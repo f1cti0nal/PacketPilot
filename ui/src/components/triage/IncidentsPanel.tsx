@@ -4,6 +4,7 @@ import {
   ArrowUpFromLine,
   ChevronRight,
   Globe,
+  KeyRound,
   Radar,
   Radio,
   Siren,
@@ -23,6 +24,7 @@ export interface IncidentsPanelProps {
 const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   beacon: { label: "C2 Beacon", Icon: Radio },
   host_sweep: { label: "Host Sweep", Icon: Radar },
+  brute_force: { label: "Brute Force", Icon: KeyRound },
   data_exfil: { label: "Data Exfiltration", Icon: ArrowUpFromLine },
   dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
 };

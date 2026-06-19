@@ -12,9 +12,9 @@ use std::time::Instant;
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, correlate_incidents, detect_beacons, detect_dns_tunnel, detect_exfil,
-    detect_sweeps, BeaconParams, BehaviorTracker, DetectConfig, DnsTunnelParams, ExfilParams,
-    SweepParams,
+    contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force, detect_dns_tunnel,
+    detect_exfil, detect_sweeps, BeaconParams, BehaviorTracker, BruteForceParams, DetectConfig,
+    DnsTunnelParams, ExfilParams, SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -51,6 +51,8 @@ pub struct PipelineConfig {
     pub exfil: ExfilParams,
     /// Host-sweep-detector tuning.
     pub sweep: SweepParams,
+    /// Credential brute-force-detector tuning.
+    pub brute_force: BruteForceParams,
     /// DNS-tunneling-detector tuning.
     pub dns_tunnel: DnsTunnelParams,
 }
@@ -75,6 +77,7 @@ impl Default for PipelineConfig {
             beacon: BeaconParams::default(),
             exfil: ExfilParams::default(),
             sweep: SweepParams::default(),
+            brute_force: BruteForceParams::default(),
             dns_tunnel: DnsTunnelParams::default(),
         }
     }
@@ -254,6 +257,7 @@ pub fn run_source(
     let mut findings = detect_beacons(&tracker, &cfg.beacon);
     findings.extend(detect_exfil(&tracker, &cfg.exfil));
     findings.extend(detect_sweeps(&tracker, &cfg.sweep));
+    findings.extend(detect_brute_force(&tracker, &cfg.brute_force));
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     stats.apply_findings(&findings);
 
@@ -821,8 +825,9 @@ mod tests {
             "c2 {c2} not High in ip_threats"
         );
 
-        // The beacon host also ran a recon sweep and exfiltrated data, so it correlates into one
-        // Critical, full kill-chain incident (Discovery -> Command & Control -> Exfiltration).
+        // The beacon host also ran a recon sweep, brute-forced credentials, and exfiltrated data,
+        // so it correlates into one Critical, full kill-chain incident
+        // (Discovery -> Credential Access -> Command & Control -> Exfiltration).
         let incident = out
             .summary
             .incidents
@@ -835,15 +840,34 @@ mod tests {
             "incident: {incident:?}"
         );
         assert!(
-            incident.findings.len() >= 4,
+            incident.findings.len() >= 5,
             "expected full kill-chain incident: {incident:?}"
         );
         assert_eq!(
             incident.stages,
-            vec!["Discovery", "Command & Control", "Exfiltration"],
+            vec![
+                "Discovery",
+                "Credential Access",
+                "Command & Control",
+                "Exfiltration"
+            ],
             "incident: {incident:?}"
         );
-        // The kill chain includes DNS tunneling (exfil over DNS).
+        // The kill chain includes a credential brute force, pinned to its identity: SSH (22)
+        // against the FIRST host the recon stage swept (10.66.0.1), so Discovery and Credential
+        // Access are coupled to the same victim, at or above the detector's attempt floor.
+        let brute = incident
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::BruteForce)
+            .unwrap_or_else(|| panic!("incident missing brute-force finding: {incident:?}"));
+        assert_eq!(brute.dst_ip.as_deref(), Some("10.66.0.1"), "brute victim");
+        assert_eq!(brute.dst_port, Some(22), "brute targets SSH");
+        assert!(
+            brute.contacts.unwrap() >= 20,
+            "brute attempts below the detector floor: {brute:?}"
+        );
+        // ...and DNS tunneling (exfil over DNS).
         assert!(
             incident
                 .findings
@@ -997,6 +1021,97 @@ mod tests {
                 .iter()
                 .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
             "sweeper not High in ip_threats"
+        );
+    }
+
+    #[test]
+    fn pipeline_surfaces_brute_force_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let attacker = Ipv4Addr::new(10, 0, 0, 9);
+        let victim = Ipv4Addr::new(10, 0, 0, 5);
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        // 25 separate SSH connection attempts (distinct ephemeral source ports => distinct flows)
+        // from one attacker to one victim — a credential brute force.
+        for i in 0..25i64 {
+            let sport = 40000 + i as u16;
+            let tcp = frames::build_tcp(attacker, victim, sport, 22, frames::TCP_SYN, &[]);
+            let ip = frames::build_ipv4(attacker, victim, frames::IP_PROTO_TCP, 64, tcp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 9],
+                [0x02, 0, 0, 0, 0, 5],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            let ts = base + i * 1_000_000;
+            let wl = frame.len() as u32;
+            container::write_legacy_record(&mut buf, ts, wl, wl).unwrap();
+            buf.write_all(&frame).unwrap();
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        // No threat feed: the verdict comes from the repeated auth attempts alone.
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let bf = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::BruteForce)
+            .unwrap_or_else(|| panic!("no brute-force finding: {:?}", out.summary.findings));
+        assert_eq!(bf.severity, crate::model::severity::Severity::High);
+        assert_eq!(bf.src_ip, "10.0.0.9");
+        assert_eq!(bf.dst_ip.as_deref(), Some("10.0.0.5"));
+        assert_eq!(bf.dst_port, Some(22));
+        assert!(bf.attack.iter().any(|a| a == "T1110"));
+        assert!(bf.contacts.unwrap() >= 20);
+        // The attacker is surfaced as a High threat card (behavior alone).
+        assert!(
+            out.summary
+                .ip_threats
+                .iter()
+                .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
+            "brute-forcer not High in ip_threats"
+        );
+    }
+
+    #[test]
+    fn benign_mixed_traffic_yields_no_brute_force_even_at_low_host_diversity() {
+        use crate::gen::{GenConfig, Scenario, SynthGen};
+        // Regression for the adversarial-review false positive: a tiny host set concentrates the
+        // generator's random TCP connections onto a few channels, so a naive auth-port gate would
+        // accumulate >=20 "attempts" on a port that merely happened to be an auth service. With
+        // other-TCP confined to high non-auth ports AND the detector gated to interactive-auth
+        // ports, benign Mixed traffic must never trip brute force — regardless of host diversity.
+        let cfg = GenConfig {
+            scenario: Scenario::Mixed,
+            packets: 200_000,
+            seed: 0x5061_636B_6574_5069,
+            host_count: 2,
+            ..Default::default()
+        };
+        let tf = tempfile::NamedTempFile::new().unwrap();
+        SynthGen::new(cfg).write_pcap(tf.path()).unwrap();
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+        let bf: Vec<_> = out
+            .summary
+            .findings
+            .iter()
+            .filter(|f| f.kind == crate::model::finding::FindingKind::BruteForce)
+            .collect();
+        assert!(
+            bf.is_empty(),
+            "spurious brute force on benign Mixed traffic: {bf:?}"
         );
     }
 
