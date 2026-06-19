@@ -4,6 +4,7 @@ import type { AnalysisOutput, Severity, SeverityCounts } from "../types";
 import { cn } from "../lib/cn";
 
 import { SeverityStrip } from "./triage/SeverityStrip";
+import { FindingsPanel } from "./triage/FindingsPanel";
 import { ThreatsPanel } from "./triage/ThreatsPanel";
 import { SummaryCard } from "./triage/SummaryCard";
 import { CategoryChart } from "./triage/CategoryChart";
@@ -71,6 +72,9 @@ export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
             : undefined
         }
       />
+
+      {/* Behavioral detections — the highest-signal surface; only shown when present. */}
+      <FindingsPanel findings={summary.findings ?? []} />
 
       {/* Top threats — full width, directly under the severity strip. */}
       <ThreatsPanel threats={summary.ip_threats ?? []} />

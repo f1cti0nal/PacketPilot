@@ -85,6 +85,8 @@ export interface Summary {
   category_breakdown: CategoryBreakdownEntry[];
   severity_counts?: SeverityCounts;
   ip_threats?: IpThreat[];
+  /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
+  findings?: Finding[];
 }
 
 export interface SeverityCounts {
@@ -106,6 +108,32 @@ export interface IpThreat {
   tags: string[];
   attack: string[];
   evidence: string[];
+}
+
+/** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */
+export type FindingKind = "beacon" | "host_sweep" | "data_exfil";
+
+/**
+ * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a
+ * finding is a *named* conclusion across many flows ("host X is beaconing to Y") that can reach
+ * High/Critical from behavior alone — no threat-feed hit required.
+ */
+export interface Finding {
+  kind: FindingKind;
+  severity: Severity;
+  score: number;
+  title: string;
+  src_ip: string;
+  dst_ip: string | null;
+  dst_port: number | null;
+  attack: string[];
+  evidence: string[];
+  /** Beacon period in nanoseconds; null for non-beacon findings. */
+  interval_ns: number | null;
+  /** Beacon jitter (coefficient of variation); null otherwise. */
+  jitter_cv: number | null;
+  /** Contributing contact / connection count. */
+  contacts: number | null;
 }
 
 export interface AnalysisOutput {
