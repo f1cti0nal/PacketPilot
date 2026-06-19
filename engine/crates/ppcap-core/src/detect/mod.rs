@@ -302,6 +302,124 @@ impl BehaviorTracker {
     }
 }
 
+use crate::enrich::classify_ip;
+use crate::model::finding::{Finding, FindingKind};
+use crate::model::flow::FlowRecord;
+use crate::model::severity::Severity;
+
+/// Tuning for the beaconing detector.
+#[derive(Debug, Clone)]
+pub struct BeaconParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum contacts on a channel before it can be called a beacon.
+    pub min_contacts: u64,
+    /// Maximum jitter (coefficient of variation) to still count as "regular".
+    pub max_jitter_cv: f64,
+    /// Ignore channels whose period is below this (sub-second chatter is not a beacon).
+    pub min_interval_ns: i64,
+    /// Ignore channels whose period is above this (too sparse to call periodic).
+    pub max_interval_ns: i64,
+}
+
+impl Default for BeaconParams {
+    fn default() -> Self {
+        BeaconParams {
+            enabled: true,
+            // A low jitter CV is only trustworthy with enough samples; too few contacts let
+            // benign traffic look periodic by chance (a multiple-comparisons effect across many
+            // channels). Real beacons check in many times, so require a solid minimum.
+            min_contacts: 12,
+            max_jitter_cv: 0.15,
+            min_interval_ns: 1_000_000_000,              // 1 s
+            max_interval_ns: 24 * 3_600 * 1_000_000_000, // 24 h
+        }
+    }
+}
+
+/// Derive the directed `(client, server, server_port, conn_start_ns)` contact from a closed
+/// flow, or `None` for a non-port transport.
+///
+/// The server is the well-known (numerically smaller) port side — matching how `stats` picks
+/// the service port — and the client is the ephemeral side. The contact time is the flow's
+/// first timestamp, i.e. the connection-initiation instant, which is the correct sample for
+/// beacon periodicity.
+pub fn contact_from_flow(record: &FlowRecord) -> Option<(IpAddr, IpAddr, u16, i64)> {
+    if !record.key.transport.has_ports() {
+        return None;
+    }
+    // The smaller port is the well-known service side (the server); the other endpoint is the
+    // ephemeral client that initiated the connection.
+    let (client, server, server_port) = if record.key.lo_port <= record.key.hi_port {
+        (record.key.hi_ip, record.key.lo_ip, record.key.lo_port)
+    } else {
+        (record.key.lo_ip, record.key.hi_ip, record.key.hi_port)
+    };
+    Some((client, server, server_port, record.first_ts_ns))
+}
+
+/// Detect periodic C2 beaconing from the behavioral tracker: one [`Finding`] per destination
+/// channel whose contacts are frequent enough ([`BeaconParams::min_contacts`]), regular enough
+/// ([`BeaconParams::max_jitter_cv`]), and within the plausible period window. Severity is High
+/// for an external destination, Medium for an internal one. Returned in deterministic order.
+pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.beacon_candidates(params.min_contacts, params.max_jitter_cv) {
+        // Reject periods outside the plausible beacon window (sub-second chatter / too sparse).
+        if c.interval_ns < params.min_interval_ns as f64
+            || c.interval_ns > params.max_interval_ns as f64
+        {
+            continue;
+        }
+        let dst = c.key.dst;
+        let external = classify_ip(dst).is_external();
+        // A periodic beacon to an external peer is High; to an internal one, Medium. The score
+        // is a representative point inside the matching band (parallels per-flow threat_score).
+        let (severity, score) = if external {
+            (Severity::High, 70)
+        } else {
+            (Severity::Medium, 45)
+        };
+        let interval_secs = c.interval_ns / 1e9;
+        let evidence = vec![
+            format!(
+                "periodic beaconing: {} contacts to {}:{}",
+                c.contacts, dst, c.key.dst_port
+            ),
+            format!(
+                "interval ~{interval_secs:.0}s, jitter CV {:.3} (low = machine-regular)",
+                c.jitter_cv
+            ),
+            if external {
+                "external destination".to_string()
+            } else {
+                "internal destination".to_string()
+            },
+        ];
+        findings.push(Finding {
+            kind: FindingKind::Beacon,
+            severity,
+            score,
+            title: format!(
+                "Periodic beacon: {} -> {}:{} every ~{interval_secs:.0}s",
+                c.key.src, dst, c.key.dst_port
+            ),
+            src_ip: c.key.src.to_string(),
+            dst_ip: Some(dst.to_string()),
+            dst_port: Some(c.key.dst_port),
+            attack: vec!["T1071".to_string()],
+            evidence,
+            interval_ns: Some(c.interval_ns.round() as i64),
+            jitter_cv: Some(c.jitter_cv),
+            contacts: Some(c.contacts),
+        });
+    }
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,5 +629,138 @@ mod tests {
         assert!(t
             .series(ContactKey::new(src, ip(203, 0, 113, 2), 443))
             .is_none());
+    }
+
+    /// Feed `n` near-periodic contacts (`period_s` seconds apart, +/- 1s jitter) into a channel.
+    fn feed_periodic(
+        t: &mut BehaviorTracker,
+        src: IpAddr,
+        dst: IpAddr,
+        port: u16,
+        n: i64,
+        period_s: i64,
+    ) {
+        for i in 0..n {
+            let ts = i * period_s * SEC + (i % 2) * SEC;
+            t.observe_contact(src, dst, port, ts);
+        }
+    }
+
+    #[test]
+    fn periodic_external_channel_yields_high_beacon_finding() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let bot = ip(10, 0, 0, 5);
+        let c2 = ip(8, 8, 8, 8); // a Public (external) address standing in for the C2
+        feed_periodic(&mut t, bot, c2, 443, 16, 60);
+
+        let findings = detect_beacons(&t, &BeaconParams::default());
+        assert_eq!(findings.len(), 1, "findings: {findings:?}");
+        let b = &findings[0];
+        assert_eq!(b.kind, FindingKind::Beacon);
+        assert_eq!(b.severity, Severity::High); // external destination
+        assert_eq!(b.src_ip, "10.0.0.5");
+        assert_eq!(b.dst_ip.as_deref(), Some("8.8.8.8"));
+        assert_eq!(b.dst_port, Some(443));
+        assert!(
+            b.attack.iter().any(|a| a == "T1071"),
+            "attack: {:?}",
+            b.attack
+        );
+        assert!(b.contacts.unwrap() >= 6);
+        assert!(b.jitter_cv.unwrap() < 0.15);
+        assert!(b.interval_ns.unwrap() > 0);
+        assert!(!b.evidence.is_empty());
+    }
+
+    #[test]
+    fn beacon_score_sits_in_its_severity_band() {
+        // External beacon -> High band (60..=84).
+        let mut ext = BehaviorTracker::new(DetectConfig::default());
+        feed_periodic(&mut ext, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 443, 16, 60);
+        let f = detect_beacons(&ext, &BeaconParams::default());
+        assert_eq!(f.len(), 1);
+        assert!(
+            (60..=84).contains(&f[0].score),
+            "external score {} not in High band",
+            f[0].score
+        );
+
+        // Internal beacon -> Medium band (35..=59).
+        let mut int = BehaviorTracker::new(DetectConfig::default());
+        feed_periodic(&mut int, ip(10, 0, 0, 5), ip(10, 0, 0, 9), 8080, 16, 30);
+        let g = detect_beacons(&int, &BeaconParams::default());
+        assert_eq!(g.len(), 1);
+        assert!(
+            (35..=59).contains(&g[0].score),
+            "internal score {} not in Medium band",
+            g[0].score
+        );
+    }
+
+    #[test]
+    fn internal_beacon_is_medium_severity() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_periodic(&mut t, ip(10, 0, 0, 5), ip(10, 0, 0, 9), 8080, 16, 30);
+        let findings = detect_beacons(&t, &BeaconParams::default());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Medium); // internal destination
+    }
+
+    #[test]
+    fn subthreshold_or_irregular_channels_yield_no_finding() {
+        // Too few contacts.
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        feed_periodic(&mut few, ip(10, 0, 0, 5), ip(203, 0, 113, 7), 443, 3, 60);
+        assert!(detect_beacons(&few, &BeaconParams::default()).is_empty());
+
+        // Enough contacts but wildly irregular timing (high CV) — not a beacon.
+        let mut irregular = BehaviorTracker::new(DetectConfig::default());
+        let bot = ip(10, 0, 0, 5);
+        let c2 = ip(203, 0, 113, 7);
+        for ts in [0, 5, 130, 140, 600, 605, 1800, 1810] {
+            irregular.observe_contact(bot, c2, 443, ts * SEC);
+        }
+        assert!(detect_beacons(&irregular, &BeaconParams::default()).is_empty());
+    }
+
+    #[test]
+    fn disabled_params_yield_no_findings() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_periodic(&mut t, ip(10, 0, 0, 5), ip(203, 0, 113, 7), 443, 8, 60);
+        let params = BeaconParams {
+            enabled: false,
+            ..BeaconParams::default()
+        };
+        assert!(detect_beacons(&t, &params).is_empty());
+    }
+
+    #[test]
+    fn contact_from_flow_picks_service_port_and_initiator() {
+        use crate::model::flow::FlowKey;
+        use crate::model::packet::Transport;
+        // Client 10.0.0.5:50000 -> server 203.0.113.7:443.
+        let (key, _dir) = FlowKey::normalized(
+            ip(10, 0, 0, 5),
+            50000,
+            ip(203, 0, 113, 7),
+            443,
+            Transport::Tcp,
+        );
+        let rec = FlowRecord::new(key, 1234);
+        let (client, server, port, ts) = contact_from_flow(&rec).expect("port-bearing flow");
+        assert_eq!(client, ip(10, 0, 0, 5));
+        assert_eq!(server, ip(203, 0, 113, 7));
+        assert_eq!(port, 443);
+        assert_eq!(ts, 1234);
+    }
+
+    #[test]
+    fn contact_from_flow_is_none_for_portless_transport() {
+        use crate::model::flow::FlowKey;
+        use crate::model::packet::Transport;
+        let (key, _dir) =
+            FlowKey::normalized(ip(10, 0, 0, 5), 0, ip(10, 0, 0, 6), 0, Transport::Icmp);
+        let rec = FlowRecord::new(key, 0);
+        assert!(contact_from_flow(&rec).is_none());
     }
 }

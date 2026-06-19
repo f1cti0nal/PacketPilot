@@ -330,6 +330,57 @@ impl StatsAccumulator {
         }
     }
 
+    /// Merge cross-flow [`crate::model::finding::Finding`]s into the per-IP threat rollups so a
+    /// behavioral verdict (e.g. a beacon) elevates the implicated hosts' threat cards. Called
+    /// once after the streaming pass and before [`finish`](Self::finish). Both endpoints of a
+    /// finding are uplifted; an already-higher card is never lowered (mirrors
+    /// [`observe_scored_flow`](Self::observe_scored_flow)).
+    pub fn apply_findings(&mut self, findings: &[crate::model::finding::Finding]) {
+        for f in findings {
+            // Both endpoints are implicated: the beaconing host and the peer it calls.
+            for ip_str in [Some(f.src_ip.as_str()), f.dst_ip.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                let Ok(ip) = ip_str.parse::<IpAddr>() else {
+                    continue;
+                };
+                // Bound the map like every other per-key dimension: a brand-new key at capacity
+                // is dropped (graceful degradation).
+                if !self.per_ip_threat.contains_key(&ip)
+                    && self.per_ip_threat.len() >= self.cfg.max_tracked_keys
+                {
+                    continue;
+                }
+                let e = self.per_ip_threat.entry(ip).or_default();
+                // Raise (never lower) the representative verdict; reseed evidence from the
+                // finding when it strictly raises so the retained strings justify the new card,
+                // exactly as observe_scored_flow does for a strictly-raising flow.
+                if f.severity > e.max_sev || (f.severity == e.max_sev && f.score > e.max_score) {
+                    e.max_sev = f.severity;
+                    e.max_score = f.score;
+                    e.evidence.clear();
+                    for ev in &f.evidence {
+                        if e.evidence.len() >= self.cfg.max_evidence_per_ip {
+                            break;
+                        }
+                        if !e.evidence.contains(ev) {
+                            e.evidence.push(ev.clone());
+                        }
+                    }
+                }
+                for a in &f.attack {
+                    e.attack.insert(a.clone());
+                }
+                for ev in &f.evidence {
+                    if e.evidence.len() < self.cfg.max_evidence_per_ip && !e.evidence.contains(ev) {
+                        e.evidence.push(ev.clone());
+                    }
+                }
+            }
+        }
+    }
+
     /// Whether `src` exceeded `threshold` distinct destination ports (scan signal).
     pub fn is_scanner(&self, src: IpAddr, threshold: u32) -> bool {
         match self.scan_spread.get(&src) {
@@ -494,6 +545,9 @@ impl StatsAccumulator {
             category_breakdown,
             severity_counts: self.severity_counts,
             ip_threats,
+            // Behavioral findings are produced by the `detect` stage from the cross-flow
+            // tracker, not by this accumulator; the orchestrator fills them in post-`finish`.
+            findings: Vec::new(),
         }
     }
 
@@ -1187,6 +1241,102 @@ mod tests {
         let s = acc.finish();
         let found = s.top_talkers.iter().any(|t| t.ip == "2001:db8::1");
         assert!(found, "talkers: {:?}", s.top_talkers);
+    }
+
+    #[test]
+    fn apply_findings_uplifts_both_endpoint_cards() {
+        use crate::model::finding::{Finding, FindingKind};
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let bot = ip4(10, 0, 0, 5);
+        let c2 = ip4(8, 8, 8, 8);
+        // Seed both IPs with a benign Info-level flow so each has a baseline card.
+        let f = flow(Transport::Tcp, bot, c2, Category::Web, 2, 100);
+        let sc = ScoredFlow {
+            severity: Severity::Info,
+            score: 5,
+            evidence: vec!["category web (+3)".to_string()],
+            attack: vec![],
+        };
+        acc.observe_scored_flow(&f, &sc);
+
+        let finding = Finding {
+            kind: FindingKind::Beacon,
+            severity: Severity::High,
+            score: 70,
+            title: "Periodic beacon".to_string(),
+            src_ip: "10.0.0.5".to_string(),
+            dst_ip: Some("8.8.8.8".to_string()),
+            dst_port: Some(443),
+            attack: vec!["T1071".to_string()],
+            evidence: vec!["periodic beaconing: 8 contacts to 8.8.8.8:443".to_string()],
+            interval_ns: Some(60_000_000_000),
+            jitter_cv: Some(0.01),
+            contacts: Some(8),
+        };
+        acc.apply_findings(&[finding]);
+
+        let s = acc.finish();
+        for who in ["10.0.0.5", "8.8.8.8"] {
+            let card = s
+                .ip_threats
+                .iter()
+                .find(|t| t.ip == who)
+                .unwrap_or_else(|| panic!("no threat card for {who}"));
+            assert_eq!(card.severity, Severity::High, "{who} not uplifted to High");
+            assert!(card.score >= 70, "{who} score {} < 70", card.score);
+            assert!(
+                card.attack.iter().any(|a| a == "T1071"),
+                "{who} missing T1071: {:?}",
+                card.attack
+            );
+            assert!(
+                card.evidence.iter().any(|e| e.contains("beaconing")),
+                "{who} missing beacon evidence: {:?}",
+                card.evidence
+            );
+        }
+    }
+
+    #[test]
+    fn apply_findings_never_lowers_a_higher_card() {
+        use crate::model::finding::{Finding, FindingKind};
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let bot = ip4(10, 0, 0, 5);
+        let c2 = ip4(8, 8, 8, 8);
+        // Seed a Critical IOC flow for the pair.
+        let mut f = flow(Transport::Tcp, bot, c2, Category::C2, 2, 100);
+        f.severity = Severity::Critical;
+        f.threat_score = 95;
+        f.ioc = true;
+        let sc = ScoredFlow {
+            severity: Severity::Critical,
+            score: 95,
+            evidence: vec!["ioc: endpoint ip on threat feed (+35)".to_string()],
+            attack: vec!["T1071".to_string()],
+        };
+        acc.observe_scored_flow(&f, &sc);
+
+        // A Medium beacon finding must NOT downgrade the Critical card.
+        let finding = Finding {
+            kind: FindingKind::Beacon,
+            severity: Severity::Medium,
+            score: 45,
+            title: "Periodic beacon".to_string(),
+            src_ip: "10.0.0.5".to_string(),
+            dst_ip: Some("8.8.8.8".to_string()),
+            dst_port: Some(443),
+            attack: vec![],
+            evidence: vec!["periodic beaconing".to_string()],
+            interval_ns: Some(1),
+            jitter_cv: Some(0.0),
+            contacts: Some(8),
+        };
+        acc.apply_findings(&[finding]);
+
+        let s = acc.finish();
+        let card = s.ip_threats.iter().find(|t| t.ip == "8.8.8.8").unwrap();
+        assert_eq!(card.severity, Severity::Critical);
+        assert!(card.score >= 95);
     }
 
     #[test]

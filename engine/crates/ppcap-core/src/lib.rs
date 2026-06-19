@@ -49,12 +49,14 @@ pub mod score;
 pub mod stats;
 
 pub use analyze::{run, run_source, PipelineConfig};
+pub use detect::{BeaconParams, BehaviorTracker, DetectConfig};
 pub use enrich::{
     attack_for, classify_ip, AttackTechnique, Enricher, FeedMatch, FlowEnrichment, IpClass,
     ThreatFeed,
 };
 pub use error::{PpError, Result};
 pub use model::category::Category;
+pub use model::finding::{Finding, FindingKind};
 pub use model::flow::{Direction, FlowKey, FlowRecord};
 pub use model::output::AnalysisOutput;
 pub use model::packet::{PacketMeta, Protocol, Transport};

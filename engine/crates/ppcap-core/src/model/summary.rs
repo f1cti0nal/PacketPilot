@@ -7,6 +7,7 @@
 
 use crate::enrich::IpClass;
 use crate::model::category::Category;
+use crate::model::finding::Finding;
 use crate::model::severity::Severity;
 
 /// Protocol-fidelity tallies the bench/golden contract asserts against the generator
@@ -152,6 +153,10 @@ pub struct Summary {
     pub severity_counts: SeverityCounts,
     /// desc by score; len <= top_k_ip_threats.
     pub ip_threats: Vec<IpThreat>,
+    /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
+    /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
+    #[serde(default)]
+    pub findings: Vec<Finding>,
 }
 
 impl Summary {
@@ -176,6 +181,7 @@ impl Summary {
             category_breakdown: Vec::new(),
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),
+            findings: Vec::new(),
         }
     }
 

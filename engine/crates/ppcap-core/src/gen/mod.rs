@@ -251,6 +251,10 @@ pub struct SynthGen {
     plan: ProtoCounts,
     emitted: u64,
     cursor_ts: i64,
+    /// Independent random-walk clock for [`Scenario::Beacon`] background traffic, advanced per
+    /// background packet so benign channels have irregular (high-CV) inter-arrivals and never
+    /// read as periodic. Kept separate from the regular beacon-callback grid.
+    bg_cursor: i64,
     /// Distinct (lo_ip, hi_ip, lo_port, hi_port, proto) flow keys seen, for
     /// `manifest.distinct_flows`. Random ephemeral ports make distinct 5-tuples scale ~per
     /// packet, so this set is HARD-CAPPED at [`MAX_TRACKED_FLOWS`] to keep the generator
@@ -265,12 +269,14 @@ impl SynthGen {
         let schedule = Schedule::from_counts(&plan);
         let rng = mix::SplitMix64::new(cfg.seed);
         let cursor_ts = cfg.start_ts_ns;
+        let bg_cursor = cfg.start_ts_ns;
         SynthGen {
             rng,
             schedule,
             plan,
             emitted: 0,
             cursor_ts,
+            bg_cursor,
             flows: HashSet::new(),
             cfg,
         }
@@ -357,6 +363,12 @@ impl SynthGen {
     fn next_planned(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
         if self.emitted >= self.cfg.packets {
             return None;
+        }
+        // The beacon scenario uses a dedicated emission path with explicit, low-jitter callback
+        // timestamps — the weighted schedule + per-packet cursor cannot produce a regular,
+        // single-channel beacon (it picks a fresh random host pair per packet).
+        if self.cfg.scenario == Scenario::Beacon {
+            return self.next_beacon();
         }
         let kind = self.schedule.next_kind(&mut self.rng)?;
         let ts = self.cursor_ts;
@@ -510,6 +522,82 @@ impl SynthGen {
         frame
     }
 
+    /// Dedicated emission for [`Scenario::Beacon`]: a regular C2 callback once per cycle from a
+    /// fixed internal client to a fixed **public** C2 on 443, surrounded by benign background.
+    ///
+    /// Each cycle is [`BEACON_CYCLE_LEN`] packets: one callback at `start + cycle*period +
+    /// jitter` followed by benign background spread across the rest of the cycle. The callback
+    /// uses a rotating ephemeral source port so every check-in is a *distinct* flow, and the
+    /// per-cycle jitter is bounded to `period/30`, keeping the inter-callback coefficient of
+    /// variation far under the detector's threshold.
+    fn next_beacon(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
+        let i = self.emitted;
+        let pos = i % BEACON_CYCLE_LEN;
+
+        let (ts, kind, frame) = if pos == 0 {
+            // The regular C2 callback, on the explicit period grid + bounded jitter.
+            let cycle = i / BEACON_CYCLE_LEN;
+            let callback_ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add((cycle as i64).saturating_mul(BEACON_PERIOD_NS))
+                .saturating_add(self.beacon_jitter(cycle));
+            (
+                callback_ts,
+                FrameKind::Tls,
+                self.build_beacon_callback(cycle),
+            )
+        } else {
+            // Benign background on an INDEPENDENT random-walk clock (not aligned to the beacon
+            // period) so any repeated background channel has Poisson-like, high-CV arrivals and
+            // never reads as periodic. Varied benign kind across ports 80/443/53 to random hosts.
+            let bg_ts = self.bg_cursor;
+            self.bg_cursor = self.bg_cursor.saturating_add(self.beacon_bg_gap());
+            let bg_kind = match self.rng.below(3) {
+                0 => FrameKind::Http,
+                1 => FrameKind::Dns,
+                _ => FrameKind::Tls,
+            };
+            (bg_ts, bg_kind, self.build_frame(bg_kind))
+        };
+
+        self.emitted += 1;
+        Some((ts, kind, frame))
+    }
+
+    /// Deterministic per-cycle beacon jitter in `[0, period/30)`. Uses an independent PRNG
+    /// stream keyed on `(seed, cycle)` so it does not depend on how many background frames were
+    /// drawn from the main PRNG — keeping callback timing stable and the output reproducible.
+    fn beacon_jitter(&self, cycle: u64) -> i64 {
+        let mut r = mix::SplitMix64::new(self.cfg.seed ^ cycle.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        r.below((BEACON_PERIOD_NS / 30) as u64) as i64
+    }
+
+    /// Mean-`period/(cycle-1)` jittered gap (±50%) for the background random walk, so the
+    /// background spans roughly the same wall-clock window as the beacon callbacks.
+    fn beacon_bg_gap(&mut self) -> i64 {
+        let mean = BEACON_PERIOD_NS / (BEACON_CYCLE_LEN as i64 - 1);
+        (mean / 2)
+            .saturating_add(self.rng.below(mean as u64) as i64)
+            .max(1)
+    }
+
+    /// Build one beacon callback: a TLS ClientHello from the fixed client to the fixed public
+    /// C2 on 443, with a rotating ephemeral source port (distinct flow per check-in).
+    fn build_beacon_callback(&mut self, cycle: u64) -> Vec<u8> {
+        let client = beacon_client();
+        let c2 = beacon_c2();
+        let sport = 49152 + (cycle % 16000) as u16;
+        self.record_flow(client, c2, sport, 443, IP_PROTO_TCP);
+        let payload = frames::tls_client_hello_payload(BEACON_SNI);
+        let tcp = frames::build_tcp(client, c2, sport, 443, TCP_PSH | TCP_ACK, &payload);
+        let ip = frames::build_ipv4(client, c2, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(BEACON_CLIENT_MAC, BEACON_C2_MAC, ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
+    }
+
     /// Record a normalized 5-tuple flow key into the bounded distinct-flow set.
     fn record_flow(&mut self, src: Ipv4Addr, dst: Ipv4Addr, sport: u16, dport: u16, proto: u8) {
         // Normalize endpoints so a<->b and b<->a collapse to one flow.
@@ -544,6 +632,28 @@ impl SynthGen {
             self.flows.insert(h);
         }
     }
+}
+
+/// Beacon callback period (~30 s) for [`Scenario::Beacon`]. Explicit so the inter-callback
+/// interval is wall-clock-regular regardless of background packet volume.
+const BEACON_PERIOD_NS: i64 = 30_000_000_000;
+/// Packets per beacon cycle: one C2 callback + 12 benign background frames.
+const BEACON_CYCLE_LEN: u64 = 13;
+/// SNI presented by the synthetic C2 callbacks.
+const BEACON_SNI: &str = "sync.cdn-metrics.net";
+/// Fixed locally-administered MACs for the beacon client / C2.
+const BEACON_CLIENT_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x01];
+const BEACON_C2_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x02];
+
+/// The compromised internal host that beacons out (RFC1918, classified internal).
+fn beacon_client() -> Ipv4Addr {
+    Ipv4Addr::new(10, 13, 37, 7)
+}
+
+/// The external C2 the beacon dials. A real public address so it classifies as external and the
+/// beacon scores **High** (an internal C2 would only reach Medium).
+fn beacon_c2() -> Ipv4Addr {
+    Ipv4Addr::new(45, 77, 13, 37)
 }
 
 /// Deterministic per-host IPv4 in 10.0.0.0/8: 10.<hi>.<mid>.<lo+1>.

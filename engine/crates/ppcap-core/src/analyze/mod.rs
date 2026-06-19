@@ -11,6 +11,9 @@ use std::time::Instant;
 
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
+use crate::detect::{
+    contact_from_flow, detect_beacons, BeaconParams, BehaviorTracker, DetectConfig,
+};
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
 use crate::model::flow::FlowRecord;
@@ -40,6 +43,8 @@ pub struct PipelineConfig {
     pub classify: ClassifyConfig,
     pub stats: StatsConfig,
     pub writer: WriterConfig,
+    /// Beaconing-detector tuning (cross-flow behavioral detection).
+    pub beacon: BeaconParams,
 }
 
 impl Default for PipelineConfig {
@@ -59,6 +64,7 @@ impl Default for PipelineConfig {
             classify: ClassifyConfig::default(),
             stats: StatsConfig::default(),
             writer: WriterConfig::default(),
+            beacon: BeaconParams::default(),
         }
     }
 }
@@ -119,6 +125,9 @@ pub fn run_source(
     // Load the threat feed exactly once (fail fast on IO/parse/bad indicator).
     let enricher = Enricher::new(ThreatFeed::load_opt(cfg.threat_feed.as_deref())?);
     let mut stats = StatsAccumulator::new(cfg.stats.clone());
+    // Cross-flow behavioral tracker: fed one "contact" per closed flow, queried at finish for
+    // beaconing/sweep findings. Bounded like every other per-key map.
+    let mut tracker = BehaviorTracker::new(DetectConfig::default());
     let mut writer: Option<FlowParquetWriter> = match &cfg.flows_parquet {
         Some(p) => Some(FlowParquetWriter::create(p, cfg.writer.clone())?),
         None => None,
@@ -189,6 +198,7 @@ pub fn run_source(
                 detect_scans,
                 scan_threshold,
                 &mut stats,
+                &mut tracker,
                 &mut writer,
                 &mut sink_err,
             );
@@ -207,6 +217,7 @@ pub fn run_source(
         detect_scans,
         scan_threshold,
         &mut stats,
+        &mut tracker,
         &mut writer,
         &mut sink_err,
     );
@@ -217,8 +228,15 @@ pub fn run_source(
     // Final progress tick so callers see the terminal totals.
     progress(pkts, bytes, size_hint);
 
+    // Cross-flow behavioral detection runs once, after every flow's contact has been folded in.
+    // Its findings uplift the implicated hosts' per-IP threat cards *before* the summary sorts
+    // and truncates them, so a beaconing host/C2 surfaces in the Top Threats panel.
+    let findings = detect_beacons(&tracker, &cfg.beacon);
+    stats.apply_findings(&findings);
+
     // Materialize the summary (consumes stats) and finalize the Parquet file.
-    let summary = stats.finish();
+    let mut summary = stats.finish();
+    summary.findings = findings;
     let flows_parquet_path = match writer {
         Some(w) => {
             w.close()?;
@@ -251,10 +269,17 @@ fn process_flow(
     detect_scans: bool,
     scan_threshold: u32,
     stats: &mut StatsAccumulator,
+    tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
     sink_err: &mut Option<PpError>,
 ) {
     classifier.classify(record);
+
+    // Behavioral substrate: fold this connection's directed contact (client -> server:port at
+    // the flow's start time) into the cross-flow tracker for beaconing/sweep detection.
+    if let Some((client, server, server_port, ts)) = contact_from_flow(record) {
+        tracker.observe_contact(client, server, server_port, ts);
+    }
 
     // Single-pass scan uplift: promote an UNNAMED flow to Scan when either endpoint is a
     // confirmed port-spraying scanner. Two guards prevent the over-firing that would
@@ -303,6 +328,7 @@ fn evict(
     detect_scans: bool,
     scan_threshold: u32,
     stats: &mut StatsAccumulator,
+    tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
     sink_err: &mut Option<PpError>,
 ) {
@@ -314,6 +340,7 @@ fn evict(
             detect_scans,
             scan_threshold,
             stats,
+            tracker,
             writer,
             sink_err,
         );
@@ -329,6 +356,7 @@ fn drain(
     detect_scans: bool,
     scan_threshold: u32,
     stats: &mut StatsAccumulator,
+    tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
     sink_err: &mut Option<PpError>,
 ) {
@@ -340,6 +368,7 @@ fn drain(
             detect_scans,
             scan_threshold,
             stats,
+            tracker,
             writer,
             sink_err,
         );
@@ -620,5 +649,143 @@ mod tests {
     #[test]
     fn schema_version_is_one() {
         assert_eq!(SCHEMA_VERSION, 1);
+    }
+
+    /// One TLS-ClientHello frame (Ethernet+IPv4+TCP PSH/ACK) from `client:sport` to
+    /// `server:443`, built from the same frame helpers the generator uses.
+    fn tls_frame(client: std::net::Ipv4Addr, sport: u16, server: std::net::Ipv4Addr) -> Vec<u8> {
+        use crate::gen::frames;
+        let payload = frames::tls_client_hello_payload("c2.example");
+        let tcp = frames::build_tcp(
+            client,
+            server,
+            sport,
+            443,
+            frames::TCP_PSH | frames::TCP_ACK,
+            &payload,
+        );
+        let ip = frames::build_ipv4(client, server, frames::IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(
+            [0x02, 0, 0, 0, 0, 1],
+            [0x02, 0, 0, 0, 0, 2],
+            frames::ETHERTYPE_IPV4,
+        );
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
+    }
+
+    #[test]
+    fn pipeline_surfaces_beacon_finding_without_threat_feed() {
+        use crate::gen::container;
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let client = Ipv4Addr::new(10, 0, 0, 5);
+        let c2 = Ipv4Addr::new(8, 8, 8, 8); // public => external => High severity
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+        let period: i64 = 60 * 1_000_000_000; // 60s callbacks
+
+        // Build an in-memory pcap: 16 regular callbacks, each a distinct flow (new ephemeral
+        // source port), so the tracker sees 16 contacts to (client -> c2:443).
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+        for i in 0..16i64 {
+            let frame = tls_frame(client, 50_000 + i as u16, c2);
+            let ts = base + i * period;
+            let wire = frame.len() as u32;
+            container::write_legacy_record(&mut buf, ts, wire, wire).unwrap();
+            buf.write_all(&frame).unwrap();
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        // Default config: NO threat feed loaded — any High verdict comes from behavior alone.
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let beacons: Vec<_> = out
+            .summary
+            .findings
+            .iter()
+            .filter(|f| f.kind == crate::model::finding::FindingKind::Beacon)
+            .collect();
+        assert_eq!(beacons.len(), 1, "findings: {:?}", out.summary.findings);
+        let b = beacons[0];
+        assert_eq!(b.src_ip, "10.0.0.5");
+        assert_eq!(b.dst_ip.as_deref(), Some("8.8.8.8"));
+        assert_eq!(b.dst_port, Some(443));
+        assert_eq!(b.severity, crate::model::severity::Severity::High);
+        assert!(b.contacts.unwrap() >= 6, "contacts: {:?}", b.contacts);
+
+        // The finding must also UPLIFT the C2's per-IP threat card (Top Threats panel), again
+        // with no threat feed — proving behavior alone drives the host's verdict to High.
+        let c2_card = out
+            .summary
+            .ip_threats
+            .iter()
+            .find(|t| t.ip == "8.8.8.8")
+            .expect("c2 threat card present");
+        assert_eq!(c2_card.severity, crate::model::severity::Severity::High);
+        assert!(c2_card.score >= 70, "c2 card score: {}", c2_card.score);
+        assert!(c2_card.attack.iter().any(|a| a == "T1071"));
+    }
+
+    #[test]
+    fn generated_beacon_scenario_is_detected_as_high() {
+        use crate::gen::{GenConfig, Scenario, SynthGen};
+        use crate::model::finding::FindingKind;
+        use crate::model::severity::Severity;
+
+        // A large capture (many cycles) is the case that previously let benign background form
+        // a spurious low-jitter channel; keep it big enough to guard that regression.
+        let cfg = GenConfig {
+            scenario: Scenario::Beacon,
+            packets: 40_000,
+            seed: 1,
+            // Many hosts => background channels stay sparse (few contacts each), so benign
+            // traffic does not accumulate enough contacts to be mistaken for a beacon.
+            host_count: 256,
+            ..Default::default()
+        };
+        let tf = tempfile::NamedTempFile::new().unwrap();
+        let mut g = SynthGen::new(cfg);
+        g.write_pcap(tf.path()).unwrap();
+
+        // No threat feed: the verdict must come from the beacon's periodicity alone.
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let beacons: Vec<_> = out
+            .summary
+            .findings
+            .iter()
+            .filter(|f| f.kind == FindingKind::Beacon)
+            .collect();
+        assert!(
+            !beacons.is_empty(),
+            "no beacon finding: {:?}",
+            out.summary.findings
+        );
+        // The real C2 callback is an external High beacon...
+        let real = beacons
+            .iter()
+            .find(|b| b.severity == Severity::High)
+            .unwrap_or_else(|| panic!("no High beacon: {beacons:?}"));
+        assert!(real.contacts.unwrap() >= 6, "contacts: {:?}", real.contacts);
+        // ...and the benign background must NOT trip any spurious beacon.
+        assert!(
+            beacons.iter().all(|b| b.severity == Severity::High),
+            "background produced a spurious beacon: {beacons:?}"
+        );
+        // The C2 it dials is surfaced as a High threat card (no threat feed involved).
+        let c2 = real.dst_ip.clone().unwrap();
+        assert!(
+            out.summary
+                .ip_threats
+                .iter()
+                .any(|t| t.ip == c2 && t.severity == Severity::High),
+            "c2 {c2} not High in ip_threats"
+        );
     }
 }
