@@ -231,6 +231,28 @@ pub struct SweepCandidate {
     pub hosts: usize,
 }
 
+/// Per-`(source, resolver)` DNS query statistics.
+#[derive(Debug, Clone, Default)]
+struct DnsStats {
+    queries: u64,
+    /// Sum of the per-query most-dense-label Shannon entropy (avg = sum / queries).
+    entropy_sum: f64,
+    max_label_len: u16,
+    /// One example qname for the finding evidence.
+    sample: Option<String>,
+}
+
+/// A `(source, resolver)` channel whose DNS queries look like tunneling / DGA.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DnsTunnelCandidate {
+    pub src: IpAddr,
+    pub resolver: IpAddr,
+    pub queries: u64,
+    pub avg_entropy: f64,
+    pub max_label_len: u16,
+    pub sample: Option<String>,
+}
+
 /// Tuning for the behavioral tracker. Both caps keep memory bounded on adversarial captures.
 #[derive(Debug, Clone)]
 pub struct DetectConfig {
@@ -261,6 +283,8 @@ pub struct BehaviorTracker {
     cfg: DetectConfig,
     channels: HashMap<ContactKey, ContactSeries>,
     fanout: HashMap<(IpAddr, u16), HashSet<IpAddr>>,
+    /// Per-`(source, resolver)` DNS query statistics for tunneling / DGA detection.
+    dns: HashMap<(IpAddr, IpAddr), DnsStats>,
 }
 
 impl BehaviorTracker {
@@ -270,6 +294,31 @@ impl BehaviorTracker {
             cfg,
             channels: HashMap::new(),
             fanout: HashMap::new(),
+            dns: HashMap::new(),
+        }
+    }
+
+    /// Fold one DNS query: `src` asked `resolver` for `qname`. Accumulates the volume, the
+    /// distribution of the most-information-dense label's Shannon entropy, and the longest label
+    /// length — the signals that separate tunneling / DGA from ordinary lookups. Bounded: a
+    /// brand-new `(src, resolver)` at capacity is dropped.
+    pub fn observe_dns_query(&mut self, src: IpAddr, resolver: IpAddr, qname: &str) {
+        let key = (src, resolver);
+        if !self.dns.contains_key(&key) && self.dns.len() >= self.cfg.max_tracked_keys.max(1) {
+            return;
+        }
+        // The data-carrying label is the longest one; measure its entropy and length.
+        let longest = qname.split('.').max_by_key(|l| l.len()).unwrap_or("");
+        let entropy = shannon_entropy(longest);
+        let label_len = longest.len().min(u16::MAX as usize) as u16;
+        let e = self.dns.entry(key).or_default();
+        e.queries += 1;
+        e.entropy_sum += entropy;
+        if label_len > e.max_label_len {
+            e.max_label_len = label_len;
+        }
+        if e.sample.is_none() && !qname.is_empty() {
+            e.sample = Some(qname.to_string());
         }
     }
 
@@ -350,6 +399,41 @@ impl BehaviorTracker {
                 .cmp(&a.hosts)
                 .then(a.src.cmp(&b.src))
                 .then(a.dst_port.cmp(&b.dst_port))
+        });
+        out
+    }
+
+    /// All `(src, resolver)` channels whose DNS queries look like tunneling / DGA: at least
+    /// `min_queries` queries, an average most-dense-label entropy at or above `min_avg_entropy`,
+    /// and a longest label at or above `min_label_len`. Returned strongest (most queries) first.
+    pub fn dns_tunnel_candidates(
+        &self,
+        min_queries: u64,
+        min_avg_entropy: f64,
+        min_label_len: u16,
+    ) -> Vec<DnsTunnelCandidate> {
+        let mut out: Vec<DnsTunnelCandidate> = self
+            .dns
+            .iter()
+            .filter(|(_, s)| {
+                s.queries >= min_queries
+                    && s.max_label_len >= min_label_len
+                    && s.entropy_sum / s.queries as f64 >= min_avg_entropy
+            })
+            .map(|(&(src, resolver), s)| DnsTunnelCandidate {
+                src,
+                resolver,
+                queries: s.queries,
+                avg_entropy: s.entropy_sum / s.queries as f64,
+                max_label_len: s.max_label_len,
+                sample: s.sample.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.queries
+                .cmp(&a.queries)
+                .then(a.src.cmp(&b.src))
+                .then(a.resolver.cmp(&b.resolver))
         });
         out
     }
@@ -699,6 +783,97 @@ pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Fin
     findings
 }
 
+/// Tuning for the DNS tunneling / DGA detector.
+#[derive(Debug, Clone)]
+pub struct DnsTunnelParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum DNS queries on a `(src, resolver)` channel to consider it.
+    pub min_queries: u64,
+    /// Minimum average most-dense-label Shannon entropy (bits/char). Random tunnel/DGA labels
+    /// run high (~3.8+); ordinary domains run lower.
+    pub min_avg_entropy: f64,
+    /// Minimum longest-label length — encoded payloads use long labels.
+    pub min_label_len: u16,
+}
+
+impl Default for DnsTunnelParams {
+    fn default() -> Self {
+        DnsTunnelParams {
+            enabled: true,
+            min_queries: 30,
+            min_avg_entropy: 3.5,
+            min_label_len: 20,
+        }
+    }
+}
+
+/// Detect DNS tunneling / DGA from the behavioral tracker: one [`Finding`] per `(src, resolver)`
+/// channel whose DNS queries are high-volume and high-entropy with long labels — the signature
+/// of data/C2 smuggled inside DNS names. High severity, ATT&CK T1071.004. Deterministic order.
+pub fn detect_dns_tunnel(tracker: &BehaviorTracker, params: &DnsTunnelParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.dns_tunnel_candidates(
+        params.min_queries,
+        params.min_avg_entropy,
+        params.min_label_len,
+    ) {
+        let mut evidence = vec![
+            format!(
+                "{} DNS queries to {} with avg label entropy {:.2} (max label {} chars)",
+                c.queries, c.resolver, c.avg_entropy, c.max_label_len
+            ),
+            "high-entropy, long-label queries — data/C2 tunneled over DNS".to_string(),
+        ];
+        if let Some(sample) = &c.sample {
+            // Bound the shown sample so a giant label cannot bloat the evidence.
+            let shown: String = sample.chars().take(80).collect();
+            evidence.push(format!("example: {shown}"));
+        }
+        findings.push(Finding {
+            kind: FindingKind::DnsTunnel,
+            severity: Severity::High,
+            score: 74,
+            title: format!(
+                "DNS tunneling: {} -> {} ({} high-entropy queries)",
+                c.src, c.resolver, c.queries
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: Some(c.resolver.to_string()),
+            dst_port: Some(53),
+            attack: vec!["T1071.004".to_string()],
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.queries),
+        });
+    }
+    findings
+}
+
+/// Shannon entropy (bits per byte) of a string's byte distribution; `0.0` for empty input.
+fn shannon_entropy(s: &str) -> f64 {
+    if s.is_empty() {
+        return 0.0;
+    }
+    let mut counts = [0u32; 256];
+    for b in s.bytes() {
+        counts[b as usize] += 1;
+    }
+    let n = s.len() as f64;
+    let mut h = 0.0;
+    for &c in counts.iter() {
+        if c > 0 {
+            let p = c as f64 / n;
+            h -= p * p.log2();
+        }
+    }
+    h
+}
+
 /// Correlate behavioral findings into per-host incidents, ordered along the kill chain
 /// (discovery -> command-and-control -> exfiltration). A host exhibiting two or more distinct
 /// stages is escalated one severity band — a multi-stage chain is a confirmed incident.
@@ -803,6 +978,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::HostSweep => 0, // discovery
         FindingKind::Beacon => 1,    // command-and-control
         FindingKind::DataExfil => 2, // exfiltration
+        FindingKind::DnsTunnel => 2, // exfiltration / C2 over DNS
     }
 }
 
@@ -812,6 +988,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::HostSweep => "Discovery",
         FindingKind::Beacon => "Command & Control",
         FindingKind::DataExfil => "Exfiltration",
+        FindingKind::DnsTunnel => "Exfiltration",
     }
 }
 
@@ -821,6 +998,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::HostSweep => "swept the network",
         FindingKind::Beacon => "beaconed to a C2",
         FindingKind::DataExfil => "exfiltrated data",
+        FindingKind::DnsTunnel => "tunneled data over DNS",
     }
 }
 
@@ -1438,5 +1616,70 @@ mod tests {
         assert_eq!(inc[0].severity, Severity::Critical);
         assert_eq!(inc[1].host, "10.0.0.5");
         assert_eq!(inc[1].severity, Severity::Medium);
+    }
+
+    /// A 32-char base32 label with high entropy, deterministic per `seed`.
+    fn tunnel_label(seed: u64) -> String {
+        const ALPHA: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
+        let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xDEAD_BEEF;
+        (0..32)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                ALPHA[(x % 32) as usize] as char
+            })
+            .collect()
+    }
+
+    #[test]
+    fn shannon_entropy_reflects_randomness() {
+        assert_eq!(shannon_entropy(""), 0.0);
+        assert!(shannon_entropy("aaaaaaaa") < 1e-9); // one symbol -> zero entropy
+                                                     // A normal label is low-entropy; a random tunnel label is clearly higher.
+        assert!(shannon_entropy("example") < 3.0);
+        assert!(
+            shannon_entropy(&tunnel_label(1)) > 3.0,
+            "entropy {}",
+            shannon_entropy(&tunnel_label(1))
+        );
+    }
+
+    #[test]
+    fn dns_tunnel_detected_for_high_entropy_volume() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let bot = ip(10, 0, 0, 5);
+        let resolver = ip(10, 0, 0, 1);
+        for i in 0..40u64 {
+            let qname = format!("{}.tunnel.evil.example", tunnel_label(i));
+            t.observe_dns_query(bot, resolver, &qname);
+        }
+        let f = detect_dns_tunnel(&t, &DnsTunnelParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::DnsTunnel);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.5");
+        assert_eq!(f[0].dst_ip.as_deref(), Some("10.0.0.1"));
+        assert_eq!(f[0].dst_port, Some(53));
+        assert!(f[0].attack.iter().any(|a| a == "T1071.004"));
+        assert!(f[0].contacts.unwrap() >= 30);
+    }
+
+    #[test]
+    fn benign_or_low_volume_dns_is_not_flagged() {
+        // Ordinary domains: short, low-entropy labels.
+        let mut benign = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..60 {
+            benign.observe_dns_query(ip(10, 0, 0, 5), ip(10, 0, 0, 1), "www.example.com");
+        }
+        assert!(detect_dns_tunnel(&benign, &DnsTunnelParams::default()).is_empty());
+
+        // High-entropy but only a few queries -> below the volume floor.
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..5u64 {
+            let q = format!("{}.t.evil.example", tunnel_label(i));
+            few.observe_dns_query(ip(10, 0, 0, 5), ip(10, 0, 0, 1), &q);
+        }
+        assert!(detect_dns_tunnel(&few, &DnsTunnelParams::default()).is_empty());
     }
 }

@@ -60,6 +60,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         vlan: None,
         app_proto: AppProto::Unknown,
         sni: None,
+        dns_qname: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -162,7 +163,10 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         let payload = l4.get(consumed..).unwrap_or(&[]);
         if let Some(hint) = l7_hint(meta.transport, meta.src_port, meta.dst_port, payload) {
             match hint {
-                L7Hint::Dns => meta.app_proto = AppProto::Dns,
+                L7Hint::Dns { qname } => {
+                    meta.app_proto = AppProto::Dns;
+                    meta.dns_qname = qname;
+                }
                 L7Hint::Http { .. } => meta.app_proto = AppProto::Http, // method token dropped
                 L7Hint::Tls { sni } => {
                     meta.app_proto = AppProto::Tls;
@@ -272,8 +276,8 @@ fn strip_null<'a>(data: &'a [u8], meta: &mut PacketMeta) -> Result<(bool, &'a [u
 /// (uncaptured-by-`PacketMeta`) payload bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum L7Hint {
-    /// Likely DNS (matched purely on port 53, UDP or TCP).
-    Dns,
+    /// Likely DNS (matched on port 53); `qname` is the first question name if parseable.
+    Dns { qname: Option<String> },
     /// An HTTP request with the sniffed method (e.g. `GET`, `POST`).
     Http { method: String },
     /// A TLS ClientHello; `sni` is the Server Name Indication host if present.
@@ -284,6 +288,52 @@ pub enum L7Hint {
 #[inline]
 pub fn is_dns_port(src_port: u16, dst_port: u16) -> bool {
     src_port == 53 || dst_port == 53
+}
+
+/// Extract the first question's QNAME from a DNS message payload, or `None` if it is not a
+/// parseable query name. Parses defensively — every index is bounds-checked, labels are capped,
+/// and a compression pointer (which a question QNAME never legitimately uses) or any malformed
+/// byte aborts cleanly — so it never panics on adversarial input. Label bytes map 1:1 to chars
+/// (so the caller can measure length/entropy); the registered domain is not separated out here.
+pub fn sniff_dns_qname(payload: &[u8]) -> Option<String> {
+    // Need the 12-byte header plus at least one name byte.
+    if payload.len() < 13 {
+        return None;
+    }
+    // QDCOUNT (questions) must be non-zero for a query name to exist.
+    if u16::from_be_bytes([payload[4], payload[5]]) == 0 {
+        return None;
+    }
+
+    let mut off = 12usize; // first question begins right after the header
+    let mut name = String::new();
+    // A valid QNAME has at most 127 labels (255-byte cap, >=2 bytes each); cap to bound the loop.
+    for _ in 0..128 {
+        let len = *payload.get(off)? as usize;
+        if len == 0 {
+            // Root label: end of the name.
+            return if name.is_empty() { None } else { Some(name) };
+        }
+        // Top two bits set => compression pointer (or reserved); a question QNAME never uses
+        // these, so any malformed pointer aborts cleanly rather than chasing offsets.
+        if len & 0xC0 != 0 {
+            return if name.is_empty() { None } else { Some(name) };
+        }
+        let start = off + 1;
+        let end = start.checked_add(len)?;
+        let label = payload.get(start..end)?;
+        if !name.is_empty() {
+            name.push('.');
+        }
+        for &b in label {
+            name.push(b as char);
+        }
+        if name.len() > 255 {
+            return None;
+        }
+        off = end;
+    }
+    None // exceeded the label cap without a root terminator => malformed
 }
 
 /// Top-level L7 sniff: combine port heuristics with a payload peek. `payload` is the L4
@@ -310,7 +360,9 @@ pub fn l7_hint(
     if (transport == Transport::Udp || transport == Transport::Tcp)
         && is_dns_port(src_port, dst_port)
     {
-        return Some(L7Hint::Dns);
+        return Some(L7Hint::Dns {
+            qname: sniff_dns_qname(payload),
+        });
     }
     None
 }
@@ -457,6 +509,7 @@ mod tests {
             vlan: None,
             app_proto: AppProto::Unknown,
             sni: None,
+            dns_qname: None,
         }
     }
 
@@ -910,7 +963,10 @@ mod tests {
         assert!(is_dns_port(53, 12345));
         assert!(is_dns_port(40000, 53));
         assert!(!is_dns_port(80, 443));
-        assert_eq!(l7_hint(Transport::Udp, 40000, 53, &[]), Some(L7Hint::Dns));
+        assert_eq!(
+            l7_hint(Transport::Udp, 40000, 53, &[]),
+            Some(L7Hint::Dns { qname: None })
+        );
     }
 
     #[test]
@@ -1085,5 +1141,74 @@ mod tests {
         record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
         record.extend_from_slice(&handshake);
         record
+    }
+
+    #[test]
+    fn sniff_dns_qname_parses_a_generated_query() {
+        let payload = crate::gen::frames::dns_query_payload("abc.example.com", 0x1234);
+        assert_eq!(
+            sniff_dns_qname(&payload).as_deref(),
+            Some("abc.example.com")
+        );
+    }
+
+    #[test]
+    fn sniff_dns_qname_parses_a_long_tunnel_label() {
+        let qname = "k7f9q2x8b3z1a5w0.tunnel.evil.example";
+        let payload = crate::gen::frames::dns_query_payload(qname, 1);
+        assert_eq!(sniff_dns_qname(&payload).as_deref(), Some(qname));
+    }
+
+    #[test]
+    fn sniff_dns_qname_rejects_short_or_empty_payload() {
+        assert_eq!(sniff_dns_qname(&[]), None);
+        assert_eq!(sniff_dns_qname(&[0u8; 8]), None);
+    }
+
+    #[test]
+    fn sniff_dns_qname_rejects_zero_question_count() {
+        // 12-byte header with QDCOUNT = 0, then a stray byte.
+        let mut p = vec![0u8; 12];
+        p[4] = 0;
+        p[5] = 0; // qdcount
+        p.push(0x00);
+        assert_eq!(sniff_dns_qname(&p), None);
+    }
+
+    #[test]
+    fn sniff_dns_qname_handles_truncated_label_without_panic() {
+        // Header (qdcount=1) then a label claiming 40 bytes with only 3 present.
+        let mut p = vec![0u8; 12];
+        p[5] = 1; // qdcount = 1
+        p.push(40); // label length 40
+        p.extend_from_slice(b"abc"); // only 3 bytes follow
+        assert_eq!(sniff_dns_qname(&p), None);
+    }
+
+    #[test]
+    fn sniff_dns_qname_aborts_on_compression_pointer() {
+        // Header (qdcount=1) then a compression pointer (0xC0 0x0C) as the first label.
+        let mut p = vec![0u8; 12];
+        p[5] = 1;
+        p.push(0xC0);
+        p.push(0x0C);
+        // A pointer at the very start yields no label -> None; must not panic or loop.
+        assert_eq!(sniff_dns_qname(&p), None);
+    }
+
+    #[test]
+    fn sniff_dns_qname_never_panics_on_arbitrary_bytes() {
+        // Adversarial / fuzzy inputs: the parser must always return, never panic.
+        for seed in 0u16..2000 {
+            let mut p = vec![0u8; 12];
+            p[5] = 1;
+            // Fill a pseudo-random tail.
+            let mut x = seed as u32;
+            for _ in 0..(seed % 80) as usize {
+                x = x.wrapping_mul(1103515245).wrapping_add(12345);
+                p.push((x >> 16) as u8);
+            }
+            let _ = sniff_dns_qname(&p); // just must not panic
+        }
     }
 }

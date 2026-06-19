@@ -100,6 +100,7 @@ fn observe_folds_fwd_and_rev() {
         vlan: None,
         app_proto: ppcap_core::model::packet::AppProto::Unknown,
         sni: None,
+        dns_qname: None,
     };
     let mut rev = fwd.clone();
     rev.ts_ns = 900;

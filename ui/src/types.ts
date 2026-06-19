@@ -113,7 +113,7 @@ export interface IpThreat {
 }
 
 /** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */
-export type FindingKind = "beacon" | "host_sweep" | "data_exfil";
+export type FindingKind = "beacon" | "host_sweep" | "data_exfil" | "dns_tunnel";
 
 /**
  * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a

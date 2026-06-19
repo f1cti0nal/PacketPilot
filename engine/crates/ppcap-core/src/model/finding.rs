@@ -21,6 +21,8 @@ pub enum FindingKind {
     HostSweep,
     /// Data exfiltration: a large asymmetric outbound transfer to an external peer.
     DataExfil,
+    /// DNS tunneling / DGA: high-volume, high-entropy DNS queries (C2 / exfil over DNS).
+    DnsTunnel,
 }
 
 impl FindingKind {
@@ -30,6 +32,7 @@ impl FindingKind {
             FindingKind::Beacon => "beacon",
             FindingKind::HostSweep => "host_sweep",
             FindingKind::DataExfil => "data_exfil",
+            FindingKind::DnsTunnel => "dns_tunnel",
         }
     }
 }

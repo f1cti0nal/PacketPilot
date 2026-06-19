@@ -3,36 +3,36 @@
   "engine_version": "0.1.0",
   "source_path": "target/beacon-sample.pcap",
   "source_sha256": null,
-  "source_bytes": 6366594,
+  "source_bytes": 6366453,
   "link_type": "EN10MB",
   "summary": {
     "total_packets": 40000,
-    "total_bytes": 5726570,
-    "captured_bytes": 5726570,
+    "total_bytes": 5726429,
+    "captured_bytes": 5726429,
     "total_flows": 39099,
     "decode_errors": 0,
     "non_ip_frames": 0,
     "proto": {
-      "tcp": 28131,
-      "udp": 11869,
-      "dns": 11869,
-      "http": 11989,
-      "tls": 16118,
+      "tcp": 28101,
+      "udp": 11899,
+      "dns": 11899,
+      "http": 11978,
+      "tls": 16099,
       "other_tcp": 24,
       "other_udp": 0,
       "truncated": 0,
       "non_ipv4": 0
     },
     "first_ts_ns": 1700000000000000000,
-    "last_ts_ns": 1700090347511008000,
-    "duration_ns": 90347511008000,
-    "unique_hosts": 91,
+    "last_ts_ns": 1700090260546552000,
+    "duration_ns": 90260546552000,
+    "unique_hosts": 92,
     "top_talkers": [
       {
         "ip": "10.13.37.7",
-        "pkts": 3930,
-        "bytes": 1715706,
-        "flows": 3031
+        "pkts": 3967,
+        "bytes": 1719821,
+        "flows": 3068
       },
       {
         "ip": "185.220.101.5",
@@ -42,69 +42,63 @@
       },
       {
         "ip": "45.77.13.37",
-        "pkts": 3006,
-        "bytes": 405810,
-        "flows": 3006
+        "pkts": 3003,
+        "bytes": 405405,
+        "flows": 3003
       },
       {
         "ip": "10.0.41.10",
-        "pkts": 1193,
-        "bytes": 134077,
-        "flows": 1193
-      },
-      {
-        "ip": "10.0.22.10",
-        "pkts": 1191,
-        "bytes": 133691,
-        "flows": 1191
-      },
-      {
-        "ip": "10.0.44.10",
         "pkts": 1192,
-        "bytes": 133347,
+        "bytes": 133953,
         "flows": 1192
       },
       {
+        "ip": "10.0.22.10",
+        "pkts": 1190,
+        "bytes": 133567,
+        "flows": 1190
+      },
+      {
+        "ip": "10.0.44.10",
+        "pkts": 1191,
+        "bytes": 133272,
+        "flows": 1191
+      },
+      {
         "ip": "10.0.54.10",
-        "pkts": 1174,
-        "bytes": 132241,
-        "flows": 1174
+        "pkts": 1173,
+        "bytes": 132104,
+        "flows": 1173
       },
       {
         "ip": "10.0.63.10",
-        "pkts": 1171,
-        "bytes": 132022,
-        "flows": 1170
-      },
-      {
-        "ip": "10.0.9.10",
-        "pkts": 1177,
-        "bytes": 131706,
-        "flows": 1177
-      },
-      {
-        "ip": "10.0.51.10",
-        "pkts": 1170,
-        "bytes": 131650,
-        "flows": 1169
-      },
-      {
-        "ip": "10.0.46.10",
-        "pkts": 1167,
-        "bytes": 131307,
+        "pkts": 1168,
+        "bytes": 131607,
         "flows": 1167
       },
       {
-        "ip": "10.0.47.10",
-        "pkts": 1166,
-        "bytes": 130967,
-        "flows": 1166
+        "ip": "10.0.51.10",
+        "pkts": 1169,
+        "bytes": 131526,
+        "flows": 1168
       },
       {
-        "ip": "10.0.36.10",
-        "pkts": 1177,
-        "bytes": 130779,
-        "flows": 1177
+        "ip": "10.0.9.10",
+        "pkts": 1175,
+        "bytes": 131507,
+        "flows": 1175
+      },
+      {
+        "ip": "10.0.46.10",
+        "pkts": 1165,
+        "bytes": 131108,
+        "flows": 1165
+      },
+      {
+        "ip": "10.0.47.10",
+        "pkts": 1165,
+        "bytes": 130843,
+        "flows": 1165
       },
       {
         "ip": "10.0.8.10",
@@ -113,28 +107,28 @@
         "flows": 1176
       },
       {
+        "ip": "10.0.36.10",
+        "pkts": 1176,
+        "bytes": 130640,
+        "flows": 1176
+      },
+      {
         "ip": "10.0.62.10",
-        "pkts": 1174,
-        "bytes": 130084,
-        "flows": 1174
+        "pkts": 1173,
+        "bytes": 129945,
+        "flows": 1173
       },
       {
         "ip": "10.0.23.10",
-        "pkts": 1150,
-        "bytes": 129941,
-        "flows": 1150
+        "pkts": 1147,
+        "bytes": 129604,
+        "flows": 1147
       },
       {
         "ip": "10.0.4.10",
-        "pkts": 1157,
-        "bytes": 128605,
-        "flows": 1157
-      },
-      {
-        "ip": "10.0.55.10",
-        "pkts": 1146,
-        "bytes": 128577,
-        "flows": 1146
+        "pkts": 1156,
+        "bytes": 128530,
+        "flows": 1156
       },
       {
         "ip": "10.0.37.10",
@@ -143,10 +137,10 @@
         "flows": 1175
       },
       {
-        "ip": "10.0.17.10",
-        "pkts": 1138,
-        "bytes": 128295,
-        "flows": 1138
+        "ip": "10.0.55.10",
+        "pkts": 1144,
+        "bytes": 128314,
+        "flows": 1144
       },
       {
         "ip": "10.0.52.10",
@@ -155,10 +149,10 @@
         "flows": 1160
       },
       {
-        "ip": "10.0.31.10",
-        "pkts": 1150,
-        "bytes": 128077,
-        "flows": 1150
+        "ip": "10.0.17.10",
+        "pkts": 1136,
+        "bytes": 128024,
+        "flows": 1136
       },
       {
         "ip": "10.0.39.10",
@@ -167,28 +161,34 @@
         "flows": 1149
       },
       {
-        "ip": "10.0.14.10",
-        "pkts": 1145,
-        "bytes": 127801,
-        "flows": 1145
+        "ip": "10.0.31.10",
+        "pkts": 1149,
+        "bytes": 128002,
+        "flows": 1149
       },
       {
-        "ip": "10.0.35.10",
+        "ip": "10.0.14.10",
         "pkts": 1144,
-        "bytes": 127771,
+        "bytes": 127665,
         "flows": 1144
       },
       {
+        "ip": "10.0.35.10",
+        "pkts": 1143,
+        "bytes": 127647,
+        "flows": 1143
+      },
+      {
         "ip": "10.0.56.10",
-        "pkts": 1153,
-        "bytes": 127460,
-        "flows": 1153
+        "pkts": 1152,
+        "bytes": 127336,
+        "flows": 1152
       },
       {
         "ip": "10.0.40.10",
-        "pkts": 1140,
-        "bytes": 127363,
-        "flows": 1140
+        "pkts": 1139,
+        "bytes": 127231,
+        "flows": 1139
       },
       {
         "ip": "10.0.24.10",
@@ -198,21 +198,15 @@
       },
       {
         "ip": "10.0.50.10",
-        "pkts": 1150,
-        "bytes": 126437,
-        "flows": 1150
-      },
-      {
-        "ip": "10.0.38.10",
-        "pkts": 1104,
-        "bytes": 126082,
-        "flows": 1104
+        "pkts": 1149,
+        "bytes": 126313,
+        "flows": 1149
       },
       {
         "ip": "10.0.60.10",
-        "pkts": 1140,
-        "bytes": 126066,
-        "flows": 1140
+        "pkts": 1139,
+        "bytes": 125991,
+        "flows": 1139
       },
       {
         "ip": "10.0.42.10",
@@ -227,58 +221,64 @@
         "flows": 1130
       },
       {
+        "ip": "10.0.38.10",
+        "pkts": 1101,
+        "bytes": 125747,
+        "flows": 1101
+      },
+      {
         "ip": "10.0.49.10",
         "pkts": 1132,
         "bytes": 125601,
         "flows": 1132
       },
       {
+        "ip": "10.0.3.10",
+        "pkts": 1128,
+        "bytes": 125235,
+        "flows": 1128
+      },
+      {
         "ip": "10.0.33.10",
-        "pkts": 1140,
-        "bytes": 125402,
-        "flows": 1140
+        "pkts": 1138,
+        "bytes": 125128,
+        "flows": 1138
       },
       {
         "ip": "10.0.7.10",
-        "pkts": 1126,
-        "bytes": 125323,
-        "flows": 1126
-      },
-      {
-        "ip": "10.0.3.10",
-        "pkts": 1129,
-        "bytes": 125310,
-        "flows": 1129
+        "pkts": 1123,
+        "bytes": 125000,
+        "flows": 1123
       },
       {
         "ip": "10.0.18.10",
-        "pkts": 1139,
-        "bytes": 124782,
-        "flows": 1139
+        "pkts": 1138,
+        "bytes": 124707,
+        "flows": 1138
       },
       {
         "ip": "10.0.10.10",
-        "pkts": 1130,
-        "bytes": 124778,
-        "flows": 1130
-      },
-      {
-        "ip": "10.0.6.10",
-        "pkts": 1124,
-        "bytes": 124724,
-        "flows": 1124
+        "pkts": 1128,
+        "bytes": 124520,
+        "flows": 1128
       },
       {
         "ip": "10.0.48.10",
-        "pkts": 1119,
-        "bytes": 124670,
-        "flows": 1119
+        "pkts": 1117,
+        "bytes": 124471,
+        "flows": 1117
       },
       {
         "ip": "10.0.43.10",
-        "pkts": 1127,
-        "bytes": 124629,
-        "flows": 1127
+        "pkts": 1125,
+        "bytes": 124425,
+        "flows": 1125
+      },
+      {
+        "ip": "10.0.6.10",
+        "pkts": 1121,
+        "bytes": 124352,
+        "flows": 1121
       },
       {
         "ip": "10.0.59.10",
@@ -288,15 +288,15 @@
       },
       {
         "ip": "10.0.58.10",
-        "pkts": 1128,
-        "bytes": 124198,
-        "flows": 1128
+        "pkts": 1127,
+        "bytes": 124069,
+        "flows": 1127
       },
       {
         "ip": "10.0.16.10",
-        "pkts": 1123,
-        "bytes": 123830,
-        "flows": 1123
+        "pkts": 1120,
+        "bytes": 123605,
+        "flows": 1120
       },
       {
         "ip": "10.0.11.10",
@@ -306,9 +306,9 @@
       },
       {
         "ip": "10.0.0.10",
-        "pkts": 1105,
-        "bytes": 123045,
-        "flows": 1105
+        "pkts": 1104,
+        "bytes": 122913,
+        "flows": 1104
       },
       {
         "ip": "10.0.30.10",
@@ -332,18 +332,18 @@
     "protocol_hierarchy": [
       {
         "path": "ip.tcp.https",
-        "pkts": 16118,
-        "bytes": 3348463
+        "pkts": 16099,
+        "bytes": 3345916
       },
       {
         "path": "ip.tcp.http",
-        "pkts": 11989,
-        "bytes": 1486636
+        "pkts": 11978,
+        "bytes": 1485272
       },
       {
         "path": "ip.udp.dns",
-        "pkts": 11869,
-        "bytes": 890175
+        "pkts": 11899,
+        "bytes": 893945
       },
       {
         "path": "ip.tcp.other",
@@ -355,20 +355,20 @@
       {
         "port": 443,
         "transport": "TCP",
-        "pkts": 16118,
-        "bytes": 3348463
+        "pkts": 16099,
+        "bytes": 3345916
       },
       {
         "port": 80,
         "transport": "TCP",
-        "pkts": 11989,
-        "bytes": 1486636
+        "pkts": 11978,
+        "bytes": 1485272
       },
       {
         "port": 53,
         "transport": "UDP",
-        "pkts": 11869,
-        "bytes": 890175
+        "pkts": 11899,
+        "bytes": 893945
       },
       {
         "port": 445,
@@ -402,6 +402,11 @@
         "epoch_sec": 1700000005,
         "pkts": 1,
         "bytes": 75
+      },
+      {
+        "epoch_sec": 1700000006,
+        "pkts": 40,
+        "bytes": 4520
       },
       {
         "epoch_sec": 1700000008,
@@ -189134,11 +189139,6 @@
         "bytes": 75
       },
       {
-        "epoch_sec": 1700090090,
-        "pkts": 1,
-        "bytes": 135
-      },
-      {
         "epoch_sec": 1700090091,
         "pkts": 1,
         "bytes": 75
@@ -189210,8 +189210,8 @@
       },
       {
         "epoch_sec": 1700090120,
-        "pkts": 2,
-        "bytes": 210
+        "pkts": 1,
+        "bytes": 75
       },
       {
         "epoch_sec": 1700090123,
@@ -189267,11 +189267,6 @@
         "epoch_sec": 1700090149,
         "pkts": 1,
         "bytes": 129
-      },
-      {
-        "epoch_sec": 1700090150,
-        "pkts": 1,
-        "bytes": 135
       },
       {
         "epoch_sec": 1700090153,
@@ -189497,205 +189492,20 @@
         "epoch_sec": 1700090260,
         "pkts": 1,
         "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090262,
-        "pkts": 1,
-        "bytes": 133
-      },
-      {
-        "epoch_sec": 1700090264,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090267,
-        "pkts": 1,
-        "bytes": 136
-      },
-      {
-        "epoch_sec": 1700090269,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090272,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090274,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090276,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090278,
-        "pkts": 1,
-        "bytes": 139
-      },
-      {
-        "epoch_sec": 1700090279,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090282,
-        "pkts": 1,
-        "bytes": 137
-      },
-      {
-        "epoch_sec": 1700090285,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090288,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090291,
-        "pkts": 1,
-        "bytes": 137
-      },
-      {
-        "epoch_sec": 1700090293,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090295,
-        "pkts": 1,
-        "bytes": 129
-      },
-      {
-        "epoch_sec": 1700090298,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090300,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090303,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090304,
-        "pkts": 1,
-        "bytes": 132
-      },
-      {
-        "epoch_sec": 1700090306,
-        "pkts": 1,
-        "bytes": 137
-      },
-      {
-        "epoch_sec": 1700090309,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090312,
-        "pkts": 1,
-        "bytes": 132
-      },
-      {
-        "epoch_sec": 1700090316,
-        "pkts": 1,
-        "bytes": 129
-      },
-      {
-        "epoch_sec": 1700090317,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090320,
-        "pkts": 1,
-        "bytes": 132
-      },
-      {
-        "epoch_sec": 1700090322,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090325,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090327,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090328,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090330,
-        "pkts": 1,
-        "bytes": 139
-      },
-      {
-        "epoch_sec": 1700090334,
-        "pkts": 1,
-        "bytes": 139
-      },
-      {
-        "epoch_sec": 1700090337,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090338,
-        "pkts": 1,
-        "bytes": 75
-      },
-      {
-        "epoch_sec": 1700090340,
-        "pkts": 1,
-        "bytes": 124
-      },
-      {
-        "epoch_sec": 1700090341,
-        "pkts": 1,
-        "bytes": 129
-      },
-      {
-        "epoch_sec": 1700090343,
-        "pkts": 1,
-        "bytes": 133
-      },
-      {
-        "epoch_sec": 1700090347,
-        "pkts": 1,
-        "bytes": 129
       }
     ],
     "category_breakdown": [
       {
         "category": "web",
-        "flows": 27207,
-        "pkts": 28107,
-        "bytes": 4835099
+        "flows": 27177,
+        "pkts": 28077,
+        "bytes": 4831188
       },
       {
         "category": "dns",
-        "flows": 11868,
-        "pkts": 11869,
-        "bytes": 890175
+        "flows": 11898,
+        "pkts": 11899,
+        "bytes": 893945
       },
       {
         "category": "email",
@@ -189762,17 +189572,17 @@
       "critical": 0,
       "high": 0,
       "medium": 0,
-      "low": 3007,
-      "info": 36092
+      "low": 3004,
+      "info": 36095
     },
     "ip_threats": [
       {
         "ip": "10.13.37.7",
         "ip_class": "private",
         "severity": "high",
-        "score": 72,
-        "flows": 3031,
-        "bytes": 1715706,
+        "score": 74,
+        "flows": 3068,
+        "bytes": 1719821,
         "ioc": false,
         "tags": [
           "internal"
@@ -189780,14 +189590,33 @@
         "attack": [
           "T1046",
           "T1048",
-          "T1071"
+          "T1071",
+          "T1071.004"
         ],
         "evidence": [
-          "outbound 1.2 MB to external 185.220.101.5:443",
-          "1308600x more out than in (asymmetric upload; 0 B in)",
-          "external destination",
-          "24 distinct destination hosts contacted on port 445",
-          "horizontal scan / remote-system discovery"
+          "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
+          "high-entropy, long-label queries — data/C2 tunneled over DNS",
+          "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
+        ]
+      },
+      {
+        "ip": "10.0.0.53",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 74,
+        "flows": 40,
+        "bytes": 4520,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [
+          "T1071.004"
+        ],
+        "evidence": [
+          "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
+          "high-entropy, long-label queries — data/C2 tunneled over DNS",
+          "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
         ]
       },
       {
@@ -189815,8 +189644,8 @@
         "ip_class": "public",
         "severity": "high",
         "score": 70,
-        "flows": 3006,
-        "bytes": 405810,
+        "flows": 3003,
+        "bytes": 405405,
         "ioc": false,
         "tags": [
           "public"
@@ -189825,7 +189654,7 @@
           "T1071"
         ],
         "evidence": [
-          "periodic beaconing: 3006 contacts to 45.77.13.37:443",
+          "periodic beaconing: 3003 contacts to 45.77.13.37:443",
           "interval ~30s, jitter CV 0.014 (low = machine-regular)",
           "external destination"
         ]
@@ -189835,8 +189664,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1193,
-        "bytes": 134077,
+        "flows": 1192,
+        "bytes": 133953,
         "ioc": false,
         "tags": [
           "internal"
@@ -189854,8 +189683,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1192,
-        "bytes": 133347,
+        "flows": 1191,
+        "bytes": 133272,
         "ioc": false,
         "tags": [
           "internal"
@@ -189873,8 +189702,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1191,
-        "bytes": 133691,
+        "flows": 1190,
+        "bytes": 133567,
         "ioc": false,
         "tags": [
           "internal"
@@ -189892,27 +189721,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1177,
-        "bytes": 130779,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.9.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1177,
-        "bytes": 131706,
+        "flows": 1176,
+        "bytes": 130640,
         "ioc": false,
         "tags": [
           "internal"
@@ -189964,12 +189774,31 @@
         ]
       },
       {
+        "ip": "10.0.9.10",
+        "ip_class": "private",
+        "severity": "info",
+        "score": 0,
+        "flows": 1175,
+        "bytes": 131507,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [],
+        "evidence": [
+          "category web (+3)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
         "ip": "10.0.54.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1174,
-        "bytes": 132241,
+        "flows": 1173,
+        "bytes": 132104,
         "ioc": false,
         "tags": [
           "internal"
@@ -189987,27 +189816,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1174,
-        "bytes": 130084,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.63.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1170,
-        "bytes": 132022,
+        "flows": 1173,
+        "bytes": 129945,
         "ioc": false,
         "tags": [
           "internal"
@@ -190025,8 +189835,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1169,
-        "bytes": 131650,
+        "flows": 1168,
+        "bytes": 131526,
         "ioc": false,
         "tags": [
           "internal"
@@ -190040,12 +189850,31 @@
         ]
       },
       {
-        "ip": "10.0.46.10",
+        "ip": "10.0.63.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
         "flows": 1167,
-        "bytes": 131307,
+        "bytes": 131607,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [],
+        "evidence": [
+          "category web (+3)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.46.10",
+        "ip_class": "private",
+        "severity": "info",
+        "score": 0,
+        "flows": 1165,
+        "bytes": 131108,
         "ioc": false,
         "tags": [
           "internal"
@@ -190063,8 +189892,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1166,
-        "bytes": 130967,
+        "flows": 1165,
+        "bytes": 130843,
         "ioc": false,
         "tags": [
           "internal"
@@ -190101,8 +189930,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1157,
-        "bytes": 128605,
+        "flows": 1156,
+        "bytes": 128530,
         "ioc": false,
         "tags": [
           "internal"
@@ -190120,27 +189949,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1153,
-        "bytes": 127460,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.23.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1150,
-        "bytes": 129941,
+        "flows": 1152,
+        "bytes": 127336,
         "ioc": false,
         "tags": [
           "internal"
@@ -190158,8 +189968,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1150,
-        "bytes": 128077,
+        "flows": 1149,
+        "bytes": 128002,
         "ioc": false,
         "tags": [
           "internal"
@@ -190170,25 +189980,6 @@
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
           "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.50.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1150,
-        "bytes": 126437,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
         ]
       },
       {
@@ -190211,12 +190002,31 @@
         ]
       },
       {
-        "ip": "10.0.55.10",
+        "ip": "10.0.50.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1146,
-        "bytes": 128577,
+        "flows": 1149,
+        "bytes": 126313,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [],
+        "evidence": [
+          "category web (+3)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.23.10",
+        "ip_class": "private",
+        "severity": "info",
+        "score": 0,
+        "flows": 1147,
+        "bytes": 129604,
         "ioc": false,
         "tags": [
           "internal"
@@ -190234,8 +190044,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1145,
-        "bytes": 127801,
+        "flows": 1144,
+        "bytes": 127665,
         "ioc": false,
         "tags": [
           "internal"
@@ -190249,12 +190059,12 @@
         ]
       },
       {
-        "ip": "10.0.35.10",
+        "ip": "10.0.55.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
         "flows": 1144,
-        "bytes": 127771,
+        "bytes": 128314,
         "ioc": false,
         "tags": [
           "internal"
@@ -190268,12 +190078,12 @@
         ]
       },
       {
-        "ip": "10.0.33.10",
+        "ip": "10.0.35.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1140,
-        "bytes": 125402,
+        "flows": 1143,
+        "bytes": 127647,
         "ioc": false,
         "tags": [
           "internal"
@@ -190291,8 +190101,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1140,
-        "bytes": 127363,
+        "flows": 1139,
+        "bytes": 127231,
         "ioc": false,
         "tags": [
           "internal"
@@ -190310,8 +190120,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1140,
-        "bytes": 126066,
+        "flows": 1139,
+        "bytes": 125991,
         "ioc": false,
         "tags": [
           "internal"
@@ -190329,8 +190139,27 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1139,
-        "bytes": 124782,
+        "flows": 1138,
+        "bytes": 124707,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [],
+        "evidence": [
+          "category web (+3)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.33.10",
+        "ip_class": "private",
+        "severity": "info",
+        "score": 0,
+        "flows": 1138,
+        "bytes": 125128,
         "ioc": false,
         "tags": [
           "internal"
@@ -190348,8 +190177,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1138,
-        "bytes": 128295,
+        "flows": 1136,
+        "bytes": 128024,
         "ioc": false,
         "tags": [
           "internal"
@@ -190369,25 +190198,6 @@
         "score": 0,
         "flows": 1132,
         "bytes": 125601,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.10.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1130,
-        "bytes": 124778,
         "ioc": false,
         "tags": [
           "internal"
@@ -190458,12 +190268,31 @@
         ]
       },
       {
+        "ip": "10.0.10.10",
+        "ip_class": "private",
+        "severity": "info",
+        "score": 0,
+        "flows": 1128,
+        "bytes": 124520,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [],
+        "evidence": [
+          "category web (+3)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
         "ip": "10.0.3.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1129,
-        "bytes": 125310,
+        "flows": 1128,
+        "bytes": 125235,
         "ioc": false,
         "tags": [
           "internal"
@@ -190500,8 +190329,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1128,
-        "bytes": 124198,
+        "flows": 1127,
+        "bytes": 124069,
         "ioc": false,
         "tags": [
           "internal"
@@ -190519,8 +190348,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1127,
-        "bytes": 124629,
+        "flows": 1125,
+        "bytes": 124425,
         "ioc": false,
         "tags": [
           "internal"
@@ -190538,8 +190367,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1126,
-        "bytes": 125323,
+        "flows": 1123,
+        "bytes": 125000,
         "ioc": false,
         "tags": [
           "internal"
@@ -190557,8 +190386,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1124,
-        "bytes": 124724,
+        "flows": 1121,
+        "bytes": 124352,
         "ioc": false,
         "tags": [
           "internal"
@@ -190576,27 +190405,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1123,
-        "bytes": 123830,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.48.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1119,
-        "bytes": 124670,
+        "flows": 1120,
+        "bytes": 123605,
         "ioc": false,
         "tags": [
           "internal"
@@ -190629,12 +190439,31 @@
         ]
       },
       {
+        "ip": "10.0.48.10",
+        "ip_class": "private",
+        "severity": "info",
+        "score": 0,
+        "flows": 1117,
+        "bytes": 124471,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [],
+        "evidence": [
+          "category dns (+3)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category web (+3)"
+        ]
+      },
+      {
         "ip": "10.0.34.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1109,
-        "bytes": 121476,
+        "flows": 1107,
+        "bytes": 121268,
         "ioc": false,
         "tags": [
           "internal"
@@ -190652,27 +190481,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1105,
-        "bytes": 123045,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.28.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1105,
-        "bytes": 121803,
+        "flows": 1104,
+        "bytes": 122913,
         "ioc": false,
         "tags": [
           "internal"
@@ -190705,12 +190515,12 @@
         ]
       },
       {
-        "ip": "10.0.38.10",
+        "ip": "10.0.28.10",
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1104,
-        "bytes": 126082,
+        "flows": 1103,
+        "bytes": 121591,
         "ioc": false,
         "tags": [
           "internal"
@@ -190737,13 +190547,13 @@
           "T1071"
         ],
         "evidence": [
-          "periodic beaconing: 3006 contacts to 45.77.13.37:443",
+          "periodic beaconing: 3003 contacts to 45.77.13.37:443",
           "interval ~30s, jitter CV 0.014 (low = machine-regular)",
           "external destination"
         ],
-        "interval_ns": 29999927484,
-        "jitter_cv": 0.013585219398577817,
-        "contacts": 3006
+        "interval_ns": 29999881459,
+        "jitter_cv": 0.013591884300246194,
+        "contacts": 3003
       },
       {
         "kind": "data_exfil",
@@ -190783,15 +190593,35 @@
         "interval_ns": null,
         "jitter_cv": null,
         "contacts": null
+      },
+      {
+        "kind": "dns_tunnel",
+        "severity": "high",
+        "score": 74,
+        "title": "DNS tunneling: 10.13.37.7 -> 10.0.0.53 (40 high-entropy queries)",
+        "src_ip": "10.13.37.7",
+        "dst_ip": "10.0.0.53",
+        "dst_port": 53,
+        "attack": [
+          "T1071.004"
+        ],
+        "evidence": [
+          "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
+          "high-entropy, long-label queries — data/C2 tunneled over DNS",
+          "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": 40
       }
     ],
     "incidents": [
       {
         "host": "10.13.37.7",
         "severity": "critical",
-        "score": 87,
+        "score": 89,
         "title": "Multi-stage incident on 10.13.37.7",
-        "narrative": "10.13.37.7 swept the network, then beaconed to a C2, then exfiltrated data.",
+        "narrative": "10.13.37.7 swept the network, then beaconed to a C2, then tunneled data over DNS, then exfiltrated data.",
         "stages": [
           "Discovery",
           "Command & Control",
@@ -190800,7 +190630,8 @@
         "attack": [
           "T1046",
           "T1048",
-          "T1071"
+          "T1071",
+          "T1071.004"
         ],
         "findings": [
           {
@@ -190834,13 +190665,33 @@
               "T1071"
             ],
             "evidence": [
-              "periodic beaconing: 3006 contacts to 45.77.13.37:443",
+              "periodic beaconing: 3003 contacts to 45.77.13.37:443",
               "interval ~30s, jitter CV 0.014 (low = machine-regular)",
               "external destination"
             ],
-            "interval_ns": 29999927484,
-            "jitter_cv": 0.013585219398577817,
-            "contacts": 3006
+            "interval_ns": 29999881459,
+            "jitter_cv": 0.013591884300246194,
+            "contacts": 3003
+          },
+          {
+            "kind": "dns_tunnel",
+            "severity": "high",
+            "score": 74,
+            "title": "DNS tunneling: 10.13.37.7 -> 10.0.0.53 (40 high-entropy queries)",
+            "src_ip": "10.13.37.7",
+            "dst_ip": "10.0.0.53",
+            "dst_port": 53,
+            "attack": [
+              "T1071.004"
+            ],
+            "evidence": [
+              "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
+              "high-entropy, long-label queries — data/C2 tunneled over DNS",
+              "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": 40
           },
           {
             "kind": "data_exfil",
@@ -190867,5 +190718,5 @@
     ]
   },
   "flows_parquet_path": "D:/Project/PacketPilot/ui/public/sample/flows.parquet",
-  "elapsed_ms": 603
+  "elapsed_ms": 633
 }

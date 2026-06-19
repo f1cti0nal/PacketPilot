@@ -12,8 +12,9 @@ use std::time::Instant;
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, correlate_incidents, detect_beacons, detect_exfil, detect_sweeps,
-    BeaconParams, BehaviorTracker, DetectConfig, ExfilParams, SweepParams,
+    contact_from_flow, correlate_incidents, detect_beacons, detect_dns_tunnel, detect_exfil,
+    detect_sweeps, BeaconParams, BehaviorTracker, DetectConfig, DnsTunnelParams, ExfilParams,
+    SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -50,6 +51,8 @@ pub struct PipelineConfig {
     pub exfil: ExfilParams,
     /// Host-sweep-detector tuning.
     pub sweep: SweepParams,
+    /// DNS-tunneling-detector tuning.
+    pub dns_tunnel: DnsTunnelParams,
 }
 
 impl Default for PipelineConfig {
@@ -72,6 +75,7 @@ impl Default for PipelineConfig {
             beacon: BeaconParams::default(),
             exfil: ExfilParams::default(),
             sweep: SweepParams::default(),
+            dns_tunnel: DnsTunnelParams::default(),
         }
     }
 }
@@ -185,6 +189,15 @@ pub fn run_source(
                 }
                 stats.observe_packet(&meta);
                 flow.observe(&meta);
+                // DNS tunneling/DGA: fold each query (client -> resolver:53) into the tracker's
+                // per-resolver entropy/volume stats. Only queries (dst port 53), not responses.
+                if meta.dst_port == 53 {
+                    if let (Some(qname), Some(src), Some(dst)) =
+                        (&meta.dns_qname, meta.src_ip, meta.dst_ip)
+                    {
+                        tracker.observe_dns_query(src, dst, qname);
+                    }
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -241,6 +254,7 @@ pub fn run_source(
     let mut findings = detect_beacons(&tracker, &cfg.beacon);
     findings.extend(detect_exfil(&tracker, &cfg.exfil));
     findings.extend(detect_sweeps(&tracker, &cfg.sweep));
+    findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
@@ -821,13 +835,21 @@ mod tests {
             "incident: {incident:?}"
         );
         assert!(
-            incident.findings.len() >= 3,
+            incident.findings.len() >= 4,
             "expected full kill-chain incident: {incident:?}"
         );
         assert_eq!(
             incident.stages,
             vec!["Discovery", "Command & Control", "Exfiltration"],
             "incident: {incident:?}"
+        );
+        // The kill chain includes DNS tunneling (exfil over DNS).
+        assert!(
+            incident
+                .findings
+                .iter()
+                .any(|f| f.kind == crate::model::finding::FindingKind::DnsTunnel),
+            "incident missing DNS-tunnel finding: {incident:?}"
         );
     }
 
@@ -976,5 +998,71 @@ mod tests {
                 .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
             "sweeper not High in ip_threats"
         );
+    }
+
+    #[test]
+    fn pipeline_surfaces_dns_tunnel_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let client = Ipv4Addr::new(10, 0, 0, 5);
+        let resolver = Ipv4Addr::new(10, 0, 0, 53);
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        // Deterministic 32-char base32 (high-entropy) label per index.
+        fn label(seed: u64) -> String {
+            const ALPHA: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
+            let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xDEAD_BEEF;
+            (0..32)
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    ALPHA[(x % 32) as usize] as char
+                })
+                .collect()
+        }
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        // 40 high-entropy DNS queries client -> resolver:53 (data smuggled in the subdomain).
+        for i in 0..40i64 {
+            let qname = format!("{}.tunnel.evil.example", label(i as u64));
+            let payload = frames::dns_query_payload(&qname, i as u16);
+            let udp = frames::build_udp(client, resolver, 50000 + i as u16, 53, &payload);
+            let ip = frames::build_ipv4(client, resolver, frames::IP_PROTO_UDP, 64, udp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 5],
+                [0x02, 0, 0, 0, 0, 53],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&udp);
+            let ts = base + i * 1_000_000;
+            let wl = frame.len() as u32;
+            container::write_legacy_record(&mut buf, ts, wl, wl).unwrap();
+            buf.write_all(&frame).unwrap();
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        // No threat feed: the verdict comes from the query entropy/volume alone.
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let dns = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::DnsTunnel)
+            .unwrap_or_else(|| panic!("no DNS-tunnel finding: {:?}", out.summary.findings));
+        assert_eq!(dns.severity, crate::model::severity::Severity::High);
+        assert_eq!(dns.src_ip, "10.0.0.5");
+        assert_eq!(dns.dst_ip.as_deref(), Some("10.0.0.53"));
+        assert!(dns.attack.iter().any(|a| a == "T1071.004"));
+        assert!(dns.contacts.unwrap() >= 30);
     }
 }
