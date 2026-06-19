@@ -85,6 +85,10 @@ export interface Summary {
   category_breakdown: CategoryBreakdownEntry[];
   severity_counts?: SeverityCounts;
   ip_threats?: IpThreat[];
+  /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
+  findings?: Finding[];
+  /** Findings correlated into per-host incidents; absent in older summaries. */
+  incidents?: Incident[];
 }
 
 export interface SeverityCounts {
@@ -106,6 +110,50 @@ export interface IpThreat {
   tags: string[];
   attack: string[];
   evidence: string[];
+}
+
+/** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */
+export type FindingKind = "beacon" | "host_sweep" | "data_exfil";
+
+/**
+ * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a
+ * finding is a *named* conclusion across many flows ("host X is beaconing to Y") that can reach
+ * High/Critical from behavior alone — no threat-feed hit required.
+ */
+export interface Finding {
+  kind: FindingKind;
+  severity: Severity;
+  score: number;
+  title: string;
+  src_ip: string;
+  dst_ip: string | null;
+  dst_port: number | null;
+  attack: string[];
+  evidence: string[];
+  /** Beacon period in nanoseconds; null for non-beacon findings. */
+  interval_ns: number | null;
+  /** Beacon jitter (coefficient of variation); null otherwise. */
+  jitter_cv: number | null;
+  /** Contributing contact / connection count. */
+  contacts: number | null;
+}
+
+/**
+ * A per-host incident: one or more findings correlated into a single ranked story, ordered
+ * along the kill chain. A host that did two or more distinct stages is escalated above any
+ * single finding's severity.
+ */
+export interface Incident {
+  host: string;
+  severity: Severity;
+  score: number;
+  title: string;
+  narrative: string;
+  /** Kill-chain stage labels, in order, e.g. ["Discovery", "Command & Control"]. */
+  stages: string[];
+  attack: string[];
+  /** Contributing findings, ordered by kill-chain stage. */
+  findings: Finding[];
 }
 
 export interface AnalysisOutput {

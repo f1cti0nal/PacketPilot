@@ -8,6 +8,7 @@
 use crate::enrich::IpClass;
 use crate::model::category::Category;
 use crate::model::finding::Finding;
+use crate::model::incident::Incident;
 use crate::model::severity::Severity;
 
 /// Protocol-fidelity tallies the bench/golden contract asserts against the generator
@@ -157,6 +158,10 @@ pub struct Summary {
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
     pub findings: Vec<Finding>,
+    /// Findings correlated into per-host incidents (kill-chain ordered). `#[serde(default)]`
+    /// keeps older summaries readable.
+    #[serde(default)]
+    pub incidents: Vec<Incident>,
 }
 
 impl Summary {
@@ -182,6 +187,7 @@ impl Summary {
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),
             findings: Vec::new(),
+            incidents: Vec::new(),
         }
     }
 

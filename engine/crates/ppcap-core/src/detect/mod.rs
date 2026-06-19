@@ -150,6 +150,10 @@ pub struct ContactSeries {
     contacts: u64,
     prev_ts_ns: Option<i64>,
     gaps: StreamStats,
+    /// Bytes sent client -> server across this channel (the exfil-relevant direction).
+    bytes_out: u64,
+    /// Bytes sent server -> client across this channel.
+    bytes_in: u64,
 }
 
 impl ContactSeries {
@@ -184,6 +188,22 @@ impl ContactSeries {
     pub fn jitter_cv(&self) -> f64 {
         self.gaps.cv()
     }
+
+    /// Fold directional byte counts for this channel.
+    pub fn add_bytes(&mut self, out: u64, inb: u64) {
+        self.bytes_out = self.bytes_out.saturating_add(out);
+        self.bytes_in = self.bytes_in.saturating_add(inb);
+    }
+
+    /// Total bytes sent client -> server on this channel.
+    pub fn bytes_out(&self) -> u64 {
+        self.bytes_out
+    }
+
+    /// Total bytes sent server -> client on this channel.
+    pub fn bytes_in(&self) -> u64 {
+        self.bytes_in
+    }
 }
 
 /// A destination channel that looks like a periodic beacon.
@@ -193,6 +213,22 @@ pub struct BeaconCandidate {
     pub contacts: u64,
     pub interval_ns: f64,
     pub jitter_cv: f64,
+}
+
+/// A destination channel with a large asymmetric outbound transfer (exfil shape).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExfilCandidate {
+    pub key: ContactKey,
+    pub bytes_out: u64,
+    pub bytes_in: u64,
+}
+
+/// A `(source, port)` pair that reached many distinct hosts (horizontal sweep shape).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SweepCandidate {
+    pub src: IpAddr,
+    pub dst_port: u16,
+    pub hosts: usize,
 }
 
 /// Tuning for the behavioral tracker. Both caps keep memory bounded on adversarial captures.
@@ -216,13 +252,15 @@ impl Default for DetectConfig {
 /// Streaming, bounded cross-flow behavioral tracker.
 ///
 /// Fed one *contact* (a new connection's directed `src -> dst:port` + timestamp) at a time, it
-/// maintains (a) a per-channel inter-arrival series for beaconing and (b) a per-source set of
-/// distinct destination hosts for horizontal sweep detection. Both maps degrade gracefully at
+/// maintains (a) a per-channel inter-arrival series for beaconing and (b) a per-`(source, port)`
+/// set of distinct destination hosts for horizontal sweep detection. Keying the fan-out on the
+/// destination port (not the source alone) distinguishes a one-port-many-hosts sweep from a
+/// busy client talking to many hosts across assorted ports. Both maps degrade gracefully at
 /// capacity (a brand-new key is dropped) so peak memory stays bounded.
 pub struct BehaviorTracker {
     cfg: DetectConfig,
     channels: HashMap<ContactKey, ContactSeries>,
-    fanout: HashMap<IpAddr, HashSet<IpAddr>>,
+    fanout: HashMap<(IpAddr, u16), HashSet<IpAddr>>,
 }
 
 impl BehaviorTracker {
@@ -235,29 +273,47 @@ impl BehaviorTracker {
         }
     }
 
-    /// Fold one contact: a new `src -> dst:dst_port` connection observed at `ts_ns`.
+    /// Fold one contact: a new `src -> dst:dst_port` connection observed at `ts_ns`. Timing-only
+    /// convenience wrapper over [`observe_flow_contact`](Self::observe_flow_contact).
     pub fn observe_contact(&mut self, src: IpAddr, dst: IpAddr, dst_port: u16, ts_ns: i64) {
-        // Per-channel inter-arrival series (bounded: a brand-new channel at capacity is
-        // dropped — best-effort heavy-hitter signal, not an exact set).
+        self.observe_flow_contact(src, dst, dst_port, ts_ns, 0, 0);
+    }
+
+    /// Fold one closed flow's contact: directed `src -> dst:dst_port` at `ts_ns` plus the
+    /// directional byte counts (`bytes_out` = client->server, `bytes_in` = server->client).
+    pub fn observe_flow_contact(
+        &mut self,
+        src: IpAddr,
+        dst: IpAddr,
+        dst_port: u16,
+        ts_ns: i64,
+        bytes_out: u64,
+        bytes_in: u64,
+    ) {
+        // Per-channel inter-arrival series + byte totals (bounded: a brand-new channel at
+        // capacity is dropped — best-effort heavy-hitter signal, not an exact set).
         let key = ContactKey::new(src, dst, dst_port);
         if let Some(series) = self.channels.get_mut(&key) {
             series.observe(ts_ns);
+            series.add_bytes(bytes_out, bytes_in);
         } else if self.channels.len() < self.cfg.max_tracked_keys.max(1) {
             let mut series = ContactSeries::new();
             series.observe(ts_ns);
+            series.add_bytes(bytes_out, bytes_in);
             self.channels.insert(key, series);
         }
 
-        // Per-source distinct destination-host set (sweep signal), bounded in both the number
-        // of sources and the hosts retained per source.
-        if let Some(set) = self.fanout.get_mut(&src) {
+        // Per-(source, port) distinct destination-host set (sweep signal), bounded in both the
+        // number of (src, port) keys and the hosts retained per key.
+        let fkey = (src, dst_port);
+        if let Some(set) = self.fanout.get_mut(&fkey) {
             if set.len() < self.cfg.max_fanout_per_src {
                 set.insert(dst);
             }
         } else if self.fanout.len() < self.cfg.max_tracked_keys.max(1) {
             let mut set = HashSet::new();
             set.insert(dst);
-            self.fanout.insert(src, set);
+            self.fanout.insert(fkey, set);
         }
     }
 
@@ -266,14 +322,36 @@ impl BehaviorTracker {
         self.channels.get(&key)
     }
 
-    /// Number of distinct destination hosts `src` has contacted (the sweep fan-out).
-    pub fn fanout(&self, src: IpAddr) -> usize {
-        self.fanout.get(&src).map_or(0, |set| set.len())
+    /// Number of distinct destination hosts `src` contacted on `dst_port` (the sweep fan-out).
+    pub fn fanout(&self, src: IpAddr, dst_port: u16) -> usize {
+        self.fanout.get(&(src, dst_port)).map_or(0, |set| set.len())
     }
 
-    /// Whether `src` contacted at least `threshold` distinct destination hosts.
-    pub fn is_sweeper(&self, src: IpAddr, threshold: usize) -> bool {
-        self.fanout(src) >= threshold
+    /// Whether `src` contacted at least `threshold` distinct hosts on `dst_port`.
+    pub fn is_sweeper(&self, src: IpAddr, dst_port: u16, threshold: usize) -> bool {
+        self.fanout(src, dst_port) >= threshold
+    }
+
+    /// All `(src, port)` pairs that reached at least `min_hosts` distinct destination hosts — a
+    /// horizontal sweep. Port gating is left to the caller. Returned in deterministic order.
+    pub fn sweep_candidates(&self, min_hosts: usize) -> Vec<SweepCandidate> {
+        let mut out: Vec<SweepCandidate> = self
+            .fanout
+            .iter()
+            .filter(|(_, hosts)| hosts.len() >= min_hosts)
+            .map(|(&(src, dst_port), hosts)| SweepCandidate {
+                src,
+                dst_port,
+                hosts: hosts.len(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.hosts
+                .cmp(&a.hosts)
+                .then(a.src.cmp(&b.src))
+                .then(a.dst_port.cmp(&b.dst_port))
+        });
+        out
     }
 
     /// Number of distinct contact channels currently tracked (for bound assertions).
@@ -300,11 +378,33 @@ impl BehaviorTracker {
         out.sort_by_key(|c| c.key);
         out
     }
+
+    /// All channels that look like data exfiltration: outbound bytes at or above `min_bytes_out`
+    /// with an out/in ratio at or above `min_ratio` (an asymmetric upload). Externality is left
+    /// to the caller. Returned in deterministic key order.
+    pub fn exfil_candidates(&self, min_bytes_out: u64, min_ratio: f64) -> Vec<ExfilCandidate> {
+        let mut out: Vec<ExfilCandidate> = self
+            .channels
+            .iter()
+            .filter(|(_, s)| {
+                s.bytes_out() >= min_bytes_out
+                    && s.bytes_out() as f64 >= min_ratio * (s.bytes_in() as f64 + 1.0)
+            })
+            .map(|(k, s)| ExfilCandidate {
+                key: *k,
+                bytes_out: s.bytes_out(),
+                bytes_in: s.bytes_in(),
+            })
+            .collect();
+        out.sort_by_key(|c| c.key);
+        out
+    }
 }
 
 use crate::enrich::classify_ip;
 use crate::model::finding::{Finding, FindingKind};
 use crate::model::flow::FlowRecord;
+use crate::model::incident::Incident;
 use crate::model::severity::Severity;
 
 /// Tuning for the beaconing detector.
@@ -337,25 +437,61 @@ impl Default for BeaconParams {
     }
 }
 
-/// Derive the directed `(client, server, server_port, conn_start_ns)` contact from a closed
-/// flow, or `None` for a non-port transport.
+/// One closed flow reduced to a directed contact: the initiating client, the service it
+/// reached, the connection-start time, and the directional byte totals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Contact {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub ts_ns: i64,
+    /// Bytes client -> server (the exfil-relevant "outbound" direction).
+    pub bytes_out: u64,
+    /// Bytes server -> client.
+    pub bytes_in: u64,
+}
+
+/// Derive the directed [`Contact`] from a closed flow, or `None` for a non-port transport.
 ///
 /// The server is the well-known (numerically smaller) port side — matching how `stats` picks
 /// the service port — and the client is the ephemeral side. The contact time is the flow's
 /// first timestamp, i.e. the connection-initiation instant, which is the correct sample for
 /// beacon periodicity.
-pub fn contact_from_flow(record: &FlowRecord) -> Option<(IpAddr, IpAddr, u16, i64)> {
+pub fn contact_from_flow(record: &FlowRecord) -> Option<Contact> {
     if !record.key.transport.has_ports() {
         return None;
     }
     // The smaller port is the well-known service side (the server); the other endpoint is the
-    // ephemeral client that initiated the connection.
-    let (client, server, server_port) = if record.key.lo_port <= record.key.hi_port {
-        (record.key.hi_ip, record.key.lo_ip, record.key.lo_port)
-    } else {
-        (record.key.lo_ip, record.key.hi_ip, record.key.hi_port)
-    };
-    Some((client, server, server_port, record.first_ts_ns))
+    // ephemeral client that initiated the connection. `bytes_out` is client->server (the
+    // exfil-relevant direction); FlowRecord stores bytes as fwd = lo->hi, rev = hi->lo.
+    let (client, server, server_port, bytes_out, bytes_in) =
+        if record.key.lo_port <= record.key.hi_port {
+            // server = lo, client = hi -> client->server is hi->lo = bytes_rev.
+            (
+                record.key.hi_ip,
+                record.key.lo_ip,
+                record.key.lo_port,
+                record.bytes_rev,
+                record.bytes_fwd,
+            )
+        } else {
+            // server = hi, client = lo -> client->server is lo->hi = bytes_fwd.
+            (
+                record.key.lo_ip,
+                record.key.hi_ip,
+                record.key.hi_port,
+                record.bytes_fwd,
+                record.bytes_rev,
+            )
+        };
+    Some(Contact {
+        client,
+        server,
+        server_port,
+        ts_ns: record.first_ts_ns,
+        bytes_out,
+        bytes_in,
+    })
 }
 
 /// Detect periodic C2 beaconing from the behavioral tracker: one [`Finding`] per destination
@@ -418,6 +554,316 @@ pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<F
         });
     }
     findings
+}
+
+/// Tuning for the data-exfiltration detector.
+#[derive(Debug, Clone)]
+pub struct ExfilParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum outbound bytes on a channel to consider it exfil.
+    pub min_bytes_out: u64,
+    /// Minimum out/in ratio (asymmetry): outbound must dominate inbound by this factor.
+    pub min_ratio: f64,
+    /// Outbound bytes at or above this escalate the finding to Critical.
+    pub critical_bytes_out: u64,
+}
+
+impl Default for ExfilParams {
+    fn default() -> Self {
+        ExfilParams {
+            enabled: true,
+            min_bytes_out: 1_000_000,        // 1 MB
+            min_ratio: 4.0,                  // 4x more out than in
+            critical_bytes_out: 100_000_000, // 100 MB
+        }
+    }
+}
+
+/// Detect data exfiltration from the behavioral tracker: one [`Finding`] per channel with a
+/// large, asymmetric outbound transfer to an **external** peer. Severity is High, escalating to
+/// Critical past [`ExfilParams::critical_bytes_out`]. Returned in deterministic order.
+pub fn detect_exfil(tracker: &BehaviorTracker, params: &ExfilParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.exfil_candidates(params.min_bytes_out, params.min_ratio) {
+        let dst = c.key.dst;
+        // Only data leaving the network counts as exfiltration.
+        if !classify_ip(dst).is_external() {
+            continue;
+        }
+        let (severity, score) = if c.bytes_out >= params.critical_bytes_out {
+            (Severity::Critical, 90)
+        } else {
+            (Severity::High, 72)
+        };
+        let ratio = c.bytes_out as f64 / (c.bytes_in as f64 + 1.0);
+        findings.push(Finding {
+            kind: FindingKind::DataExfil,
+            severity,
+            score,
+            title: format!(
+                "Data exfiltration: {} -> {}:{} ({} out)",
+                c.key.src,
+                dst,
+                c.key.dst_port,
+                human_bytes(c.bytes_out)
+            ),
+            src_ip: c.key.src.to_string(),
+            dst_ip: Some(dst.to_string()),
+            dst_port: Some(c.key.dst_port),
+            attack: vec!["T1048".to_string()],
+            evidence: vec![
+                format!(
+                    "outbound {} to external {}:{}",
+                    human_bytes(c.bytes_out),
+                    dst,
+                    c.key.dst_port
+                ),
+                format!(
+                    "{ratio:.0}x more out than in (asymmetric upload; {} in)",
+                    human_bytes(c.bytes_in)
+                ),
+                "external destination".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        });
+    }
+    findings
+}
+
+/// Tuning for the host-sweep detector.
+#[derive(Debug, Clone)]
+pub struct SweepParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum distinct destination hosts on one `(src, port)` to call it a sweep.
+    pub min_hosts: usize,
+    /// Ports excluded from sweep detection — ordinary client traffic (web/DNS/NTP) routinely
+    /// fans out to many hosts and is not a scan. A sweep of these is indistinguishable from a
+    /// busy browser without payload analysis, so they are skipped to avoid false positives.
+    pub ignore_ports: Vec<u16>,
+}
+
+impl Default for SweepParams {
+    fn default() -> Self {
+        SweepParams {
+            enabled: true,
+            min_hosts: 16,
+            ignore_ports: vec![80, 443, 8080, 8443, 53, 123],
+        }
+    }
+}
+
+/// Detect horizontal host sweeps from the behavioral tracker: one [`Finding`] per `(src, port)`
+/// that reached at least [`SweepParams::min_hosts`] distinct hosts on a non-ignored port. These
+/// are network-service / remote-system discovery; severity is High, ATT&CK T1046. Deterministic
+/// order.
+pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.sweep_candidates(params.min_hosts) {
+        if params.ignore_ports.contains(&c.dst_port) {
+            continue;
+        }
+        findings.push(Finding {
+            kind: FindingKind::HostSweep,
+            severity: Severity::High,
+            score: 65,
+            title: format!(
+                "Host sweep: {} probed {} hosts on port {}",
+                c.src, c.hosts, c.dst_port
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: None,
+            dst_port: Some(c.dst_port),
+            attack: vec!["T1046".to_string()],
+            evidence: vec![
+                format!(
+                    "{} distinct destination hosts contacted on port {}",
+                    c.hosts, c.dst_port
+                ),
+                "horizontal scan / remote-system discovery".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        });
+    }
+    findings
+}
+
+/// Correlate behavioral findings into per-host incidents, ordered along the kill chain
+/// (discovery -> command-and-control -> exfiltration). A host exhibiting two or more distinct
+/// stages is escalated one severity band — a multi-stage chain is a confirmed incident.
+/// Incidents are returned worst-first.
+pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // Group every finding under its actor host (the source it is attributed to).
+    let mut by_host: BTreeMap<&str, Vec<Finding>> = BTreeMap::new();
+    for f in findings {
+        by_host
+            .entry(f.src_ip.as_str())
+            .or_default()
+            .push(f.clone());
+    }
+
+    let mut incidents: Vec<Incident> = by_host
+        .into_iter()
+        .map(|(host, mut fs)| {
+            // Order the contributing findings along the kill chain (then strongest first).
+            fs.sort_by(|a, b| {
+                stage_ordinal(a.kind)
+                    .cmp(&stage_ordinal(b.kind))
+                    .then(b.score.cmp(&a.score))
+            });
+
+            let distinct_kinds: BTreeSet<FindingKind> = fs.iter().map(|f| f.kind).collect();
+            let multi_stage = distinct_kinds.len() >= 2;
+
+            let base_sev = fs
+                .iter()
+                .map(|f| f.severity)
+                .max()
+                .unwrap_or(Severity::Info);
+            let base_score = fs.iter().map(|f| f.score).max().unwrap_or(0);
+            // A multi-stage chain is a confirmed incident: escalate one band / bump the score.
+            let severity = if multi_stage {
+                escalate(base_sev)
+            } else {
+                base_sev
+            };
+            let score = if multi_stage {
+                (base_score + 15).min(100)
+            } else {
+                base_score
+            };
+
+            // Distinct stage labels, in kill-chain order.
+            let mut stages: Vec<String> = Vec::new();
+            for f in &fs {
+                let label = stage_label(f.kind).to_string();
+                if !stages.contains(&label) {
+                    stages.push(label);
+                }
+            }
+
+            // ATT&CK union, sorted + deduped.
+            let attack: BTreeSet<String> =
+                fs.iter().flat_map(|f| f.attack.iter().cloned()).collect();
+
+            let (title, narrative) = if fs.len() == 1 {
+                (fs[0].title.clone(), fs[0].title.clone())
+            } else {
+                let mut seen = BTreeSet::new();
+                let phrases: Vec<&str> = fs
+                    .iter()
+                    .filter(|f| seen.insert(f.kind))
+                    .map(|f| kind_phrase(f.kind))
+                    .collect();
+                (
+                    format!("Multi-stage incident on {host}"),
+                    format!("{host} {}.", join_phrases(&phrases)),
+                )
+            };
+
+            Incident {
+                host: host.to_string(),
+                severity,
+                score,
+                title,
+                narrative,
+                stages,
+                attack: attack.into_iter().collect(),
+                findings: fs,
+            }
+        })
+        .collect();
+
+    incidents.sort_by(|a, b| {
+        b.severity
+            .rank()
+            .cmp(&a.severity.rank())
+            .then(b.score.cmp(&a.score))
+            .then(a.host.cmp(&b.host))
+    });
+    incidents
+}
+
+/// Kill-chain stage of a finding kind (lower = earlier in the chain).
+fn stage_ordinal(kind: FindingKind) -> u8 {
+    match kind {
+        FindingKind::HostSweep => 0, // discovery
+        FindingKind::Beacon => 1,    // command-and-control
+        FindingKind::DataExfil => 2, // exfiltration
+    }
+}
+
+/// Human kill-chain stage label for a finding kind.
+fn stage_label(kind: FindingKind) -> &'static str {
+    match kind {
+        FindingKind::HostSweep => "Discovery",
+        FindingKind::Beacon => "Command & Control",
+        FindingKind::DataExfil => "Exfiltration",
+    }
+}
+
+/// Narrative verb phrase for a finding kind.
+fn kind_phrase(kind: FindingKind) -> &'static str {
+    match kind {
+        FindingKind::HostSweep => "swept the network",
+        FindingKind::Beacon => "beaconed to a C2",
+        FindingKind::DataExfil => "exfiltrated data",
+    }
+}
+
+/// Raise a severity by one band, saturating at `Critical`.
+fn escalate(sev: Severity) -> Severity {
+    match sev {
+        Severity::Info => Severity::Low,
+        Severity::Low => Severity::Medium,
+        Severity::Medium => Severity::High,
+        Severity::High | Severity::Critical => Severity::Critical,
+    }
+}
+
+/// Join phrases as "a, then b, then c".
+fn join_phrases(phrases: &[&str]) -> String {
+    match phrases {
+        [] => String::new(),
+        [only] => only.to_string(),
+        [first, rest @ ..] => {
+            let mut s = first.to_string();
+            for p in rest {
+                s.push_str(", then ");
+                s.push_str(p);
+            }
+            s
+        }
+    }
+}
+
+/// Compact base-1024 byte rendering for evidence strings (e.g. `5.0 MB`).
+fn human_bytes(n: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut v = n as f64;
+    let mut i = 0;
+    while v >= 1024.0 && i < UNITS.len() - 1 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{n} B")
+    } else {
+        format!("{v:.1} {}", UNITS[i])
+    }
 }
 
 #[cfg(test)]
@@ -574,14 +1020,65 @@ mod tests {
         let attacker = ip(10, 0, 0, 9);
         // One source touches 20 distinct destination hosts on port 445 (SMB sweep).
         for last in 1..=20u8 {
-            t.observe_contact(attacker, ip(10, 0, 0, last), 445, 0);
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
         }
-        assert_eq!(t.fanout(attacker), 20);
-        assert!(t.is_sweeper(attacker, 15));
-        assert!(!t.is_sweeper(attacker, 21));
+        assert_eq!(t.fanout(attacker, 445), 20);
+        assert!(t.is_sweeper(attacker, 445, 15));
+        assert!(!t.is_sweeper(attacker, 445, 21));
+        // Fan-out is per-port: nothing was seen on 443.
+        assert_eq!(t.fanout(attacker, 443), 0);
         // An unrelated source has no fan-out.
-        assert_eq!(t.fanout(ip(10, 0, 0, 1)), 0);
-        assert!(!t.is_sweeper(ip(1, 1, 1, 1), 1));
+        assert_eq!(t.fanout(ip(10, 0, 0, 1), 445), 0);
+        assert!(!t.is_sweeper(ip(1, 1, 1, 1), 445, 1));
+    }
+
+    #[test]
+    fn detect_sweeps_flags_service_port_and_ignores_web() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        // SMB sweep: 20 distinct hosts on 445.
+        for last in 1..=20u8 {
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
+        }
+        // A busy browser: 20 hosts on 443 must NOT be flagged (ignored port).
+        for last in 1..=20u8 {
+            t.observe_contact(attacker, ip(10, 0, 2, last), 443, 0);
+        }
+
+        let findings = detect_sweeps(&t, &SweepParams::default());
+        assert_eq!(findings.len(), 1, "findings: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::HostSweep);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.src_ip, "10.0.0.9");
+        assert_eq!(f.dst_port, Some(445));
+        assert!(f.dst_ip.is_none()); // a fan-out finding has no single destination
+        assert!(
+            f.attack.iter().any(|a| a == "T1046"),
+            "attack: {:?}",
+            f.attack
+        );
+    }
+
+    #[test]
+    fn detect_sweeps_below_threshold_or_disabled_yield_nothing() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        // Only 5 hosts on 445 — below min_hosts.
+        for last in 1..=5u8 {
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
+        }
+        assert!(detect_sweeps(&t, &SweepParams::default()).is_empty());
+
+        // Now well above threshold, but disabled.
+        for last in 6..=25u8 {
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
+        }
+        let params = SweepParams {
+            enabled: false,
+            ..SweepParams::default()
+        };
+        assert!(detect_sweeps(&t, &params).is_empty());
     }
 
     #[test]
@@ -747,11 +1244,11 @@ mod tests {
             Transport::Tcp,
         );
         let rec = FlowRecord::new(key, 1234);
-        let (client, server, port, ts) = contact_from_flow(&rec).expect("port-bearing flow");
-        assert_eq!(client, ip(10, 0, 0, 5));
-        assert_eq!(server, ip(203, 0, 113, 7));
-        assert_eq!(port, 443);
-        assert_eq!(ts, 1234);
+        let c = contact_from_flow(&rec).expect("port-bearing flow");
+        assert_eq!(c.client, ip(10, 0, 0, 5));
+        assert_eq!(c.server, ip(203, 0, 113, 7));
+        assert_eq!(c.server_port, 443);
+        assert_eq!(c.ts_ns, 1234);
     }
 
     #[test]
@@ -762,5 +1259,184 @@ mod tests {
             FlowKey::normalized(ip(10, 0, 0, 5), 0, ip(10, 0, 0, 6), 0, Transport::Icmp);
         let rec = FlowRecord::new(key, 0);
         assert!(contact_from_flow(&rec).is_none());
+    }
+
+    #[test]
+    fn channel_folds_directional_bytes() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let src = ip(10, 0, 0, 5);
+        let ext = ip(8, 8, 8, 8);
+        t.observe_flow_contact(src, ext, 443, 0, 500_000, 1_000);
+        t.observe_flow_contact(src, ext, 443, SEC, 700_000, 2_000);
+        let s = t
+            .series(ContactKey::new(src, ext, 443))
+            .expect("channel tracked");
+        assert_eq!(s.contacts(), 2);
+        assert_eq!(s.bytes_out(), 1_200_000);
+        assert_eq!(s.bytes_in(), 3_000);
+    }
+
+    #[test]
+    fn exfil_candidate_for_large_asymmetric_outbound() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let src = ip(10, 0, 0, 5);
+        let ext = ip(8, 8, 8, 8);
+        // Big asymmetric upload — exfil shape.
+        t.observe_flow_contact(src, ext, 443, 0, 5_000_000, 10_000);
+        // A download (inbound-heavy) is NOT exfil.
+        t.observe_flow_contact(src, ext, 80, 0, 10_000, 5_000_000);
+        // A small channel is below the volume floor.
+        t.observe_flow_contact(src, ip(10, 0, 0, 9), 445, 0, 1_000, 100);
+
+        let cands = t.exfil_candidates(1_000_000, 4.0);
+        assert_eq!(cands.len(), 1, "candidates: {cands:?}");
+        assert_eq!(cands[0].key, ContactKey::new(src, ext, 443));
+        assert!(cands[0].bytes_out >= 1_000_000);
+    }
+
+    #[test]
+    fn detect_exfil_flags_external_upload_high() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let src = ip(10, 0, 0, 5);
+        // Large asymmetric upload to an external peer.
+        t.observe_flow_contact(src, ip(8, 8, 8, 8), 443, 0, 5_000_000, 10_000);
+        // Same shape but to an INTERNAL peer — not exfil out of the network.
+        t.observe_flow_contact(src, ip(10, 0, 0, 9), 445, 0, 5_000_000, 10_000);
+
+        let findings = detect_exfil(&t, &ExfilParams::default());
+        assert_eq!(findings.len(), 1, "findings: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::DataExfil);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.dst_ip.as_deref(), Some("8.8.8.8"));
+        assert_eq!(f.dst_port, Some(443));
+        assert!(
+            f.attack.iter().any(|a| a == "T1048"),
+            "attack: {:?}",
+            f.attack
+        );
+        assert!(!f.evidence.is_empty());
+    }
+
+    #[test]
+    fn detect_exfil_escalates_huge_volume_to_critical() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let src = ip(10, 0, 0, 5);
+        t.observe_flow_contact(src, ip(8, 8, 8, 8), 443, 0, 200_000_000, 10_000);
+        let findings = detect_exfil(&t, &ExfilParams::default());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn detect_exfil_disabled_yields_nothing() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_flow_contact(ip(10, 0, 0, 5), ip(8, 8, 8, 8), 443, 0, 5_000_000, 10_000);
+        let params = ExfilParams {
+            enabled: false,
+            ..ExfilParams::default()
+        };
+        assert!(detect_exfil(&t, &params).is_empty());
+    }
+
+    fn mk_finding(
+        kind: FindingKind,
+        src: &str,
+        sev: Severity,
+        score: u16,
+        attack: &[&str],
+    ) -> Finding {
+        Finding {
+            kind,
+            severity: sev,
+            score,
+            title: format!("{} on {src}", kind.as_str()),
+            src_ip: src.to_string(),
+            dst_ip: Some("1.2.3.4".to_string()),
+            dst_port: Some(443),
+            attack: attack.iter().map(|s| s.to_string()).collect(),
+            evidence: Vec::new(),
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        }
+    }
+
+    #[test]
+    fn single_finding_yields_one_unescalated_incident() {
+        let f = mk_finding(
+            FindingKind::Beacon,
+            "10.0.0.5",
+            Severity::High,
+            70,
+            &["T1071"],
+        );
+        let inc = correlate_incidents(&[f]);
+        assert_eq!(inc.len(), 1);
+        assert_eq!(inc[0].host, "10.0.0.5");
+        assert_eq!(inc[0].severity, Severity::High); // single stage — not escalated
+        assert_eq!(inc[0].findings.len(), 1);
+        assert_eq!(inc[0].stages, vec!["Command & Control"]);
+    }
+
+    #[test]
+    fn multi_stage_chain_escalates_and_orders_by_kill_chain() {
+        let host = "10.13.37.7";
+        // Added out of kill-chain order: exfil, beacon, sweep.
+        let exfil = mk_finding(FindingKind::DataExfil, host, Severity::High, 72, &["T1048"]);
+        let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
+        let sweep = mk_finding(FindingKind::HostSweep, host, Severity::High, 65, &["T1046"]);
+
+        let inc = correlate_incidents(&[exfil, beacon, sweep]);
+        assert_eq!(inc.len(), 1);
+        let i = &inc[0];
+        assert_eq!(i.host, host);
+        // Three distinct stages -> escalate High to Critical.
+        assert_eq!(i.severity, Severity::Critical);
+        assert_eq!(
+            i.stages,
+            vec!["Discovery", "Command & Control", "Exfiltration"]
+        );
+        // Contributing findings ordered along the kill chain.
+        assert_eq!(i.findings.len(), 3);
+        assert_eq!(i.findings[0].kind, FindingKind::HostSweep);
+        assert_eq!(i.findings[1].kind, FindingKind::Beacon);
+        assert_eq!(i.findings[2].kind, FindingKind::DataExfil);
+        // ATT&CK union, sorted.
+        assert_eq!(i.attack, vec!["T1046", "T1048", "T1071"]);
+        assert!(i.narrative.contains("swept"), "narrative: {}", i.narrative);
+    }
+
+    #[test]
+    fn different_hosts_are_separate_incidents_ranked_worst_first() {
+        let a = mk_finding(
+            FindingKind::Beacon,
+            "10.0.0.5",
+            Severity::Medium,
+            45,
+            &["T1071"],
+        );
+        let b1 = mk_finding(
+            FindingKind::HostSweep,
+            "10.0.0.9",
+            Severity::High,
+            65,
+            &["T1046"],
+        );
+        let b2 = mk_finding(
+            FindingKind::Beacon,
+            "10.0.0.9",
+            Severity::High,
+            70,
+            &["T1071"],
+        );
+
+        let inc = correlate_incidents(&[a, b1, b2]);
+        assert_eq!(inc.len(), 2);
+        // 10.0.0.9 is multi-stage -> Critical, ranks first.
+        assert_eq!(inc[0].host, "10.0.0.9");
+        assert_eq!(inc[0].severity, Severity::Critical);
+        assert_eq!(inc[1].host, "10.0.0.5");
+        assert_eq!(inc[1].severity, Severity::Medium);
     }
 }

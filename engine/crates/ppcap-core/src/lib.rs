@@ -39,6 +39,7 @@ pub mod decode;
 pub mod detect;
 pub mod enrich;
 pub mod error;
+pub mod export;
 pub mod flow;
 pub mod gen;
 pub mod metrics;
@@ -49,7 +50,7 @@ pub mod score;
 pub mod stats;
 
 pub use analyze::{run, run_source, PipelineConfig};
-pub use detect::{BeaconParams, BehaviorTracker, DetectConfig};
+pub use detect::{BeaconParams, BehaviorTracker, DetectConfig, ExfilParams, SweepParams};
 pub use enrich::{
     attack_for, classify_ip, AttackTechnique, Enricher, FeedMatch, FlowEnrichment, IpClass,
     ThreatFeed,
@@ -58,6 +59,7 @@ pub use error::{PpError, Result};
 pub use model::category::Category;
 pub use model::finding::{Finding, FindingKind};
 pub use model::flow::{Direction, FlowKey, FlowRecord};
+pub use model::incident::Incident;
 pub use model::output::AnalysisOutput;
 pub use model::packet::{PacketMeta, Protocol, Transport};
 pub use model::severity::Severity;

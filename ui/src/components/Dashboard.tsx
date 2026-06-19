@@ -4,6 +4,7 @@ import type { AnalysisOutput, Severity, SeverityCounts } from "../types";
 import { cn } from "../lib/cn";
 
 import { SeverityStrip } from "./triage/SeverityStrip";
+import { IncidentsPanel } from "./triage/IncidentsPanel";
 import { ThreatsPanel } from "./triage/ThreatsPanel";
 import { SummaryCard } from "./triage/SummaryCard";
 import { CategoryChart } from "./triage/CategoryChart";
@@ -71,6 +72,9 @@ export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
             : undefined
         }
       />
+
+      {/* Correlated incidents — the highest-signal surface; only shown when present. */}
+      <IncidentsPanel incidents={summary.incidents ?? []} />
 
       {/* Top threats — full width, directly under the severity strip. */}
       <ThreatsPanel threats={summary.ip_threats ?? []} />
