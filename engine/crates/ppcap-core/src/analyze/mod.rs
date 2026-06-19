@@ -807,8 +807,8 @@ mod tests {
             "c2 {c2} not High in ip_threats"
         );
 
-        // The beacon host also ran a recon sweep, so it correlates into one multi-stage,
-        // Critical-escalated incident (Discovery -> Command & Control).
+        // The beacon host also ran a recon sweep and exfiltrated data, so it correlates into one
+        // Critical, full kill-chain incident (Discovery -> Command & Control -> Exfiltration).
         let incident = out
             .summary
             .incidents
@@ -821,14 +821,14 @@ mod tests {
             "incident: {incident:?}"
         );
         assert!(
-            incident.findings.len() >= 2,
-            "expected multi-stage incident"
+            incident.findings.len() >= 3,
+            "expected full kill-chain incident: {incident:?}"
         );
         assert_eq!(
-            incident.stages.first().map(String::as_str),
-            Some("Discovery")
+            incident.stages,
+            vec!["Discovery", "Command & Control", "Exfiltration"],
+            "incident: {incident:?}"
         );
-        assert!(incident.stages.iter().any(|s| s == "Command & Control"));
     }
 
     #[test]
