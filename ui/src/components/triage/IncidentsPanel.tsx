@@ -3,6 +3,7 @@ import {
   Activity,
   ArrowUpFromLine,
   ChevronRight,
+  Globe,
   Radar,
   Radio,
   Siren,
@@ -23,6 +24,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   beacon: { label: "C2 Beacon", Icon: Radio },
   host_sweep: { label: "Host Sweep", Icon: Radar },
   data_exfil: { label: "Data Exfiltration", Icon: ArrowUpFromLine },
+  dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
 };
 
 /** Worst-first ordering. */

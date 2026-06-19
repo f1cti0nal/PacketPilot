@@ -534,7 +534,8 @@ impl SynthGen {
         let i = self.emitted;
         let sweep_count = self.beacon_sweep_count();
         let exfil_count = self.beacon_exfil_count();
-        let prefix = sweep_count + exfil_count;
+        let dns_count = self.beacon_dns_count();
+        let prefix = sweep_count + exfil_count + dns_count;
 
         // Stage 1 (recon): a short SYN sweep — the beacon host probes many internal hosts on
         // 445. Combined with the C2 beacon below, this gives the host a multi-stage incident.
@@ -547,7 +548,7 @@ impl SynthGen {
 
         // Stage 2 (exfiltration): a large asymmetric upload from the beacon host to an external
         // drop server — one flow, megabytes outbound, almost nothing back.
-        if i < prefix {
+        if i < sweep_count + exfil_count {
             let k = i - sweep_count;
             let frame = self.build_beacon_exfil();
             // A few seconds after the sweep, ~1 ms apart.
@@ -560,7 +561,21 @@ impl SynthGen {
             return Some((ts, FrameKind::Tls, frame));
         }
 
-        // Stage 3 (C2): the periodic beacon + benign background.
+        // Stage 3 (DNS tunneling): a burst of high-entropy DNS queries to the internal resolver,
+        // smuggling data out over DNS.
+        if i < prefix {
+            let k = i - sweep_count - exfil_count;
+            let frame = self.build_beacon_dns(k);
+            let ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(6_000_000_000)
+                .saturating_add(k as i64 * 2_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::Dns, frame));
+        }
+
+        // Stage 4 (C2): the periodic beacon + benign background.
         let j = i - prefix;
         let pos = j % BEACON_CYCLE_LEN;
 
@@ -654,6 +669,32 @@ impl SynthGen {
         frame
     }
 
+    /// Number of DNS-tunnel queries emitted (0 for small captures), >= the detector floor.
+    fn beacon_dns_count(&self) -> u64 {
+        if self.cfg.packets >= 2_000 {
+            BEACON_DNS_QUERIES
+        } else {
+            0
+        }
+    }
+
+    /// Build one DNS-tunnel query: a high-entropy, long-label name from the beacon host to the
+    /// internal resolver on 53 (data encoded in the subdomain).
+    fn build_beacon_dns(&mut self, idx: u64) -> Vec<u8> {
+        let client = beacon_client();
+        let resolver = beacon_dns_resolver();
+        let sport = 50000 + (idx % 2000) as u16;
+        let qname = format!("{}.{BEACON_DNS_DOMAIN}", beacon_dns_label(idx));
+        self.record_flow(client, resolver, sport, 53, IP_PROTO_UDP);
+        let payload = frames::dns_query_payload(&qname, idx as u16);
+        let udp = frames::build_udp(client, resolver, sport, 53, &payload);
+        let ip = frames::build_ipv4(client, resolver, IP_PROTO_UDP, 64, udp.len());
+        let mut frame = frames::build_ethernet(BEACON_CLIENT_MAC, BEACON_DNS_MAC, ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&udp);
+        frame
+    }
+
     /// Build one sweep SYN: the beacon host probing a distinct internal host on 445.
     fn build_beacon_sweep(&mut self, idx: u64) -> Vec<u8> {
         let client = beacon_client();
@@ -738,6 +779,29 @@ const BEACON_EXFIL_PACKETS: u64 = 900;
 const BEACON_EXFIL_PAYLOAD: usize = 1400;
 const BEACON_EXFIL_SPORT: u16 = 51000;
 const BEACON_EXFIL_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x03];
+/// DNS-tunnel stage: number of high-entropy queries (>= the detector floor) and the base domain.
+const BEACON_DNS_QUERIES: u64 = 40;
+const BEACON_DNS_DOMAIN: &str = "tunnel.exfil.example";
+const BEACON_DNS_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x04];
+
+/// The internal resolver the beacon host tunnels DNS through.
+fn beacon_dns_resolver() -> Ipv4Addr {
+    Ipv4Addr::new(10, 0, 0, 53)
+}
+
+/// A deterministic 32-char base32 (high-entropy) DNS label for query `idx`.
+fn beacon_dns_label(idx: u64) -> String {
+    const ALPHA: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
+    let mut x = idx.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1CE_F00D;
+    (0..32)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            ALPHA[(x % 32) as usize] as char
+        })
+        .collect()
+}
 /// SNI presented by the synthetic C2 callbacks.
 const BEACON_SNI: &str = "sync.cdn-metrics.net";
 /// Fixed locally-administered MACs for the beacon client / C2.

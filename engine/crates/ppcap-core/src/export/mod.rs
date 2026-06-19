@@ -89,7 +89,8 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
             "external_references": [{
                 "source_name": "mitre-attack",
                 "external_id": t,
-                "url": format!("https://attack.mitre.org/techniques/{t}")
+                // Sub-technique ids (e.g. T1071.004) map to a /Txxxx/yyy URL path.
+                "url": format!("https://attack.mitre.org/techniques/{}", t.replace('.', "/"))
             }]
         }));
     }
