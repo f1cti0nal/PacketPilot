@@ -589,10 +589,11 @@ pub struct BeaconParams {
     pub min_interval_ns: i64,
     /// Ignore channels whose period is above this (too sparse to call periodic).
     pub max_interval_ns: i64,
-    /// Destination ports excluded from beacon detection. A throttled credential guesser produces
-    /// a regular, low-jitter series to an auth service that would otherwise satisfy the beacon
-    /// predicate too; excluding the auth ports keeps a brute force from also being reported as a
-    /// C2 beacon (legitimate C2 rarely beacons over an interactive-login port anyway).
+    /// Destination ports excluded from beacon detection. A throttled credential guesser or a
+    /// periodic remote-admin agent produces a regular, low-jitter series to an auth / admin
+    /// service that would otherwise satisfy the beacon predicate too; excluding the auth AND
+    /// lateral-movement ports keeps a brute force / lateral fan-out from also being reported as a
+    /// C2 beacon (legitimate C2 rarely beacons over an interactive-login or remote-admin port).
     pub ignore_ports: Vec<u16>,
 }
 
@@ -607,9 +608,20 @@ impl Default for BeaconParams {
             max_jitter_cv: 0.15,
             min_interval_ns: 1_000_000_000,              // 1 s
             max_interval_ns: 24 * 3_600 * 1_000_000_000, // 24 h
-            ignore_ports: INTERACTIVE_AUTH_PORTS.to_vec(),
+            // The union of the auth ports (brute-force territory) and the remote-admin ports
+            // (lateral-movement territory): a regular series to any of these is owned by the
+            // more-specific detector, never reported as a beacon.
+            ignore_ports: merged_ports(INTERACTIVE_AUTH_PORTS, LATERAL_PORTS),
         }
     }
+}
+
+/// Sorted, deduplicated union of two port lists (for default ignore sets).
+fn merged_ports(a: &[u16], b: &[u16]) -> Vec<u16> {
+    let mut v: Vec<u16> = a.iter().chain(b.iter()).copied().collect();
+    v.sort_unstable();
+    v.dedup();
+    v
 }
 
 /// One closed flow reduced to a directed contact: the initiating client, the service it
@@ -994,6 +1006,18 @@ fn lateral_service_name(port: u16) -> &'static str {
 }
 
 /// Tuning for the lateral-movement detector.
+///
+/// **False-positive note.** This detector recognizes a *behavior* (an internal host opening admin
+/// sessions to many internal peers), and that behavior is shared by legitimate east-west
+/// infrastructure: backup / imaging servers, configuration management (SCCM, Ansible, WinRM),
+/// patch/WSUS, monitoring and inventory collectors, jump hosts, and domain controllers all fan out
+/// over SMB/RPC/RDP/WinRM by design. No purely network-level signal separates those from an
+/// attacker pivot — it needs asset-role context the engine does not have. The session-byte floor
+/// only excludes scans/handshakes; it does **not** distinguish benign from malicious admin fan-out.
+/// The intended workflow is therefore: surface the finding with explainable evidence, and let the
+/// operator exempt known management sources via [`LateralMovementParams::ignore_src`]. Treat a
+/// standalone finding as "review this east-west fan-out", and trust the kill-chain correlation to
+/// escalate it only when it sits alongside Discovery / Credential Access / C2 / Exfiltration.
 #[derive(Debug, Clone)]
 pub struct LateralMovementParams {
     /// Master switch.
@@ -1006,6 +1030,11 @@ pub struct LateralMovementParams {
     pub min_session_bytes: u64,
     /// Remote-administration ports considered. Defaults to [`LATERAL_PORTS`].
     pub lateral_ports: Vec<u16>,
+    /// Source IPs exempt from lateral-movement detection — the escape hatch for known management
+    /// infrastructure (backup / SCCM / monitoring / jump hosts / DCs) whose admin fan-out is
+    /// expected. Empty by default; populate it per deployment to silence the recurring benign
+    /// east-west finding without disabling the detector.
+    pub ignore_src: Vec<IpAddr>,
 }
 
 impl Default for LateralMovementParams {
@@ -1017,6 +1046,7 @@ impl Default for LateralMovementParams {
             min_hosts: 4,
             min_session_bytes: 512,
             lateral_ports: LATERAL_PORTS.to_vec(),
+            ignore_src: Vec::new(),
         }
     }
 }
@@ -1037,6 +1067,12 @@ pub fn detect_lateral_movement(
     for c in tracker.lateral_candidates(params.min_session_bytes, &params.lateral_ports) {
         // Lateral movement is east-west: the actor must be internal.
         if classify_ip(c.src).is_external() {
+            continue;
+        }
+        // Known management infrastructure (backup / SCCM / monitoring / jump hosts) fans out over
+        // these ports by design — let the operator exempt those sources rather than disable the
+        // detector wholesale.
+        if params.ignore_src.contains(&c.src) {
             continue;
         }
         // Count only internal targets (an internal host reaching out to external admin services is
@@ -1775,6 +1811,90 @@ mod tests {
         );
         assert_eq!(kept.len(), 1, "only the overlapping sweep is dropped: {kept:?}");
         assert_eq!(kept[0].src_ip, "10.0.0.7");
+    }
+
+    #[test]
+    fn lateral_movement_respects_source_allowlist() {
+        // A benign internal admin server (e.g. backup / SCCM) fans out established SMB sessions to
+        // several internal hosts — the dominant false-positive surface. By default it fires (the
+        // behavior is real); exempting the known source via ignore_src silences it without
+        // disabling the detector. This makes the FP tunable and the guard non-vacuous.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let infra = ip(10, 0, 0, 9);
+        for h in 1..=5u8 {
+            t.observe_flow_contact(infra, ip(10, 0, 1, h), 445, h as i64 * SEC, 4000, 4000);
+        }
+        assert_eq!(
+            detect_lateral_movement(&t, &LateralMovementParams::default()).len(),
+            1,
+            "established admin fan-out fires by default"
+        );
+        let params = LateralMovementParams {
+            ignore_src: vec![infra],
+            ..LateralMovementParams::default()
+        };
+        assert!(
+            detect_lateral_movement(&t, &params).is_empty(),
+            "an allowlisted source is exempt"
+        );
+    }
+
+    #[test]
+    fn beacon_ignores_remote_admin_ports() {
+        // A periodic, low-jitter ESTABLISHED series on SMB (445) — a remote-admin / monitoring
+        // cadence — must not be reported as a C2 beacon. 445 is not an interactive-auth port, so
+        // this guards extending BeaconParams.ignore_ports to the lateral-movement ports.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let src = ip(10, 0, 0, 9);
+        let dst = ip(10, 0, 0, 5);
+        for i in 0..16i64 {
+            t.observe_flow_contact(src, dst, 445, i * 30 * SEC, 2000, 2000);
+        }
+        assert!(
+            detect_beacons(&t, &BeaconParams::default())
+                .iter()
+                .all(|b| b.dst_port != Some(445)),
+            "admin-port cadence must not be a beacon"
+        );
+        // Prove it is the guard, not the timing: clear ignore_ports and 445 trips the beacon.
+        let no_ignore = BeaconParams {
+            ignore_ports: vec![],
+            ..BeaconParams::default()
+        };
+        assert!(
+            detect_beacons(&t, &no_ignore)
+                .iter()
+                .any(|b| b.dst_port == Some(445)),
+            "without the guard the admin cadence would look like a beacon"
+        );
+    }
+
+    #[test]
+    fn established_admin_spray_reports_both_credential_access_and_lateral_movement() {
+        // A source that opens many established SSH sessions to each of several internal hosts is a
+        // credential spray AND a pivot. Both detectors fire (brute force per host, lateral movement
+        // for the fan-out) and correlation orders them Credential Access -> Lateral Movement — the
+        // intended kill-chain coexistence on the shared port 22 (not a double-count to suppress).
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        for h in 1..=4u8 {
+            let victim = ip(10, 0, 1, h);
+            for i in 0..22i64 {
+                t.observe_flow_contact(attacker, victim, 22, i * SEC, 800, 800);
+            }
+        }
+        let brutes = detect_brute_force(&t, &BruteForceParams::default());
+        let lateral = detect_lateral_movement(&t, &LateralMovementParams::default());
+        assert_eq!(brutes.len(), 4, "one brute finding per sprayed host: {brutes:?}");
+        assert_eq!(lateral.len(), 1, "one lateral fan-out finding: {lateral:?}");
+        // Port 22 is in the beacon ignore set, so the regular cadence is NOT also a beacon.
+        assert!(detect_beacons(&t, &BeaconParams::default()).is_empty());
+
+        let mut all = brutes;
+        all.extend(lateral);
+        let inc = correlate_incidents(&all);
+        assert_eq!(inc.len(), 1);
+        assert_eq!(inc[0].stages, vec!["Credential Access", "Lateral Movement"]);
     }
 
     #[test]
