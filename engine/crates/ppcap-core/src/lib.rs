@@ -58,6 +58,7 @@ pub use error::{PpError, Result};
 pub use model::category::Category;
 pub use model::finding::{Finding, FindingKind};
 pub use model::flow::{Direction, FlowKey, FlowRecord};
+pub use model::incident::Incident;
 pub use model::output::AnalysisOutput;
 pub use model::packet::{PacketMeta, Protocol, Transport};
 pub use model::severity::Severity;

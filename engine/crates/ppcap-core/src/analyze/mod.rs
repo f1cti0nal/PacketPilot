@@ -12,8 +12,8 @@ use std::time::Instant;
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, detect_beacons, detect_exfil, detect_sweeps, BeaconParams, BehaviorTracker,
-    DetectConfig, ExfilParams, SweepParams,
+    contact_from_flow, correlate_incidents, detect_beacons, detect_exfil, detect_sweeps,
+    BeaconParams, BehaviorTracker, DetectConfig, ExfilParams, SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -245,6 +245,8 @@ pub fn run_source(
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
     let mut summary = stats.finish();
+    // Correlate the findings into per-host incidents (the "is this a real incident" view).
+    summary.incidents = correlate_incidents(&findings);
     summary.findings = findings;
     let flows_parquet_path = match writer {
         Some(w) => {
@@ -804,6 +806,29 @@ mod tests {
                 .any(|t| t.ip == c2 && t.severity == Severity::High),
             "c2 {c2} not High in ip_threats"
         );
+
+        // The beacon host also ran a recon sweep, so it correlates into one multi-stage,
+        // Critical-escalated incident (Discovery -> Command & Control).
+        let incident = out
+            .summary
+            .incidents
+            .iter()
+            .find(|i| i.host == real.src_ip)
+            .unwrap_or_else(|| panic!("no incident for {}", real.src_ip));
+        assert_eq!(
+            incident.severity,
+            Severity::Critical,
+            "incident: {incident:?}"
+        );
+        assert!(
+            incident.findings.len() >= 2,
+            "expected multi-stage incident"
+        );
+        assert_eq!(
+            incident.stages.first().map(String::as_str),
+            Some("Discovery")
+        );
+        assert!(incident.stages.iter().any(|s| s == "Command & Control"));
     }
 
     #[test]

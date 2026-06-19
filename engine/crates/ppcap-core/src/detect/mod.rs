@@ -404,6 +404,7 @@ impl BehaviorTracker {
 use crate::enrich::classify_ip;
 use crate::model::finding::{Finding, FindingKind};
 use crate::model::flow::FlowRecord;
+use crate::model::incident::Incident;
 use crate::model::severity::Severity;
 
 /// Tuning for the beaconing detector.
@@ -696,6 +697,157 @@ pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Fin
         });
     }
     findings
+}
+
+/// Correlate behavioral findings into per-host incidents, ordered along the kill chain
+/// (discovery -> command-and-control -> exfiltration). A host exhibiting two or more distinct
+/// stages is escalated one severity band — a multi-stage chain is a confirmed incident.
+/// Incidents are returned worst-first.
+pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // Group every finding under its actor host (the source it is attributed to).
+    let mut by_host: BTreeMap<&str, Vec<Finding>> = BTreeMap::new();
+    for f in findings {
+        by_host
+            .entry(f.src_ip.as_str())
+            .or_default()
+            .push(f.clone());
+    }
+
+    let mut incidents: Vec<Incident> = by_host
+        .into_iter()
+        .map(|(host, mut fs)| {
+            // Order the contributing findings along the kill chain (then strongest first).
+            fs.sort_by(|a, b| {
+                stage_ordinal(a.kind)
+                    .cmp(&stage_ordinal(b.kind))
+                    .then(b.score.cmp(&a.score))
+            });
+
+            let distinct_kinds: BTreeSet<FindingKind> = fs.iter().map(|f| f.kind).collect();
+            let multi_stage = distinct_kinds.len() >= 2;
+
+            let base_sev = fs
+                .iter()
+                .map(|f| f.severity)
+                .max()
+                .unwrap_or(Severity::Info);
+            let base_score = fs.iter().map(|f| f.score).max().unwrap_or(0);
+            // A multi-stage chain is a confirmed incident: escalate one band / bump the score.
+            let severity = if multi_stage {
+                escalate(base_sev)
+            } else {
+                base_sev
+            };
+            let score = if multi_stage {
+                (base_score + 15).min(100)
+            } else {
+                base_score
+            };
+
+            // Distinct stage labels, in kill-chain order.
+            let mut stages: Vec<String> = Vec::new();
+            for f in &fs {
+                let label = stage_label(f.kind).to_string();
+                if !stages.contains(&label) {
+                    stages.push(label);
+                }
+            }
+
+            // ATT&CK union, sorted + deduped.
+            let attack: BTreeSet<String> =
+                fs.iter().flat_map(|f| f.attack.iter().cloned()).collect();
+
+            let (title, narrative) = if fs.len() == 1 {
+                (fs[0].title.clone(), fs[0].title.clone())
+            } else {
+                let mut seen = BTreeSet::new();
+                let phrases: Vec<&str> = fs
+                    .iter()
+                    .filter(|f| seen.insert(f.kind))
+                    .map(|f| kind_phrase(f.kind))
+                    .collect();
+                (
+                    format!("Multi-stage incident on {host}"),
+                    format!("{host} {}.", join_phrases(&phrases)),
+                )
+            };
+
+            Incident {
+                host: host.to_string(),
+                severity,
+                score,
+                title,
+                narrative,
+                stages,
+                attack: attack.into_iter().collect(),
+                findings: fs,
+            }
+        })
+        .collect();
+
+    incidents.sort_by(|a, b| {
+        b.severity
+            .rank()
+            .cmp(&a.severity.rank())
+            .then(b.score.cmp(&a.score))
+            .then(a.host.cmp(&b.host))
+    });
+    incidents
+}
+
+/// Kill-chain stage of a finding kind (lower = earlier in the chain).
+fn stage_ordinal(kind: FindingKind) -> u8 {
+    match kind {
+        FindingKind::HostSweep => 0, // discovery
+        FindingKind::Beacon => 1,    // command-and-control
+        FindingKind::DataExfil => 2, // exfiltration
+    }
+}
+
+/// Human kill-chain stage label for a finding kind.
+fn stage_label(kind: FindingKind) -> &'static str {
+    match kind {
+        FindingKind::HostSweep => "Discovery",
+        FindingKind::Beacon => "Command & Control",
+        FindingKind::DataExfil => "Exfiltration",
+    }
+}
+
+/// Narrative verb phrase for a finding kind.
+fn kind_phrase(kind: FindingKind) -> &'static str {
+    match kind {
+        FindingKind::HostSweep => "swept the network",
+        FindingKind::Beacon => "beaconed to a C2",
+        FindingKind::DataExfil => "exfiltrated data",
+    }
+}
+
+/// Raise a severity by one band, saturating at `Critical`.
+fn escalate(sev: Severity) -> Severity {
+    match sev {
+        Severity::Info => Severity::Low,
+        Severity::Low => Severity::Medium,
+        Severity::Medium => Severity::High,
+        Severity::High | Severity::Critical => Severity::Critical,
+    }
+}
+
+/// Join phrases as "a, then b, then c".
+fn join_phrases(phrases: &[&str]) -> String {
+    match phrases {
+        [] => String::new(),
+        [only] => only.to_string(),
+        [first, rest @ ..] => {
+            let mut s = first.to_string();
+            for p in rest {
+                s.push_str(", then ");
+                s.push_str(p);
+            }
+            s
+        }
+    }
 }
 
 /// Compact base-1024 byte rendering for evidence strings (e.g. `5.0 MB`).
@@ -1185,5 +1337,106 @@ mod tests {
             ..ExfilParams::default()
         };
         assert!(detect_exfil(&t, &params).is_empty());
+    }
+
+    fn mk_finding(
+        kind: FindingKind,
+        src: &str,
+        sev: Severity,
+        score: u16,
+        attack: &[&str],
+    ) -> Finding {
+        Finding {
+            kind,
+            severity: sev,
+            score,
+            title: format!("{} on {src}", kind.as_str()),
+            src_ip: src.to_string(),
+            dst_ip: Some("1.2.3.4".to_string()),
+            dst_port: Some(443),
+            attack: attack.iter().map(|s| s.to_string()).collect(),
+            evidence: Vec::new(),
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        }
+    }
+
+    #[test]
+    fn single_finding_yields_one_unescalated_incident() {
+        let f = mk_finding(
+            FindingKind::Beacon,
+            "10.0.0.5",
+            Severity::High,
+            70,
+            &["T1071"],
+        );
+        let inc = correlate_incidents(&[f]);
+        assert_eq!(inc.len(), 1);
+        assert_eq!(inc[0].host, "10.0.0.5");
+        assert_eq!(inc[0].severity, Severity::High); // single stage — not escalated
+        assert_eq!(inc[0].findings.len(), 1);
+        assert_eq!(inc[0].stages, vec!["Command & Control"]);
+    }
+
+    #[test]
+    fn multi_stage_chain_escalates_and_orders_by_kill_chain() {
+        let host = "10.13.37.7";
+        // Added out of kill-chain order: exfil, beacon, sweep.
+        let exfil = mk_finding(FindingKind::DataExfil, host, Severity::High, 72, &["T1048"]);
+        let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
+        let sweep = mk_finding(FindingKind::HostSweep, host, Severity::High, 65, &["T1046"]);
+
+        let inc = correlate_incidents(&[exfil, beacon, sweep]);
+        assert_eq!(inc.len(), 1);
+        let i = &inc[0];
+        assert_eq!(i.host, host);
+        // Three distinct stages -> escalate High to Critical.
+        assert_eq!(i.severity, Severity::Critical);
+        assert_eq!(
+            i.stages,
+            vec!["Discovery", "Command & Control", "Exfiltration"]
+        );
+        // Contributing findings ordered along the kill chain.
+        assert_eq!(i.findings.len(), 3);
+        assert_eq!(i.findings[0].kind, FindingKind::HostSweep);
+        assert_eq!(i.findings[1].kind, FindingKind::Beacon);
+        assert_eq!(i.findings[2].kind, FindingKind::DataExfil);
+        // ATT&CK union, sorted.
+        assert_eq!(i.attack, vec!["T1046", "T1048", "T1071"]);
+        assert!(i.narrative.contains("swept"), "narrative: {}", i.narrative);
+    }
+
+    #[test]
+    fn different_hosts_are_separate_incidents_ranked_worst_first() {
+        let a = mk_finding(
+            FindingKind::Beacon,
+            "10.0.0.5",
+            Severity::Medium,
+            45,
+            &["T1071"],
+        );
+        let b1 = mk_finding(
+            FindingKind::HostSweep,
+            "10.0.0.9",
+            Severity::High,
+            65,
+            &["T1046"],
+        );
+        let b2 = mk_finding(
+            FindingKind::Beacon,
+            "10.0.0.9",
+            Severity::High,
+            70,
+            &["T1071"],
+        );
+
+        let inc = correlate_incidents(&[a, b1, b2]);
+        assert_eq!(inc.len(), 2);
+        // 10.0.0.9 is multi-stage -> Critical, ranks first.
+        assert_eq!(inc[0].host, "10.0.0.9");
+        assert_eq!(inc[0].severity, Severity::Critical);
+        assert_eq!(inc[1].host, "10.0.0.5");
+        assert_eq!(inc[1].severity, Severity::Medium);
     }
 }

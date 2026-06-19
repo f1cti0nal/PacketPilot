@@ -532,11 +532,24 @@ impl SynthGen {
     /// variation far under the detector's threshold.
     fn next_beacon(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
         let i = self.emitted;
-        let pos = i % BEACON_CYCLE_LEN;
+        let sweep_count = self.beacon_sweep_count();
+
+        // Stage 1 (recon): a short SYN sweep — the beacon host probes many internal hosts on
+        // 445. Combined with the C2 beacon below, this gives the host a multi-stage incident.
+        if i < sweep_count {
+            let frame = self.build_beacon_sweep(i);
+            let ts = self.cfg.start_ts_ns.saturating_add(i as i64 * 100_000_000); // ~100 ms apart at the start
+            self.emitted += 1;
+            return Some((ts, FrameKind::OtherTcp, frame));
+        }
+
+        // Stage 2 (C2): the periodic beacon + benign background.
+        let j = i - sweep_count;
+        let pos = j % BEACON_CYCLE_LEN;
 
         let (ts, kind, frame) = if pos == 0 {
             // The regular C2 callback, on the explicit period grid + bounded jitter.
-            let cycle = i / BEACON_CYCLE_LEN;
+            let cycle = j / BEACON_CYCLE_LEN;
             let callback_ts = self
                 .cfg
                 .start_ts_ns
@@ -580,6 +593,33 @@ impl SynthGen {
         (mean / 2)
             .saturating_add(self.rng.below(mean as u64) as i64)
             .max(1)
+    }
+
+    /// Number of recon-sweep SYNs prefixed to a beacon capture (skipped for tiny captures).
+    fn beacon_sweep_count(&self) -> u64 {
+        if self.cfg.packets >= 200 {
+            BEACON_SWEEP_HOSTS
+        } else {
+            0
+        }
+    }
+
+    /// Build one sweep SYN: the beacon host probing a distinct internal host on 445.
+    fn build_beacon_sweep(&mut self, idx: u64) -> Vec<u8> {
+        let client = beacon_client();
+        let target = Ipv4Addr::new(10, 66, 0, (idx + 1) as u8);
+        let sport = 40000 + (idx % 2000) as u16;
+        self.record_flow(client, target, sport, 445, IP_PROTO_TCP);
+        let tcp = frames::build_tcp(client, target, sport, 445, TCP_SYN, &[]);
+        let ip = frames::build_ipv4(client, target, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(
+            BEACON_CLIENT_MAC,
+            [0x02, 0, 0, 0, 0xFF, (idx & 0xFF) as u8],
+            ETHERTYPE_IPV4,
+        );
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
     }
 
     /// Build one beacon callback: a TLS ClientHello from the fixed client to the fixed public
@@ -639,6 +679,9 @@ impl SynthGen {
 const BEACON_PERIOD_NS: i64 = 30_000_000_000;
 /// Packets per beacon cycle: one C2 callback + 12 benign background frames.
 const BEACON_CYCLE_LEN: u64 = 13;
+/// Distinct internal hosts the beacon host sweeps on 445 first (>= the sweep detector floor, so
+/// the capture yields a recon + C2 multi-stage incident).
+const BEACON_SWEEP_HOSTS: u64 = 24;
 /// SNI presented by the synthetic C2 callbacks.
 const BEACON_SNI: &str = "sync.cdn-metrics.net";
 /// Fixed locally-administered MACs for the beacon client / C2.

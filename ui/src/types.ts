@@ -87,6 +87,8 @@ export interface Summary {
   ip_threats?: IpThreat[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
+  /** Findings correlated into per-host incidents; absent in older summaries. */
+  incidents?: Incident[];
 }
 
 export interface SeverityCounts {
@@ -134,6 +136,24 @@ export interface Finding {
   jitter_cv: number | null;
   /** Contributing contact / connection count. */
   contacts: number | null;
+}
+
+/**
+ * A per-host incident: one or more findings correlated into a single ranked story, ordered
+ * along the kill chain. A host that did two or more distinct stages is escalated above any
+ * single finding's severity.
+ */
+export interface Incident {
+  host: string;
+  severity: Severity;
+  score: number;
+  title: string;
+  narrative: string;
+  /** Kill-chain stage labels, in order, e.g. ["Discovery", "Command & Control"]. */
+  stages: string[];
+  attack: string[];
+  /** Contributing findings, ordered by kill-chain stage. */
+  findings: Finding[];
 }
 
 export interface AnalysisOutput {
