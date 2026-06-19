@@ -12,8 +12,8 @@ use std::time::Instant;
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, detect_beacons, detect_exfil, BeaconParams, BehaviorTracker, DetectConfig,
-    ExfilParams,
+    contact_from_flow, detect_beacons, detect_exfil, detect_sweeps, BeaconParams, BehaviorTracker,
+    DetectConfig, ExfilParams, SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -48,6 +48,8 @@ pub struct PipelineConfig {
     pub beacon: BeaconParams,
     /// Data-exfiltration-detector tuning.
     pub exfil: ExfilParams,
+    /// Host-sweep-detector tuning.
+    pub sweep: SweepParams,
 }
 
 impl Default for PipelineConfig {
@@ -69,6 +71,7 @@ impl Default for PipelineConfig {
             writer: WriterConfig::default(),
             beacon: BeaconParams::default(),
             exfil: ExfilParams::default(),
+            sweep: SweepParams::default(),
         }
     }
 }
@@ -237,6 +240,7 @@ pub fn run_source(
     // and truncates them, so a beaconing host/C2 surfaces in the Top Threats panel.
     let mut findings = detect_beacons(&tracker, &cfg.beacon);
     findings.extend(detect_exfil(&tracker, &cfg.exfil));
+    findings.extend(detect_sweeps(&tracker, &cfg.sweep));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
@@ -888,6 +892,64 @@ mod tests {
                 .iter()
                 .any(|t| t.ip == "8.8.8.8" && t.severity == crate::model::severity::Severity::High),
             "exfil peer not High in ip_threats"
+        );
+    }
+
+    #[test]
+    fn pipeline_surfaces_host_sweep_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let attacker = Ipv4Addr::new(10, 0, 0, 9);
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        // One SYN to port 445 on each of 20 distinct hosts — a horizontal SMB sweep. Distinct
+        // destination hosts make distinct flows even with a shared source port.
+        for last in 1..=20i64 {
+            let target = Ipv4Addr::new(10, 0, 1, last as u8);
+            let tcp = frames::build_tcp(attacker, target, 40000, 445, frames::TCP_SYN, &[]);
+            let ip = frames::build_ipv4(attacker, target, frames::IP_PROTO_TCP, 64, tcp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 9],
+                [0x02, 0, 0, 0, 0, last as u8],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            let ts = base + last * 1_000_000;
+            let wl = frame.len() as u32;
+            container::write_legacy_record(&mut buf, ts, wl, wl).unwrap();
+            buf.write_all(&frame).unwrap();
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        // No threat feed: the sweep verdict comes from the fan-out alone.
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let sweep = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::HostSweep)
+            .unwrap_or_else(|| panic!("no sweep finding: {:?}", out.summary.findings));
+        assert_eq!(sweep.severity, crate::model::severity::Severity::High);
+        assert_eq!(sweep.src_ip, "10.0.0.9");
+        assert_eq!(sweep.dst_port, Some(445));
+        assert!(sweep.attack.iter().any(|a| a == "T1046"));
+        // The scanning host is surfaced as a High threat card.
+        assert!(
+            out.summary
+                .ip_threats
+                .iter()
+                .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
+            "sweeper not High in ip_threats"
         );
     }
 }

@@ -223,6 +223,14 @@ pub struct ExfilCandidate {
     pub bytes_in: u64,
 }
 
+/// A `(source, port)` pair that reached many distinct hosts (horizontal sweep shape).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SweepCandidate {
+    pub src: IpAddr,
+    pub dst_port: u16,
+    pub hosts: usize,
+}
+
 /// Tuning for the behavioral tracker. Both caps keep memory bounded on adversarial captures.
 #[derive(Debug, Clone)]
 pub struct DetectConfig {
@@ -295,16 +303,17 @@ impl BehaviorTracker {
             self.channels.insert(key, series);
         }
 
-        // Per-source distinct destination-host set (sweep signal), bounded in both the number
-        // of sources and the hosts retained per source.
-        if let Some(set) = self.fanout.get_mut(&src) {
+        // Per-(source, port) distinct destination-host set (sweep signal), bounded in both the
+        // number of (src, port) keys and the hosts retained per key.
+        let fkey = (src, dst_port);
+        if let Some(set) = self.fanout.get_mut(&fkey) {
             if set.len() < self.cfg.max_fanout_per_src {
                 set.insert(dst);
             }
         } else if self.fanout.len() < self.cfg.max_tracked_keys.max(1) {
             let mut set = HashSet::new();
             set.insert(dst);
-            self.fanout.insert(src, set);
+            self.fanout.insert(fkey, set);
         }
     }
 
@@ -313,14 +322,36 @@ impl BehaviorTracker {
         self.channels.get(&key)
     }
 
-    /// Number of distinct destination hosts `src` has contacted (the sweep fan-out).
-    pub fn fanout(&self, src: IpAddr) -> usize {
-        self.fanout.get(&src).map_or(0, |set| set.len())
+    /// Number of distinct destination hosts `src` contacted on `dst_port` (the sweep fan-out).
+    pub fn fanout(&self, src: IpAddr, dst_port: u16) -> usize {
+        self.fanout.get(&(src, dst_port)).map_or(0, |set| set.len())
     }
 
-    /// Whether `src` contacted at least `threshold` distinct destination hosts.
-    pub fn is_sweeper(&self, src: IpAddr, threshold: usize) -> bool {
-        self.fanout(src) >= threshold
+    /// Whether `src` contacted at least `threshold` distinct hosts on `dst_port`.
+    pub fn is_sweeper(&self, src: IpAddr, dst_port: u16, threshold: usize) -> bool {
+        self.fanout(src, dst_port) >= threshold
+    }
+
+    /// All `(src, port)` pairs that reached at least `min_hosts` distinct destination hosts — a
+    /// horizontal sweep. Port gating is left to the caller. Returned in deterministic order.
+    pub fn sweep_candidates(&self, min_hosts: usize) -> Vec<SweepCandidate> {
+        let mut out: Vec<SweepCandidate> = self
+            .fanout
+            .iter()
+            .filter(|(_, hosts)| hosts.len() >= min_hosts)
+            .map(|(&(src, dst_port), hosts)| SweepCandidate {
+                src,
+                dst_port,
+                hosts: hosts.len(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.hosts
+                .cmp(&a.hosts)
+                .then(a.src.cmp(&b.src))
+                .then(a.dst_port.cmp(&b.dst_port))
+        });
+        out
     }
 
     /// Number of distinct contact channels currently tracked (for bound assertions).
@@ -604,6 +635,69 @@ pub fn detect_exfil(tracker: &BehaviorTracker, params: &ExfilParams) -> Vec<Find
     findings
 }
 
+/// Tuning for the host-sweep detector.
+#[derive(Debug, Clone)]
+pub struct SweepParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum distinct destination hosts on one `(src, port)` to call it a sweep.
+    pub min_hosts: usize,
+    /// Ports excluded from sweep detection — ordinary client traffic (web/DNS/NTP) routinely
+    /// fans out to many hosts and is not a scan. A sweep of these is indistinguishable from a
+    /// busy browser without payload analysis, so they are skipped to avoid false positives.
+    pub ignore_ports: Vec<u16>,
+}
+
+impl Default for SweepParams {
+    fn default() -> Self {
+        SweepParams {
+            enabled: true,
+            min_hosts: 16,
+            ignore_ports: vec![80, 443, 8080, 8443, 53, 123],
+        }
+    }
+}
+
+/// Detect horizontal host sweeps from the behavioral tracker: one [`Finding`] per `(src, port)`
+/// that reached at least [`SweepParams::min_hosts`] distinct hosts on a non-ignored port. These
+/// are network-service / remote-system discovery; severity is High, ATT&CK T1046. Deterministic
+/// order.
+pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.sweep_candidates(params.min_hosts) {
+        if params.ignore_ports.contains(&c.dst_port) {
+            continue;
+        }
+        findings.push(Finding {
+            kind: FindingKind::HostSweep,
+            severity: Severity::High,
+            score: 65,
+            title: format!(
+                "Host sweep: {} probed {} hosts on port {}",
+                c.src, c.hosts, c.dst_port
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: None,
+            dst_port: Some(c.dst_port),
+            attack: vec!["T1046".to_string()],
+            evidence: vec![
+                format!(
+                    "{} distinct destination hosts contacted on port {}",
+                    c.hosts, c.dst_port
+                ),
+                "horizontal scan / remote-system discovery".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        });
+    }
+    findings
+}
+
 /// Compact base-1024 byte rendering for evidence strings (e.g. `5.0 MB`).
 fn human_bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -774,14 +868,65 @@ mod tests {
         let attacker = ip(10, 0, 0, 9);
         // One source touches 20 distinct destination hosts on port 445 (SMB sweep).
         for last in 1..=20u8 {
-            t.observe_contact(attacker, ip(10, 0, 0, last), 445, 0);
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
         }
-        assert_eq!(t.fanout(attacker), 20);
-        assert!(t.is_sweeper(attacker, 15));
-        assert!(!t.is_sweeper(attacker, 21));
+        assert_eq!(t.fanout(attacker, 445), 20);
+        assert!(t.is_sweeper(attacker, 445, 15));
+        assert!(!t.is_sweeper(attacker, 445, 21));
+        // Fan-out is per-port: nothing was seen on 443.
+        assert_eq!(t.fanout(attacker, 443), 0);
         // An unrelated source has no fan-out.
-        assert_eq!(t.fanout(ip(10, 0, 0, 1)), 0);
-        assert!(!t.is_sweeper(ip(1, 1, 1, 1), 1));
+        assert_eq!(t.fanout(ip(10, 0, 0, 1), 445), 0);
+        assert!(!t.is_sweeper(ip(1, 1, 1, 1), 445, 1));
+    }
+
+    #[test]
+    fn detect_sweeps_flags_service_port_and_ignores_web() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        // SMB sweep: 20 distinct hosts on 445.
+        for last in 1..=20u8 {
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
+        }
+        // A busy browser: 20 hosts on 443 must NOT be flagged (ignored port).
+        for last in 1..=20u8 {
+            t.observe_contact(attacker, ip(10, 0, 2, last), 443, 0);
+        }
+
+        let findings = detect_sweeps(&t, &SweepParams::default());
+        assert_eq!(findings.len(), 1, "findings: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::HostSweep);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.src_ip, "10.0.0.9");
+        assert_eq!(f.dst_port, Some(445));
+        assert!(f.dst_ip.is_none()); // a fan-out finding has no single destination
+        assert!(
+            f.attack.iter().any(|a| a == "T1046"),
+            "attack: {:?}",
+            f.attack
+        );
+    }
+
+    #[test]
+    fn detect_sweeps_below_threshold_or_disabled_yield_nothing() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        // Only 5 hosts on 445 — below min_hosts.
+        for last in 1..=5u8 {
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
+        }
+        assert!(detect_sweeps(&t, &SweepParams::default()).is_empty());
+
+        // Now well above threshold, but disabled.
+        for last in 6..=25u8 {
+            t.observe_contact(attacker, ip(10, 0, 1, last), 445, 0);
+        }
+        let params = SweepParams {
+            enabled: false,
+            ..SweepParams::default()
+        };
+        assert!(detect_sweeps(&t, &params).is_empty());
     }
 
     #[test]
