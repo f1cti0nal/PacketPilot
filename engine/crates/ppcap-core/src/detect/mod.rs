@@ -244,13 +244,15 @@ impl Default for DetectConfig {
 /// Streaming, bounded cross-flow behavioral tracker.
 ///
 /// Fed one *contact* (a new connection's directed `src -> dst:port` + timestamp) at a time, it
-/// maintains (a) a per-channel inter-arrival series for beaconing and (b) a per-source set of
-/// distinct destination hosts for horizontal sweep detection. Both maps degrade gracefully at
+/// maintains (a) a per-channel inter-arrival series for beaconing and (b) a per-`(source, port)`
+/// set of distinct destination hosts for horizontal sweep detection. Keying the fan-out on the
+/// destination port (not the source alone) distinguishes a one-port-many-hosts sweep from a
+/// busy client talking to many hosts across assorted ports. Both maps degrade gracefully at
 /// capacity (a brand-new key is dropped) so peak memory stays bounded.
 pub struct BehaviorTracker {
     cfg: DetectConfig,
     channels: HashMap<ContactKey, ContactSeries>,
-    fanout: HashMap<IpAddr, HashSet<IpAddr>>,
+    fanout: HashMap<(IpAddr, u16), HashSet<IpAddr>>,
 }
 
 impl BehaviorTracker {
