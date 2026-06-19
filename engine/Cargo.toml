@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = ["crates/ppcap-core", "crates/ppcap-cli"]
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.85"
+license      = "MIT OR Apache-2.0"
+
+# Single source of truth for every pinned dependency. Members reference via workspace = true.
+[workspace.dependencies]
+pcap-parser  = "=0.17.0"
+etherparse   = "=0.20.2"
+arrow        = { version = "=59.0.0", default-features = false, features = ["prettyprint"] }
+arrow-array  = "=59.0.0"
+arrow-schema = "=59.0.0"
+parquet      = { version = "=59.0.0", default-features = false, features = ["arrow", "snap", "base64", "lz4"] }
+clap         = { version = "=4.6.1", features = ["derive", "wrap_help"] }
+serde        = { version = "=1.0.228", features = ["derive"] }
+serde_json   = "=1.0.150"
+thiserror    = "=2.0.18"
+anyhow       = "=1.0.102"
+time         = { version = "=0.3.41", default-features = false, features = ["formatting", "macros"] }
+# dev
+criterion    = { version = "=0.8.2", default-features = false, features = ["plotters", "cargo_bench_support"] }
+peak_alloc   = "=0.3.0"
+pcap-file    = "=2.0.0"
+tempfile     = "=3.23.0"
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+panic         = "abort"   # no recoverable panics by design; all bad input -> Result
+
+[profile.bench]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+# NOTE: bench keeps panic = "unwind" (criterion requires it); do NOT set panic=abort here.

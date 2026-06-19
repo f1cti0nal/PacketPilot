@@ -1,0 +1,5 @@
+[build]
+target = "x86_64-pc-windows-gnu"
+
+[target.x86_64-pc-windows-gnu]
+# rustup ships the gnu linker; no MSVC C build tools required.

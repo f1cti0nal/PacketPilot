@@ -1,0 +1,9 @@
+node_modules
+dist
+*.local
+.DS_Store
+
+# Tauri / Rust
+src-tauri/target
+src-tauri/gen
+src-tauri/Cargo.lock

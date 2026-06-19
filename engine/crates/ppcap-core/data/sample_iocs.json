@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "label": "PacketPilot DEMO IOC feed — synthetic indicators ONLY. NOT real threat intelligence. Crafted to match `ppcap gen` output (10.0.0.0/8 hosts and the auth.bank.example SNI) so demo runs produce High/Critical verdicts with no network.",
+  "bad_ips": ["10.0.0.10", "10.0.5.10"],
+  "bad_cidrs": ["10.0.5.0/24", "203.0.113.0/24"],
+  "bad_domains": ["auth.bank.example"],
+  "bad_suffixes": [".telemetry.app.example"],
+  "bad_ja3": []
+}

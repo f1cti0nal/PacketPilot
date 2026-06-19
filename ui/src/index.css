@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Surfaces */
+  --color-bg: #0a0e14;
+  --color-surface: #111722;
+  --color-surface-2: #1a2230;
+  --color-border: #243042;
+  --color-grid: #1e2733;
+
+  /* Text */
+  --color-text: #e2e8f0;
+  --color-text-dim: #94a3b8;
+  --color-text-faint: #64748b;
+
+  /* Accent */
+  --color-accent: #38bdf8;
+
+  /* Severity */
+  --color-sev-critical: #f43f5e;
+  --color-sev-high: #fb923c;
+  --color-sev-medium: #fbbf24;
+  --color-sev-low: #2dd4bf;
+  --color-sev-info: #38bdf8;
+  --color-sev-none: #64748b;
+
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Monospace utility for IPs / ports / hashes */
+.font-mono-num {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}

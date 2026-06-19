@@ -1,0 +1,2556 @@
+{
+  "schema_version": 1,
+  "engine_version": "0.1.0",
+  "source_path": "C:/Users/ravid/uisample.pcap",
+  "source_sha256": null,
+  "source_bytes": 13876756,
+  "link_type": "EN10MB",
+  "summary": {
+    "total_packets": 119999,
+    "total_bytes": 11956694,
+    "captured_bytes": 11956694,
+    "total_flows": 119992,
+    "decode_errors": 1,
+    "non_ip_frames": 1,
+    "proto": {
+      "tcp": 78365,
+      "udp": 41633,
+      "dns": 24509,
+      "http": 26954,
+      "tls": 34301,
+      "other_tcp": 17091,
+      "other_udp": 17143,
+      "truncated": 1,
+      "non_ipv4": 1
+    },
+    "first_ts_ns": 1700000000000000000,
+    "last_ts_ns": 1700000119931568000,
+    "duration_ns": 119931568000,
+    "unique_hosts": 64,
+    "top_talkers": [
+      {
+        "ip": "10.0.33.10",
+        "pkts": 3802,
+        "bytes": 385217,
+        "flows": 3801
+      },
+      {
+        "ip": "10.0.7.10",
+        "pkts": 3813,
+        "bytes": 385088,
+        "flows": 3813
+      },
+      {
+        "ip": "10.0.0.10",
+        "pkts": 3845,
+        "bytes": 383871,
+        "flows": 3845
+      },
+      {
+        "ip": "10.0.62.10",
+        "pkts": 3841,
+        "bytes": 383420,
+        "flows": 3841
+      },
+      {
+        "ip": "10.0.26.10",
+        "pkts": 3853,
+        "bytes": 382919,
+        "flows": 3852
+      },
+      {
+        "ip": "10.0.31.10",
+        "pkts": 3792,
+        "bytes": 381807,
+        "flows": 3792
+      },
+      {
+        "ip": "10.0.17.10",
+        "pkts": 3811,
+        "bytes": 381495,
+        "flows": 3810
+      },
+      {
+        "ip": "10.0.54.10",
+        "pkts": 3787,
+        "bytes": 380481,
+        "flows": 3787
+      },
+      {
+        "ip": "10.0.8.10",
+        "pkts": 3808,
+        "bytes": 380150,
+        "flows": 3808
+      },
+      {
+        "ip": "10.0.18.10",
+        "pkts": 3804,
+        "bytes": 379893,
+        "flows": 3804
+      },
+      {
+        "ip": "10.0.63.10",
+        "pkts": 3780,
+        "bytes": 379751,
+        "flows": 3780
+      },
+      {
+        "ip": "10.0.47.10",
+        "pkts": 3734,
+        "bytes": 379085,
+        "flows": 3733
+      },
+      {
+        "ip": "10.0.6.10",
+        "pkts": 3765,
+        "bytes": 378762,
+        "flows": 3765
+      },
+      {
+        "ip": "10.0.27.10",
+        "pkts": 3809,
+        "bytes": 378570,
+        "flows": 3809
+      },
+      {
+        "ip": "10.0.4.10",
+        "pkts": 3823,
+        "bytes": 378533,
+        "flows": 3823
+      },
+      {
+        "ip": "10.0.39.10",
+        "pkts": 3794,
+        "bytes": 378427,
+        "flows": 3794
+      },
+      {
+        "ip": "10.0.38.10",
+        "pkts": 3762,
+        "bytes": 378026,
+        "flows": 3762
+      },
+      {
+        "ip": "10.0.24.10",
+        "pkts": 3791,
+        "bytes": 377856,
+        "flows": 3791
+      },
+      {
+        "ip": "10.0.35.10",
+        "pkts": 3777,
+        "bytes": 377825,
+        "flows": 3777
+      },
+      {
+        "ip": "10.0.37.10",
+        "pkts": 3768,
+        "bytes": 377030,
+        "flows": 3768
+      },
+      {
+        "ip": "10.0.40.10",
+        "pkts": 3816,
+        "bytes": 376656,
+        "flows": 3816
+      },
+      {
+        "ip": "10.0.5.10",
+        "pkts": 3790,
+        "bytes": 376378,
+        "flows": 3790
+      },
+      {
+        "ip": "10.0.9.10",
+        "pkts": 3753,
+        "bytes": 376350,
+        "flows": 3753
+      },
+      {
+        "ip": "10.0.42.10",
+        "pkts": 3794,
+        "bytes": 376252,
+        "flows": 3793
+      },
+      {
+        "ip": "10.0.48.10",
+        "pkts": 3747,
+        "bytes": 376191,
+        "flows": 3747
+      },
+      {
+        "ip": "10.0.49.10",
+        "pkts": 3782,
+        "bytes": 375836,
+        "flows": 3781
+      },
+      {
+        "ip": "10.0.1.10",
+        "pkts": 3765,
+        "bytes": 375593,
+        "flows": 3765
+      },
+      {
+        "ip": "10.0.12.10",
+        "pkts": 3785,
+        "bytes": 375562,
+        "flows": 3785
+      },
+      {
+        "ip": "10.0.46.10",
+        "pkts": 3775,
+        "bytes": 374806,
+        "flows": 3775
+      },
+      {
+        "ip": "10.0.43.10",
+        "pkts": 3748,
+        "bytes": 374381,
+        "flows": 3747
+      },
+      {
+        "ip": "10.0.10.10",
+        "pkts": 3765,
+        "bytes": 374250,
+        "flows": 3765
+      },
+      {
+        "ip": "10.0.34.10",
+        "pkts": 3775,
+        "bytes": 373953,
+        "flows": 3775
+      },
+      {
+        "ip": "10.0.3.10",
+        "pkts": 3766,
+        "bytes": 373922,
+        "flows": 3766
+      },
+      {
+        "ip": "10.0.14.10",
+        "pkts": 3752,
+        "bytes": 373760,
+        "flows": 3752
+      },
+      {
+        "ip": "10.0.25.10",
+        "pkts": 3730,
+        "bytes": 373740,
+        "flows": 3730
+      },
+      {
+        "ip": "10.0.41.10",
+        "pkts": 3748,
+        "bytes": 373701,
+        "flows": 3748
+      },
+      {
+        "ip": "10.0.51.10",
+        "pkts": 3752,
+        "bytes": 373181,
+        "flows": 3752
+      },
+      {
+        "ip": "10.0.11.10",
+        "pkts": 3760,
+        "bytes": 372948,
+        "flows": 3760
+      },
+      {
+        "ip": "10.0.28.10",
+        "pkts": 3761,
+        "bytes": 372568,
+        "flows": 3761
+      },
+      {
+        "ip": "10.0.21.10",
+        "pkts": 3755,
+        "bytes": 372308,
+        "flows": 3755
+      },
+      {
+        "ip": "10.0.16.10",
+        "pkts": 3731,
+        "bytes": 371642,
+        "flows": 3731
+      },
+      {
+        "ip": "10.0.50.10",
+        "pkts": 3750,
+        "bytes": 371407,
+        "flows": 3750
+      },
+      {
+        "ip": "10.0.36.10",
+        "pkts": 3760,
+        "bytes": 370892,
+        "flows": 3760
+      },
+      {
+        "ip": "10.0.30.10",
+        "pkts": 3721,
+        "bytes": 370830,
+        "flows": 3721
+      },
+      {
+        "ip": "10.0.61.10",
+        "pkts": 3750,
+        "bytes": 370490,
+        "flows": 3750
+      },
+      {
+        "ip": "10.0.58.10",
+        "pkts": 3729,
+        "bytes": 370341,
+        "flows": 3729
+      },
+      {
+        "ip": "10.0.13.10",
+        "pkts": 3729,
+        "bytes": 370270,
+        "flows": 3729
+      },
+      {
+        "ip": "10.0.57.10",
+        "pkts": 3702,
+        "bytes": 370212,
+        "flows": 3702
+      },
+      {
+        "ip": "10.0.15.10",
+        "pkts": 3697,
+        "bytes": 370006,
+        "flows": 3696
+      },
+      {
+        "ip": "10.0.23.10",
+        "pkts": 3673,
+        "bytes": 369378,
+        "flows": 3673
+      }
+    ],
+    "protocol_hierarchy": [
+      {
+        "path": "ip.tcp.https",
+        "pkts": 34301,
+        "bytes": 4586204
+      },
+      {
+        "path": "ip.tcp.http",
+        "pkts": 26954,
+        "bytes": 3341176
+      },
+      {
+        "path": "ip.udp.dns",
+        "pkts": 24490,
+        "bytes": 1836750
+      },
+      {
+        "path": "ip.udp.other",
+        "pkts": 17143,
+        "bytes": 1268582
+      },
+      {
+        "path": "ip.tcp.other",
+        "pkts": 17091,
+        "bytes": 922914
+      },
+      {
+        "path": "ip.tcp.dns",
+        "pkts": 19,
+        "bytes": 1026
+      }
+    ],
+    "port_histogram": [
+      {
+        "port": 443,
+        "transport": "TCP",
+        "pkts": 34301,
+        "bytes": 4586204
+      },
+      {
+        "port": 80,
+        "transport": "TCP",
+        "pkts": 26954,
+        "bytes": 3341176
+      },
+      {
+        "port": 53,
+        "transport": "UDP",
+        "pkts": 24490,
+        "bytes": 1836750
+      },
+      {
+        "port": 421,
+        "transport": "TCP",
+        "pkts": 30,
+        "bytes": 1620
+      },
+      {
+        "port": 725,
+        "transport": "TCP",
+        "pkts": 30,
+        "bytes": 1620
+      },
+      {
+        "port": 1012,
+        "transport": "TCP",
+        "pkts": 30,
+        "bytes": 1620
+      },
+      {
+        "port": 103,
+        "transport": "TCP",
+        "pkts": 29,
+        "bytes": 1566
+      },
+      {
+        "port": 682,
+        "transport": "TCP",
+        "pkts": 29,
+        "bytes": 1566
+      },
+      {
+        "port": 170,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 183,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 196,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 325,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 395,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 517,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 685,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 774,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 783,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 896,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 914,
+        "transport": "TCP",
+        "pkts": 28,
+        "bytes": 1512
+      },
+      {
+        "port": 283,
+        "transport": "TCP",
+        "pkts": 27,
+        "bytes": 1458
+      },
+      {
+        "port": 649,
+        "transport": "TCP",
+        "pkts": 27,
+        "bytes": 1458
+      },
+      {
+        "port": 671,
+        "transport": "TCP",
+        "pkts": 27,
+        "bytes": 1458
+      },
+      {
+        "port": 720,
+        "transport": "TCP",
+        "pkts": 27,
+        "bytes": 1458
+      },
+      {
+        "port": 187,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 259,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 346,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 350,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 558,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 625,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 705,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 732,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 769,
+        "transport": "TCP",
+        "pkts": 26,
+        "bytes": 1404
+      },
+      {
+        "port": 245,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 264,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 442,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 642,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 796,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 967,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 1022,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 1023,
+        "transport": "TCP",
+        "pkts": 25,
+        "bytes": 1350
+      },
+      {
+        "port": 46,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 50,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 100,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 101,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 133,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 211,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 277,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 353,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 374,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      },
+      {
+        "port": 396,
+        "transport": "TCP",
+        "pkts": 24,
+        "bytes": 1296
+      }
+    ],
+    "time_histogram": [
+      {
+        "epoch_sec": 1700000000,
+        "pkts": 1009,
+        "bytes": 98744
+      },
+      {
+        "epoch_sec": 1700000001,
+        "pkts": 1006,
+        "bytes": 99839
+      },
+      {
+        "epoch_sec": 1700000002,
+        "pkts": 1000,
+        "bytes": 98619
+      },
+      {
+        "epoch_sec": 1700000003,
+        "pkts": 987,
+        "bytes": 98802
+      },
+      {
+        "epoch_sec": 1700000004,
+        "pkts": 993,
+        "bytes": 100395
+      },
+      {
+        "epoch_sec": 1700000005,
+        "pkts": 993,
+        "bytes": 98133
+      },
+      {
+        "epoch_sec": 1700000006,
+        "pkts": 1011,
+        "bytes": 101290
+      },
+      {
+        "epoch_sec": 1700000007,
+        "pkts": 980,
+        "bytes": 96428
+      },
+      {
+        "epoch_sec": 1700000008,
+        "pkts": 998,
+        "bytes": 98205
+      },
+      {
+        "epoch_sec": 1700000009,
+        "pkts": 998,
+        "bytes": 97882
+      },
+      {
+        "epoch_sec": 1700000010,
+        "pkts": 997,
+        "bytes": 99465
+      },
+      {
+        "epoch_sec": 1700000011,
+        "pkts": 1002,
+        "bytes": 101182
+      },
+      {
+        "epoch_sec": 1700000012,
+        "pkts": 997,
+        "bytes": 99746
+      },
+      {
+        "epoch_sec": 1700000013,
+        "pkts": 1002,
+        "bytes": 100330
+      },
+      {
+        "epoch_sec": 1700000014,
+        "pkts": 1004,
+        "bytes": 99565
+      },
+      {
+        "epoch_sec": 1700000015,
+        "pkts": 1014,
+        "bytes": 101224
+      },
+      {
+        "epoch_sec": 1700000016,
+        "pkts": 1002,
+        "bytes": 99718
+      },
+      {
+        "epoch_sec": 1700000017,
+        "pkts": 1007,
+        "bytes": 100061
+      },
+      {
+        "epoch_sec": 1700000018,
+        "pkts": 991,
+        "bytes": 97373
+      },
+      {
+        "epoch_sec": 1700000019,
+        "pkts": 992,
+        "bytes": 99795
+      },
+      {
+        "epoch_sec": 1700000020,
+        "pkts": 1010,
+        "bytes": 99405
+      },
+      {
+        "epoch_sec": 1700000021,
+        "pkts": 997,
+        "bytes": 98370
+      },
+      {
+        "epoch_sec": 1700000022,
+        "pkts": 995,
+        "bytes": 97621
+      },
+      {
+        "epoch_sec": 1700000023,
+        "pkts": 1015,
+        "bytes": 102948
+      },
+      {
+        "epoch_sec": 1700000024,
+        "pkts": 998,
+        "bytes": 100079
+      },
+      {
+        "epoch_sec": 1700000025,
+        "pkts": 1011,
+        "bytes": 99863
+      },
+      {
+        "epoch_sec": 1700000026,
+        "pkts": 989,
+        "bytes": 98628
+      },
+      {
+        "epoch_sec": 1700000027,
+        "pkts": 997,
+        "bytes": 97385
+      },
+      {
+        "epoch_sec": 1700000028,
+        "pkts": 1005,
+        "bytes": 99454
+      },
+      {
+        "epoch_sec": 1700000029,
+        "pkts": 1002,
+        "bytes": 101301
+      },
+      {
+        "epoch_sec": 1700000030,
+        "pkts": 1005,
+        "bytes": 98711
+      },
+      {
+        "epoch_sec": 1700000031,
+        "pkts": 995,
+        "bytes": 100241
+      },
+      {
+        "epoch_sec": 1700000032,
+        "pkts": 1005,
+        "bytes": 99798
+      },
+      {
+        "epoch_sec": 1700000033,
+        "pkts": 999,
+        "bytes": 98217
+      },
+      {
+        "epoch_sec": 1700000034,
+        "pkts": 1011,
+        "bytes": 100422
+      },
+      {
+        "epoch_sec": 1700000035,
+        "pkts": 1002,
+        "bytes": 100657
+      },
+      {
+        "epoch_sec": 1700000036,
+        "pkts": 1003,
+        "bytes": 98487
+      },
+      {
+        "epoch_sec": 1700000037,
+        "pkts": 1000,
+        "bytes": 99015
+      },
+      {
+        "epoch_sec": 1700000038,
+        "pkts": 996,
+        "bytes": 99315
+      },
+      {
+        "epoch_sec": 1700000039,
+        "pkts": 1008,
+        "bytes": 100049
+      },
+      {
+        "epoch_sec": 1700000040,
+        "pkts": 1008,
+        "bytes": 100333
+      },
+      {
+        "epoch_sec": 1700000041,
+        "pkts": 996,
+        "bytes": 99348
+      },
+      {
+        "epoch_sec": 1700000042,
+        "pkts": 998,
+        "bytes": 98389
+      },
+      {
+        "epoch_sec": 1700000043,
+        "pkts": 1004,
+        "bytes": 99732
+      },
+      {
+        "epoch_sec": 1700000044,
+        "pkts": 991,
+        "bytes": 99406
+      },
+      {
+        "epoch_sec": 1700000045,
+        "pkts": 1012,
+        "bytes": 98762
+      },
+      {
+        "epoch_sec": 1700000046,
+        "pkts": 996,
+        "bytes": 99217
+      },
+      {
+        "epoch_sec": 1700000047,
+        "pkts": 1008,
+        "bytes": 100747
+      },
+      {
+        "epoch_sec": 1700000048,
+        "pkts": 1001,
+        "bytes": 99933
+      },
+      {
+        "epoch_sec": 1700000049,
+        "pkts": 990,
+        "bytes": 97967
+      },
+      {
+        "epoch_sec": 1700000050,
+        "pkts": 1022,
+        "bytes": 103111
+      },
+      {
+        "epoch_sec": 1700000051,
+        "pkts": 1007,
+        "bytes": 100317
+      },
+      {
+        "epoch_sec": 1700000052,
+        "pkts": 1003,
+        "bytes": 98735
+      },
+      {
+        "epoch_sec": 1700000053,
+        "pkts": 992,
+        "bytes": 98669
+      },
+      {
+        "epoch_sec": 1700000054,
+        "pkts": 1002,
+        "bytes": 99461
+      },
+      {
+        "epoch_sec": 1700000055,
+        "pkts": 1000,
+        "bytes": 101232
+      },
+      {
+        "epoch_sec": 1700000056,
+        "pkts": 988,
+        "bytes": 99778
+      },
+      {
+        "epoch_sec": 1700000057,
+        "pkts": 992,
+        "bytes": 98983
+      },
+      {
+        "epoch_sec": 1700000058,
+        "pkts": 1010,
+        "bytes": 99056
+      },
+      {
+        "epoch_sec": 1700000059,
+        "pkts": 986,
+        "bytes": 99661
+      },
+      {
+        "epoch_sec": 1700000060,
+        "pkts": 996,
+        "bytes": 98361
+      },
+      {
+        "epoch_sec": 1700000061,
+        "pkts": 1014,
+        "bytes": 100019
+      },
+      {
+        "epoch_sec": 1700000062,
+        "pkts": 1008,
+        "bytes": 97801
+      },
+      {
+        "epoch_sec": 1700000063,
+        "pkts": 1003,
+        "bytes": 98595
+      },
+      {
+        "epoch_sec": 1700000064,
+        "pkts": 1002,
+        "bytes": 98904
+      },
+      {
+        "epoch_sec": 1700000065,
+        "pkts": 1006,
+        "bytes": 99624
+      },
+      {
+        "epoch_sec": 1700000066,
+        "pkts": 1000,
+        "bytes": 97623
+      },
+      {
+        "epoch_sec": 1700000067,
+        "pkts": 1009,
+        "bytes": 101686
+      },
+      {
+        "epoch_sec": 1700000068,
+        "pkts": 1002,
+        "bytes": 101017
+      },
+      {
+        "epoch_sec": 1700000069,
+        "pkts": 1015,
+        "bytes": 100606
+      },
+      {
+        "epoch_sec": 1700000070,
+        "pkts": 1008,
+        "bytes": 99577
+      },
+      {
+        "epoch_sec": 1700000071,
+        "pkts": 993,
+        "bytes": 98868
+      },
+      {
+        "epoch_sec": 1700000072,
+        "pkts": 1014,
+        "bytes": 103583
+      },
+      {
+        "epoch_sec": 1700000073,
+        "pkts": 1010,
+        "bytes": 100819
+      },
+      {
+        "epoch_sec": 1700000074,
+        "pkts": 990,
+        "bytes": 97613
+      },
+      {
+        "epoch_sec": 1700000075,
+        "pkts": 1012,
+        "bytes": 101869
+      },
+      {
+        "epoch_sec": 1700000076,
+        "pkts": 976,
+        "bytes": 95835
+      },
+      {
+        "epoch_sec": 1700000077,
+        "pkts": 999,
+        "bytes": 99073
+      },
+      {
+        "epoch_sec": 1700000078,
+        "pkts": 991,
+        "bytes": 97826
+      },
+      {
+        "epoch_sec": 1700000079,
+        "pkts": 1006,
+        "bytes": 100572
+      },
+      {
+        "epoch_sec": 1700000080,
+        "pkts": 995,
+        "bytes": 99880
+      },
+      {
+        "epoch_sec": 1700000081,
+        "pkts": 1006,
+        "bytes": 100038
+      },
+      {
+        "epoch_sec": 1700000082,
+        "pkts": 1011,
+        "bytes": 101395
+      },
+      {
+        "epoch_sec": 1700000083,
+        "pkts": 1008,
+        "bytes": 99606
+      },
+      {
+        "epoch_sec": 1700000084,
+        "pkts": 1000,
+        "bytes": 98871
+      },
+      {
+        "epoch_sec": 1700000085,
+        "pkts": 1001,
+        "bytes": 97457
+      },
+      {
+        "epoch_sec": 1700000086,
+        "pkts": 1005,
+        "bytes": 99627
+      },
+      {
+        "epoch_sec": 1700000087,
+        "pkts": 987,
+        "bytes": 99318
+      },
+      {
+        "epoch_sec": 1700000088,
+        "pkts": 1008,
+        "bytes": 101587
+      },
+      {
+        "epoch_sec": 1700000089,
+        "pkts": 996,
+        "bytes": 100578
+      },
+      {
+        "epoch_sec": 1700000090,
+        "pkts": 1009,
+        "bytes": 101624
+      },
+      {
+        "epoch_sec": 1700000091,
+        "pkts": 994,
+        "bytes": 99746
+      },
+      {
+        "epoch_sec": 1700000092,
+        "pkts": 1004,
+        "bytes": 99836
+      },
+      {
+        "epoch_sec": 1700000093,
+        "pkts": 1012,
+        "bytes": 101727
+      },
+      {
+        "epoch_sec": 1700000094,
+        "pkts": 986,
+        "bytes": 97809
+      },
+      {
+        "epoch_sec": 1700000095,
+        "pkts": 993,
+        "bytes": 100691
+      },
+      {
+        "epoch_sec": 1700000096,
+        "pkts": 1003,
+        "bytes": 98490
+      },
+      {
+        "epoch_sec": 1700000097,
+        "pkts": 1006,
+        "bytes": 101568
+      },
+      {
+        "epoch_sec": 1700000098,
+        "pkts": 987,
+        "bytes": 99313
+      },
+      {
+        "epoch_sec": 1700000099,
+        "pkts": 1006,
+        "bytes": 101368
+      },
+      {
+        "epoch_sec": 1700000100,
+        "pkts": 994,
+        "bytes": 100084
+      },
+      {
+        "epoch_sec": 1700000101,
+        "pkts": 997,
+        "bytes": 99939
+      },
+      {
+        "epoch_sec": 1700000102,
+        "pkts": 997,
+        "bytes": 100033
+      },
+      {
+        "epoch_sec": 1700000103,
+        "pkts": 998,
+        "bytes": 100896
+      },
+      {
+        "epoch_sec": 1700000104,
+        "pkts": 1000,
+        "bytes": 100619
+      },
+      {
+        "epoch_sec": 1700000105,
+        "pkts": 1003,
+        "bytes": 102727
+      },
+      {
+        "epoch_sec": 1700000106,
+        "pkts": 1001,
+        "bytes": 99180
+      },
+      {
+        "epoch_sec": 1700000107,
+        "pkts": 993,
+        "bytes": 100697
+      },
+      {
+        "epoch_sec": 1700000108,
+        "pkts": 994,
+        "bytes": 99641
+      },
+      {
+        "epoch_sec": 1700000109,
+        "pkts": 1013,
+        "bytes": 100358
+      },
+      {
+        "epoch_sec": 1700000110,
+        "pkts": 993,
+        "bytes": 97935
+      },
+      {
+        "epoch_sec": 1700000111,
+        "pkts": 1018,
+        "bytes": 103066
+      },
+      {
+        "epoch_sec": 1700000112,
+        "pkts": 1000,
+        "bytes": 100461
+      },
+      {
+        "epoch_sec": 1700000113,
+        "pkts": 987,
+        "bytes": 98240
+      },
+      {
+        "epoch_sec": 1700000114,
+        "pkts": 996,
+        "bytes": 99014
+      },
+      {
+        "epoch_sec": 1700000115,
+        "pkts": 989,
+        "bytes": 99296
+      },
+      {
+        "epoch_sec": 1700000116,
+        "pkts": 1005,
+        "bytes": 100728
+      },
+      {
+        "epoch_sec": 1700000117,
+        "pkts": 979,
+        "bytes": 99231
+      },
+      {
+        "epoch_sec": 1700000118,
+        "pkts": 1004,
+        "bytes": 100866
+      },
+      {
+        "epoch_sec": 1700000119,
+        "pkts": 935,
+        "bytes": 93684
+      }
+    ],
+    "category_breakdown": [
+      {
+        "category": "web",
+        "flows": 61251,
+        "pkts": 61255,
+        "bytes": 7927380
+      },
+      {
+        "category": "dns",
+        "flows": 24507,
+        "pkts": 24509,
+        "bytes": 1837776
+      },
+      {
+        "category": "email",
+        "flows": 126,
+        "pkts": 126,
+        "bytes": 6804
+      },
+      {
+        "category": "file-transfer",
+        "flows": 113,
+        "pkts": 113,
+        "bytes": 6122
+      },
+      {
+        "category": "remote-access",
+        "flows": 30,
+        "pkts": 30,
+        "bytes": 1620
+      },
+      {
+        "category": "voip",
+        "flows": 7013,
+        "pkts": 7013,
+        "bytes": 518962
+      },
+      {
+        "category": "iot-ot",
+        "flows": 25,
+        "pkts": 25,
+        "bytes": 1450
+      },
+      {
+        "category": "tunnel-vpn",
+        "flows": 1,
+        "pkts": 1,
+        "bytes": 74
+      },
+      {
+        "category": "scan",
+        "flows": 26926,
+        "pkts": 26926,
+        "bytes": 1656464
+      },
+      {
+        "category": "c2",
+        "flows": 0,
+        "pkts": 0,
+        "bytes": 0
+      },
+      {
+        "category": "anomalous",
+        "flows": 0,
+        "pkts": 0,
+        "bytes": 0
+      },
+      {
+        "category": "unknown",
+        "flows": 0,
+        "pkts": 0,
+        "bytes": 0
+      }
+    ],
+    "severity_counts": {
+      "critical": 0,
+      "high": 15329,
+      "medium": 0,
+      "low": 25192,
+      "info": 79471
+    },
+    "ip_threats": [
+      {
+        "ip": "10.0.26.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3852,
+        "bytes": 382919,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.0.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3845,
+        "bytes": 383871,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "floor: ioc match forces High (>= 60)"
+        ]
+      },
+      {
+        "ip": "10.0.62.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3841,
+        "bytes": 383420,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.4.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3823,
+        "bytes": 378533,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "floor: ioc match forces High (>= 60)"
+        ]
+      },
+      {
+        "ip": "10.0.40.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3816,
+        "bytes": 376656,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category voip (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.7.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3813,
+        "bytes": 385088,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.17.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3810,
+        "bytes": 381495,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.27.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3809,
+        "bytes": 378570,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ]
+      },
+      {
+        "ip": "10.0.8.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3808,
+        "bytes": 380150,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.18.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3804,
+        "bytes": 379893,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.33.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3801,
+        "bytes": 385217,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.39.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3794,
+        "bytes": 378427,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.42.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3793,
+        "bytes": 376252,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.31.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3792,
+        "bytes": 381807,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.24.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3791,
+        "bytes": 377856,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ]
+      },
+      {
+        "ip": "10.0.5.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3790,
+        "bytes": 376378,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ]
+      },
+      {
+        "ip": "10.0.54.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3787,
+        "bytes": 380481,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.12.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3785,
+        "bytes": 375562,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.49.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3781,
+        "bytes": 375836,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.63.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3780,
+        "bytes": 379751,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.35.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3777,
+        "bytes": 377825,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.34.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3775,
+        "bytes": 373953,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.46.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3775,
+        "bytes": 374806,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.37.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3768,
+        "bytes": 377030,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "floor: ioc match forces High (>= 60)",
+          "category voip (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.3.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3766,
+        "bytes": 373922,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.1.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3765,
+        "bytes": 375593,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.10.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3765,
+        "bytes": 374250,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ]
+      },
+      {
+        "ip": "10.0.6.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3765,
+        "bytes": 378762,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "floor: ioc match forces High (>= 60)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.38.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3762,
+        "bytes": 378026,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.28.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3761,
+        "bytes": 372568,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.11.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3760,
+        "bytes": 372948,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.36.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3760,
+        "bytes": 370892,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category voip (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.21.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3755,
+        "bytes": 372308,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.9.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3753,
+        "bytes": 376350,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.14.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3752,
+        "bytes": 373760,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ]
+      },
+      {
+        "ip": "10.0.51.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3752,
+        "bytes": 373181,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046",
+          "T1572"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "floor: ioc match forces High (>= 60)"
+        ]
+      },
+      {
+        "ip": "10.0.50.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3750,
+        "bytes": 371407,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.61.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3750,
+        "bytes": 370490,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.41.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3748,
+        "bytes": 373701,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.43.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3747,
+        "bytes": 374381,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.48.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3747,
+        "bytes": 376191,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.47.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3733,
+        "bytes": 379085,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ]
+      },
+      {
+        "ip": "10.0.16.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3731,
+        "bytes": 371642,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "floor: ioc match forces High (>= 60)",
+          "category scan (+25)"
+        ]
+      },
+      {
+        "ip": "10.0.25.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3730,
+        "bytes": 373740,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.13.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3729,
+        "bytes": 370270,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.58.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3729,
+        "bytes": 370341,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.29.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3725,
+        "bytes": 368386,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.30.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3721,
+        "bytes": 370830,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.59.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3718,
+        "bytes": 368734,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046",
+          "T1572"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ]
+      },
+      {
+        "ip": "10.0.32.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 3715,
+        "bytes": 367913,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ]
+      }
+    ]
+  },
+  "flows_parquet_path": "../ui/public/sample/flows.parquet",
+  "elapsed_ms": 1551
+}

@@ -1,0 +1,19 @@
+[package]
+name = "ppcap-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ppcap"
+path = "src/main.rs"
+
+[dependencies]
+ppcap-core = { path = "../ppcap-core" }
+clap       = { workspace = true }
+anyhow     = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

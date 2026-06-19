@@ -1,0 +1,1089 @@
+//! Frame decoder: a borrowed [`RawFrame`] -> a fixed-size [`PacketMeta`].
+//!
+//! Backed by hand-rolled, fully bounds-checked framing for Ethernet/VLAN/SLL/Null/Raw link
+//! types and IPv4/IPv6/TCP/UDP/SCTP, plus lightweight L7 sniffing helpers (DNS by port,
+//! HTTP request-method, TLS ClientHello SNI). No payload is retained — only metadata.
+//!
+//! ## Contract
+//! - Never panics on malformed input: every access is bounds-checked
+//!   (`get`/`split_at_checked`), never raw indexing of attacker-controlled offsets.
+//! - Returns [`PpError::Truncated`] / [`PpError::MalformedHeader`] for per-packet
+//!   problems; the pipeline counts these as `decode_errors` and continues (unless strict).
+//! - VLAN-tagged frames: record the 802.1Q id and decode the inner ethertype.
+//! - IPv6 extension-header chains: walk a bounded number of headers (≤ 8) to find L4.
+//! - IP fragments: ports are 0 for non-first fragments; still counted.
+//! - ARP / non-IP: produce a `PacketMeta` with `l3 = Arp|NonIp`, no IPs, no ports.
+//!
+//! ## NOTE TO INTEGRATOR (etherparse vs hand-rolled)
+//! The task brief asked for an `etherparse`-backed implementation. The IMPL comments
+//! committed in these files (mod.rs / l2.rs / l3.rs / l4.rs) instead specify exact byte
+//! offsets and a hand-rolled, allocation-free, bounds-checked parse, and `PacketMeta`
+//! exposes only fixed metadata fields. This implementation follows the committed IMPL
+//! contract (hand-rolled) because it is what the documented data-flow and the existing
+//! `model::packet` flag masks require, and it is trivially panic-safe. `etherparse 0.20.2`
+//! is still a dependency and may be swapped in behind these same function signatures with
+//! no change to callers if desired.
+//!
+//! ## L7 hints
+//! The freeze is lifted: `decode_l3` now stores the sniffed L7 hint on
+//! [`PacketMeta::app_proto`] and the SNI host on [`PacketMeta::sni`], and
+//! `FlowRecord::observe` unions those onto the flow (most-specific hint, first SNI). The
+//! pure sniffing helpers ([`l7_hint`], [`sniff_http_method`], [`sniff_tls_client_hello`],
+//! [`looks_like_tls_client_hello`], [`is_dns_port`]) remain the building blocks and are
+//! exercised by this module's unit tests.
+
+use crate::error::PpError;
+use crate::model::packet::{AppProto, PacketMeta, Protocol, Transport};
+use crate::reader::{LinkType, RawFrame};
+use crate::Result;
+
+use l2::{ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6};
+
+/// Decode a full L2 (or raw-L3) frame into packet metadata.
+pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
+    // 1. Seed a PacketMeta from the borrowed frame's fixed fields.
+    let mut meta = PacketMeta {
+        index: frame.index,
+        ts_ns: frame.ts_ns,
+        iface_id: frame.iface_id,
+        wire_len: frame.wire_len,
+        cap_len: frame.cap_len,
+        l3: Protocol::NonIp,
+        transport: Transport::Other(0),
+        src_ip: None,
+        dst_ip: None,
+        src_port: 0,
+        dst_port: 0,
+        tcp_flags: 0,
+        ttl: 0,
+        payload_len: 0,
+        vlan: None,
+        app_proto: AppProto::Unknown,
+        sni: None,
+    };
+
+    // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
+    //    For raw-IP link types there is no ethertype, so we dispatch straight to L3.
+    match frame.link_type {
+        LinkType::Ethernet => {
+            let (ethertype, l3) = l2::strip_l2(frame.data, &mut meta)?;
+            dispatch_ethertype(ethertype, l3, &mut meta)?;
+        }
+        LinkType::LinuxSll => {
+            let (ethertype, l3) = strip_linux_sll(frame.data, &mut meta)?;
+            dispatch_ethertype(ethertype, l3, &mut meta)?;
+        }
+        LinkType::LinuxSll2 => {
+            let (ethertype, l3) = strip_linux_sll2(frame.data, &mut meta)?;
+            dispatch_ethertype(ethertype, l3, &mut meta)?;
+        }
+        LinkType::Null => {
+            let (family_is_ipv6, l3) = strip_null(frame.data, &mut meta)?;
+            // BSD loopback only ever carries IP; sniff version but trust the family word.
+            if family_is_ipv6 {
+                dispatch_ethertype(ETHERTYPE_IPV6, l3, &mut meta)?;
+            } else {
+                dispatch_ethertype(ETHERTYPE_IPV4, l3, &mut meta)?;
+            }
+        }
+        LinkType::RawIpv4 => {
+            decode_l3(frame.data, &mut meta)?;
+        }
+        LinkType::RawIpv6 => {
+            decode_l3(frame.data, &mut meta)?;
+        }
+        LinkType::Raw => {
+            // DLT_RAW: the data IS L3; sniff the IP version nibble.
+            decode_l3(frame.data, &mut meta)?;
+        }
+        LinkType::Unsupported(dlt) => {
+            return Err(PpError::UnsupportedLinkType("UNSUPPORTED", dlt));
+        }
+    }
+
+    Ok(meta)
+}
+
+/// Map an ethertype to L3 handling, mutating `meta`. ARP/unknown are recorded but not
+/// parsed further (counted, never flowed).
+fn dispatch_ethertype(ethertype: u16, l3: &[u8], meta: &mut PacketMeta) -> Result<()> {
+    match ethertype {
+        ETHERTYPE_IPV4 | ETHERTYPE_IPV6 => decode_l3(l3, meta),
+        ETHERTYPE_ARP => {
+            meta.l3 = Protocol::Arp;
+            Ok(())
+        }
+        _ => {
+            // Unknown ethertype: counted as non-IP.
+            meta.l3 = Protocol::NonIp;
+            Ok(())
+        }
+    }
+}
+
+/// Decode an L3 slice (for raw-IP link types, or after L2 stripping) into `meta`,
+/// including the L4 dispatch.
+pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
+    // Peek the version nibble. An empty slice is non-IP, not an error.
+    let first = match bytes.first() {
+        Some(&b) => b,
+        None => {
+            meta.l3 = Protocol::NonIp;
+            return Ok(());
+        }
+    };
+
+    let (proto, l4) = match first >> 4 {
+        4 => l3::decode_ipv4(bytes, meta)?,
+        6 => l3::decode_ipv6(bytes, meta)?,
+        _ => {
+            meta.l3 = Protocol::NonIp;
+            return Ok(());
+        }
+    };
+
+    meta.transport = Transport::from_ip_proto(proto);
+
+    match meta.transport {
+        Transport::Tcp => l4::decode_tcp(l4, meta)?,
+        Transport::Udp => l4::decode_udp(l4, meta)?,
+        Transport::Sctp => l4::decode_sctp(l4, meta)?,
+        // ICMP / ICMPv6 / Other: no ports; payload_len already seeded from L3 total length.
+        Transport::Icmp | Transport::Icmpv6 | Transport::Other(_) => {}
+    }
+
+    // L7 enrichment: peek at the L4 payload (NO retention). The payload begins after the
+    // transport header; `payload_len` was set by the L4 decoder, so the payload offset within
+    // the captured L4 slice is `l4.len() - payload_len`. Only TCP/UDP carry sniffable L7;
+    // the DNS-by-port case still fires when `payload_len == 0`. Non-first fragments have an
+    // empty `l4` slice -> empty payload -> no match (correct: fragment data must not sniff).
+    if meta.transport.has_ports() {
+        let consumed = l4.len().saturating_sub(meta.payload_len as usize);
+        let payload = l4.get(consumed..).unwrap_or(&[]);
+        if let Some(hint) = l7_hint(meta.transport, meta.src_port, meta.dst_port, payload) {
+            match hint {
+                L7Hint::Dns => meta.app_proto = AppProto::Dns,
+                L7Hint::Http { .. } => meta.app_proto = AppProto::Http, // method token dropped
+                L7Hint::Tls { sni } => {
+                    meta.app_proto = AppProto::Tls;
+                    meta.sni = sni; // Some only when ClientHello carried server_name
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------
+// Link-type framing helpers for the non-Ethernet DLTs (hand-rolled, bounds-checked).
+// ---------------------------------------------------------------------------------------
+
+/// Strip a Linux "cooked" v1 (SLL, DLT 113) header: 16 bytes, the L3 protocol type is the
+/// big-endian ethertype at offset 14. Returns `(ethertype, l3_slice)`.
+fn strip_linux_sll<'a>(data: &'a [u8], meta: &mut PacketMeta) -> Result<(u16, &'a [u8])> {
+    const SLL_HDR: usize = 16;
+    if data.len() < SLL_HDR {
+        return Err(PpError::Truncated {
+            needed: SLL_HDR,
+            had: data.len(),
+            offset: meta.index,
+        });
+    }
+    let ethertype = u16::from_be_bytes([data[14], data[15]]);
+    match data.split_at_checked(SLL_HDR) {
+        Some((_, l3)) => Ok((ethertype, l3)),
+        None => Err(PpError::Truncated {
+            needed: SLL_HDR,
+            had: data.len(),
+            offset: meta.index,
+        }),
+    }
+}
+
+/// Strip a Linux "cooked" v2 (SLL2, DLT 276) header: 20 bytes, the protocol type is the
+/// big-endian ethertype at offset 0. Returns `(ethertype, l3_slice)`.
+fn strip_linux_sll2<'a>(data: &'a [u8], meta: &mut PacketMeta) -> Result<(u16, &'a [u8])> {
+    const SLL2_HDR: usize = 20;
+    if data.len() < SLL2_HDR {
+        return Err(PpError::Truncated {
+            needed: SLL2_HDR,
+            had: data.len(),
+            offset: meta.index,
+        });
+    }
+    let ethertype = u16::from_be_bytes([data[0], data[1]]);
+    match data.split_at_checked(SLL2_HDR) {
+        Some((_, l3)) => Ok((ethertype, l3)),
+        None => Err(PpError::Truncated {
+            needed: SLL2_HDR,
+            had: data.len(),
+            offset: meta.index,
+        }),
+    }
+}
+
+/// Strip a BSD loopback / null (DLT 0) header: a 4-byte host-endian address family word.
+/// Returns `(is_ipv6, l3_slice)`. AF_INET == 2 means IPv4; the various AF_INET6 values
+/// (24/28/30 across BSDs, plus Linux's 10) mean IPv6. We accept both endiannesses and fall
+/// back to sniffing the IP version nibble if the family word is unrecognized.
+fn strip_null<'a>(data: &'a [u8], meta: &mut PacketMeta) -> Result<(bool, &'a [u8])> {
+    const NULL_HDR: usize = 4;
+    if data.len() < NULL_HDR {
+        return Err(PpError::Truncated {
+            needed: NULL_HDR,
+            had: data.len(),
+            offset: meta.index,
+        });
+    }
+    let le = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    let be = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+
+    let l3 = match data.split_at_checked(NULL_HDR) {
+        Some((_, rest)) => rest,
+        None => {
+            return Err(PpError::Truncated {
+                needed: NULL_HDR,
+                had: data.len(),
+                offset: meta.index,
+            })
+        }
+    };
+
+    let is_ipv6 = |fam: u32| matches!(fam, 10 | 24 | 28 | 30);
+    let is_ipv4 = |fam: u32| fam == 2;
+
+    if is_ipv4(le) || is_ipv4(be) {
+        Ok((false, l3))
+    } else if is_ipv6(le) || is_ipv6(be) {
+        Ok((true, l3))
+    } else {
+        // Unrecognized family word: fall back to the IP version nibble of the payload.
+        let v6 = l3.first().map(|b| (b >> 4) == 6).unwrap_or(false);
+        Ok((v6, l3))
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// L7 sniffing helpers (pure; see "NOTE TO INTEGRATOR" above — not stored on PacketMeta).
+// ---------------------------------------------------------------------------------------
+
+/// A lightweight, best-effort application-layer hint derived from L4 ports + a peek at the
+/// (uncaptured-by-`PacketMeta`) payload bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum L7Hint {
+    /// Likely DNS (matched purely on port 53, UDP or TCP).
+    Dns,
+    /// An HTTP request with the sniffed method (e.g. `GET`, `POST`).
+    Http { method: String },
+    /// A TLS ClientHello; `sni` is the Server Name Indication host if present.
+    Tls { sni: Option<String> },
+}
+
+/// True if either endpoint is the well-known DNS port (53).
+#[inline]
+pub fn is_dns_port(src_port: u16, dst_port: u16) -> bool {
+    src_port == 53 || dst_port == 53
+}
+
+/// Top-level L7 sniff: combine port heuristics with a payload peek. `payload` is the L4
+/// payload (may be empty or truncated). Returns `None` when nothing is recognized.
+pub fn l7_hint(
+    transport: Transport,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) -> Option<L7Hint> {
+    // TLS ClientHello (typically TCP/443 but detected structurally, so port-agnostic).
+    if transport == Transport::Tcp {
+        if let Some(sni) = sniff_tls_client_hello(payload) {
+            return Some(L7Hint::Tls { sni });
+        }
+        if looks_like_tls_client_hello(payload) {
+            return Some(L7Hint::Tls { sni: None });
+        }
+        if let Some(method) = sniff_http_method(payload) {
+            return Some(L7Hint::Http { method });
+        }
+    }
+    // DNS is matched on port for both UDP and TCP.
+    if (transport == Transport::Udp || transport == Transport::Tcp)
+        && is_dns_port(src_port, dst_port)
+    {
+        return Some(L7Hint::Dns);
+    }
+    None
+}
+
+/// Lightweight TLS-record recognizer: a handshake record (content type 22), record version
+/// major 3, whose first handshake-message byte is 1 (ClientHello). Recognizes a ClientHello
+/// *structurally* even when the body is too short for full SNI parsing (e.g. the synthetic
+/// generator's stub `gen::frames::tls_client_hello_payload`), so payload-derived TLS
+/// classification still fires. Strict SNI parsing still wins when the payload is well-formed.
+#[inline]
+pub fn looks_like_tls_client_hello(payload: &[u8]) -> bool {
+    matches!(payload, [22, 3, _, _, _, 1, ..])
+}
+
+/// Sniff an HTTP request method from the start of a TCP payload. Returns the method token
+/// (e.g. `"GET"`) when the payload begins with a known method followed by a space.
+pub fn sniff_http_method(payload: &[u8]) -> Option<String> {
+    const METHODS: &[&str] = &[
+        "GET ", "POST ", "PUT ", "HEAD ", "DELETE ", "OPTIONS ", "PATCH ", "TRACE ", "CONNECT ",
+    ];
+    for m in METHODS {
+        let mb = m.as_bytes();
+        if payload.len() >= mb.len() && &payload[..mb.len()] == mb {
+            // Strip the trailing space we matched on.
+            return Some(m.trim_end().to_string());
+        }
+    }
+    None
+}
+
+/// Sniff a TLS ClientHello and, if present, the SNI host. Returns:
+/// - `Some(Some(host))` — ClientHello with an SNI extension,
+/// - `Some(None)` — ClientHello but no SNI,
+/// - `None` — not a (recognizable) ClientHello.
+pub fn sniff_tls_client_hello(payload: &[u8]) -> Option<Option<String>> {
+    // TLS record header: content_type(1) version(2) length(2).
+    // ClientHello content type is 22 (handshake); handshake type 1 is ClientHello.
+    let ct = *payload.first()?;
+    if ct != 22 {
+        return None;
+    }
+    // payload[1..3] = record version (ignored). payload[3..5] = record length.
+    let rec_len = u16::from_be_bytes([*payload.get(3)?, *payload.get(4)?]) as usize;
+    let rec_end = 5usize.checked_add(rec_len)?.min(payload.len());
+    let body = payload.get(5..rec_end)?;
+
+    // Handshake header: msg_type(1) length(3).
+    if *body.first()? != 1 {
+        return None; // not ClientHello
+    }
+    // Skip handshake header (4) + client_version(2) + random(32) = 38.
+    let mut pos = 4 + 2 + 32;
+    // session_id: len(1) + bytes.
+    let sid_len = *body.get(pos)? as usize;
+    pos = pos.checked_add(1)?.checked_add(sid_len)?;
+    // cipher_suites: len(2) + bytes.
+    let cs_len = u16::from_be_bytes([*body.get(pos)?, *body.get(pos + 1)?]) as usize;
+    pos = pos.checked_add(2)?.checked_add(cs_len)?;
+    // compression_methods: len(1) + bytes.
+    let cm_len = *body.get(pos)? as usize;
+    pos = pos.checked_add(1)?.checked_add(cm_len)?;
+    // extensions: len(2) + bytes.
+    let ext_total = u16::from_be_bytes([*body.get(pos)?, *body.get(pos + 1)?]) as usize;
+    pos = pos.checked_add(2)?;
+    let ext_end = pos.checked_add(ext_total)?.min(body.len());
+    let extensions = body.get(pos..ext_end)?;
+
+    // Walk extensions looking for type 0x0000 (server_name).
+    let mut i = 0usize;
+    while i + 4 <= extensions.len() {
+        let ext_type = u16::from_be_bytes([extensions[i], extensions[i + 1]]);
+        let ext_len = u16::from_be_bytes([extensions[i + 2], extensions[i + 3]]) as usize;
+        let data_start = i + 4;
+        let data_end = data_start.checked_add(ext_len)?;
+        if data_end > extensions.len() {
+            break;
+        }
+        if ext_type == 0x0000 {
+            // server_name extension:
+            //   server_name_list length(2), then entries of:
+            //     name_type(1) + name_length(2) + name(name_length).
+            let snl = extensions.get(data_start..data_end)?;
+            // server_name_list length.
+            if snl.len() < 2 {
+                return Some(None);
+            }
+            let mut j = 2usize; // skip list length
+            while j + 3 <= snl.len() {
+                let name_type = snl[j];
+                let name_len = u16::from_be_bytes([snl[j + 1], snl[j + 2]]) as usize;
+                let name_start = j + 3;
+                let name_end = name_start.checked_add(name_len)?;
+                if name_end > snl.len() {
+                    break;
+                }
+                if name_type == 0 {
+                    // host_name
+                    if let Ok(host) = std::str::from_utf8(&snl[name_start..name_end]) {
+                        return Some(Some(host.to_string()));
+                    }
+                    return Some(None);
+                }
+                j = name_end;
+            }
+            return Some(None);
+        }
+        i = data_end;
+    }
+
+    // It was a ClientHello but carried no SNI.
+    Some(None)
+}
+
+/// Convenience wrapper returning just the SNI host (`None` if not a ClientHello or no SNI).
+pub fn sniff_tls_sni(payload: &[u8]) -> Option<String> {
+    sniff_tls_client_hello(payload).flatten()
+}
+
+pub(crate) mod l2;
+pub(crate) mod l3;
+pub(crate) mod l4;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    fn blank_meta() -> PacketMeta {
+        PacketMeta {
+            index: 0,
+            ts_ns: 0,
+            iface_id: 0,
+            wire_len: 0,
+            cap_len: 0,
+            l3: Protocol::NonIp,
+            transport: Transport::Other(0),
+            src_ip: None,
+            dst_ip: None,
+            src_port: 0,
+            dst_port: 0,
+            tcp_flags: 0,
+            ttl: 0,
+            payload_len: 0,
+            vlan: None,
+            app_proto: AppProto::Unknown,
+            sni: None,
+        }
+    }
+
+    fn frame<'a>(link_type: LinkType, data: &'a [u8]) -> RawFrame<'a> {
+        RawFrame {
+            index: 7,
+            ts_ns: 1_234,
+            iface_id: 0,
+            wire_len: data.len() as u32,
+            cap_len: data.len() as u32,
+            link_type,
+            data,
+        }
+    }
+
+    // --- L2 ---------------------------------------------------------------------------
+
+    #[test]
+    fn ethernet_too_short_is_truncated() {
+        let data = [0u8; 10];
+        let mut m = blank_meta();
+        let err = l2::strip_l2(&data, &mut m).unwrap_err();
+        assert!(matches!(err, PpError::Truncated { needed: 14, .. }));
+    }
+
+    #[test]
+    fn ethernet_ipv4_ethertype_no_vlan() {
+        let mut data = vec![0u8; 14];
+        data[12] = 0x08;
+        data[13] = 0x00; // IPv4
+        let mut m = blank_meta();
+        let (et, l3) = l2::strip_l2(&data, &mut m).unwrap();
+        assert_eq!(et, ETHERTYPE_IPV4);
+        assert_eq!(l3.len(), 0);
+        assert_eq!(m.vlan, None);
+    }
+
+    #[test]
+    fn ethernet_single_vlan_records_id_and_inner_ethertype() {
+        // 14 base + 4 vlan; TCI = 0x0064 (vlan id 100), inner = IPv4.
+        let mut data = vec![0u8; 18];
+        data[12] = 0x81;
+        data[13] = 0x00; // 802.1Q
+        data[14] = 0x00;
+        data[15] = 0x64; // TCI: vlan 100
+        data[16] = 0x08;
+        data[17] = 0x00; // inner = IPv4
+        let mut m = blank_meta();
+        let (et, l3) = l2::strip_l2(&data, &mut m).unwrap();
+        assert_eq!(et, ETHERTYPE_IPV4);
+        assert_eq!(m.vlan, Some(100));
+        assert_eq!(l3.len(), 0);
+    }
+
+    #[test]
+    fn ethernet_qinq_double_vlan_bounded() {
+        // Two stacked tags; outer vlan 1, inner vlan 2, then IPv6.
+        let mut data = vec![0u8; 22];
+        data[12] = 0x88;
+        data[13] = 0xA8; // QinQ
+        data[14] = 0x00;
+        data[15] = 0x01; // outer vlan 1
+        data[16] = 0x81;
+        data[17] = 0x00; // 802.1Q
+        data[18] = 0x00;
+        data[19] = 0x02; // inner vlan 2
+        data[20] = 0x86;
+        data[21] = 0xDD; // IPv6
+        let mut m = blank_meta();
+        let (et, _l3) = l2::strip_l2(&data, &mut m).unwrap();
+        assert_eq!(et, ETHERTYPE_IPV6);
+        // Only the outermost vlan id is recorded.
+        assert_eq!(m.vlan, Some(1));
+    }
+
+    #[test]
+    fn arp_frame_sets_l3_arp_and_no_ip() {
+        let mut data = vec![0u8; 14];
+        data[12] = 0x08;
+        data[13] = 0x06; // ARP
+        let f = frame(LinkType::Ethernet, &data);
+        let m = decode_frame(&f).unwrap();
+        assert_eq!(m.l3, Protocol::Arp);
+        assert_eq!(m.src_ip, None);
+        assert_eq!(m.dst_ip, None);
+    }
+
+    #[test]
+    fn unknown_ethertype_is_nonip() {
+        let mut data = vec![0u8; 14];
+        data[12] = 0x12;
+        data[13] = 0x34;
+        let f = frame(LinkType::Ethernet, &data);
+        let m = decode_frame(&f).unwrap();
+        assert_eq!(m.l3, Protocol::NonIp);
+    }
+
+    // --- L3 IPv4 ----------------------------------------------------------------------
+
+    /// Build a minimal IPv4 header (20 bytes, IHL=5).
+    fn ipv4_header(proto: u8, total_len: u16, frag_field: u16, ttl: u8) -> Vec<u8> {
+        let mut h = vec![0u8; 20];
+        h[0] = 0x45; // version 4, IHL 5
+        h[2..4].copy_from_slice(&total_len.to_be_bytes());
+        h[6..8].copy_from_slice(&frag_field.to_be_bytes());
+        h[8] = ttl;
+        h[9] = proto;
+        h[12..16].copy_from_slice(&[10, 0, 0, 1]); // src
+        h[16..20].copy_from_slice(&[10, 0, 0, 2]); // dst
+        h
+    }
+
+    #[test]
+    fn ipv4_tcp_full_decode() {
+        let mut pkt = ipv4_header(6, 40, 0, 64); // 20 ip + 20 tcp
+        let mut tcp = vec![0u8; 20];
+        tcp[0..2].copy_from_slice(&12345u16.to_be_bytes());
+        tcp[2..4].copy_from_slice(&80u16.to_be_bytes());
+        tcp[12] = 0x50; // data offset 5 words = 20 bytes
+        tcp[13] = 0x02; // SYN
+        pkt.extend_from_slice(&tcp);
+
+        let mut m = blank_meta();
+        decode_l3(&pkt, &mut m).unwrap();
+        assert_eq!(m.l3, Protocol::Ipv4);
+        assert_eq!(m.transport, Transport::Tcp);
+        assert_eq!(m.src_ip, Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+        assert_eq!(m.dst_ip, Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))));
+        assert_eq!(m.src_port, 12345);
+        assert_eq!(m.dst_port, 80);
+        assert_eq!(m.ttl, 64);
+        assert!(m.is_tcp_syn_only());
+        assert_eq!(m.payload_len, 0);
+    }
+
+    #[test]
+    fn ipv4_options_shift_l4_offset() {
+        // IHL = 6 (24-byte header, 4 bytes of options).
+        let mut pkt = vec![0u8; 24];
+        pkt[0] = 0x46; // version 4, IHL 6
+        pkt[2..4].copy_from_slice(&32u16.to_be_bytes()); // total 24 + 8 udp
+        pkt[8] = 50;
+        pkt[9] = 17; // UDP
+        pkt[12..16].copy_from_slice(&[1, 1, 1, 1]);
+        pkt[16..20].copy_from_slice(&[2, 2, 2, 2]);
+        // UDP header at offset 24.
+        let mut udp = vec![0u8; 8];
+        udp[0..2].copy_from_slice(&5353u16.to_be_bytes());
+        udp[2..4].copy_from_slice(&53u16.to_be_bytes());
+        udp[4..6].copy_from_slice(&8u16.to_be_bytes()); // udp length 8 (header only)
+        pkt.extend_from_slice(&udp);
+
+        let mut m = blank_meta();
+        decode_l3(&pkt, &mut m).unwrap();
+        assert_eq!(m.transport, Transport::Udp);
+        assert_eq!(m.src_port, 5353);
+        assert_eq!(m.dst_port, 53);
+    }
+
+    #[test]
+    fn ipv4_non_first_fragment_has_zero_ports() {
+        // frag offset != 0 (offset field nonzero) marks a non-first fragment.
+        let mut pkt = ipv4_header(6, 1400, 185, 64);
+        // append some "tcp-looking" bytes that must be ignored.
+        pkt.extend_from_slice(&[0xff; 20]);
+        let mut m = blank_meta();
+        decode_l3(&pkt, &mut m).unwrap();
+        assert_eq!(m.transport, Transport::Tcp);
+        assert_eq!(m.src_port, 0);
+        assert_eq!(m.dst_port, 0);
+        assert_eq!(m.tcp_flags, 0);
+    }
+
+    #[test]
+    fn ipv4_bad_ihl_is_malformed() {
+        let mut pkt = vec![0u8; 20];
+        pkt[0] = 0x43; // IHL 3 -> header_len 12 < 20
+        let mut m = blank_meta();
+        let err = l3::decode_ipv4(&pkt, &mut m).unwrap_err();
+        assert!(matches!(
+            err,
+            PpError::MalformedHeader { layer: "ipv4", .. }
+        ));
+    }
+
+    #[test]
+    fn ipv4_truncated_header() {
+        let pkt = [0x45u8; 10];
+        let mut m = blank_meta();
+        let err = l3::decode_ipv4(&pkt, &mut m).unwrap_err();
+        assert!(matches!(err, PpError::Truncated { needed: 20, .. }));
+    }
+
+    // --- L3 IPv6 ----------------------------------------------------------------------
+
+    fn ipv6_header(next_header: u8, payload_len: u16, hop: u8) -> Vec<u8> {
+        let mut h = vec![0u8; 40];
+        h[0] = 0x60; // version 6
+        h[4..6].copy_from_slice(&payload_len.to_be_bytes());
+        h[6] = next_header;
+        h[7] = hop;
+        h[8] = 0x20;
+        h[9] = 0x01; // src 2001::1
+        h[23] = 0x01;
+        h[24] = 0x20;
+        h[25] = 0x01; // dst 2001::2
+        h[39] = 0x02;
+        h
+    }
+
+    #[test]
+    fn ipv6_udp_direct() {
+        let mut pkt = ipv6_header(17, 8, 64);
+        let mut udp = vec![0u8; 8];
+        udp[0..2].copy_from_slice(&1000u16.to_be_bytes());
+        udp[2..4].copy_from_slice(&53u16.to_be_bytes());
+        udp[4..6].copy_from_slice(&8u16.to_be_bytes());
+        pkt.extend_from_slice(&udp);
+        let mut m = blank_meta();
+        decode_l3(&pkt, &mut m).unwrap();
+        assert_eq!(m.l3, Protocol::Ipv6);
+        assert_eq!(m.transport, Transport::Udp);
+        assert_eq!(m.dst_port, 53);
+        assert_eq!(m.ttl, 64);
+        assert_eq!(
+            m.src_ip,
+            Some(IpAddr::V6("2001::1".parse::<Ipv6Addr>().unwrap()))
+        );
+        assert_eq!(
+            m.dst_ip,
+            Some(IpAddr::V6("2001::2".parse::<Ipv6Addr>().unwrap()))
+        );
+    }
+
+    #[test]
+    fn ipv6_hop_by_hop_then_tcp() {
+        // next_header 0 (hop-by-hop), one 8-byte ext header pointing to TCP (6).
+        let mut pkt = ipv6_header(0, 28, 64);
+        let mut ext = vec![0u8; 8];
+        ext[0] = 6; // next = TCP
+        ext[1] = 0; // hdr_ext_len 0 -> total 8 bytes
+        pkt.extend_from_slice(&ext);
+        let mut tcp = vec![0u8; 20];
+        tcp[0..2].copy_from_slice(&4444u16.to_be_bytes());
+        tcp[2..4].copy_from_slice(&443u16.to_be_bytes());
+        tcp[12] = 0x50;
+        tcp[13] = 0x10; // ACK
+        pkt.extend_from_slice(&tcp);
+        let mut m = blank_meta();
+        decode_l3(&pkt, &mut m).unwrap();
+        assert_eq!(m.transport, Transport::Tcp);
+        assert_eq!(m.src_port, 4444);
+        assert_eq!(m.dst_port, 443);
+    }
+
+    #[test]
+    fn ipv6_fragment_non_first_zero_ports() {
+        // Fragment ext header with nonzero offset -> non-first fragment.
+        let mut pkt = ipv6_header(44, 28, 64);
+        let mut frag = vec![0u8; 8];
+        frag[0] = 6; // next TCP
+                     // fragment offset (top 13 bits) nonzero: set offset 1 (value 0x0008).
+        frag[2..4].copy_from_slice(&0x0008u16.to_be_bytes());
+        pkt.extend_from_slice(&frag);
+        pkt.extend_from_slice(&[0xee; 20]); // garbage that must be ignored
+        let mut m = blank_meta();
+        decode_l3(&pkt, &mut m).unwrap();
+        assert_eq!(m.transport, Transport::Tcp);
+        assert_eq!(m.src_port, 0);
+        assert_eq!(m.dst_port, 0);
+    }
+
+    #[test]
+    fn ipv6_ext_header_chain_overflow_is_malformed() {
+        // Chain of 9 hop-by-hop headers each pointing to another hop-by-hop (0).
+        let mut pkt = ipv6_header(0, 0, 64);
+        for _ in 0..9 {
+            let mut ext = vec![0u8; 8];
+            ext[0] = 0; // next = hop-by-hop again
+            ext[1] = 0;
+            pkt.extend_from_slice(&ext);
+        }
+        let mut m = blank_meta();
+        let err = decode_l3(&pkt, &mut m).unwrap_err();
+        assert!(matches!(
+            err,
+            PpError::MalformedHeader {
+                layer: "ipv6-ext",
+                ..
+            }
+        ));
+    }
+
+    // --- L4 ---------------------------------------------------------------------------
+
+    #[test]
+    fn tcp_flag_union_full_byte() {
+        let mut tcp = vec![0u8; 20];
+        tcp[12] = 0x50;
+        tcp[13] = 0b0001_1111; // FIN|SYN|RST|PSH|ACK
+        let mut m = blank_meta();
+        l4::decode_tcp(&tcp, &mut m).unwrap();
+        assert_eq!(m.tcp_flags, 0b0001_1111);
+    }
+
+    #[test]
+    fn tcp_payload_len_after_options() {
+        let mut tcp = vec![0u8; 24 + 5]; // 24-byte header (data offset 6) + 5 payload
+        tcp[12] = 0x60; // data offset 6 words = 24 bytes
+        let mut m = blank_meta();
+        l4::decode_tcp(&tcp, &mut m).unwrap();
+        assert_eq!(m.payload_len, 5);
+    }
+
+    #[test]
+    fn tcp_bad_data_offset_is_malformed() {
+        let mut tcp = vec![0u8; 20];
+        tcp[12] = 0x40; // data offset 4 words = 16 < 20
+        let mut m = blank_meta();
+        let err = l4::decode_tcp(&tcp, &mut m).unwrap_err();
+        assert!(matches!(err, PpError::MalformedHeader { layer: "tcp", .. }));
+    }
+
+    #[test]
+    fn empty_l4_slice_is_ok_no_ports() {
+        let mut m = blank_meta();
+        l4::decode_tcp(&[], &mut m).unwrap();
+        l4::decode_udp(&[], &mut m).unwrap();
+        l4::decode_sctp(&[], &mut m).unwrap();
+        assert_eq!(m.src_port, 0);
+        assert_eq!(m.dst_port, 0);
+    }
+
+    #[test]
+    fn udp_payload_len_clamped_to_capture() {
+        let mut udp = vec![0u8; 8 + 2]; // only 2 payload bytes captured
+        udp[4..6].copy_from_slice(&100u16.to_be_bytes()); // claims 92 payload
+        let mut m = blank_meta();
+        l4::decode_udp(&udp, &mut m).unwrap();
+        assert_eq!(m.payload_len, 2);
+    }
+
+    #[test]
+    fn sctp_ports() {
+        let mut sctp = vec![0u8; 12];
+        sctp[0..2].copy_from_slice(&2905u16.to_be_bytes());
+        sctp[2..4].copy_from_slice(&9899u16.to_be_bytes());
+        let mut m = blank_meta();
+        l4::decode_sctp(&sctp, &mut m).unwrap();
+        assert_eq!(m.src_port, 2905);
+        assert_eq!(m.dst_port, 9899);
+    }
+
+    // --- Link types -------------------------------------------------------------------
+
+    #[test]
+    fn raw_ipv4_link_type_decodes_l3_directly() {
+        let mut pkt = ipv4_header(17, 28, 0, 32);
+        let mut udp = vec![0u8; 8];
+        udp[0..2].copy_from_slice(&99u16.to_be_bytes());
+        udp[2..4].copy_from_slice(&53u16.to_be_bytes());
+        udp[4..6].copy_from_slice(&8u16.to_be_bytes());
+        pkt.extend_from_slice(&udp);
+        let f = frame(LinkType::RawIpv4, &pkt);
+        let m = decode_frame(&f).unwrap();
+        assert_eq!(m.l3, Protocol::Ipv4);
+        assert_eq!(m.dst_port, 53);
+    }
+
+    #[test]
+    fn linux_sll_strips_16_bytes() {
+        let mut data = vec![0u8; 16];
+        data[14] = 0x08;
+        data[15] = 0x00; // IPv4
+                         // append a minimal ipv4+udp.
+        let mut pkt = ipv4_header(17, 28, 0, 10);
+        let mut udp = vec![0u8; 8];
+        udp[2..4].copy_from_slice(&53u16.to_be_bytes());
+        udp[4..6].copy_from_slice(&8u16.to_be_bytes());
+        pkt.extend_from_slice(&udp);
+        data.extend_from_slice(&pkt);
+        let f = frame(LinkType::LinuxSll, &data);
+        let m = decode_frame(&f).unwrap();
+        assert_eq!(m.l3, Protocol::Ipv4);
+        assert_eq!(m.dst_port, 53);
+    }
+
+    #[test]
+    fn null_loopback_af_inet() {
+        let mut data = vec![2u8, 0, 0, 0]; // AF_INET little-endian
+        let pkt = ipv4_header(6, 20, 0, 5);
+        data.extend_from_slice(&pkt);
+        // add tcp
+        let mut tcp = vec![0u8; 20];
+        tcp[12] = 0x50;
+        data.extend_from_slice(&tcp);
+        let f = frame(LinkType::Null, &data);
+        let m = decode_frame(&f).unwrap();
+        assert_eq!(m.l3, Protocol::Ipv4);
+        assert_eq!(m.transport, Transport::Tcp);
+    }
+
+    #[test]
+    fn unsupported_link_type_is_fatal_err() {
+        let data = [0u8; 4];
+        let f = frame(LinkType::Unsupported(99), &data);
+        let err = decode_frame(&f).unwrap_err();
+        assert!(matches!(err, PpError::UnsupportedLinkType(_, 99)));
+        assert!(err.is_fatal());
+    }
+
+    #[test]
+    fn never_panics_on_random_garbage() {
+        // Fuzz-lite: a spread of malformed inputs must all return without panicking.
+        let cases: &[(LinkType, &[u8])] = &[
+            (LinkType::Ethernet, &[]),
+            (LinkType::Ethernet, &[0xff; 3]),
+            (LinkType::Ethernet, &[0x45; 14]),
+            (LinkType::RawIpv4, &[0x40]),
+            (LinkType::RawIpv6, &[0x60; 39]),
+            (LinkType::Raw, &[0x99; 7]),
+            (LinkType::LinuxSll, &[0x00; 5]),
+            (LinkType::Null, &[0xde, 0xad, 0xbe, 0xef, 0x45]),
+        ];
+        for (lt, data) in cases {
+            let f = frame(*lt, data);
+            // Either Ok or Err — just must not panic.
+            let _ = decode_frame(&f);
+        }
+    }
+
+    // --- L7 hints ---------------------------------------------------------------------
+
+    #[test]
+    fn http_method_sniff() {
+        assert_eq!(
+            sniff_http_method(b"GET / HTTP/1.1\r\n"),
+            Some("GET".to_string())
+        );
+        assert_eq!(
+            sniff_http_method(b"POST /api HTTP/1.1"),
+            Some("POST".to_string())
+        );
+        assert_eq!(sniff_http_method(b"NOTAVERB / HTTP"), None);
+        assert_eq!(sniff_http_method(b"GE"), None);
+        assert_eq!(sniff_http_method(b""), None);
+    }
+
+    #[test]
+    fn dns_port_hint() {
+        assert!(is_dns_port(53, 12345));
+        assert!(is_dns_port(40000, 53));
+        assert!(!is_dns_port(80, 443));
+        assert_eq!(l7_hint(Transport::Udp, 40000, 53, &[]), Some(L7Hint::Dns));
+    }
+
+    #[test]
+    fn tls_client_hello_sni_extraction() {
+        let payload = build_client_hello(Some("example.com"));
+        assert_eq!(sniff_tls_sni(&payload), Some("example.com".to_string()));
+        match l7_hint(Transport::Tcp, 50000, 443, &payload) {
+            Some(L7Hint::Tls { sni }) => assert_eq!(sni, Some("example.com".to_string())),
+            other => panic!("expected TLS hint, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tls_client_hello_without_sni() {
+        let payload = build_client_hello(None);
+        assert_eq!(sniff_tls_sni(&payload), None);
+        // Still recognized as a ClientHello (Some(None)).
+        assert_eq!(sniff_tls_client_hello(&payload), Some(None));
+    }
+
+    #[test]
+    fn tls_sniffer_rejects_non_tls() {
+        assert_eq!(sniff_tls_client_hello(b"GET / HTTP/1.1"), None);
+        assert_eq!(sniff_tls_client_hello(&[]), None);
+        // Truncated TLS record must not panic.
+        assert_eq!(sniff_tls_client_hello(&[22, 3, 1, 0]), None);
+    }
+
+    // --- L7 decode integration --------------------------------------------------------
+
+    #[test]
+    fn decode_sets_tls_hint_and_sni_wellformed() {
+        // IPv4/TCP :443 carrying a well-formed ClientHello (strict parser path).
+        let ch = build_client_hello(Some("decode.example"));
+        let total = (20 + 20 + ch.len()) as u16;
+        let mut pkt = ipv4_header(6, total, 0, 64);
+        let mut tcp = vec![0u8; 20];
+        tcp[0..2].copy_from_slice(&50000u16.to_be_bytes());
+        tcp[2..4].copy_from_slice(&443u16.to_be_bytes());
+        tcp[12] = 0x50; // data offset 5
+        tcp[13] = 0x18; // PSH|ACK
+        pkt.extend_from_slice(&tcp);
+        pkt.extend_from_slice(&ch);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Tls);
+        assert_eq!(m.sni.as_deref(), Some("decode.example"));
+    }
+
+    #[test]
+    fn decode_sets_tls_hint_via_signature_fallback_no_sni() {
+        // A structurally-recognizable ClientHello (16 03 03 .. 01) too short for the strict
+        // SNI parser: the signature fallback fires (app_proto=Tls) with no SNI extracted.
+        let ch: &[u8] = &[22, 3, 3, 0, 2, 1, 0];
+        let total = (20 + 20 + ch.len()) as u16;
+        let mut pkt = ipv4_header(6, total, 0, 64);
+        let mut tcp = vec![0u8; 20];
+        tcp[2..4].copy_from_slice(&443u16.to_be_bytes());
+        tcp[12] = 0x50;
+        tcp[13] = 0x18;
+        pkt.extend_from_slice(&tcp);
+        pkt.extend_from_slice(ch);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Tls);
+        assert_eq!(m.sni, None); // recognized structurally, no SNI extracted
+    }
+
+    #[test]
+    fn decode_generator_clienthello_yields_sni() {
+        // The generator now emits a full ClientHello with a real SNI extension; the strict
+        // parser must recover the host end to end.
+        let ch = crate::gen::frames::tls_client_hello_payload("gen.example.net");
+        let total = (20 + 20 + ch.len()) as u16;
+        let mut pkt = ipv4_header(6, total, 0, 64);
+        let mut tcp = vec![0u8; 20];
+        tcp[2..4].copy_from_slice(&443u16.to_be_bytes());
+        tcp[12] = 0x50;
+        tcp[13] = 0x18;
+        pkt.extend_from_slice(&tcp);
+        pkt.extend_from_slice(&ch);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Tls);
+        assert_eq!(m.sni.as_deref(), Some("gen.example.net"));
+    }
+
+    #[test]
+    fn decode_sets_http_hint_no_sni_nonstandard_port() {
+        let body = b"GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n";
+        let total = (20 + 20 + body.len()) as u16;
+        let mut pkt = ipv4_header(6, total, 0, 64);
+        let mut tcp = vec![0u8; 20];
+        tcp[2..4].copy_from_slice(&8080u16.to_be_bytes()); // non-standard HTTP port
+        tcp[12] = 0x50;
+        tcp[13] = 0x18;
+        pkt.extend_from_slice(&tcp);
+        pkt.extend_from_slice(body);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Http);
+        assert_eq!(m.sni, None);
+    }
+
+    #[test]
+    fn decode_sets_dns_hint_by_port_empty_payload() {
+        let mut pkt = ipv4_header(17, 28, 0, 64); // 20 ip + 8 udp, no payload
+        let mut udp = vec![0u8; 8];
+        udp[0..2].copy_from_slice(&53u16.to_be_bytes());
+        udp[2..4].copy_from_slice(&40000u16.to_be_bytes());
+        udp[4..6].copy_from_slice(&8u16.to_be_bytes());
+        pkt.extend_from_slice(&udp);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Dns);
+        assert_eq!(m.sni, None);
+    }
+
+    #[test]
+    fn decode_common_path_leaves_hint_unknown_no_alloc() {
+        let mut pkt = ipv4_header(6, 40, 0, 64);
+        let mut tcp = vec![0u8; 20];
+        tcp[2..4].copy_from_slice(&31337u16.to_be_bytes());
+        tcp[12] = 0x50;
+        tcp[13] = 0x02; // bare SYN, no payload
+        pkt.extend_from_slice(&tcp);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Unknown);
+        assert_eq!(m.sni, None);
+    }
+
+    /// Build a minimal-but-well-formed TLS ClientHello record, optionally with an SNI
+    /// extension carrying `host`.
+    fn build_client_hello(host: Option<&str>) -> Vec<u8> {
+        // Handshake body (after the 4-byte handshake header).
+        let mut hs_body = Vec::new();
+        hs_body.extend_from_slice(&[0x03, 0x03]); // client_version TLS 1.2
+        hs_body.extend_from_slice(&[0u8; 32]); // random
+        hs_body.push(0); // session_id length 0
+        hs_body.extend_from_slice(&[0x00, 0x02]); // cipher_suites length 2
+        hs_body.extend_from_slice(&[0x00, 0x2f]); // one cipher suite
+        hs_body.push(1); // compression methods length 1
+        hs_body.push(0); // null compression
+
+        // Extensions.
+        let mut exts = Vec::new();
+        if let Some(h) = host {
+            let hb = h.as_bytes();
+            // server_name entry: name_type(0) + name_len(2) + name.
+            let mut entry = Vec::new();
+            entry.push(0);
+            entry.extend_from_slice(&(hb.len() as u16).to_be_bytes());
+            entry.extend_from_slice(hb);
+            // server_name_list = list_len(2) + entry.
+            let mut snl = Vec::new();
+            snl.extend_from_slice(&(entry.len() as u16).to_be_bytes());
+            snl.extend_from_slice(&entry);
+            // extension = type(0x0000) + len(2) + snl.
+            exts.extend_from_slice(&[0x00, 0x00]);
+            exts.extend_from_slice(&(snl.len() as u16).to_be_bytes());
+            exts.extend_from_slice(&snl);
+        }
+        hs_body.extend_from_slice(&(exts.len() as u16).to_be_bytes());
+        hs_body.extend_from_slice(&exts);
+
+        // Handshake header: msg_type(1=ClientHello) + length(3).
+        let mut handshake = Vec::new();
+        handshake.push(1);
+        let len = hs_body.len();
+        handshake.extend_from_slice(&[(len >> 16) as u8, (len >> 8) as u8, len as u8]);
+        handshake.extend_from_slice(&hs_body);
+
+        // TLS record header: content_type(22) + version(2) + length(2).
+        let mut record = Vec::new();
+        record.push(22);
+        record.extend_from_slice(&[0x03, 0x01]); // record version
+        record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+        record.extend_from_slice(&handshake);
+        record
+    }
+}

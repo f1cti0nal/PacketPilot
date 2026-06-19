@@ -1,0 +1,707 @@
+//! Deterministic synthetic capture generator.
+//!
+//! Produces byte-identical pcap/pcapng output for a given `(seed, packets, scenario)` so
+//! tests and benches have a stable, ground-truth corpus. The generator authors a
+//! [`GenManifest`] tallying exactly what it wrote — the golden test's reference. The PRNG
+//! is a self-contained SplitMix64 (no `rand` dependency); protocol mix counts are a pure
+//! function of `(scenario, packets, include_edge_cases)`, independent of seed.
+//!
+//! ## Streaming / memory
+//!
+//! [`SynthGen::write_to`] streams one frame at a time straight into the supplied writer; it
+//! never materializes a `Vec` of all frames. The only per-run state is the PRNG, the count
+//! schedule (a fixed-size struct), the running manifest, and a distinct-flow set that is
+//! HARD-CAPPED at [`MAX_TRACKED_FLOWS`] — so peak heap is bounded regardless of `packets` or
+//! flow cardinality. The manifest's `distinct_flows` therefore *saturates* at that cap for
+//! very high-cardinality captures (it is an exact count below the cap).
+
+use std::collections::HashSet;
+use std::io::Write;
+use std::net::Ipv4Addr;
+use std::path::Path;
+
+use crate::model::summary::ProtoCounts;
+use crate::reader::LinkType;
+use crate::PpError;
+use crate::Result;
+
+/// Upper bound on the number of distinct flow keys the generator tracks for the manifest's
+/// `distinct_flows` tally. Capping this keeps the generator bounded-memory no matter how many
+/// distinct 5-tuples the chosen scenario produces (random ephemeral ports can yield ~one flow
+/// per packet); the reported count saturates here.
+pub const MAX_TRACKED_FLOWS: usize = 100_000;
+
+pub(crate) mod container;
+pub(crate) mod frames;
+pub(crate) mod mix;
+
+use frames::{
+    ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_TCP, IP_PROTO_UDP, TCP_ACK, TCP_PSH, TCP_SYN,
+};
+
+/// Traffic recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scenario {
+    /// Weighted mix: HTTP 22 / TLS 28 / DNS 20 / other-TCP 14 / other-UDP 14 / edge 2.
+    Mixed,
+    WebOnly,
+    DnsFlood,
+    PortScan,
+    Beacon,
+    BulkTransfer,
+}
+
+impl Scenario {
+    /// Parse a CLI token (`"mixed"`, `"web-only"`/`"webonly"`, ...) into a [`Scenario`].
+    pub fn from_str_opt(s: &str) -> Option<Scenario> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "mixed" => Some(Scenario::Mixed),
+            "web" | "web-only" | "webonly" => Some(Scenario::WebOnly),
+            "dns" | "dns-flood" | "dnsflood" => Some(Scenario::DnsFlood),
+            "scan" | "port-scan" | "portscan" => Some(Scenario::PortScan),
+            "beacon" => Some(Scenario::Beacon),
+            "bulk" | "bulk-transfer" | "bulktransfer" => Some(Scenario::BulkTransfer),
+            _ => None,
+        }
+    }
+
+    /// All scenarios (for help text / enumeration).
+    pub fn all() -> &'static [Scenario] {
+        &[
+            Scenario::Mixed,
+            Scenario::WebOnly,
+            Scenario::DnsFlood,
+            Scenario::PortScan,
+            Scenario::Beacon,
+            Scenario::BulkTransfer,
+        ]
+    }
+}
+
+/// Generator configuration.
+#[derive(Debug, Clone)]
+pub struct GenConfig {
+    pub scenario: Scenario,
+    pub packets: u64,
+    /// Same seed+count => byte-identical output.
+    pub seed: u64,
+    pub link_type: LinkType,
+    /// `false` => classic pcap; `true` => pcapng.
+    pub pcapng: bool,
+    pub start_ts_ns: i64,
+    pub mean_gap_ns: i64,
+    /// When `true`, inject the fixed edge-case frames (§6.2).
+    pub include_edge_cases: bool,
+    pub host_count: u16,
+}
+
+impl Default for GenConfig {
+    fn default() -> Self {
+        GenConfig {
+            scenario: Scenario::Mixed,
+            packets: 100_000,
+            // "PacketPi" as ASCII bytes -> a fixed, memorable seed.
+            seed: 0x5061_636B_6574_5069,
+            link_type: LinkType::Ethernet,
+            pcapng: false,
+            // 2023-11-14T22:13:20Z, a fixed reference start.
+            start_ts_ns: 1_700_000_000i64 * 1_000_000_000,
+            mean_gap_ns: 1_000_000, // 1 ms
+            include_edge_cases: false,
+            host_count: 64,
+        }
+    }
+}
+
+/// Ground-truth tallies the generator authored — the golden test's reference.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GenManifest {
+    pub packets_written: u64,
+    /// Total bytes incl. container headers.
+    pub bytes_written: u64,
+    /// Σ wire_len (throughput math).
+    pub frame_bytes: u64,
+    pub counts: ProtoCounts,
+    pub first_ts_ns: i64,
+    pub last_ts_ns: i64,
+    pub distinct_flows: u32,
+}
+
+/// The kind of frame to emit at a given schedule position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    Http,
+    Tls,
+    Dns,
+    OtherTcp,
+    OtherUdp,
+    /// Malformed (truncated) IPv4/TCP edge frame; counted under `tcp`/`other_tcp`.
+    Truncated,
+    /// ARP edge frame; counted under `non_ipv4`.
+    NonIpv4,
+}
+
+/// A deterministic emission schedule derived from the count plan. The frame kinds are
+/// interleaved (not blocked by type) so the timeline looks like real mixed traffic, yet the
+/// exact per-kind totals equal the plan.
+#[derive(Debug, Clone)]
+struct Schedule {
+    /// Remaining count per kind, indexed by `FrameKind as usize` order below.
+    remaining: [u64; 7],
+    total_remaining: u64,
+}
+
+// Stable index assignment for the schedule array.
+const K_HTTP: usize = 0;
+const K_TLS: usize = 1;
+const K_DNS: usize = 2;
+const K_OTCP: usize = 3;
+const K_OUDP: usize = 4;
+const K_TRUNC: usize = 5;
+const K_NONIP: usize = 6;
+
+impl Schedule {
+    fn from_counts(counts: &ProtoCounts) -> Schedule {
+        // The leaf TCP buckets already include the truncated edge unit; carve it back out so
+        // it is emitted as a distinct kind without double counting.
+        let trunc = counts.truncated;
+        let nonip = counts.non_ipv4;
+        // `other_tcp` hosts the truncated unit (see mix::counts_for); subtract it here.
+        let other_tcp = counts.other_tcp.saturating_sub(trunc);
+
+        let remaining = [
+            counts.http,
+            counts.tls,
+            counts.dns,
+            other_tcp,
+            counts.other_udp,
+            trunc,
+            nonip,
+        ];
+        let total_remaining = remaining.iter().copied().sum();
+        Schedule {
+            remaining,
+            total_remaining,
+        }
+    }
+
+    /// Pick the next kind deterministically: choose the kind with the most remaining slots,
+    /// weighted by the PRNG so the interleave varies but totals are exact. Ties break toward
+    /// the lower index for determinism.
+    fn next_kind(&mut self, rng: &mut mix::SplitMix64) -> Option<FrameKind> {
+        if self.total_remaining == 0 {
+            return None;
+        }
+        // Weighted pick proportional to remaining counts so the schedule drains evenly.
+        let pick = rng.below(self.total_remaining);
+        let mut acc = 0u64;
+        let mut chosen = 0usize;
+        for (i, &r) in self.remaining.iter().enumerate() {
+            acc += r;
+            if pick < acc {
+                chosen = i;
+                break;
+            }
+        }
+        // Defensive: if rounding left `pick` past the end, take the first non-empty bucket.
+        if self.remaining[chosen] == 0 {
+            chosen = self.remaining.iter().position(|&r| r > 0).unwrap_or(chosen);
+        }
+        self.remaining[chosen] -= 1;
+        self.total_remaining -= 1;
+        Some(index_to_kind(chosen))
+    }
+}
+
+fn index_to_kind(i: usize) -> FrameKind {
+    match i {
+        K_HTTP => FrameKind::Http,
+        K_TLS => FrameKind::Tls,
+        K_DNS => FrameKind::Dns,
+        K_OTCP => FrameKind::OtherTcp,
+        K_OUDP => FrameKind::OtherUdp,
+        K_TRUNC => FrameKind::Truncated,
+        K_NONIP => FrameKind::NonIpv4,
+        _ => unreachable!("index_to_kind: schedule index {i} out of range"),
+    }
+}
+
+/// Realistic-looking SNI hosts for generated TLS ClientHellos, chosen by server index so
+/// distinct servers present distinct SNIs in the synthetic capture.
+fn sni_host(server_idx: u16) -> &'static str {
+    const HOSTS: [&str; 8] = [
+        "login.example.net",
+        "cdn.assets.example.com",
+        "api.service.io",
+        "mail.corp.example",
+        "updates.vendor.com",
+        "auth.bank.example",
+        "telemetry.app.example",
+        "static.media.example.org",
+    ];
+    HOSTS[(server_idx as usize) % HOSTS.len()]
+}
+
+/// The synthetic generator.
+pub struct SynthGen {
+    cfg: GenConfig,
+    rng: mix::SplitMix64,
+    schedule: Schedule,
+    /// The full count plan (also the basis of the manifest's `counts`).
+    plan: ProtoCounts,
+    emitted: u64,
+    cursor_ts: i64,
+    /// Distinct (lo_ip, hi_ip, lo_port, hi_port, proto) flow keys seen, for
+    /// `manifest.distinct_flows`. Random ephemeral ports make distinct 5-tuples scale ~per
+    /// packet, so this set is HARD-CAPPED at [`MAX_TRACKED_FLOWS`] to keep the generator
+    /// bounded-memory; the reported count saturates at that cap.
+    flows: HashSet<u64>,
+}
+
+impl SynthGen {
+    /// Build a generator from config (seeds the PRNG, precomputes the count plan).
+    pub fn new(cfg: GenConfig) -> SynthGen {
+        let plan = mix::counts_for(cfg.scenario, cfg.packets, cfg.include_edge_cases);
+        let schedule = Schedule::from_counts(&plan);
+        let rng = mix::SplitMix64::new(cfg.seed);
+        let cursor_ts = cfg.start_ts_ns;
+        SynthGen {
+            rng,
+            schedule,
+            plan,
+            emitted: 0,
+            cursor_ts,
+            flows: HashSet::new(),
+            cfg,
+        }
+    }
+
+    /// Generate to a pcap/pcapng file at `path`. O(1) memory (BufWriter, frame-at-a-time).
+    pub fn write_pcap(&mut self, path: &Path) -> Result<GenManifest> {
+        let file = std::fs::File::create(path)
+            .map_err(|e| PpError::io(format!("create {}", path.display()), e))?;
+        let w = std::io::BufWriter::new(file);
+        self.write_to(w)
+    }
+
+    /// Generate to any writer. Returns the ground-truth [`GenManifest`].
+    pub fn write_to<W: Write>(&mut self, mut w: W) -> Result<GenManifest> {
+        let mut manifest = GenManifest {
+            counts: self.plan,
+            ..Default::default()
+        };
+
+        // Container header.
+        let header_bytes = if self.cfg.pcapng {
+            container::write_pcapng_shb_idb(&mut w, self.cfg.link_type)?
+        } else {
+            container::write_pcap_header(&mut w, self.cfg.link_type)?
+        };
+        manifest.bytes_written += header_bytes as u64;
+
+        let mut first_ts: Option<i64> = None;
+        let mut last_ts: i64 = self.cfg.start_ts_ns;
+
+        while let Some((ts, kind, frame)) = self.next_planned() {
+            let wire_len = frame.len() as u32;
+            // We do not truncate capture below wire length here (snaplen 65535 >> frames),
+            // so caplen == origlen == wire_len.
+            let rec_bytes = if self.cfg.pcapng {
+                container::write_epb(&mut w, 0, ts, wire_len, wire_len, &frame)?
+            } else {
+                let hdr = container::write_legacy_record(&mut w, ts, wire_len, wire_len)?;
+                w.write_all(&frame)
+                    .map_err(|e| PpError::io("write frame bytes", e))?;
+                hdr + frame.len()
+            };
+
+            manifest.packets_written += 1;
+            manifest.frame_bytes += wire_len as u64;
+            manifest.bytes_written += rec_bytes as u64;
+
+            // Record timestamps at the resolution actually written: classic pcap stores
+            // microseconds (see container::split_secs_usec), so truncate sub-µs here too so
+            // the manifest stays a faithful ground-truth of the file and round-trips exactly
+            // through analyze. pcapng keeps full nanosecond resolution (if_tsresol = 9).
+            let stored_ts = if self.cfg.pcapng {
+                ts
+            } else {
+                ts - ts.rem_euclid(1_000)
+            };
+            if first_ts.is_none() {
+                first_ts = Some(stored_ts);
+            }
+            last_ts = stored_ts;
+            let _ = kind; // counts come from the plan; kept for readability/debugging.
+        }
+
+        w.flush()
+            .map_err(|e| PpError::io("flush generator output", e))?;
+
+        manifest.first_ts_ns = first_ts.unwrap_or(self.cfg.start_ts_ns);
+        manifest.last_ts_ns = last_ts;
+        manifest.distinct_flows = self.flows.len().min(u32::MAX as usize) as u32;
+        Ok(manifest)
+    }
+
+    /// Produce the next `(ts_ns, L2 frame bytes)`, or `None` when `packets` is reached.
+    ///
+    /// Standalone callers (tests) get the raw bytes; `write_to` uses [`Self::next_planned`]
+    /// which also surfaces the chosen [`FrameKind`].
+    pub fn next_raw(&mut self) -> Option<(i64, Vec<u8>)> {
+        self.next_planned().map(|(ts, _kind, frame)| (ts, frame))
+    }
+
+    /// Internal: pick the next scheduled frame kind, build it, advance time, and record the
+    /// flow key. Returns `None` once the plan is exhausted.
+    fn next_planned(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
+        if self.emitted >= self.cfg.packets {
+            return None;
+        }
+        let kind = self.schedule.next_kind(&mut self.rng)?;
+        let ts = self.cursor_ts;
+
+        let frame = self.build_frame(kind);
+
+        // Advance the timestamp by mean_gap_ns +/- up to 50% jitter, never going backwards.
+        let gap = self.jittered_gap();
+        self.cursor_ts = self.cursor_ts.saturating_add(gap);
+        self.emitted += 1;
+
+        Some((ts, kind, frame))
+    }
+
+    /// Deterministic non-negative inter-packet gap in `[mean/2, 3*mean/2]` (roughly).
+    fn jittered_gap(&mut self) -> i64 {
+        let mean = self.cfg.mean_gap_ns.max(0);
+        if mean == 0 {
+            return 0;
+        }
+        // jitter in [0, mean) then center it around mean: gap = mean/2 + jitter.
+        let jitter = self.rng.below(mean as u64) as i64;
+        (mean / 2).saturating_add(jitter).max(1)
+    }
+
+    /// Build a complete L2 frame for the given kind from deterministic endpoints/ports.
+    fn build_frame(&mut self, kind: FrameKind) -> Vec<u8> {
+        let hosts = self.cfg.host_count.max(1);
+        // Pick two distinct host indices deterministically.
+        let a = self.rng.below(hosts as u64) as u16;
+        let mut b = self.rng.below(hosts as u64) as u16;
+        if b == a {
+            b = (b + 1) % hosts;
+        }
+        let client_ip = host_ip(a);
+        let server_ip = host_ip(b);
+
+        // Ephemeral client port in [49152, 65535].
+        let client_port = 49152 + (self.rng.below(16384) as u16);
+
+        match kind {
+            FrameKind::NonIpv4 => {
+                // ARP request: the deterministic non-IPv4 edge frame.
+                let arp = frames::arp_request_payload(client_ip, server_ip, mac_for(a));
+                let mut frame = frames::build_ethernet(mac_for(a), mac_for(b), ETHERTYPE_ARP);
+                frame.extend_from_slice(&arp);
+                // ARP frames are not a 5-tuple flow; do not record.
+                frame
+            }
+            FrameKind::Dns => {
+                let txid = self.rng.below(0x10000) as u16;
+                let payload = frames::dns_query_payload("svc.example.net", txid);
+                self.record_flow(client_ip, server_ip, client_port, 53, IP_PROTO_UDP);
+                self.ip_udp_frame(a, b, client_ip, server_ip, client_port, 53, &payload)
+            }
+            FrameKind::OtherUdp => {
+                // A small generic UDP datagram to an assorted high port.
+                let dport = 1024 + (self.rng.below(40000) as u16);
+                let payload = [0xABu8; 32];
+                self.record_flow(client_ip, server_ip, client_port, dport, IP_PROTO_UDP);
+                self.ip_udp_frame(a, b, client_ip, server_ip, client_port, dport, &payload)
+            }
+            FrameKind::Http => {
+                let payload = frames::http_request_payload("example.com", "/index.html");
+                self.record_flow(client_ip, server_ip, client_port, 80, IP_PROTO_TCP);
+                self.ip_tcp_frame(
+                    a,
+                    b,
+                    client_ip,
+                    server_ip,
+                    client_port,
+                    80,
+                    TCP_PSH | TCP_ACK,
+                    &payload,
+                )
+            }
+            FrameKind::Tls => {
+                let payload = frames::tls_client_hello_payload(sni_host(b));
+                self.record_flow(client_ip, server_ip, client_port, 443, IP_PROTO_TCP);
+                self.ip_tcp_frame(
+                    a,
+                    b,
+                    client_ip,
+                    server_ip,
+                    client_port,
+                    443,
+                    TCP_PSH | TCP_ACK,
+                    &payload,
+                )
+            }
+            FrameKind::OtherTcp => {
+                // A TCP SYN to an assorted port (scan-ish / generic TCP).
+                let dport = 1 + (self.rng.below(1023) as u16);
+                self.record_flow(client_ip, server_ip, client_port, dport, IP_PROTO_TCP);
+                self.ip_tcp_frame(a, b, client_ip, server_ip, client_port, dport, TCP_SYN, &[])
+            }
+            FrameKind::Truncated => {
+                // A deliberately malformed frame: Ethernet + an IPv4 header that claims a
+                // larger total length than the bytes actually present (truncated L4). The
+                // decoder must count this as `truncated` without panicking.
+                self.record_flow(client_ip, server_ip, client_port, 80, IP_PROTO_TCP);
+                let mut frame = frames::build_ethernet(mac_for(a), mac_for(b), ETHERTYPE_IPV4);
+                // Claim 100 bytes of L4 but append only 4 — a truncated TCP header.
+                let ip = frames::build_ipv4(client_ip, server_ip, IP_PROTO_TCP, 64, 100);
+                frame.extend_from_slice(&ip);
+                let sp = client_port.to_be_bytes();
+                frame.extend_from_slice(&[sp[0], sp[1], 0, 80]); // partial TCP src/dst port
+                frame
+            }
+        }
+    }
+
+    /// Assemble Ethernet + IPv4 + TCP into one frame.
+    #[allow(clippy::too_many_arguments)]
+    fn ip_tcp_frame(
+        &self,
+        a: u16,
+        b: u16,
+        src: Ipv4Addr,
+        dst: Ipv4Addr,
+        sport: u16,
+        dport: u16,
+        flags: u8,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let tcp = frames::build_tcp(src, dst, sport, dport, flags, payload);
+        let ip = frames::build_ipv4(src, dst, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(mac_for(a), mac_for(b), ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
+    }
+
+    /// Assemble Ethernet + IPv4 + UDP into one frame.
+    #[allow(clippy::too_many_arguments)]
+    fn ip_udp_frame(
+        &self,
+        a: u16,
+        b: u16,
+        src: Ipv4Addr,
+        dst: Ipv4Addr,
+        sport: u16,
+        dport: u16,
+        payload: &[u8],
+    ) -> Vec<u8> {
+        let udp = frames::build_udp(src, dst, sport, dport, payload);
+        let ip = frames::build_ipv4(src, dst, IP_PROTO_UDP, 64, udp.len());
+        let mut frame = frames::build_ethernet(mac_for(a), mac_for(b), ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&udp);
+        frame
+    }
+
+    /// Record a normalized 5-tuple flow key into the bounded distinct-flow set.
+    fn record_flow(&mut self, src: Ipv4Addr, dst: Ipv4Addr, sport: u16, dport: u16, proto: u8) {
+        // Normalize endpoints so a<->b and b<->a collapse to one flow.
+        let (lo_ip, lo_port, hi_ip, hi_port) = {
+            let aa = (u32::from(src), sport);
+            let bb = (u32::from(dst), dport);
+            if aa <= bb {
+                (aa.0, aa.1, bb.0, bb.1)
+            } else {
+                (bb.0, bb.1, aa.0, aa.1)
+            }
+        };
+        // Pack into a single u64 key: this is collision-resistant enough for the small,
+        // deterministic endpoint space the generator uses (host_count is a u16, ports u16).
+        // Use a stable FNV-1a hash over the tuple bytes to keep the set bounded and cheap.
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in lo_ip
+            .to_be_bytes()
+            .iter()
+            .chain(hi_ip.to_be_bytes().iter())
+            .chain(lo_port.to_be_bytes().iter())
+            .chain(hi_port.to_be_bytes().iter())
+            .chain(std::iter::once(&proto))
+        {
+            h ^= *byte as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01B3);
+        }
+        // Hard-cap the set so the generator stays bounded-memory even for scenarios that
+        // produce a distinct flow per packet (random ephemeral ports). Once saturated,
+        // `distinct_flows` stops growing — a documented lower bound (see MAX_TRACKED_FLOWS).
+        if self.flows.len() < MAX_TRACKED_FLOWS {
+            self.flows.insert(h);
+        }
+    }
+}
+
+/// Deterministic per-host IPv4 in 10.0.0.0/8: 10.<hi>.<mid>.<lo+1>.
+fn host_ip(idx: u16) -> Ipv4Addr {
+    let i = idx as u32;
+    Ipv4Addr::new(10, ((i >> 8) & 0xFF) as u8, (i & 0xFF) as u8, 10)
+}
+
+/// Deterministic per-host MAC: 02:00:00:00:HH:LL (locally administered).
+fn mac_for(idx: u16) -> [u8; 6] {
+    [0x02, 0x00, 0x00, 0x00, (idx >> 8) as u8, (idx & 0xFF) as u8]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_small() -> GenConfig {
+        GenConfig {
+            scenario: Scenario::Mixed,
+            packets: 200,
+            seed: 0xDEAD_BEEF,
+            link_type: LinkType::Ethernet,
+            pcapng: false,
+            start_ts_ns: 1_700_000_000i64 * 1_000_000_000,
+            mean_gap_ns: 1_000_000,
+            include_edge_cases: false,
+            host_count: 8,
+        }
+    }
+
+    #[test]
+    fn scenario_parsing_roundtrips() {
+        assert_eq!(Scenario::from_str_opt("mixed"), Some(Scenario::Mixed));
+        assert_eq!(Scenario::from_str_opt("WEB-ONLY"), Some(Scenario::WebOnly));
+        assert_eq!(Scenario::from_str_opt("webonly"), Some(Scenario::WebOnly));
+        assert_eq!(
+            Scenario::from_str_opt("dns-flood"),
+            Some(Scenario::DnsFlood)
+        );
+        assert_eq!(Scenario::from_str_opt("portscan"), Some(Scenario::PortScan));
+        assert_eq!(Scenario::from_str_opt(" beacon "), Some(Scenario::Beacon));
+        assert_eq!(Scenario::from_str_opt("bulk"), Some(Scenario::BulkTransfer));
+        assert_eq!(Scenario::from_str_opt("nonsense"), None);
+        assert_eq!(Scenario::all().len(), 6);
+    }
+
+    #[test]
+    fn manifest_packet_count_matches_config() {
+        let mut g = SynthGen::new(cfg_small());
+        let m = g.write_to(std::io::sink()).unwrap();
+        assert_eq!(m.packets_written, 200);
+        assert_eq!(m.counts.tcp + m.counts.udp + m.counts.non_ipv4, 200);
+    }
+
+    #[test]
+    fn output_is_byte_identical_for_same_config() {
+        let mut a = SynthGen::new(cfg_small());
+        let mut b = SynthGen::new(cfg_small());
+        let mut buf_a = Vec::new();
+        let mut buf_b = Vec::new();
+        a.write_to(&mut buf_a).unwrap();
+        b.write_to(&mut buf_b).unwrap();
+        assert_eq!(buf_a, buf_b);
+        assert!(!buf_a.is_empty());
+    }
+
+    #[test]
+    fn counts_are_seed_independent() {
+        let mut c1 = cfg_small();
+        c1.seed = 1;
+        let mut c2 = cfg_small();
+        c2.seed = 999_999;
+        let m1 = SynthGen::new(c1).write_to(std::io::sink()).unwrap();
+        let m2 = SynthGen::new(c2).write_to(std::io::sink()).unwrap();
+        assert_eq!(m1.counts, m2.counts);
+        assert_eq!(m1.packets_written, m2.packets_written);
+    }
+
+    #[test]
+    fn edge_cases_present_in_manifest() {
+        let mut cfg = cfg_small();
+        cfg.include_edge_cases = true;
+        let m = SynthGen::new(cfg).write_to(std::io::sink()).unwrap();
+        assert_eq!(m.counts.truncated, 1);
+        assert_eq!(m.counts.non_ipv4, 1);
+        assert_eq!(m.counts.tcp + m.counts.udp + m.counts.non_ipv4, 200);
+    }
+
+    #[test]
+    fn first_record_header_is_well_formed() {
+        let mut g = SynthGen::new(cfg_small());
+        let mut buf = Vec::new();
+        let m = g.write_to(&mut buf).unwrap();
+        // Global header is 24 bytes; first record header begins at offset 24.
+        assert!(buf.len() > 40);
+        let magic = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        assert_eq!(magic, container::PCAP_MAGIC_USEC_LE);
+        // First record ts_sec matches start_ts.
+        let ts_sec = u32::from_le_bytes([buf[24], buf[25], buf[26], buf[27]]);
+        assert_eq!(ts_sec, 1_700_000_000);
+        // Manifest first ts equals configured start.
+        assert_eq!(m.first_ts_ns, 1_700_000_000i64 * 1_000_000_000);
+        assert!(m.last_ts_ns >= m.first_ts_ns);
+    }
+
+    #[test]
+    fn timestamps_are_monotonic_nondecreasing() {
+        let mut g = SynthGen::new(cfg_small());
+        let mut prev = i64::MIN;
+        while let Some((ts, _f)) = g.next_raw() {
+            assert!(ts >= prev, "timestamp went backwards: {ts} < {prev}");
+            prev = ts;
+        }
+    }
+
+    #[test]
+    fn next_raw_stops_at_packet_count() {
+        let mut g = SynthGen::new(cfg_small());
+        let mut n = 0;
+        while g.next_raw().is_some() {
+            n += 1;
+            assert!(n <= 200, "produced more frames than configured");
+        }
+        assert_eq!(n, 200);
+    }
+
+    #[test]
+    fn distinct_flows_bounded_by_host_space() {
+        let mut g = SynthGen::new(cfg_small());
+        let m = g.write_to(std::io::sink()).unwrap();
+        // With 8 hosts there can be at most a modest number of distinct flow keys; assert it
+        // stayed well within the deterministic endpoint space rather than growing per packet.
+        assert!(m.distinct_flows > 0);
+        assert!(m.distinct_flows <= 200);
+    }
+
+    #[test]
+    fn pcapng_output_starts_with_shb() {
+        let mut cfg = cfg_small();
+        cfg.pcapng = true;
+        cfg.packets = 10;
+        let mut buf = Vec::new();
+        let m = SynthGen::new(cfg).write_to(&mut buf).unwrap();
+        assert_eq!(m.packets_written, 10);
+        let bt = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        assert_eq!(bt, container::NG_BLOCK_SHB);
+    }
+
+    #[test]
+    fn zero_packets_writes_only_header() {
+        let mut cfg = cfg_small();
+        cfg.packets = 0;
+        let mut buf = Vec::new();
+        let m = SynthGen::new(cfg).write_to(&mut buf).unwrap();
+        assert_eq!(m.packets_written, 0);
+        assert_eq!(buf.len(), 24); // just the global header
+        assert_eq!(m.frame_bytes, 0);
+        assert_eq!(m.bytes_written, 24);
+    }
+}

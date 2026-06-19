@@ -1,0 +1,23 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Generated / sample captures
+*.pcap
+*.pcapng
+*.pcap.gz
+
+# Engine output directory (JSON, Parquet)
+out/
+
+# Parquet case directory
+pq/
+
+# Editor / OS cruft
+*.swp
+.DS_Store
+
+# Bench/test logs and ad-hoc demo artifacts
+*.log
+out.json
+demo.*
