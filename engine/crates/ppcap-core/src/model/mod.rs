@@ -8,6 +8,7 @@
 //! - [`output`] — `AnalysisOutput` (the headline JSON object)
 
 pub mod category;
+pub mod finding;
 pub mod flow;
 pub mod output;
 pub mod packet;
@@ -15,6 +16,7 @@ pub mod severity;
 pub mod summary;
 
 pub use category::Category;
+pub use finding::{Finding, FindingKind};
 pub use flow::{Direction, FlowKey, FlowRecord};
 pub use output::AnalysisOutput;
 pub use packet::{AppProto, PacketMeta, Protocol, Transport};
