@@ -36,6 +36,7 @@ pub mod analyze;
 pub mod classify;
 pub mod columnar;
 pub mod decode;
+pub mod detect;
 pub mod enrich;
 pub mod error;
 pub mod flow;
