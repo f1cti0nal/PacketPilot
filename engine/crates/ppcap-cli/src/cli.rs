@@ -54,6 +54,12 @@ pub enum Command {
         /// Local IOC threat-feed JSON (offline enrichment); omit => no enrichment.
         #[arg(long = "threat-feed")]
         threat_feed: Option<PathBuf>,
+        /// Export behavioral findings as CSV to this path.
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        /// Export a STIX 2.1 bundle (indicators + ATT&CK) to this path.
+        #[arg(long)]
+        stix: Option<PathBuf>,
     },
     /// Generate a synthetic capture for testing.
     Gen {
@@ -118,6 +124,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             hash,
             quiet,
             threat_feed,
+            csv,
+            stix,
         } => {
             // IMPL:
             //  - Build ppcap_core::PipelineConfig::default(), then set:
@@ -196,6 +204,26 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     .with_context(|| format!("write HTML report to {}", html_path.display()))?;
                 if !quiet {
                     eprintln!("wrote HTML report -> {}", html_path.display());
+                }
+            }
+
+            if let Some(csv_path) = csv.as_ref() {
+                std::fs::write(csv_path, ppcap_core::export::findings_csv(&out))
+                    .with_context(|| format!("write findings CSV to {}", csv_path.display()))?;
+                if !quiet {
+                    eprintln!("wrote findings CSV -> {}", csv_path.display());
+                }
+            }
+
+            if let Some(stix_path) = stix.as_ref() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                std::fs::write(stix_path, ppcap_core::export::stix_bundle(&out, now))
+                    .with_context(|| format!("write STIX bundle to {}", stix_path.display()))?;
+                if !quiet {
+                    eprintln!("wrote STIX 2.1 bundle -> {}", stix_path.display());
                 }
             }
             Ok(())
