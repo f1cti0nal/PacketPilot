@@ -460,8 +460,11 @@ impl SynthGen {
                 )
             }
             FrameKind::OtherTcp => {
-                // A TCP SYN to an assorted port (scan-ish / generic TCP).
-                let dport = 1 + (self.rng.below(1023) as u16);
+                // A TCP SYN to an assorted high port (scan-ish / generic TCP). The range is kept
+                // clear of the well-known service ports (80/443/53) and the interactive-auth ports
+                // (21/22/23/3389/5900) so synthetic benign traffic never manufactures repeated
+                // connections to an auth service that the brute-force detector would then flag.
+                let dport = 20000 + (self.rng.below(40000) as u16);
                 self.record_flow(client_ip, server_ip, client_port, dport, IP_PROTO_TCP);
                 self.ip_tcp_frame(a, b, client_ip, server_ip, client_port, dport, TCP_SYN, &[])
             }
@@ -533,9 +536,10 @@ impl SynthGen {
     fn next_beacon(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
         let i = self.emitted;
         let sweep_count = self.beacon_sweep_count();
+        let brute_count = self.beacon_brute_count();
         let exfil_count = self.beacon_exfil_count();
         let dns_count = self.beacon_dns_count();
-        let prefix = sweep_count + exfil_count + dns_count;
+        let prefix = sweep_count + brute_count + exfil_count + dns_count;
 
         // Stage 1 (recon): a short SYN sweep — the beacon host probes many internal hosts on
         // 445. Combined with the C2 beacon below, this gives the host a multi-stage incident.
@@ -546,10 +550,25 @@ impl SynthGen {
             return Some((ts, FrameKind::OtherTcp, frame));
         }
 
-        // Stage 2 (exfiltration): a large asymmetric upload from the beacon host to an external
-        // drop server — one flow, megabytes outbound, almost nothing back.
-        if i < sweep_count + exfil_count {
+        // Stage 2 (credential access): a burst of SSH connection attempts against one discovered
+        // host — password guessing. Each attempt is a distinct flow (rotating ephemeral port).
+        if i < sweep_count + brute_count {
             let k = i - sweep_count;
+            let frame = self.build_beacon_brute(k);
+            // Just after the sweep, ~10 ms apart.
+            let ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(2_500_000_000)
+                .saturating_add(k as i64 * 10_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::OtherTcp, frame));
+        }
+
+        // Stage 3 (exfiltration): a large asymmetric upload from the beacon host to an external
+        // drop server — one flow, megabytes outbound, almost nothing back.
+        if i < sweep_count + brute_count + exfil_count {
+            let k = i - sweep_count - brute_count;
             let frame = self.build_beacon_exfil();
             // A few seconds after the sweep, ~1 ms apart.
             let ts = self
@@ -561,10 +580,10 @@ impl SynthGen {
             return Some((ts, FrameKind::Tls, frame));
         }
 
-        // Stage 3 (DNS tunneling): a burst of high-entropy DNS queries to the internal resolver,
+        // Stage 4 (DNS tunneling): a burst of high-entropy DNS queries to the internal resolver,
         // smuggling data out over DNS.
         if i < prefix {
-            let k = i - sweep_count - exfil_count;
+            let k = i - sweep_count - brute_count - exfil_count;
             let frame = self.build_beacon_dns(k);
             let ts = self
                 .cfg
@@ -575,7 +594,7 @@ impl SynthGen {
             return Some((ts, FrameKind::Dns, frame));
         }
 
-        // Stage 4 (C2): the periodic beacon + benign background.
+        // Stage 5 (C2): the periodic beacon + benign background.
         let j = i - prefix;
         let pos = j % BEACON_CYCLE_LEN;
 
@@ -634,6 +653,31 @@ impl SynthGen {
         } else {
             0
         }
+    }
+
+    /// Number of SSH brute-force attempts emitted after the sweep (0 for small captures),
+    /// >= the brute-force detector's attempt floor.
+    fn beacon_brute_count(&self) -> u64 {
+        if self.cfg.packets >= 2_000 {
+            BEACON_BRUTE_ATTEMPTS
+        } else {
+            0
+        }
+    }
+
+    /// Build one brute-force attempt: a SYN from the beacon host to one discovered victim's SSH
+    /// service (22), with a rotating ephemeral source port so each attempt is a distinct flow.
+    fn build_beacon_brute(&mut self, idx: u64) -> Vec<u8> {
+        let client = beacon_client();
+        let victim = beacon_brute_victim();
+        let sport = 41000 + (idx % 2000) as u16;
+        self.record_flow(client, victim, sport, 22, IP_PROTO_TCP);
+        let tcp = frames::build_tcp(client, victim, sport, 22, TCP_SYN, &[]);
+        let ip = frames::build_ipv4(client, victim, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(BEACON_CLIENT_MAC, BEACON_BRUTE_MAC, ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
     }
 
     /// Number of exfil-upload packets emitted after the sweep (0 for small captures). Sized so
@@ -773,6 +817,10 @@ const BEACON_CYCLE_LEN: u64 = 13;
 /// Distinct internal hosts the beacon host sweeps on 445 first (>= the sweep detector floor, so
 /// the capture yields a recon + C2 multi-stage incident).
 const BEACON_SWEEP_HOSTS: u64 = 24;
+/// Credential-access stage: SSH connection attempts against one discovered host (>= the
+/// brute-force detector's attempt floor) and the MAC used for those frames.
+const BEACON_BRUTE_ATTEMPTS: u64 = 30;
+const BEACON_BRUTE_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x05];
 /// Exfil upload: number of large data packets, their payload size, and the fixed source port
 /// (one flow). 900 × 1400 B ≈ 1.2 MB outbound — clears the 1 MB exfil floor.
 const BEACON_EXFIL_PACKETS: u64 = 900;
@@ -787,6 +835,12 @@ const BEACON_DNS_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x04];
 /// The internal resolver the beacon host tunnels DNS through.
 fn beacon_dns_resolver() -> Ipv4Addr {
     Ipv4Addr::new(10, 0, 0, 53)
+}
+
+/// The discovered internal host the beacon host brute-forces SSH on — the first host it swept on
+/// 445 (10.66.0.1), tying the Credential Access stage to the Discovery stage.
+fn beacon_brute_victim() -> Ipv4Addr {
+    Ipv4Addr::new(10, 66, 0, 1)
 }
 
 /// A deterministic 32-char base32 (high-entropy) DNS label for query `idx`.
@@ -981,5 +1035,36 @@ mod tests {
         assert_eq!(buf.len(), 24); // just the global header
         assert_eq!(m.frame_bytes, 0);
         assert_eq!(m.bytes_written, 24);
+    }
+
+    #[test]
+    fn beacon_scenario_conserves_packet_count_and_is_deterministic() {
+        // The Beacon scenario uses a dedicated emission path (next_beacon) whose multi-stage
+        // prefix (sweep -> brute -> exfil -> dns -> C2 cycles) does index arithmetic across stage
+        // boundaries. Cover it directly: at packets just above the 2000 gate (all prefix stages
+        // active) and at a large multi-cycle value, packets_written must equal cfg.packets, and
+        // the same (seed, packets) must produce byte-identical output.
+        let beacon_cfg = |packets: u64| GenConfig {
+            scenario: Scenario::Beacon,
+            packets,
+            seed: 0xBEAC_0017,
+            host_count: 64,
+            ..Default::default()
+        };
+        for &packets in &[2_001u64, 40_000] {
+            let m = SynthGen::new(beacon_cfg(packets))
+                .write_to(std::io::sink())
+                .unwrap();
+            assert_eq!(
+                m.packets_written, packets,
+                "beacon packets_written == cfg.packets (packets={packets})"
+            );
+
+            let mut a = Vec::new();
+            let mut b = Vec::new();
+            SynthGen::new(beacon_cfg(packets)).write_to(&mut a).unwrap();
+            SynthGen::new(beacon_cfg(packets)).write_to(&mut b).unwrap();
+            assert_eq!(a, b, "beacon output byte-identical for same config (packets={packets})");
+        }
     }
 }

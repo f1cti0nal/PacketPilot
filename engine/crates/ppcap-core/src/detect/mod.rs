@@ -231,6 +231,13 @@ pub struct SweepCandidate {
     pub hosts: usize,
 }
 
+/// A channel with many connection attempts to one authentication service (brute-force shape).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BruteForceCandidate {
+    pub key: ContactKey,
+    pub attempts: u64,
+}
+
 /// Per-`(source, resolver)` DNS query statistics.
 #[derive(Debug, Clone, Default)]
 struct DnsStats {
@@ -483,6 +490,29 @@ impl BehaviorTracker {
         out.sort_by_key(|c| c.key);
         out
     }
+
+    /// All channels that look like a credential brute force: at least `min_attempts` separate
+    /// connection attempts to a destination service whose port is in `auth_ports`. Each login
+    /// attempt is a distinct flow (new ephemeral source port), so the signal lives on the
+    /// cross-flow contact count, not a single [`crate::model::flow::FlowRecord`]. Returned
+    /// strongest (most attempts) first.
+    pub fn brute_force_candidates(
+        &self,
+        min_attempts: u64,
+        auth_ports: &[u16],
+    ) -> Vec<BruteForceCandidate> {
+        let mut out: Vec<BruteForceCandidate> = self
+            .channels
+            .iter()
+            .filter(|(k, s)| s.contacts() >= min_attempts && auth_ports.contains(&k.dst_port))
+            .map(|(k, s)| BruteForceCandidate {
+                key: *k,
+                attempts: s.contacts(),
+            })
+            .collect();
+        out.sort_by(|a, b| b.attempts.cmp(&a.attempts).then(a.key.cmp(&b.key)));
+        out
+    }
 }
 
 use crate::enrich::classify_ip;
@@ -490,6 +520,20 @@ use crate::model::finding::{Finding, FindingKind};
 use crate::model::flow::FlowRecord;
 use crate::model::incident::Incident;
 use crate::model::severity::Severity;
+
+/// Interactive remote-login service ports treated as credential-brute-force targets. Repeated
+/// separate connections to one of these from a single source is anomalous (you reuse one SSH/RDP
+/// session, you do not open twenty), and benign churn on them is low — unlike high-volume service
+/// ports (SMB 445, LDAP 389, the database ports) where a workstation legitimately opens many
+/// connections to a file server / DC. Used as both [`BruteForceParams::auth_ports`] and
+/// [`BeaconParams::ignore_ports`] so the two detectors never disagree about a channel.
+pub const INTERACTIVE_AUTH_PORTS: &[u16] = &[
+    21,   // FTP
+    22,   // SSH
+    23,   // Telnet
+    3389, // RDP
+    5900, // VNC
+];
 
 /// Tuning for the beaconing detector.
 #[derive(Debug, Clone)]
@@ -504,6 +548,11 @@ pub struct BeaconParams {
     pub min_interval_ns: i64,
     /// Ignore channels whose period is above this (too sparse to call periodic).
     pub max_interval_ns: i64,
+    /// Destination ports excluded from beacon detection. A throttled credential guesser produces
+    /// a regular, low-jitter series to an auth service that would otherwise satisfy the beacon
+    /// predicate too; excluding the auth ports keeps a brute force from also being reported as a
+    /// C2 beacon (legitimate C2 rarely beacons over an interactive-login port anyway).
+    pub ignore_ports: Vec<u16>,
 }
 
 impl Default for BeaconParams {
@@ -517,6 +566,7 @@ impl Default for BeaconParams {
             max_jitter_cv: 0.15,
             min_interval_ns: 1_000_000_000,              // 1 s
             max_interval_ns: 24 * 3_600 * 1_000_000_000, // 24 h
+            ignore_ports: INTERACTIVE_AUTH_PORTS.to_vec(),
         }
     }
 }
@@ -592,6 +642,11 @@ pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<F
         if c.interval_ns < params.min_interval_ns as f64
             || c.interval_ns > params.max_interval_ns as f64
         {
+            continue;
+        }
+        // A regular, low-jitter series to an auth service is a (throttled) brute force, not a C2
+        // beacon — skip the auth ports so the two detectors never double-report one channel.
+        if params.ignore_ports.contains(&c.key.dst_port) {
             continue;
         }
         let dst = c.key.dst;
@@ -778,6 +833,94 @@ pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Fin
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+        });
+    }
+    findings
+}
+
+/// Tuning for the credential brute-force detector.
+#[derive(Debug, Clone)]
+pub struct BruteForceParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum connection attempts to one auth service before it counts as a brute force.
+    pub min_attempts: u64,
+    /// Destination ports treated as authentication services. Gating on these is the
+    /// false-positive guard. The default is the *interactive remote-login* services
+    /// ([`INTERACTIVE_AUTH_PORTS`]) where many separate connections from one source is
+    /// unambiguously anomalous; high-churn services (SMB, LDAP, the databases) are deliberately
+    /// left out of the default to avoid firing on legitimate enterprise service churn — the same
+    /// "skip what you cannot cleanly disambiguate" stance as [`SweepParams::ignore_ports`]. Add
+    /// them here when the deployment warrants it.
+    pub auth_ports: Vec<u16>,
+}
+
+impl Default for BruteForceParams {
+    fn default() -> Self {
+        BruteForceParams {
+            enabled: true,
+            min_attempts: 20,
+            auth_ports: INTERACTIVE_AUTH_PORTS.to_vec(),
+        }
+    }
+}
+
+/// Human service name for a well-known authentication port (for evidence/title text).
+fn auth_service_name(port: u16) -> &'static str {
+    match port {
+        21 => "FTP",
+        22 => "SSH",
+        23 => "Telnet",
+        110 => "POP3",
+        143 => "IMAP",
+        389 => "LDAP",
+        445 => "SMB",
+        636 => "LDAPS",
+        1433 => "MSSQL",
+        3306 => "MySQL",
+        3389 => "RDP",
+        5432 => "PostgreSQL",
+        5900 => "VNC",
+        5985 => "WinRM",
+        _ => "auth service",
+    }
+}
+
+/// Detect credential brute force from the behavioral tracker: one [`Finding`] per `(src, dst)`
+/// channel that made at least [`BruteForceParams::min_attempts`] connection attempts to an
+/// authentication service ([`BruteForceParams::auth_ports`]). High severity, ATT&CK T1110.
+/// Deterministic order.
+pub fn detect_brute_force(tracker: &BehaviorTracker, params: &BruteForceParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.brute_force_candidates(params.min_attempts, &params.auth_ports) {
+        let dst = c.key.dst;
+        let port = c.key.dst_port;
+        let service = auth_service_name(port);
+        findings.push(Finding {
+            kind: FindingKind::BruteForce,
+            severity: Severity::High,
+            score: 68,
+            title: format!(
+                "Brute force: {} -> {}:{} ({} {} attempts)",
+                c.key.src, dst, port, c.attempts, service
+            ),
+            src_ip: c.key.src.to_string(),
+            dst_ip: Some(dst.to_string()),
+            dst_port: Some(port),
+            attack: vec!["T1110".to_string()],
+            evidence: vec![
+                format!(
+                    "{} connection attempts to {} {}:{}",
+                    c.attempts, service, dst, port
+                ),
+                "many separate logins to one auth service — password guessing".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.attempts),
         });
     }
     findings
@@ -975,10 +1118,11 @@ pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
 /// Kill-chain stage of a finding kind (lower = earlier in the chain).
 fn stage_ordinal(kind: FindingKind) -> u8 {
     match kind {
-        FindingKind::HostSweep => 0, // discovery
-        FindingKind::Beacon => 1,    // command-and-control
-        FindingKind::DataExfil => 2, // exfiltration
-        FindingKind::DnsTunnel => 2, // exfiltration / C2 over DNS
+        FindingKind::HostSweep => 0,  // discovery
+        FindingKind::BruteForce => 1, // credential access
+        FindingKind::Beacon => 2,     // command-and-control
+        FindingKind::DataExfil => 3,  // exfiltration
+        FindingKind::DnsTunnel => 3,  // exfiltration / C2 over DNS
     }
 }
 
@@ -986,6 +1130,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
 fn stage_label(kind: FindingKind) -> &'static str {
     match kind {
         FindingKind::HostSweep => "Discovery",
+        FindingKind::BruteForce => "Credential Access",
         FindingKind::Beacon => "Command & Control",
         FindingKind::DataExfil => "Exfiltration",
         FindingKind::DnsTunnel => "Exfiltration",
@@ -996,6 +1141,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
 fn kind_phrase(kind: FindingKind) -> &'static str {
     match kind {
         FindingKind::HostSweep => "swept the network",
+        FindingKind::BruteForce => "brute-forced credentials",
         FindingKind::Beacon => "beaconed to a C2",
         FindingKind::DataExfil => "exfiltrated data",
         FindingKind::DnsTunnel => "tunneled data over DNS",
@@ -1257,6 +1403,111 @@ mod tests {
             ..SweepParams::default()
         };
         assert!(detect_sweeps(&t, &params).is_empty());
+    }
+
+    #[test]
+    fn detect_brute_force_flags_repeated_auth_attempts_high() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        let victim = ip(10, 0, 0, 5);
+        // 25 separate connection attempts to the victim's SSH service (each a distinct flow).
+        for i in 0..25i64 {
+            t.observe_contact(attacker, victim, 22, i * SEC);
+        }
+        // A handful of benign HTTPS connections to the same victim must NOT be a brute force.
+        for i in 0..3i64 {
+            t.observe_contact(attacker, victim, 443, i * SEC);
+        }
+
+        let findings = detect_brute_force(&t, &BruteForceParams::default());
+        assert_eq!(findings.len(), 1, "findings: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::BruteForce);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.src_ip, "10.0.0.9");
+        assert_eq!(f.dst_ip.as_deref(), Some("10.0.0.5"));
+        assert_eq!(f.dst_port, Some(22));
+        assert!(f.attack.iter().any(|a| a == "T1110"), "attack: {:?}", f.attack);
+        assert!(f.contacts.unwrap() >= 20);
+        assert!(
+            f.title.contains("SSH"),
+            "title should name the service: {}",
+            f.title
+        );
+    }
+
+    #[test]
+    fn detect_brute_force_ignores_non_auth_ports_and_below_threshold() {
+        // Many attempts, but to a non-auth port (8080) — not a credential brute force.
+        let mut high_vol = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..50i64 {
+            high_vol.observe_contact(ip(10, 0, 0, 9), ip(10, 0, 0, 5), 8080, i * SEC);
+        }
+        assert!(detect_brute_force(&high_vol, &BruteForceParams::default()).is_empty());
+
+        // An auth port, but only a few attempts — below the threshold.
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..5i64 {
+            few.observe_contact(ip(10, 0, 0, 9), ip(10, 0, 0, 5), 3389, i * SEC);
+        }
+        assert!(detect_brute_force(&few, &BruteForceParams::default()).is_empty());
+
+        // A high-churn service (SMB 445) is NOT in the default auth_ports — many connections to a
+        // file server are ordinary, so the default must not flag them.
+        let mut smb = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..50i64 {
+            smb.observe_contact(ip(10, 0, 0, 9), ip(10, 0, 0, 5), 445, i * SEC);
+        }
+        assert!(detect_brute_force(&smb, &BruteForceParams::default()).is_empty());
+    }
+
+    #[test]
+    fn detect_brute_force_disabled_yields_nothing() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..30i64 {
+            t.observe_contact(ip(10, 0, 0, 9), ip(10, 0, 0, 5), 22, i * SEC);
+        }
+        let params = BruteForceParams {
+            enabled: false,
+            ..BruteForceParams::default()
+        };
+        assert!(detect_brute_force(&t, &params).is_empty());
+    }
+
+    #[test]
+    fn regular_auth_channel_is_brute_force_not_beacon() {
+        // A throttled credential guesser: 25 regular, low-jitter SSH attempts ~5 s apart. That
+        // timing ALSO satisfies the beacon predicate (>=12 contacts, CV~0, interval in [1s,24h]),
+        // so without a guard the one channel would be reported as BOTH a brute force AND a C2
+        // beacon. BeaconParams.ignore_ports skips the auth ports, so it is only a brute force.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        let victim = ip(10, 0, 0, 5);
+        for i in 0..25i64 {
+            t.observe_contact(attacker, victim, 22, i * 5 * SEC);
+        }
+
+        let beacons = detect_beacons(&t, &BeaconParams::default());
+        let brutes = detect_brute_force(&t, &BruteForceParams::default());
+        assert!(
+            beacons.iter().all(|b| b.dst_port != Some(22)),
+            "auth-port channel must not be reported as a beacon: {beacons:?}"
+        );
+        assert_eq!(brutes.len(), 1, "the channel is a brute force: {brutes:?}");
+        assert_eq!(brutes[0].dst_port, Some(22));
+
+        // Prove it is the GUARD, not the timing, that prevents the overlap: clear ignore_ports and
+        // the identical channel now also trips the beacon detector.
+        let no_ignore = BeaconParams {
+            ignore_ports: vec![],
+            ..BeaconParams::default()
+        };
+        assert!(
+            detect_beacons(&t, &no_ignore)
+                .iter()
+                .any(|b| b.dst_port == Some(22)),
+            "without the guard the auth channel would also look like a beacon"
+        );
     }
 
     #[test]
@@ -1583,6 +1834,30 @@ mod tests {
         // ATT&CK union, sorted.
         assert_eq!(i.attack, vec!["T1046", "T1048", "T1071"]);
         assert!(i.narrative.contains("swept"), "narrative: {}", i.narrative);
+    }
+
+    #[test]
+    fn brute_force_sorts_into_credential_access_between_discovery_and_c2() {
+        let host = "10.13.37.7";
+        // Added out of kill-chain order: beacon (C2), sweep (discovery), brute force (cred access).
+        let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
+        let sweep = mk_finding(FindingKind::HostSweep, host, Severity::High, 65, &["T1046"]);
+        let brute = mk_finding(FindingKind::BruteForce, host, Severity::High, 68, &["T1110"]);
+
+        let inc = correlate_incidents(&[beacon, sweep, brute]);
+        assert_eq!(inc.len(), 1);
+        let i = &inc[0];
+        // Three distinct stages -> escalate High to Critical.
+        assert_eq!(i.severity, Severity::Critical);
+        assert_eq!(
+            i.stages,
+            vec!["Discovery", "Credential Access", "Command & Control"]
+        );
+        // Findings ordered along the kill chain: sweep -> brute force -> beacon.
+        assert_eq!(i.findings[0].kind, FindingKind::HostSweep);
+        assert_eq!(i.findings[1].kind, FindingKind::BruteForce);
+        assert_eq!(i.findings[2].kind, FindingKind::Beacon);
+        assert_eq!(i.attack, vec!["T1046", "T1071", "T1110"]);
     }
 
     #[test]

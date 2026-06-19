@@ -19,6 +19,8 @@ pub enum FindingKind {
     Beacon,
     /// Horizontal sweep: one source touching many distinct destination hosts.
     HostSweep,
+    /// Credential brute force: many connection attempts to one authentication service.
+    BruteForce,
     /// Data exfiltration: a large asymmetric outbound transfer to an external peer.
     DataExfil,
     /// DNS tunneling / DGA: high-volume, high-entropy DNS queries (C2 / exfil over DNS).
@@ -31,6 +33,7 @@ impl FindingKind {
         match self {
             FindingKind::Beacon => "beacon",
             FindingKind::HostSweep => "host_sweep",
+            FindingKind::BruteForce => "brute_force",
             FindingKind::DataExfil => "data_exfil",
             FindingKind::DnsTunnel => "dns_tunnel",
         }

@@ -63,10 +63,9 @@ fn analyze_file_counts_categories_and_reconciles() {
     assert_eq!(s.proto.tcp, m.counts.tcp, "tcp aggregate");
     assert_eq!(s.proto.udp, m.counts.udp, "udp aggregate");
     assert_eq!(s.non_ip_frames, m.counts.non_ipv4, "non-ip frames");
-    // App-proto leaves are a lower bound on the plan: the generator's generic `other_tcp`
-    // frames pick a random low port that may coincide with 80/443/53 and be counted as
-    // http/tls/dns. The planned service frames always decode to their well-known port, so the
-    // decoded leaf counts are >= the planned counts.
+    // App-proto leaves are a lower bound on the plan. The generator's generic `other_tcp` frames
+    // now target high non-service ports (never 80/443/53), so in practice the decoded leaf counts
+    // equal the plan; `>=` is kept as the robust invariant (any future coincidence stays valid).
     assert!(s.proto.http >= m.counts.http, "http >= planned");
     assert!(s.proto.tls >= m.counts.tls, "tls >= planned");
     assert!(s.proto.dns >= m.counts.dns, "dns >= planned");

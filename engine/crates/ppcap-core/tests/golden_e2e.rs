@@ -59,9 +59,9 @@ fn golden_conservation_and_fidelity() {
         "decoded tcp == planned tcp - truncated"
     );
     assert_eq!(s.proto.udp, m.counts.udp, "udp aggregate exact");
-    // The leaf app-proto split (http/tls/dns) is a *lower bound* on the plan: the generator's
-    // generic `other_tcp` frames pick a random low destination port, which may coincide with
-    // 80/443/53 and get counted as http/tls/dns. So decoded leaf counts are >= the plan.
+    // The leaf app-proto split (http/tls/dns) is a *lower bound* on the plan. The generator's
+    // generic `other_tcp` frames now target high non-service ports (never 80/443/53), so decoded
+    // leaf counts match the plan in practice; `>=` is kept as the robust invariant.
     assert!(s.proto.http >= m.counts.http, "http >= planned");
     assert!(s.proto.tls >= m.counts.tls, "tls >= planned");
     assert!(s.proto.dns >= m.counts.dns, "dns >= planned");
