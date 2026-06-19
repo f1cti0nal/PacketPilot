@@ -117,6 +117,7 @@ export type FindingKind =
   | "beacon"
   | "host_sweep"
   | "brute_force"
+  | "lateral_movement"
   | "data_exfil"
   | "dns_tunnel";
 
