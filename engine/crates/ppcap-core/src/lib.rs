@@ -49,7 +49,7 @@ pub mod score;
 pub mod stats;
 
 pub use analyze::{run, run_source, PipelineConfig};
-pub use detect::{BeaconParams, BehaviorTracker, DetectConfig};
+pub use detect::{BeaconParams, BehaviorTracker, DetectConfig, ExfilParams};
 pub use enrich::{
     attack_for, classify_ip, AttackTechnique, Enricher, FeedMatch, FlowEnrichment, IpClass,
     ThreatFeed,

@@ -12,7 +12,8 @@ use std::time::Instant;
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, detect_beacons, BeaconParams, BehaviorTracker, DetectConfig,
+    contact_from_flow, detect_beacons, detect_exfil, BeaconParams, BehaviorTracker, DetectConfig,
+    ExfilParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -45,6 +46,8 @@ pub struct PipelineConfig {
     pub writer: WriterConfig,
     /// Beaconing-detector tuning (cross-flow behavioral detection).
     pub beacon: BeaconParams,
+    /// Data-exfiltration-detector tuning.
+    pub exfil: ExfilParams,
 }
 
 impl Default for PipelineConfig {
@@ -65,6 +68,7 @@ impl Default for PipelineConfig {
             stats: StatsConfig::default(),
             writer: WriterConfig::default(),
             beacon: BeaconParams::default(),
+            exfil: ExfilParams::default(),
         }
     }
 }
@@ -231,7 +235,8 @@ pub fn run_source(
     // Cross-flow behavioral detection runs once, after every flow's contact has been folded in.
     // Its findings uplift the implicated hosts' per-IP threat cards *before* the summary sorts
     // and truncates them, so a beaconing host/C2 surfaces in the Top Threats panel.
-    let findings = detect_beacons(&tracker, &cfg.beacon);
+    let mut findings = detect_beacons(&tracker, &cfg.beacon);
+    findings.extend(detect_exfil(&tracker, &cfg.exfil));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
@@ -276,9 +281,17 @@ fn process_flow(
     classifier.classify(record);
 
     // Behavioral substrate: fold this connection's directed contact (client -> server:port at
-    // the flow's start time) into the cross-flow tracker for beaconing/sweep detection.
-    if let Some((client, server, server_port, ts)) = contact_from_flow(record) {
-        tracker.observe_contact(client, server, server_port, ts);
+    // the flow's start time, with directional bytes) into the cross-flow tracker for
+    // beaconing / exfil detection.
+    if let Some(c) = contact_from_flow(record) {
+        tracker.observe_flow_contact(
+            c.client,
+            c.server,
+            c.server_port,
+            c.ts_ns,
+            c.bytes_out,
+            c.bytes_in,
+        );
     }
 
     // Single-pass scan uplift: promote an UNNAMED flow to Scan when either endpoint is a
@@ -786,6 +799,95 @@ mod tests {
                 .iter()
                 .any(|t| t.ip == c2 && t.severity == Severity::High),
             "c2 {c2} not High in ip_threats"
+        );
+    }
+
+    #[test]
+    fn pipeline_surfaces_exfil_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let client = Ipv4Addr::new(10, 0, 0, 5);
+        let ext = Ipv4Addr::new(8, 8, 8, 8); // external destination
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        // One flow, heavily asymmetric: ~75 KB uploaded client -> ext:443 over 60 data packets...
+        let payload = vec![0xABu8; 1200];
+        let push = |buf: &mut Vec<u8>, frame: &[u8], ts: i64| {
+            let wl = frame.len() as u32;
+            container::write_legacy_record(buf, ts, wl, wl).unwrap();
+            buf.write_all(frame).unwrap();
+        };
+        for i in 0..60i64 {
+            let tcp = frames::build_tcp(
+                client,
+                ext,
+                50000,
+                443,
+                frames::TCP_PSH | frames::TCP_ACK,
+                &payload,
+            );
+            let ip = frames::build_ipv4(client, ext, frames::IP_PROTO_TCP, 64, tcp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 1],
+                [0x02, 0, 0, 0, 0, 2],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            push(&mut buf, &frame, base + i * 1_000_000);
+        }
+        // ...with only a few tiny inbound acks.
+        for i in 0..3i64 {
+            let tcp = frames::build_tcp(ext, client, 443, 50000, frames::TCP_ACK, &[]);
+            let ip = frames::build_ipv4(ext, client, frames::IP_PROTO_TCP, 64, tcp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 2],
+                [0x02, 0, 0, 0, 0, 1],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            push(&mut buf, &frame, base + (60 + i) * 1_000_000);
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        // Low exfil floor so the ~75 KB upload trips it; NO threat feed.
+        let cfg = PipelineConfig {
+            exfil: crate::detect::ExfilParams {
+                enabled: true,
+                min_bytes_out: 50_000,
+                min_ratio: 4.0,
+                critical_bytes_out: 100_000_000,
+            },
+            ..PipelineConfig::default()
+        };
+        let out = run(tf.path(), &cfg, |_, _, _| {}).unwrap();
+
+        let exfil = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::DataExfil)
+            .unwrap_or_else(|| panic!("no exfil finding: {:?}", out.summary.findings));
+        assert_eq!(exfil.severity, crate::model::severity::Severity::High);
+        assert_eq!(exfil.dst_ip.as_deref(), Some("8.8.8.8"));
+        assert_eq!(exfil.src_ip, "10.0.0.5");
+        assert!(exfil.attack.iter().any(|a| a == "T1048"));
+        // The external peer is surfaced as a High threat card (behavior alone).
+        assert!(
+            out.summary
+                .ip_threats
+                .iter()
+                .any(|t| t.ip == "8.8.8.8" && t.severity == crate::model::severity::Severity::High),
+            "exfil peer not High in ip_threats"
         );
     }
 }
