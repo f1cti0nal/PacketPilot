@@ -13,8 +13,9 @@ use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force, detect_dns_tunnel,
-    detect_exfil, detect_sweeps, BeaconParams, BehaviorTracker, BruteForceParams, DetectConfig,
-    DnsTunnelParams, ExfilParams, SweepParams,
+    detect_exfil, detect_lateral_movement, detect_sweeps, suppress_swept_by_lateral, BeaconParams,
+    BehaviorTracker, BruteForceParams, DetectConfig, DnsTunnelParams, ExfilParams,
+    LateralMovementParams, SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -53,6 +54,8 @@ pub struct PipelineConfig {
     pub sweep: SweepParams,
     /// Credential brute-force-detector tuning.
     pub brute_force: BruteForceParams,
+    /// Lateral-movement-detector tuning.
+    pub lateral: LateralMovementParams,
     /// DNS-tunneling-detector tuning.
     pub dns_tunnel: DnsTunnelParams,
 }
@@ -78,6 +81,7 @@ impl Default for PipelineConfig {
             exfil: ExfilParams::default(),
             sweep: SweepParams::default(),
             brute_force: BruteForceParams::default(),
+            lateral: LateralMovementParams::default(),
             dns_tunnel: DnsTunnelParams::default(),
         }
     }
@@ -254,10 +258,15 @@ pub fn run_source(
     // Cross-flow behavioral detection runs once, after every flow's contact has been folded in.
     // Its findings uplift the implicated hosts' per-IP threat cards *before* the summary sorts
     // and truncates them, so a beaconing host/C2 surfaces in the Top Threats panel.
+    let lateral = detect_lateral_movement(&tracker, &cfg.lateral);
+    // An established admin fan-out is lateral movement (real sessions), not a probe sweep, so the
+    // more-specific lateral finding suppresses any host-sweep on the same (src, port).
+    let sweeps = suppress_swept_by_lateral(detect_sweeps(&tracker, &cfg.sweep), &lateral);
     let mut findings = detect_beacons(&tracker, &cfg.beacon);
     findings.extend(detect_exfil(&tracker, &cfg.exfil));
-    findings.extend(detect_sweeps(&tracker, &cfg.sweep));
+    findings.extend(sweeps);
     findings.extend(detect_brute_force(&tracker, &cfg.brute_force));
+    findings.extend(lateral);
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     stats.apply_findings(&findings);
 
@@ -840,7 +849,7 @@ mod tests {
             "incident: {incident:?}"
         );
         assert!(
-            incident.findings.len() >= 5,
+            incident.findings.len() >= 6,
             "expected full kill-chain incident: {incident:?}"
         );
         assert_eq!(
@@ -848,6 +857,7 @@ mod tests {
             vec![
                 "Discovery",
                 "Credential Access",
+                "Lateral Movement",
                 "Command & Control",
                 "Exfiltration"
             ],
@@ -866,6 +876,18 @@ mod tests {
         assert!(
             brute.contacts.unwrap() >= 20,
             "brute attempts below the detector floor: {brute:?}"
+        );
+        // ...lateral movement: established RDP (3389) sessions across several internal hosts...
+        let lateral = incident
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::LateralMovement)
+            .unwrap_or_else(|| panic!("incident missing lateral-movement finding: {incident:?}"));
+        assert_eq!(lateral.dst_port, Some(3389), "lateral over RDP");
+        assert!(lateral.dst_ip.is_none(), "fan-out finding has no single dst");
+        assert!(
+            lateral.contacts.unwrap() >= 4,
+            "lateral host count below the detector floor: {lateral:?}"
         );
         // ...and DNS tunneling (exfil over DNS).
         assert!(
@@ -1086,6 +1108,101 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_surfaces_lateral_movement_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let attacker = Ipv4Addr::new(10, 0, 0, 9); // internal
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        let mut ts = base;
+        let push = |buf: &mut Vec<u8>, frame: &[u8], ts: i64| {
+            let wl = frame.len() as u32;
+            container::write_legacy_record(buf, ts, wl, wl).unwrap();
+            buf.write_all(frame).unwrap();
+        };
+        // Established RDP (3389) sessions to 5 distinct internal hosts: for each, a fixed ephemeral
+        // source port keeps both directions in one flow, and ~700 B payloads each way clear the
+        // detector's per-direction session-byte floor (a SYN probe never would).
+        let payload = [0x77u8; 700];
+        for h in 1..=5u8 {
+            let victim = Ipv4Addr::new(10, 0, 1, h);
+            let sport = 52000 + h as u16;
+            for round in 0..2i64 {
+                // client -> server
+                let tcp = frames::build_tcp(
+                    attacker,
+                    victim,
+                    sport,
+                    3389,
+                    frames::TCP_PSH | frames::TCP_ACK,
+                    &payload,
+                );
+                let ip = frames::build_ipv4(attacker, victim, frames::IP_PROTO_TCP, 64, tcp.len());
+                let mut frame = frames::build_ethernet(
+                    [0x02, 0, 0, 0, 0, 9],
+                    [0x02, 0, 0, 0, 1, h],
+                    frames::ETHERTYPE_IPV4,
+                );
+                frame.extend_from_slice(&ip);
+                frame.extend_from_slice(&tcp);
+                push(&mut buf, &frame, ts);
+                ts += 1_000_000;
+                // server -> client
+                let tcp = frames::build_tcp(
+                    victim,
+                    attacker,
+                    3389,
+                    sport,
+                    frames::TCP_PSH | frames::TCP_ACK,
+                    &payload,
+                );
+                let ip = frames::build_ipv4(victim, attacker, frames::IP_PROTO_TCP, 64, tcp.len());
+                let mut frame = frames::build_ethernet(
+                    [0x02, 0, 0, 0, 1, h],
+                    [0x02, 0, 0, 0, 0, 9],
+                    frames::ETHERTYPE_IPV4,
+                );
+                frame.extend_from_slice(&ip);
+                frame.extend_from_slice(&tcp);
+                push(&mut buf, &frame, ts);
+                ts += 1_000_000;
+                let _ = round;
+            }
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let lm = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::LateralMovement)
+            .unwrap_or_else(|| panic!("no lateral-movement finding: {:?}", out.summary.findings));
+        assert_eq!(lm.severity, crate::model::severity::Severity::High);
+        assert_eq!(lm.src_ip, "10.0.0.9");
+        assert!(lm.dst_ip.is_none());
+        assert_eq!(lm.dst_port, Some(3389));
+        assert!(lm.attack.iter().any(|a| a == "T1021"));
+        assert!(lm.contacts.unwrap() >= 4);
+        assert!(
+            out.summary
+                .ip_threats
+                .iter()
+                .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
+            "lateral mover not High in ip_threats"
+        );
+    }
+
+    #[test]
     fn benign_mixed_traffic_yields_no_brute_force_even_at_low_host_diversity() {
         use crate::gen::{GenConfig, Scenario, SynthGen};
         // Regression for the adversarial-review false positive: a tiny host set concentrates the
@@ -1103,15 +1220,21 @@ mod tests {
         let tf = tempfile::NamedTempFile::new().unwrap();
         SynthGen::new(cfg).write_pcap(tf.path()).unwrap();
         let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
-        let bf: Vec<_> = out
+        // Neither the credential nor the lateral-movement detector may fire on benign Mixed
+        // traffic: other-TCP is SYN-only on high non-admin ports, so no channel is both on an
+        // auth/admin port AND an established bidirectional session.
+        let spurious: Vec<_> = out
             .summary
             .findings
             .iter()
-            .filter(|f| f.kind == crate::model::finding::FindingKind::BruteForce)
+            .filter(|f| {
+                f.kind == crate::model::finding::FindingKind::BruteForce
+                    || f.kind == crate::model::finding::FindingKind::LateralMovement
+            })
             .collect();
         assert!(
-            bf.is_empty(),
-            "spurious brute force on benign Mixed traffic: {bf:?}"
+            spurious.is_empty(),
+            "spurious credential/lateral finding on benign Mixed traffic: {spurious:?}"
         );
     }
 

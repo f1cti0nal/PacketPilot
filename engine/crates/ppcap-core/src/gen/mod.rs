@@ -537,9 +537,10 @@ impl SynthGen {
         let i = self.emitted;
         let sweep_count = self.beacon_sweep_count();
         let brute_count = self.beacon_brute_count();
+        let lateral_count = self.beacon_lateral_count();
         let exfil_count = self.beacon_exfil_count();
         let dns_count = self.beacon_dns_count();
-        let prefix = sweep_count + brute_count + exfil_count + dns_count;
+        let prefix = sweep_count + brute_count + lateral_count + exfil_count + dns_count;
 
         // Stage 1 (recon): a short SYN sweep — the beacon host probes many internal hosts on
         // 445. Combined with the C2 beacon below, this gives the host a multi-stage incident.
@@ -565,10 +566,24 @@ impl SynthGen {
             return Some((ts, FrameKind::OtherTcp, frame));
         }
 
-        // Stage 3 (exfiltration): a large asymmetric upload from the beacon host to an external
-        // drop server — one flow, megabytes outbound, almost nothing back.
-        if i < sweep_count + brute_count + exfil_count {
+        // Stage 3 (lateral movement): the beacon host pivots into several discovered hosts with
+        // established RDP sessions (bytes both directions per host), east-west across the LAN.
+        if i < sweep_count + brute_count + lateral_count {
             let k = i - sweep_count - brute_count;
+            let frame = self.build_beacon_lateral(k);
+            let ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(2_800_000_000)
+                .saturating_add(k as i64 * 5_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::OtherTcp, frame));
+        }
+
+        // Stage 4 (exfiltration): a large asymmetric upload from the beacon host to an external
+        // drop server — one flow, megabytes outbound, almost nothing back.
+        if i < sweep_count + brute_count + lateral_count + exfil_count {
+            let k = i - sweep_count - brute_count - lateral_count;
             let frame = self.build_beacon_exfil();
             // A few seconds after the sweep, ~1 ms apart.
             let ts = self
@@ -580,10 +595,10 @@ impl SynthGen {
             return Some((ts, FrameKind::Tls, frame));
         }
 
-        // Stage 4 (DNS tunneling): a burst of high-entropy DNS queries to the internal resolver,
+        // Stage 5 (DNS tunneling): a burst of high-entropy DNS queries to the internal resolver,
         // smuggling data out over DNS.
         if i < prefix {
-            let k = i - sweep_count - brute_count - exfil_count;
+            let k = i - sweep_count - brute_count - lateral_count - exfil_count;
             let frame = self.build_beacon_dns(k);
             let ts = self
                 .cfg
@@ -594,7 +609,7 @@ impl SynthGen {
             return Some((ts, FrameKind::Dns, frame));
         }
 
-        // Stage 5 (C2): the periodic beacon + benign background.
+        // Stage 6 (C2): the periodic beacon + benign background.
         let j = i - prefix;
         let pos = j % BEACON_CYCLE_LEN;
 
@@ -675,6 +690,44 @@ impl SynthGen {
         let tcp = frames::build_tcp(client, victim, sport, 22, TCP_SYN, &[]);
         let ip = frames::build_ipv4(client, victim, IP_PROTO_TCP, 64, tcp.len());
         let mut frame = frames::build_ethernet(BEACON_CLIENT_MAC, BEACON_BRUTE_MAC, ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
+    }
+
+    /// Number of lateral-movement frames emitted after the brute stage (0 for small captures):
+    /// [`BEACON_LATERAL_HOSTS`] established RDP sessions, [`BEACON_LATERAL_FRAMES_PER_HOST`] frames
+    /// each (alternating client->server / server->client so both directions clear the detector's
+    /// per-direction session-byte floor).
+    fn beacon_lateral_count(&self) -> u64 {
+        if self.cfg.packets >= 2_000 {
+            BEACON_LATERAL_HOSTS * BEACON_LATERAL_FRAMES_PER_HOST
+        } else {
+            0
+        }
+    }
+
+    /// Build one lateral-movement frame: a data segment of an established RDP (3389) session from
+    /// the beacon host to one discovered internal host. A fixed ephemeral source port per target
+    /// keeps each host's frames in one flow; alternating direction gives that flow bytes both
+    /// ways, so the channel reads as a real session (not a SYN probe).
+    fn build_beacon_lateral(&mut self, idx: u64) -> Vec<u8> {
+        let client = beacon_client();
+        let target_idx = idx / BEACON_LATERAL_FRAMES_PER_HOST;
+        let target = Ipv4Addr::new(10, 66, 0, (target_idx + 1) as u8);
+        let sport = 52000 + target_idx as u16;
+        let outbound = idx % 2 == 0;
+        let payload = [0x77u8; BEACON_LATERAL_PAYLOAD];
+        // record_flow normalizes endpoints, so both directions map to the one session flow.
+        self.record_flow(client, target, sport, 3389, IP_PROTO_TCP);
+        let (src, dst, sp, dp, smac, dmac) = if outbound {
+            (client, target, sport, 3389, BEACON_CLIENT_MAC, BEACON_LATERAL_MAC)
+        } else {
+            (target, client, 3389, sport, BEACON_LATERAL_MAC, BEACON_CLIENT_MAC)
+        };
+        let tcp = frames::build_tcp(src, dst, sp, dp, TCP_PSH | TCP_ACK, &payload);
+        let ip = frames::build_ipv4(src, dst, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(smac, dmac, ETHERTYPE_IPV4);
         frame.extend_from_slice(&ip);
         frame.extend_from_slice(&tcp);
         frame
@@ -821,6 +874,13 @@ const BEACON_SWEEP_HOSTS: u64 = 24;
 /// brute-force detector's attempt floor) and the MAC used for those frames.
 const BEACON_BRUTE_ATTEMPTS: u64 = 30;
 const BEACON_BRUTE_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x05];
+/// Lateral-movement stage: established RDP sessions to N discovered internal hosts (>= the
+/// lateral detector's host floor), each carrying a few data frames per direction (so both
+/// directions clear the per-direction session-byte floor), plus the MAC for those frames.
+const BEACON_LATERAL_HOSTS: u64 = 6;
+const BEACON_LATERAL_FRAMES_PER_HOST: u64 = 4;
+const BEACON_LATERAL_PAYLOAD: usize = 700;
+const BEACON_LATERAL_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x06];
 /// Exfil upload: number of large data packets, their payload size, and the fixed source port
 /// (one flow). 900 × 1400 B ≈ 1.2 MB outbound — clears the 1 MB exfil floor.
 const BEACON_EXFIL_PACKETS: u64 = 900;

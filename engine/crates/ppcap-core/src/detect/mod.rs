@@ -238,6 +238,16 @@ pub struct BruteForceCandidate {
     pub attempts: u64,
 }
 
+/// A `(source, admin-port)` pair that opened established sessions to several distinct hosts
+/// (lateral-movement shape). `targets` are the distinct destinations whose channel carried a
+/// real bidirectional session; internality is left to the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LateralCandidate {
+    pub src: IpAddr,
+    pub dst_port: u16,
+    pub targets: Vec<IpAddr>,
+}
+
 /// Per-`(source, resolver)` DNS query statistics.
 #[derive(Debug, Clone, Default)]
 struct DnsStats {
@@ -513,6 +523,37 @@ impl BehaviorTracker {
         out.sort_by(|a, b| b.attempts.cmp(&a.attempts).then(a.key.cmp(&b.key)));
         out
     }
+
+    /// All `(source, admin-port)` pairs that opened an *established* session — at least
+    /// `min_session_bytes` in **each** direction, which a SYN scan / bare handshake never reaches —
+    /// to one or more distinct destinations on a port in `lateral_ports`. The byte floor per
+    /// direction is what separates lateral movement (real remote-admin sessions) from a horizontal
+    /// probe sweep. Internality of the endpoints and the host-count threshold are left to the
+    /// caller. Returned in deterministic order; `targets` are sorted and deduplicated.
+    pub fn lateral_candidates(
+        &self,
+        min_session_bytes: u64,
+        lateral_ports: &[u16],
+    ) -> Vec<LateralCandidate> {
+        use std::collections::{BTreeMap, BTreeSet};
+        let mut groups: BTreeMap<(IpAddr, u16), BTreeSet<IpAddr>> = BTreeMap::new();
+        for (k, s) in &self.channels {
+            if lateral_ports.contains(&k.dst_port)
+                && s.bytes_out() >= min_session_bytes
+                && s.bytes_in() >= min_session_bytes
+            {
+                groups.entry((k.src, k.dst_port)).or_default().insert(k.dst);
+            }
+        }
+        groups
+            .into_iter()
+            .map(|((src, dst_port), set)| LateralCandidate {
+                src,
+                dst_port,
+                targets: set.into_iter().collect(),
+            })
+            .collect()
+    }
 }
 
 use crate::enrich::classify_ip;
@@ -548,10 +589,11 @@ pub struct BeaconParams {
     pub min_interval_ns: i64,
     /// Ignore channels whose period is above this (too sparse to call periodic).
     pub max_interval_ns: i64,
-    /// Destination ports excluded from beacon detection. A throttled credential guesser produces
-    /// a regular, low-jitter series to an auth service that would otherwise satisfy the beacon
-    /// predicate too; excluding the auth ports keeps a brute force from also being reported as a
-    /// C2 beacon (legitimate C2 rarely beacons over an interactive-login port anyway).
+    /// Destination ports excluded from beacon detection. A throttled credential guesser or a
+    /// periodic remote-admin agent produces a regular, low-jitter series to an auth / admin
+    /// service that would otherwise satisfy the beacon predicate too; excluding the auth AND
+    /// lateral-movement ports keeps a brute force / lateral fan-out from also being reported as a
+    /// C2 beacon (legitimate C2 rarely beacons over an interactive-login or remote-admin port).
     pub ignore_ports: Vec<u16>,
 }
 
@@ -566,9 +608,20 @@ impl Default for BeaconParams {
             max_jitter_cv: 0.15,
             min_interval_ns: 1_000_000_000,              // 1 s
             max_interval_ns: 24 * 3_600 * 1_000_000_000, // 24 h
-            ignore_ports: INTERACTIVE_AUTH_PORTS.to_vec(),
+            // The union of the auth ports (brute-force territory) and the remote-admin ports
+            // (lateral-movement territory): a regular series to any of these is owned by the
+            // more-specific detector, never reported as a beacon.
+            ignore_ports: merged_ports(INTERACTIVE_AUTH_PORTS, LATERAL_PORTS),
         }
     }
+}
+
+/// Sorted, deduplicated union of two port lists (for default ignore sets).
+fn merged_ports(a: &[u16], b: &[u16]) -> Vec<u16> {
+    let mut v: Vec<u16> = a.iter().chain(b.iter()).copied().collect();
+    v.sort_unstable();
+    v.dedup();
+    v
 }
 
 /// One closed flow reduced to a directed contact: the initiating client, the service it
@@ -926,6 +979,166 @@ pub fn detect_brute_force(tracker: &BehaviorTracker, params: &BruteForceParams) 
     findings
 }
 
+/// Remote-administration / remote-execution service ports used to pivot between hosts (the MITRE
+/// T1021 sub-techniques): SSH, RPC/DCOM, SMB, RDP, VNC, WinRM. Established sessions to several
+/// internal peers on these is the lateral-movement signature.
+pub const LATERAL_PORTS: &[u16] = &[
+    22,   // SSH (T1021.004)
+    135,  // RPC / DCOM / WMI (T1021.003)
+    445,  // SMB / admin shares (T1021.002)
+    3389, // RDP (T1021.001)
+    5900, // VNC (T1021.005)
+    5985, // WinRM HTTP (T1021.006)
+    5986, // WinRM HTTPS
+];
+
+/// Human service name for a well-known lateral-movement port (for evidence/title text).
+fn lateral_service_name(port: u16) -> &'static str {
+    match port {
+        22 => "SSH",
+        135 => "RPC",
+        445 => "SMB",
+        3389 => "RDP",
+        5900 => "VNC",
+        5985 | 5986 => "WinRM",
+        _ => "remote-admin",
+    }
+}
+
+/// Tuning for the lateral-movement detector.
+///
+/// **False-positive note.** This detector recognizes a *behavior* (an internal host opening admin
+/// sessions to many internal peers), and that behavior is shared by legitimate east-west
+/// infrastructure: backup / imaging servers, configuration management (SCCM, Ansible, WinRM),
+/// patch/WSUS, monitoring and inventory collectors, jump hosts, and domain controllers all fan out
+/// over SMB/RPC/RDP/WinRM by design. No purely network-level signal separates those from an
+/// attacker pivot — it needs asset-role context the engine does not have. The session-byte floor
+/// only excludes scans/handshakes; it does **not** distinguish benign from malicious admin fan-out.
+/// The intended workflow is therefore: surface the finding with explainable evidence, and let the
+/// operator exempt known management sources via [`LateralMovementParams::ignore_src`]. Treat a
+/// standalone finding as "review this east-west fan-out", and trust the kill-chain correlation to
+/// escalate it only when it sits alongside Discovery / Credential Access / C2 / Exfiltration.
+#[derive(Debug, Clone)]
+pub struct LateralMovementParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum distinct internal hosts reached with an established admin session.
+    pub min_hosts: usize,
+    /// Minimum bytes in **each** direction for a channel to count as an established session
+    /// (rather than a SYN scan / bare handshake). A real remote-admin session moves well past
+    /// this both ways; a probe does not.
+    pub min_session_bytes: u64,
+    /// Remote-administration ports considered. Defaults to [`LATERAL_PORTS`].
+    pub lateral_ports: Vec<u16>,
+    /// Source IPs exempt from lateral-movement detection — the escape hatch for known management
+    /// infrastructure (backup / SCCM / monitoring / jump hosts / DCs) whose admin fan-out is
+    /// expected. Empty by default; populate it per deployment to silence the recurring benign
+    /// east-west finding without disabling the detector.
+    pub ignore_src: Vec<IpAddr>,
+}
+
+impl Default for LateralMovementParams {
+    fn default() -> Self {
+        LateralMovementParams {
+            enabled: true,
+            // Below the host-sweep floor (16) so a few established admin sessions read as a
+            // pivot, not a broad probe; high enough that a single targeted RDP/SSH is not flagged.
+            min_hosts: 4,
+            min_session_bytes: 512,
+            lateral_ports: LATERAL_PORTS.to_vec(),
+            ignore_src: Vec::new(),
+        }
+    }
+}
+
+/// Detect lateral movement from the behavioral tracker: one [`Finding`] per **internal** source
+/// that opened an established admin session to at least [`LateralMovementParams::min_hosts`]
+/// distinct **internal** hosts on one remote-administration port. East-west only (an external peer
+/// is exfil/C2, not lateral movement) and session-gated (a SYN sweep is Discovery, not movement).
+/// High severity, ATT&CK T1021. Deterministic order.
+pub fn detect_lateral_movement(
+    tracker: &BehaviorTracker,
+    params: &LateralMovementParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.lateral_candidates(params.min_session_bytes, &params.lateral_ports) {
+        // Lateral movement is east-west: the actor must be internal.
+        if classify_ip(c.src).is_external() {
+            continue;
+        }
+        // Known management infrastructure (backup / SCCM / monitoring / jump hosts) fans out over
+        // these ports by design — let the operator exempt those sources rather than disable the
+        // detector wholesale.
+        if params.ignore_src.contains(&c.src) {
+            continue;
+        }
+        // Count only internal targets (an internal host reaching out to external admin services is
+        // not lateral movement within the network).
+        let internal: Vec<IpAddr> = c
+            .targets
+            .into_iter()
+            .filter(|d| !classify_ip(*d).is_external())
+            .collect();
+        if internal.len() < params.min_hosts {
+            continue;
+        }
+        let port = c.dst_port;
+        let service = lateral_service_name(port);
+        // A couple of representative targets for the evidence, without unbounding the string.
+        let sample: Vec<String> = internal.iter().take(3).map(|ip| ip.to_string()).collect();
+        findings.push(Finding {
+            kind: FindingKind::LateralMovement,
+            severity: Severity::High,
+            score: 70,
+            title: format!(
+                "Lateral movement: {} -> {} internal hosts over {} ({})",
+                c.src,
+                internal.len(),
+                service,
+                port
+            ),
+            src_ip: c.src.to_string(),
+            // A fan-out finding implicates many destinations; like a sweep, it has no single dst.
+            dst_ip: None,
+            dst_port: Some(port),
+            attack: vec!["T1021".to_string()],
+            evidence: vec![
+                format!(
+                    "established {} sessions to {} distinct internal hosts on port {}",
+                    service,
+                    internal.len(),
+                    port
+                ),
+                format!("e.g. {}", sample.join(", ")),
+                "east-west admin sessions across hosts — pivoting / remote execution".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(internal.len() as u64),
+        });
+    }
+    findings
+}
+
+/// Drop host-sweep findings that lateral movement already explains: an established admin
+/// fan-out to many internal hosts on a port is movement (real sessions), not a probe sweep, so
+/// the more-specific lateral-movement finding wins for that `(src, port)`. Sweep findings carry no
+/// `dst_ip` (fan-out), so the match is on `(src_ip, dst_port)`.
+pub fn suppress_swept_by_lateral(sweeps: Vec<Finding>, lateral: &[Finding]) -> Vec<Finding> {
+    use std::collections::HashSet;
+    let claimed: HashSet<(&str, Option<u16>)> = lateral
+        .iter()
+        .map(|f| (f.src_ip.as_str(), f.dst_port))
+        .collect();
+    sweeps
+        .into_iter()
+        .filter(|s| !claimed.contains(&(s.src_ip.as_str(), s.dst_port)))
+        .collect()
+}
+
 /// Tuning for the DNS tunneling / DGA detector.
 #[derive(Debug, Clone)]
 pub struct DnsTunnelParams {
@@ -1118,11 +1331,12 @@ pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
 /// Kill-chain stage of a finding kind (lower = earlier in the chain).
 fn stage_ordinal(kind: FindingKind) -> u8 {
     match kind {
-        FindingKind::HostSweep => 0,  // discovery
-        FindingKind::BruteForce => 1, // credential access
-        FindingKind::Beacon => 2,     // command-and-control
-        FindingKind::DataExfil => 3,  // exfiltration
-        FindingKind::DnsTunnel => 3,  // exfiltration / C2 over DNS
+        FindingKind::HostSweep => 0,       // discovery
+        FindingKind::BruteForce => 1,      // credential access
+        FindingKind::LateralMovement => 2, // lateral movement
+        FindingKind::Beacon => 3,          // command-and-control
+        FindingKind::DataExfil => 4,       // exfiltration
+        FindingKind::DnsTunnel => 4,       // exfiltration / C2 over DNS
     }
 }
 
@@ -1131,6 +1345,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
     match kind {
         FindingKind::HostSweep => "Discovery",
         FindingKind::BruteForce => "Credential Access",
+        FindingKind::LateralMovement => "Lateral Movement",
         FindingKind::Beacon => "Command & Control",
         FindingKind::DataExfil => "Exfiltration",
         FindingKind::DnsTunnel => "Exfiltration",
@@ -1142,6 +1357,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
     match kind {
         FindingKind::HostSweep => "swept the network",
         FindingKind::BruteForce => "brute-forced credentials",
+        FindingKind::LateralMovement => "moved laterally",
         FindingKind::Beacon => "beaconed to a C2",
         FindingKind::DataExfil => "exfiltrated data",
         FindingKind::DnsTunnel => "tunneled data over DNS",
@@ -1511,6 +1727,177 @@ mod tests {
     }
 
     #[test]
+    fn lateral_movement_flags_established_admin_fanout_high() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9); // internal
+                                        // Established RDP sessions (bytes both ways) to 5 distinct internal hosts.
+        for h in 1..=5u8 {
+            t.observe_flow_contact(attacker, ip(10, 0, 1, h), 3389, h as i64 * SEC, 4000, 4000);
+        }
+
+        let findings = detect_lateral_movement(&t, &LateralMovementParams::default());
+        assert_eq!(findings.len(), 1, "findings: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::LateralMovement);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.src_ip, "10.0.0.9");
+        assert!(f.dst_ip.is_none(), "fan-out finding has no single dst");
+        assert_eq!(f.dst_port, Some(3389));
+        assert!(f.attack.iter().any(|a| a == "T1021"), "attack: {:?}", f.attack);
+        assert_eq!(f.contacts, Some(5));
+        assert!(f.title.contains("RDP"), "title names the service: {}", f.title);
+    }
+
+    #[test]
+    fn lateral_movement_ignores_probes_external_and_below_threshold() {
+        // SYN-only fan-out: 8 hosts on 445, no bytes back (a sweep, not established sessions).
+        let mut probes = BehaviorTracker::new(DetectConfig::default());
+        for h in 1..=8u8 {
+            probes.observe_flow_contact(ip(10, 0, 0, 9), ip(10, 0, 1, h), 445, 0, 60, 0);
+        }
+        assert!(detect_lateral_movement(&probes, &LateralMovementParams::default()).is_empty());
+
+        // Established sessions, but to EXTERNAL hosts — that is C2/exfil, not lateral movement.
+        let mut external = BehaviorTracker::new(DetectConfig::default());
+        for h in 1..=6u8 {
+            external.observe_flow_contact(ip(10, 0, 0, 9), ip(8, 8, 8, h), 22, 0, 4000, 4000);
+        }
+        assert!(detect_lateral_movement(&external, &LateralMovementParams::default()).is_empty());
+
+        // Established internal sessions, but only to 2 hosts — below the host threshold.
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        for h in 1..=2u8 {
+            few.observe_flow_contact(ip(10, 0, 0, 9), ip(10, 0, 1, h), 445, 0, 4000, 4000);
+        }
+        assert!(detect_lateral_movement(&few, &LateralMovementParams::default()).is_empty());
+    }
+
+    #[test]
+    fn lateral_movement_disabled_yields_nothing() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for h in 1..=6u8 {
+            t.observe_flow_contact(ip(10, 0, 0, 9), ip(10, 0, 1, h), 445, 0, 4000, 4000);
+        }
+        let params = LateralMovementParams {
+            enabled: false,
+            ..LateralMovementParams::default()
+        };
+        assert!(detect_lateral_movement(&t, &params).is_empty());
+    }
+
+    #[test]
+    fn suppress_swept_by_lateral_drops_overlapping_sweep_only() {
+        // A sweep and a lateral-movement finding on the SAME (src, port): the established-session
+        // interpretation (lateral) wins, so that sweep is dropped. An unrelated sweep survives.
+        let overlap_sweep =
+            mk_finding(FindingKind::HostSweep, "10.0.0.9", Severity::High, 65, &["T1046"]);
+        let other_sweep =
+            mk_finding(FindingKind::HostSweep, "10.0.0.7", Severity::High, 65, &["T1046"]);
+        let lateral = mk_finding(
+            FindingKind::LateralMovement,
+            "10.0.0.9",
+            Severity::High,
+            70,
+            &["T1021"],
+        );
+        // mk_finding sets dst_port = Some(443) for all; align the non-overlapping sweep to a
+        // different port so only the matching (src, port) is suppressed.
+        let mut other_sweep = other_sweep;
+        other_sweep.dst_port = Some(445);
+
+        let kept = suppress_swept_by_lateral(
+            vec![overlap_sweep.clone(), other_sweep.clone()],
+            &[lateral],
+        );
+        assert_eq!(kept.len(), 1, "only the overlapping sweep is dropped: {kept:?}");
+        assert_eq!(kept[0].src_ip, "10.0.0.7");
+    }
+
+    #[test]
+    fn lateral_movement_respects_source_allowlist() {
+        // A benign internal admin server (e.g. backup / SCCM) fans out established SMB sessions to
+        // several internal hosts — the dominant false-positive surface. By default it fires (the
+        // behavior is real); exempting the known source via ignore_src silences it without
+        // disabling the detector. This makes the FP tunable and the guard non-vacuous.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let infra = ip(10, 0, 0, 9);
+        for h in 1..=5u8 {
+            t.observe_flow_contact(infra, ip(10, 0, 1, h), 445, h as i64 * SEC, 4000, 4000);
+        }
+        assert_eq!(
+            detect_lateral_movement(&t, &LateralMovementParams::default()).len(),
+            1,
+            "established admin fan-out fires by default"
+        );
+        let params = LateralMovementParams {
+            ignore_src: vec![infra],
+            ..LateralMovementParams::default()
+        };
+        assert!(
+            detect_lateral_movement(&t, &params).is_empty(),
+            "an allowlisted source is exempt"
+        );
+    }
+
+    #[test]
+    fn beacon_ignores_remote_admin_ports() {
+        // A periodic, low-jitter ESTABLISHED series on SMB (445) — a remote-admin / monitoring
+        // cadence — must not be reported as a C2 beacon. 445 is not an interactive-auth port, so
+        // this guards extending BeaconParams.ignore_ports to the lateral-movement ports.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let src = ip(10, 0, 0, 9);
+        let dst = ip(10, 0, 0, 5);
+        for i in 0..16i64 {
+            t.observe_flow_contact(src, dst, 445, i * 30 * SEC, 2000, 2000);
+        }
+        assert!(
+            detect_beacons(&t, &BeaconParams::default())
+                .iter()
+                .all(|b| b.dst_port != Some(445)),
+            "admin-port cadence must not be a beacon"
+        );
+        // Prove it is the guard, not the timing: clear ignore_ports and 445 trips the beacon.
+        let no_ignore = BeaconParams {
+            ignore_ports: vec![],
+            ..BeaconParams::default()
+        };
+        assert!(
+            detect_beacons(&t, &no_ignore)
+                .iter()
+                .any(|b| b.dst_port == Some(445)),
+            "without the guard the admin cadence would look like a beacon"
+        );
+    }
+
+    #[test]
+    fn established_admin_spray_reports_both_credential_access_and_lateral_movement() {
+        // A source that opens many established SSH sessions to each of several internal hosts is a
+        // credential spray AND a pivot. Both detectors fire (brute force per host, lateral movement
+        // for the fan-out) and correlation orders them Credential Access -> Lateral Movement — the
+        // intended kill-chain coexistence on the shared port 22 (not a double-count to suppress).
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        for h in 1..=4u8 {
+            let victim = ip(10, 0, 1, h);
+            for i in 0..22i64 {
+                t.observe_flow_contact(attacker, victim, 22, i * SEC, 800, 800);
+            }
+        }
+        let brutes = detect_brute_force(&t, &BruteForceParams::default());
+        let lateral = detect_lateral_movement(&t, &LateralMovementParams::default());
+        assert_eq!(brutes.len(), 4, "one brute finding per sprayed host: {brutes:?}");
+        assert_eq!(lateral.len(), 1, "one lateral fan-out finding: {lateral:?}");
+        // Port 22 is in the beacon ignore set, so the regular cadence is NOT also a beacon.
+        assert!(detect_beacons(&t, &BeaconParams::default()).is_empty());
+
+        let mut all = brutes;
+        all.extend(lateral);
+        let inc = correlate_incidents(&all);
+        assert_eq!(inc.len(), 1);
+        assert_eq!(inc[0].stages, vec!["Credential Access", "Lateral Movement"]);
+    }
+
+    #[test]
     fn beacon_candidate_surfaced_for_periodic_destination() {
         let mut t = BehaviorTracker::new(DetectConfig::default());
         let bot = ip(10, 0, 0, 5);
@@ -1858,6 +2245,50 @@ mod tests {
         assert_eq!(i.findings[1].kind, FindingKind::BruteForce);
         assert_eq!(i.findings[2].kind, FindingKind::Beacon);
         assert_eq!(i.attack, vec!["T1046", "T1071", "T1110"]);
+    }
+
+    #[test]
+    fn full_five_stage_kill_chain_orders_and_escalates() {
+        let host = "10.13.37.7";
+        // Added out of order; correlation must sort them along the full kill chain.
+        let exfil = mk_finding(FindingKind::DataExfil, host, Severity::High, 72, &["T1048"]);
+        let lateral = mk_finding(
+            FindingKind::LateralMovement,
+            host,
+            Severity::High,
+            70,
+            &["T1021"],
+        );
+        let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
+        let sweep = mk_finding(FindingKind::HostSweep, host, Severity::High, 65, &["T1046"]);
+        let brute = mk_finding(FindingKind::BruteForce, host, Severity::High, 68, &["T1110"]);
+
+        let inc = correlate_incidents(&[exfil, lateral, beacon, sweep, brute]);
+        assert_eq!(inc.len(), 1);
+        let i = &inc[0];
+        assert_eq!(i.severity, Severity::Critical);
+        assert_eq!(
+            i.stages,
+            vec![
+                "Discovery",
+                "Credential Access",
+                "Lateral Movement",
+                "Command & Control",
+                "Exfiltration"
+            ]
+        );
+        let kinds: Vec<FindingKind> = i.findings.iter().map(|f| f.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                FindingKind::HostSweep,
+                FindingKind::BruteForce,
+                FindingKind::LateralMovement,
+                FindingKind::Beacon,
+                FindingKind::DataExfil,
+            ]
+        );
+        assert!(i.narrative.contains("moved laterally"), "narrative: {}", i.narrative);
     }
 
     #[test]
