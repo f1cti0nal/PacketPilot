@@ -383,6 +383,17 @@ export interface WireFlowPackets {
   packets: WirePacket[];
 }
 
+export interface PacketRow {
+  index: number; tsNs: number; relMs: number;
+  direction: "c2s" | "s2c"; wireLen: number; capLen: number;
+  tcpFlags: number; seq: number | null; ack: number | null;
+  payloadLen: number; payload: Uint8Array; payloadTruncated: boolean;
+}
+export interface FlowPackets { total: number; truncated: boolean; packets: PacketRow[]; }
+
+/** Active capture source — drives whether packet drill-down is available and which backend serves it. */
+export type ActiveSource = { kind: "path"; path: string } | { kind: "bytes"; bytes: ArrayBuffer } | null;
+
 export interface SummaryState {
   status: "idle" | "loading" | "ready" | "error";
   data?: AnalysisOutput;

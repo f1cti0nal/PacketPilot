@@ -1,4 +1,4 @@
-import type { AnalysisOutput, Finding, FlowRow, IpThreat } from "../types";
+import type { AnalysisOutput, Finding, FlowPackets, FlowRow, IpThreat, PacketRow } from "../types";
 
 const f = (p: Partial<Finding> & Pick<Finding, "kind" | "severity" | "score" | "title" | "src_ip">): Finding => ({
   dst_ip: null, dst_port: null, attack: [], evidence: [],
@@ -77,4 +77,14 @@ export function makeFlows(n = 5): FlowRow[] {
     pkts: 10, startMs: 1_700_000_000_000 + i * 1000, endMs: 1_700_000_001_000 + i * 1000, durationMs: 1000,
     tcpFlagsC2s: 0, tcpFlagsS2c: 0, ttlMinC2s: 64, category: "web", severity: "info", threatScore: 0, ioc: false,
   }));
+}
+
+export function makePackets(over: Partial<FlowPackets> = {}): FlowPackets {
+  const mk = (i: number, dir: "c2s" | "s2c", payload: string): PacketRow => ({
+    index: i, tsNs: 1_700_000_000_000_000_000 + i * 1_000_000, relMs: i,
+    direction: dir, wireLen: 60 + payload.length, capLen: 60 + payload.length,
+    tcpFlags: 0x18, seq: i, ack: i, payloadLen: payload.length,
+    payload: new TextEncoder().encode(payload), payloadTruncated: false,
+  });
+  return { total: 3, truncated: false, packets: [mk(0, "c2s", "GET / HTTP/1.1\r\n"), mk(1, "s2c", "HTTP/1.1 200 OK\r\n"), mk(2, "c2s", "")], ...over };
 }
