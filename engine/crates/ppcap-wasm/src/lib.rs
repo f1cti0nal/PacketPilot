@@ -14,6 +14,75 @@ use ppcap_core::{run_source_visiting, FlowRecord, PipelineConfig};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+// ---------------------------------------------------------------------------
+// extract_packets — on-demand per-flow packet extraction
+// ---------------------------------------------------------------------------
+
+/// JS-sent query shape: IPs as strings, transport as IANA protocol number.
+#[derive(serde::Deserialize)]
+struct QueryDto {
+    src_ip: String,
+    dst_ip: String,
+    src_port: u16,
+    dst_port: u16,
+    proto: u8,
+    start_ns: i64,
+    end_ns: i64,
+}
+
+/// JS-sent extraction caps (both optional; defaults to the engine's hard limits).
+#[derive(serde::Deserialize)]
+struct CapsDto {
+    max_packets: Option<usize>,
+    payload_cap: Option<usize>,
+}
+
+/// Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and return the packets for the
+/// single flow described by `query_json`, bounded by `caps_json`.
+///
+/// Returns a JSON string matching `FlowPackets` (`{ total, truncated, packets: [...] }`),
+/// or rejects with an error string. The capture bytes never leave the device.
+#[wasm_bindgen]
+pub fn extract_packets(bytes: &[u8], query_json: &str, caps_json: &str) -> Result<String, JsValue> {
+    let q: QueryDto =
+        serde_json::from_str(query_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let c: CapsDto =
+        serde_json::from_str(caps_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let query = ppcap_core::PacketQuery {
+        src_ip: q
+            .src_ip
+            .parse()
+            .map_err(|_| JsValue::from_str("bad src_ip"))?,
+        dst_ip: q
+            .dst_ip
+            .parse()
+            .map_err(|_| JsValue::from_str("bad dst_ip"))?,
+        src_port: q.src_port,
+        dst_port: q.dst_port,
+        transport: ppcap_core::Transport::from_ip_proto(q.proto),
+        start_ns: q.start_ns,
+        end_ns: q.end_ns,
+    };
+    let caps = ppcap_core::PacketCaps {
+        max_packets: c
+            .max_packets
+            .unwrap_or(ppcap_core::packets::MAX_PACKETS_PER_FLOW),
+        payload_cap: c
+            .payload_cap
+            .unwrap_or(ppcap_core::packets::PAYLOAD_CAP_BYTES),
+    };
+
+    let len = bytes.len() as u64;
+    let source = ppcap_core::reader::open_reader(Cursor::new(bytes.to_vec()), Some(len))
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let fp = ppcap_core::extract_flow_packets(source, &query, &caps)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    serde_json::to_string(&fp).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// One analyzed flow — same fields, names, and semantics as the Parquet `flows` schema.
 /// Integer timestamps are nanoseconds since the Unix epoch (the frontend divides to ms).
 #[derive(Serialize)]
