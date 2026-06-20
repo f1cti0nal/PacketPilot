@@ -252,6 +252,16 @@ pub fn ftp_command_payload(line: &str) -> Vec<u8> {
     format!("{line}\r\n").into_bytes()
 }
 
+/// An HTTP POST request with a form-encoded body — used to carry plaintext PII (e.g. a card
+/// number) in the clear for the PII sniffer to flag.
+pub fn http_post_payload(host: &str, path: &str, body: &str) -> Vec<u8> {
+    let s = format!(
+        "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    s.into_bytes()
+}
+
 /// A well-formed TLS ClientHello record carrying a real SNI `server_name` extension.
 ///
 /// Emits a complete (if minimal) ClientHello — client_version, 32-byte random, empty

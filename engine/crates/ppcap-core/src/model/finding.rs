@@ -23,6 +23,8 @@ pub enum FindingKind {
     BruteForce,
     /// Cleartext credential exposure: credentials sent over an unencrypted protocol.
     CleartextCreds,
+    /// Plaintext PII exposure: sensitive data (credit card, SSN) sent over an unencrypted protocol.
+    PiiExposure,
     /// Lateral movement: one internal host opening admin sessions to many internal hosts.
     LateralMovement,
     /// Data exfiltration: a large asymmetric outbound transfer to an external peer.
@@ -39,6 +41,7 @@ impl FindingKind {
             FindingKind::HostSweep => "host_sweep",
             FindingKind::BruteForce => "brute_force",
             FindingKind::CleartextCreds => "cleartext_creds",
+            FindingKind::PiiExposure => "pii_exposure",
             FindingKind::LateralMovement => "lateral_movement",
             FindingKind::DataExfil => "data_exfil",
             FindingKind::DnsTunnel => "dns_tunnel",

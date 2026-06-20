@@ -124,7 +124,7 @@ impl StreamStats {
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use crate::model::packet::CredScheme;
+use crate::model::packet::{CredScheme, PiiKind};
 
 /// Identity of a directed "destination contact channel": one source reaching one
 /// `(dst_ip, dst_port)` service. Beaconing periodicity is measured per channel because each
@@ -260,6 +260,16 @@ pub struct CleartextCredCandidate {
     pub exposures: u64,
 }
 
+/// A `(source, dst, dst_port)` channel that transmitted plaintext PII.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PiiCandidate {
+    pub src: IpAddr,
+    pub dst: IpAddr,
+    pub dst_port: u16,
+    pub kind: PiiKind,
+    pub exposures: u64,
+}
+
 /// Per-`(source, resolver)` DNS query statistics.
 #[derive(Debug, Clone, Default)]
 struct DnsStats {
@@ -317,6 +327,9 @@ pub struct BehaviorTracker {
     /// Per-`(source, dst, dst_port)` cleartext credential exposures: the sniffed scheme and the
     /// number of packets that exposed a credential on that channel.
     creds: HashMap<(IpAddr, IpAddr, u16), (CredScheme, u64)>,
+    /// Per-`(source, dst, dst_port)` plaintext PII exposures: the sniffed kind and the number of
+    /// packets that exposed PII on that channel.
+    pii: HashMap<(IpAddr, IpAddr, u16), (PiiKind, u64)>,
 }
 
 impl BehaviorTracker {
@@ -328,7 +341,20 @@ impl BehaviorTracker {
             fanout: HashMap::new(),
             dns: HashMap::new(),
             creds: HashMap::new(),
+            pii: HashMap::new(),
         }
+    }
+
+    /// Fold one plaintext PII exposure: `src` sent PII (`kind`) to `dst:port` in the clear. Counts
+    /// exposures per channel and keeps the first kind seen. Bounded: a brand-new channel at
+    /// capacity is dropped.
+    pub fn observe_pii(&mut self, src: IpAddr, dst: IpAddr, dst_port: u16, kind: PiiKind) {
+        let key = (src, dst, dst_port);
+        if !self.pii.contains_key(&key) && self.pii.len() >= self.cfg.max_tracked_keys.max(1) {
+            return;
+        }
+        let e = self.pii.entry(key).or_insert((kind, 0));
+        e.1 += 1;
     }
 
     /// Fold one cleartext credential exposure: `src` sent a credential (`scheme`) to `dst:port` in
@@ -601,6 +627,31 @@ impl BehaviorTracker {
                 dst,
                 dst_port,
                 scheme,
+                exposures,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.exposures
+                .cmp(&a.exposures)
+                .then(a.src.cmp(&b.src))
+                .then(a.dst.cmp(&b.dst))
+                .then(a.dst_port.cmp(&b.dst_port))
+        });
+        out
+    }
+
+    /// All `(src, dst, dst_port)` channels that exposed at least `min_exposures` plaintext PII
+    /// values. Returned strongest (most exposures) first, then by channel for determinism.
+    pub fn pii_candidates(&self, min_exposures: u64) -> Vec<PiiCandidate> {
+        let mut out: Vec<PiiCandidate> = self
+            .pii
+            .iter()
+            .filter(|(_, (_, n))| *n >= min_exposures)
+            .map(|(&(src, dst, dst_port), &(kind, exposures))| PiiCandidate {
+                src,
+                dst,
+                dst_port,
+                kind,
                 exposures,
             })
             .collect();
@@ -1260,6 +1311,71 @@ pub fn detect_cleartext_creds(
     findings
 }
 
+/// Tuning for the plaintext-PII-exposure detector.
+#[derive(Debug, Clone)]
+pub struct PiiExposureParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum exposures on a `(src, dst, port)` channel before it is reported. One exposed PII
+    /// value is already a finding, so the default is 1.
+    pub min_exposures: u64,
+}
+
+impl Default for PiiExposureParams {
+    fn default() -> Self {
+        PiiExposureParams {
+            enabled: true,
+            min_exposures: 1,
+        }
+    }
+}
+
+/// Detect plaintext PII exposure from the behavioral tracker: one [`Finding`] per
+/// `(src, dst, port)` channel that transmitted PII (a credit-card number or US SSN) in the clear.
+/// The PII value itself is never captured — only that an exposure occurred, its kind, the
+/// endpoints, and the count. High severity; mapped to the Collection stage (ATT&CK T1040, the
+/// network-sniffing technique that harvests such cleartext data). Deterministic order.
+pub fn detect_pii_exposure(tracker: &BehaviorTracker, params: &PiiExposureParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.pii_candidates(params.min_exposures) {
+        let kind = c.kind.label();
+        let plural = if c.exposures == 1 { "" } else { "s" };
+        findings.push(Finding {
+            kind: FindingKind::PiiExposure,
+            severity: Severity::High,
+            score: 64,
+            title: format!(
+                "Plaintext PII: {} -> {}:{} ({})",
+                c.src, c.dst, c.dst_port, kind
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: Some(c.dst.to_string()),
+            dst_port: Some(c.dst_port),
+            attack: vec!["T1040".to_string()],
+            evidence: vec![
+                format!(
+                    "{}{} sent in cleartext to {}:{} ({} exposure{})",
+                    kind,
+                    if c.exposures == 1 { "" } else { "s" },
+                    c.dst,
+                    c.dst_port,
+                    c.exposures,
+                    plural
+                ),
+                "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
+                    .to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.exposures),
+        });
+    }
+    findings
+}
+
 /// Tuning for the DNS tunneling / DGA detector.
 #[derive(Debug, Clone)]
 pub struct DnsTunnelParams {
@@ -1456,9 +1572,10 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::CleartextCreds => 1,  // credential access (exposure)
         FindingKind::BruteForce => 1,      // credential access
         FindingKind::LateralMovement => 2, // lateral movement
-        FindingKind::Beacon => 3,          // command-and-control
-        FindingKind::DataExfil => 4,       // exfiltration
-        FindingKind::DnsTunnel => 4,       // exfiltration / C2 over DNS
+        FindingKind::PiiExposure => 3,     // collection (data at risk on the wire)
+        FindingKind::Beacon => 4,          // command-and-control
+        FindingKind::DataExfil => 5,       // exfiltration
+        FindingKind::DnsTunnel => 5,       // exfiltration / C2 over DNS
     }
 }
 
@@ -1469,6 +1586,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::CleartextCreds => "Credential Access",
         FindingKind::BruteForce => "Credential Access",
         FindingKind::LateralMovement => "Lateral Movement",
+        FindingKind::PiiExposure => "Collection",
         FindingKind::Beacon => "Command & Control",
         FindingKind::DataExfil => "Exfiltration",
         FindingKind::DnsTunnel => "Exfiltration",
@@ -1482,6 +1600,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::CleartextCreds => "exposed credentials in cleartext",
         FindingKind::BruteForce => "brute-forced credentials",
         FindingKind::LateralMovement => "moved laterally",
+        FindingKind::PiiExposure => "exposed PII in cleartext",
         FindingKind::Beacon => "beaconed to a C2",
         FindingKind::DataExfil => "exfiltrated data",
         FindingKind::DnsTunnel => "tunneled data over DNS",
@@ -2061,6 +2180,53 @@ mod tests {
             min_exposures: 2,
         };
         assert!(detect_cleartext_creds(&t, &hi).is_empty());
+    }
+
+    #[test]
+    fn detect_pii_exposure_flags_high_t1040() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let victim = ip(10, 0, 0, 52);
+        let server = ip(10, 0, 0, 80);
+        // 3 POSTs leaking a card number on one channel -> one finding, 3 exposures.
+        for _ in 0..3 {
+            t.observe_pii(victim, server, 80, PiiKind::CreditCard);
+        }
+        // An unrelated SSN exposure on a different channel.
+        t.observe_pii(ip(10, 0, 0, 53), ip(10, 0, 0, 81), 8080, PiiKind::Ssn);
+
+        let findings = detect_pii_exposure(&t, &PiiExposureParams::default());
+        assert_eq!(findings.len(), 2, "findings: {findings:?}");
+        let f = &findings[0]; // strongest (most exposures) first
+        assert_eq!(f.kind, FindingKind::PiiExposure);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.src_ip, "10.0.0.52");
+        assert_eq!(f.dst_ip.as_deref(), Some("10.0.0.80"));
+        assert_eq!(f.dst_port, Some(80));
+        assert!(f.attack.iter().any(|a| a == "T1040"), "attack: {:?}", f.attack);
+        assert_eq!(f.contacts, Some(3));
+        assert!(f.title.contains("credit card"), "title: {}", f.title);
+        // Disabled yields nothing.
+        let off = PiiExposureParams {
+            enabled: false,
+            ..PiiExposureParams::default()
+        };
+        assert!(detect_pii_exposure(&t, &off).is_empty());
+    }
+
+    #[test]
+    fn pii_exposure_sorts_into_collection_stage() {
+        // A PII finding correlates as its own "Collection" stage; mixed with other stages it sorts
+        // between Lateral Movement and Command & Control.
+        let host = "10.0.0.52";
+        let pii = mk_finding(FindingKind::PiiExposure, host, Severity::High, 64, &["T1040"]);
+        let lateral = mk_finding(FindingKind::LateralMovement, host, Severity::High, 70, &["T1021"]);
+        let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
+        let inc = correlate_incidents(&[beacon, pii, lateral]);
+        assert_eq!(inc.len(), 1);
+        assert_eq!(
+            inc[0].stages,
+            vec!["Lateral Movement", "Collection", "Command & Control"]
+        );
     }
 
     #[test]

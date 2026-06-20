@@ -750,20 +750,21 @@ impl SynthGen {
         frame
     }
 
-    /// Number of cleartext-credential frames emitted (0 for small captures): some HTTP Basic
-    /// requests from one victim, then an FTP USER + PASS exchange from another.
+    /// Number of cleartext-exposure frames emitted (0 for small captures): some HTTP Basic
+    /// requests from one victim, an FTP USER + PASS exchange from a second, and HTTP POSTs leaking
+    /// a credit-card number from a third.
     fn beacon_creds_count(&self) -> u64 {
         if self.cfg.packets >= 2_000 {
-            BEACON_CREDS_HTTP + 2
+            BEACON_CREDS_HTTP + 2 + BEACON_PII_REQUESTS
         } else {
             0
         }
     }
 
-    /// Build one cleartext-credential frame. The first [`BEACON_CREDS_HTTP`] are HTTP GETs with an
-    /// `Authorization: Basic` header from one victim to an intranet web app (80); the last two are
-    /// an FTP `USER`/`PASS` exchange from a second victim to an FTP server (21) — credentials
-    /// exposed in the clear, surfacing as two separate single-stage incidents.
+    /// Build one cleartext-exposure frame. `[0, BEACON_CREDS_HTTP)` are HTTP GETs with an
+    /// `Authorization: Basic` header (victim 1 -> web app, 80); the next two are an FTP `USER`/`PASS`
+    /// exchange (victim 2 -> FTP server, 21); the rest are HTTP POSTs whose body carries a credit
+    /// card number in the clear (victim 3 -> web app, 80). Three separate single-stage incidents.
     fn build_beacon_creds(&mut self, idx: u64) -> Vec<u8> {
         if idx < BEACON_CREDS_HTTP {
             let victim = beacon_creds_victim();
@@ -782,7 +783,7 @@ impl SynthGen {
             frame.extend_from_slice(&ip);
             frame.extend_from_slice(&tcp);
             frame
-        } else {
+        } else if idx < BEACON_CREDS_HTTP + 2 {
             // FTP USER then PASS, one flow (fixed source port) to the FTP server's control port.
             let victim = beacon_ftp_victim();
             let server = beacon_ftp_server();
@@ -798,6 +799,25 @@ impl SynthGen {
             let ip = frames::build_ipv4(victim, server, IP_PROTO_TCP, 64, tcp.len());
             let mut frame =
                 frames::build_ethernet(BEACON_CREDS_MAC, BEACON_CREDS_SRV_MAC, ETHERTYPE_IPV4);
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            frame
+        } else {
+            // HTTP POST whose form body carries a (test) credit-card number in cleartext.
+            let k = idx - BEACON_CREDS_HTTP - 2;
+            let victim = beacon_pii_victim();
+            let server = beacon_creds_server();
+            let sport = 55000 + (k % 2000) as u16;
+            self.record_flow(victim, server, sport, 80, IP_PROTO_TCP);
+            let payload = frames::http_post_payload(
+                "shop.corp.example",
+                "/checkout",
+                BEACON_PII_BODY,
+            );
+            let tcp = frames::build_tcp(victim, server, sport, 80, TCP_PSH | TCP_ACK, &payload);
+            let ip = frames::build_ipv4(victim, server, IP_PROTO_TCP, 64, tcp.len());
+            let mut frame =
+                frames::build_ethernet(BEACON_PII_MAC, BEACON_CREDS_SRV_MAC, ETHERTYPE_IPV4);
             frame.extend_from_slice(&ip);
             frame.extend_from_slice(&tcp);
             frame
@@ -959,6 +979,10 @@ const BEACON_CREDS_TOKEN: &str = "dXNlcjpodW50ZXIy"; // base64("user:hunter2"); 
 const BEACON_CREDS_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xC0, 0xDE, 0x01];
 const BEACON_CREDS_SRV_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xC0, 0xDE, 0x02];
 const BEACON_FTP_SPORT: u16 = 54000;
+/// PII stage: HTTP POSTs leaking a (Luhn-valid test) card number in the body, and the victim MAC.
+const BEACON_PII_REQUESTS: u64 = 4;
+const BEACON_PII_BODY: &str = "name=Jane+Doe&card=4111111111111111&exp=12%2F30&cvv=123";
+const BEACON_PII_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xC0, 0xDE, 0x03];
 
 /// The victim host that exposes its credentials over cleartext HTTP Basic auth (internal).
 fn beacon_creds_victim() -> Ipv4Addr {
@@ -978,6 +1002,11 @@ fn beacon_ftp_victim() -> Ipv4Addr {
 /// The FTP server reached in the clear (internal).
 fn beacon_ftp_server() -> Ipv4Addr {
     Ipv4Addr::new(10, 0, 0, 91)
+}
+
+/// The victim host that submits a credit-card number over cleartext HTTP (internal).
+fn beacon_pii_victim() -> Ipv4Addr {
+    Ipv4Addr::new(10, 0, 0, 52)
 }
 /// Exfil upload: number of large data packets, their payload size, and the fixed source port
 /// (one flow). 900 × 1400 B ≈ 1.2 MB outbound — clears the 1 MB exfil floor.
