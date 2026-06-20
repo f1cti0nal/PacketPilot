@@ -33,7 +33,7 @@
 //! exercised by this module's unit tests.
 
 use crate::error::PpError;
-use crate::model::packet::{AppProto, PacketMeta, Protocol, Transport};
+use crate::model::packet::{AppProto, CredScheme, PacketMeta, PiiKind, Protocol, Transport};
 use crate::reader::{LinkType, RawFrame};
 use crate::Result;
 
@@ -61,6 +61,8 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         app_proto: AppProto::Unknown,
         sni: None,
         dns_qname: None,
+        cleartext_cred: None,
+        pii: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -174,6 +176,12 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                 }
             }
         }
+        // Cleartext credential exposure: a second, payload-free sniff over the same peek. Sets
+        // only the derived scheme (never the credential), so the no-retention contract holds.
+        meta.cleartext_cred =
+            sniff_cleartext_cred(meta.transport, meta.src_port, meta.dst_port, payload);
+        // Plaintext PII exposure: derive only the PII *kind* (credit card / SSN), never the value.
+        meta.pii = sniff_pii(meta.transport, payload);
     }
 
     Ok(())
@@ -393,6 +401,277 @@ pub fn sniff_http_method(payload: &[u8]) -> Option<String> {
     None
 }
 
+/// ASCII case-insensitive prefix test (`haystack` starts with `needle`).
+fn starts_with_ci(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.len() >= needle.len()
+        && haystack[..needle.len()]
+            .iter()
+            .zip(needle)
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
+}
+
+/// First index in `haystack` where `needle` matches, ASCII case-insensitively; `None` if absent.
+/// O(n·m) but `n` is the bounded header peek and `m` is a short literal.
+fn find_ci(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| starts_with_ci(&haystack[i..], needle))
+}
+
+/// If an HTTP request's header block carries an `Authorization` / `Proxy-Authorization` header
+/// with a Basic or Digest scheme, return the scheme. The credential itself is neither parsed nor
+/// kept. The match is anchored to the **start of a header line** and the **request body is never
+/// scanned** (truncated at the first blank line), so the literal `authorization:` appearing in a
+/// request URI/query or body does not false-positive.
+fn http_auth_scheme(buf: &[u8]) -> Option<CredScheme> {
+    // Headers end at the first blank line (`\r\n\r\n`); if it is not in the bounded peek, the
+    // payload is all headers (truncated), so scan what we have.
+    let headers = match find_ci(buf, b"\r\n\r\n") {
+        Some(end) => &buf[..end],
+        None => buf,
+    };
+    // Each header sits on its own CRLF-delimited line; the first line is the request line, which
+    // never starts with the header name, so it is naturally skipped.
+    for raw in headers.split(|&b| b == b'\n') {
+        let line = raw.strip_suffix(b"\r").unwrap_or(raw);
+        let value = if starts_with_ci(line, b"authorization:") {
+            &line[b"authorization:".len()..]
+        } else if starts_with_ci(line, b"proxy-authorization:") {
+            &line[b"proxy-authorization:".len()..]
+        } else {
+            continue;
+        };
+        // Skip optional leading whitespace, then match the scheme token.
+        let start = value
+            .iter()
+            .position(|&b| b != b' ' && b != b'\t')
+            .unwrap_or(value.len());
+        let token = &value[start..];
+        if starts_with_ci(token, b"basic") {
+            return Some(CredScheme::HttpBasic);
+        } else if starts_with_ci(token, b"digest") {
+            return Some(CredScheme::HttpDigest);
+        }
+    }
+    None
+}
+
+/// Sniff a *cleartext* credential exposure from a bounded TCP-payload peek — HTTP Basic/Digest
+/// auth (the request is plaintext, so an HTTPS request would be TLS-wrapped and never match) or
+/// FTP `USER`/`PASS` control commands. Returns only the derived [`CredScheme`]; the credential is
+/// never extracted or retained. Pure, bounds-checked, and never panics on malformed input.
+pub fn sniff_cleartext_cred(
+    transport: Transport,
+    _src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) -> Option<CredScheme> {
+    if transport != Transport::Tcp || payload.is_empty() {
+        return None;
+    }
+    // Credentials live in the request line / header block near the start; bound the scan.
+    let scan = &payload[..payload.len().min(1024)];
+
+    // FTP control commands to the server (port 21): USER/PASS carry the credential verbatim.
+    if dst_port == 21 && (starts_with_ci(scan, b"USER ") || starts_with_ci(scan, b"PASS ")) {
+        return Some(CredScheme::Ftp);
+    }
+
+    // HTTP Authorization header — only on an actual request, to avoid matching response bodies.
+    if sniff_http_method(payload).is_some() {
+        return http_auth_scheme(scan);
+    }
+    None
+}
+
+/// Luhn (mod-10) checksum over ASCII digits; `true` if the sequence is Luhn-valid. The slice must
+/// contain only ASCII digits (the caller guarantees this).
+fn luhn_valid(digits: &[u8]) -> bool {
+    if digits.len() < 12 {
+        return false;
+    }
+    let mut sum = 0u32;
+    // Double every second digit counting from the right.
+    for (i, &d) in digits.iter().rev().enumerate() {
+        let mut v = (d - b'0') as u32;
+        if i % 2 == 1 {
+            v *= 2;
+            if v > 9 {
+                v -= 9;
+            }
+        }
+        sum += v;
+    }
+    sum % 10 == 0
+}
+
+/// Whether a digit string has a recognized payment-card issuer prefix and length. Gating on real
+/// issuer ranges (with the Luhn check) keeps a random Luhn-valid digit run from false-positiving.
+fn has_card_prefix(d: &[u8]) -> bool {
+    let n = d.len();
+    if !(13..=19).contains(&n) {
+        return false;
+    }
+    let digit = |i: usize| (d[i] - b'0') as usize;
+    let p2 = digit(0) * 10 + digit(1);
+    let p4 = digit(0) * 1000 + digit(1) * 100 + digit(2) * 10 + digit(3);
+    match d[0] {
+        b'4' => n == 13 || n == 16 || n == 19,          // Visa
+        b'3' => n == 15 && (p2 == 34 || p2 == 37),      // Amex
+        b'5' => n == 16 && (51..=55).contains(&p2),     // Mastercard (legacy BIN)
+        b'2' => n == 16 && (2221..=2720).contains(&p4), // Mastercard (2-series)
+        b'6' => n == 16 && (p4 == 6011 || p2 == 65),    // Discover
+        _ => false,
+    }
+}
+
+/// Whether any of `keywords` (lowercase ASCII) appears, case-insensitively, within the `window`
+/// bytes of `buf` immediately preceding `pos`. Used to require a field-name hint (`card`, `ssn`,
+/// …) near a candidate, so a bare numeric run that merely passes Luhn / the dashed shape is not
+/// reported — the dominant false-positive source.
+fn keyword_before(buf: &[u8], pos: usize, window: usize, keywords: &[&[u8]]) -> bool {
+    let start = pos.saturating_sub(window);
+    let ctx = &buf[start..pos];
+    keywords.iter().any(|kw| find_ci(ctx, kw).is_some())
+}
+
+/// Field-name hints that must precede a card-number run for it to be reported.
+const CARD_KEYWORDS: &[&[u8]] = &[b"card", b"pan", b"credit"];
+/// Field-name hints that must precede an SSN-shaped run for it to be reported.
+const SSN_KEYWORDS: &[&[u8]] = &[b"ssn", b"social"];
+
+/// Scan `buf` for a payment-card number: a run of 13–19 digits (single space/dash separators
+/// allowed, as cards are often grouped) with a recognized issuer prefix, a valid Luhn checksum,
+/// **and** a card-ish field-name keyword within the preceding bytes. The keyword corroboration is
+/// what keeps a benign Luhn-valid numeric id (which Visa's `4`-anything range would otherwise
+/// admit ~10% of the time) from being mislabeled as a card.
+fn contains_credit_card(buf: &[u8]) -> bool {
+    let mut i = 0;
+    while i < buf.len() {
+        if !buf[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        // Collect the (separator-tolerant) digit group starting here.
+        let start = i;
+        let mut digits = [0u8; 19];
+        let mut len = 0usize;
+        let mut j = i;
+        while j < buf.len() && len < 19 {
+            let b = buf[j];
+            if b.is_ascii_digit() {
+                digits[len] = b;
+                len += 1;
+                j += 1;
+            } else if (b == b' ' || b == b'-')
+                && j + 1 < buf.len()
+                && buf[j + 1].is_ascii_digit()
+            {
+                // A single separator inside the run.
+                j += 1;
+            } else {
+                break;
+            }
+        }
+        if has_card_prefix(&digits[..len])
+            && luhn_valid(&digits[..len])
+            && keyword_before(buf, start, 40, CARD_KEYWORDS)
+        {
+            return true;
+        }
+        // Skip past the run we just consumed (j advanced past at least one digit), avoiding
+        // O(n^2) rescanning.
+        i = j;
+    }
+    false
+}
+
+/// Scan `buf` for a US SSN in the dashed `NNN-NN-NNNN` form: a structurally-valid run (area not
+/// 000/666/900–999, group not 00, serial not 0000), not embedded in a longer digit string, **and**
+/// preceded by an `ssn`/`social` field-name keyword. Both the structure and the keyword are needed
+/// because a bare dashed 3-2-4 number is also a common product/serial-code shape.
+fn contains_ssn(buf: &[u8]) -> bool {
+    let d = |b: u8| b.is_ascii_digit();
+    let n = buf.len();
+    if n < 11 {
+        return false;
+    }
+    let mut i = 0;
+    while i + 11 <= n {
+        let w = &buf[i..i + 11];
+        let shaped = d(w[0])
+            && d(w[1])
+            && d(w[2])
+            && w[3] == b'-'
+            && d(w[4])
+            && d(w[5])
+            && w[6] == b'-'
+            && d(w[7])
+            && d(w[8])
+            && d(w[9])
+            && d(w[10]);
+        if shaped {
+            // Not embedded in a longer formatted number on either side.
+            let prev_ok = i == 0 || !buf[i - 1].is_ascii_digit();
+            let next_ok = i + 11 >= n || !buf[i + 11].is_ascii_digit();
+            let area =
+                (w[0] - b'0') as u16 * 100 + (w[1] - b'0') as u16 * 10 + (w[2] - b'0') as u16;
+            let group_ok = w[4] != b'0' || w[5] != b'0'; // group 00 is never a valid SSN
+            let serial_ok = w[7] != b'0' || w[8] != b'0' || w[9] != b'0' || w[10] != b'0'; // serial 0000
+            if prev_ok
+                && next_ok
+                && area != 0
+                && area != 666
+                && area < 900
+                && group_ok
+                && serial_ok
+                && keyword_before(buf, i, 40, SSN_KEYWORDS)
+            {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// True if the first up-to-64 payload bytes look like text (so the PII scan skips binary / TLS /
+/// compressed payloads cheaply). Gates on *control-byte* density rather than ASCII-printable
+/// density, so UTF-8 text with high bytes (≥ 0x80) is still admitted while NUL/control-heavy
+/// binary is rejected. Tab/CR/LF do not count as control.
+fn looks_like_text(buf: &[u8]) -> bool {
+    let sample = &buf[..buf.len().min(64)];
+    if sample.is_empty() {
+        return false;
+    }
+    let control = sample
+        .iter()
+        .filter(|&&b| b < 0x20 && b != b'\t' && b != b'\r' && b != b'\n')
+        .count();
+    control * 10 <= sample.len() // ≤ 10% control bytes
+}
+
+/// Sniff plaintext PII (a credit-card number or a US SSN) from a bounded TCP-payload peek.
+/// Returns only the derived [`PiiKind`] — never the value. Gated on a cheap printable-text check
+/// so binary / TLS payloads skip the digit scan. Pure, bounds-checked, never panics.
+pub fn sniff_pii(transport: Transport, payload: &[u8]) -> Option<PiiKind> {
+    if transport != Transport::Tcp || payload.is_empty() {
+        return None;
+    }
+    let scan = &payload[..payload.len().min(1024)];
+    if !looks_like_text(scan) {
+        return None;
+    }
+    if contains_credit_card(scan) {
+        return Some(PiiKind::CreditCard);
+    }
+    if contains_ssn(scan) {
+        return Some(PiiKind::Ssn);
+    }
+    None
+}
+
 /// Sniff a TLS ClientHello and, if present, the SNI host. Returns:
 /// - `Some(Some(host))` — ClientHello with an SNI extension,
 /// - `Some(None)` — ClientHello but no SNI,
@@ -510,6 +789,8 @@ mod tests {
             app_proto: AppProto::Unknown,
             sni: None,
             dns_qname: None,
+            cleartext_cred: None,
+            pii: None,
         }
     }
 
@@ -956,6 +1237,157 @@ mod tests {
         assert_eq!(sniff_http_method(b"NOTAVERB / HTTP"), None);
         assert_eq!(sniff_http_method(b"GE"), None);
         assert_eq!(sniff_http_method(b""), None);
+    }
+
+    #[test]
+    fn cleartext_cred_sniff_http_basic_and_digest() {
+        let tcp = Transport::Tcp;
+        // HTTP Basic auth over cleartext -> HttpBasic (case-insensitive header match).
+        let basic = b"GET /p HTTP/1.1\r\nHost: x\r\nAuthorization: Basic dXNlcjpwYXNz\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, basic),
+            Some(CredScheme::HttpBasic)
+        );
+        // Lowercased header + no space after the colon still matches.
+        let basic2 = b"POST /login HTTP/1.1\r\nauthorization:Basic QQ==\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 8080, basic2),
+            Some(CredScheme::HttpBasic)
+        );
+        // Digest scheme.
+        let digest = b"GET / HTTP/1.1\r\nAuthorization: Digest username=\"bob\"\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, digest),
+            Some(CredScheme::HttpDigest)
+        );
+        // Proxy-Authorization is also covered (contains "authorization:").
+        let proxy = b"GET / HTTP/1.1\r\nProxy-Authorization: Basic QQ==\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, proxy),
+            Some(CredScheme::HttpBasic)
+        );
+    }
+
+    #[test]
+    fn cleartext_cred_sniff_ftp() {
+        let tcp = Transport::Tcp;
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 40000, 21, b"USER alice\r\n"),
+            Some(CredScheme::Ftp)
+        );
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 40000, 21, b"pass s3cret\r\n"),
+            Some(CredScheme::Ftp)
+        );
+        // FTP commands only count when addressed to the control port (21).
+        assert_eq!(sniff_cleartext_cred(tcp, 40000, 8021, b"USER alice\r\n"), None);
+    }
+
+    #[test]
+    fn cleartext_cred_sniff_negatives() {
+        let tcp = Transport::Tcp;
+        // A plain HTTP request with no auth header.
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, b"GET / HTTP/1.1\r\nHost: x\r\n\r\n"),
+            None
+        );
+        // "Authorization:" in a non-request body must not match (we require an HTTP request).
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, b"random bytes Authorization: Basic xx"),
+            None
+        );
+        // UDP and empty payloads never match.
+        assert_eq!(sniff_cleartext_cred(Transport::Udp, 0, 80, b"Authorization: Basic x"), None);
+        assert_eq!(sniff_cleartext_cred(tcp, 50000, 80, b""), None);
+
+        // The literal in a request URI/query must NOT match (anchored to header lines).
+        assert_eq!(
+            sniff_cleartext_cred(
+                tcp,
+                50000,
+                80,
+                b"GET /r?h=authorization:basic%20x HTTP/1.1\r\nHost: x\r\n\r\n"
+            ),
+            None
+        );
+        // The literal echoed in a request BODY must NOT match (body is never scanned).
+        assert_eq!(
+            sniff_cleartext_cred(
+                tcp,
+                50000,
+                80,
+                b"POST /log HTTP/1.1\r\nHost: x\r\n\r\n{\"h\":\"Authorization: Basic QQ==\"}"
+            ),
+            None
+        );
+        // ...but a real header line after a body-less request still fires.
+        assert_eq!(
+            sniff_cleartext_cred(
+                tcp,
+                50000,
+                80,
+                b"GET / HTTP/1.1\r\nHost: x\r\nAuthorization: Basic QQ==\r\n\r\n"
+            ),
+            Some(CredScheme::HttpBasic)
+        );
+    }
+
+    #[test]
+    fn pii_sniff_detects_credit_cards() {
+        let tcp = Transport::Tcp;
+        // Visa / Amex / Mastercard test numbers (all Luhn-valid), each near a card field name.
+        let visa = b"POST /pay HTTP/1.1\r\n\r\ncard=4111111111111111&cvv=123";
+        assert_eq!(sniff_pii(tcp, visa), Some(PiiKind::CreditCard));
+        let amex = b"card number: 378282246310005";
+        assert_eq!(sniff_pii(tcp, amex), Some(PiiKind::CreditCard));
+        // Grouped with spaces (as cards are often written).
+        let grouped = b"pan=5555 5555 5555 4444 exp=12/30";
+        assert_eq!(sniff_pii(tcp, grouped), Some(PiiKind::CreditCard));
+        let dashed = b"credit card: 4012-8888-8888-1881"; // Visa test number, dash-grouped
+        assert_eq!(sniff_pii(tcp, dashed), Some(PiiKind::CreditCard));
+        // UTF-8 text with high bytes is still scanned (control-byte text gate, not ASCII-only).
+        let utf8 = "café — card=4111111111111111".as_bytes();
+        assert_eq!(sniff_pii(tcp, utf8), Some(PiiKind::CreditCard));
+    }
+
+    #[test]
+    fn pii_sniff_detects_ssn() {
+        assert_eq!(
+            sniff_pii(Transport::Tcp, b"ssn=123-45-6789 dob=..."),
+            Some(PiiKind::Ssn)
+        );
+        assert_eq!(
+            sniff_pii(Transport::Tcp, b"Social Security: 078-05-1120"),
+            Some(PiiKind::Ssn)
+        );
+    }
+
+    #[test]
+    fn pii_sniff_negatives() {
+        let tcp = Transport::Tcp;
+        // A Luhn-valid Visa-shaped run with NO card keyword nearby is NOT reported (the dominant
+        // false-positive: a benign 4-prefixed numeric id).
+        assert_eq!(sniff_pii(tcp, b"orderId=4111111111111111 ok"), None);
+        // A card keyword but a Luhn-FAILING number must not match.
+        assert_eq!(sniff_pii(tcp, b"card=4111111111111112"), None);
+        // Luhn-valid but no recognized issuer prefix / length (an 8-digit order id), with keyword.
+        assert_eq!(sniff_pii(tcp, b"card=00000000"), None);
+        // A bare 9-digit number is NOT an SSN (requires the dashed shape).
+        assert_eq!(sniff_pii(tcp, b"ssn 123456789 ok"), None);
+        // An SSN-shaped run embedded in a longer digit string is rejected.
+        assert_eq!(sniff_pii(tcp, b"ssn=9123-45-67890"), None);
+        // SSN-shaped with a keyword but an invalid group (00) or all-zero serial is rejected.
+        assert_eq!(sniff_pii(tcp, b"ssn=123-00-6789"), None);
+        assert_eq!(sniff_pii(tcp, b"ssn=123-45-0000"), None);
+        // A dashed 3-2-4 code with NO ssn keyword (a benign product code) is NOT reported.
+        assert_eq!(sniff_pii(tcp, b"part 123-45-6789 qty 2"), None);
+        // Binary / non-text payload skips the scan even if digits line up.
+        let mut bin = vec![0x00u8, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
+        bin.extend_from_slice(b"card=4111111111111111");
+        assert_eq!(sniff_pii(tcp, &bin), None);
+        // UDP and empty never match.
+        assert_eq!(sniff_pii(Transport::Udp, b"card=4111111111111111"), None);
+        assert_eq!(sniff_pii(tcp, b""), None);
     }
 
     #[test]

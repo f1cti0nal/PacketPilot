@@ -7,14 +7,20 @@
 //! One streaming pass; bounded memory.
 
 use std::path::{Path, PathBuf};
+// `Instant::now()` panics on `wasm32-unknown-unknown` (no platform clock), and the wasm
+// build reaches the pipeline via `run_source_visiting`, so the elapsed-time instrumentation
+// is compiled out there.
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, correlate_incidents, detect_beacons, detect_dns_tunnel, detect_exfil,
-    detect_sweeps, BeaconParams, BehaviorTracker, DetectConfig, DnsTunnelParams, ExfilParams,
-    SweepParams,
+    contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
+    detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_lateral_movement,
+    detect_pii_exposure, detect_sweeps, suppress_swept_by_lateral, BeaconParams, BehaviorTracker,
+    BruteForceParams, CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams,
+    LateralMovementParams, PiiExposureParams, SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -51,6 +57,14 @@ pub struct PipelineConfig {
     pub exfil: ExfilParams,
     /// Host-sweep-detector tuning.
     pub sweep: SweepParams,
+    /// Credential brute-force-detector tuning.
+    pub brute_force: BruteForceParams,
+    /// Cleartext-credential-exposure-detector tuning.
+    pub cleartext_creds: CleartextCredsParams,
+    /// Plaintext-PII-exposure-detector tuning.
+    pub pii: PiiExposureParams,
+    /// Lateral-movement-detector tuning.
+    pub lateral: LateralMovementParams,
     /// DNS-tunneling-detector tuning.
     pub dns_tunnel: DnsTunnelParams,
 }
@@ -75,6 +89,10 @@ impl Default for PipelineConfig {
             beacon: BeaconParams::default(),
             exfil: ExfilParams::default(),
             sweep: SweepParams::default(),
+            brute_force: BruteForceParams::default(),
+            cleartext_creds: CleartextCredsParams::default(),
+            pii: PiiExposureParams::default(),
+            lateral: LateralMovementParams::default(),
             dns_tunnel: DnsTunnelParams::default(),
         }
     }
@@ -117,6 +135,24 @@ pub fn run_source(
     source_label: &str,
     source_bytes: u64,
     cfg: &PipelineConfig,
+    progress: impl FnMut(u64, u64, Option<u64>),
+) -> Result<AnalysisOutput> {
+    run_source_visiting(source, source_label, source_bytes, cfg, &mut |_| {}, progress)
+}
+
+/// Like [`run_source`], but invokes `on_flow` once per finalized flow record — after
+/// classify + scan-uplift + enrich + score, so the record carries its final category,
+/// severity, threat score, and IOC flag (exactly what the Parquet writer would persist).
+///
+/// This is the seam for filesystem-free consumers (e.g. the WebAssembly build) that need
+/// the per-flow rows in memory rather than written to a Parquet path. `on_flow` runs in
+/// addition to the optional `cfg.flows_parquet` writer, so a native caller can do both.
+pub fn run_source_visiting(
+    source: Box<dyn PacketSource>,
+    source_label: &str,
+    source_bytes: u64,
+    cfg: &PipelineConfig,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     mut progress: impl FnMut(u64, u64, Option<u64>),
 ) -> Result<AnalysisOutput> {
     if cfg.evict_interval_pkts == 0 {
@@ -125,6 +161,7 @@ pub fn run_source(
         ));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     let start = Instant::now();
     let mut source = source;
     let link = source.link_type();
@@ -198,6 +235,17 @@ pub fn run_source(
                         tracker.observe_dns_query(src, dst, qname);
                     }
                 }
+                // Cleartext credential exposure: fold each packet that carried a credential in the
+                // clear (the decode sniff set the derived scheme; the secret is never retained).
+                if let (Some(scheme), Some(src), Some(dst)) =
+                    (meta.cleartext_cred, meta.src_ip, meta.dst_ip)
+                {
+                    tracker.observe_cleartext_cred(src, dst, meta.dst_port, scheme);
+                }
+                // Plaintext PII exposure: same fold for sniffed PII (kind only, never the value).
+                if let (Some(kind), Some(src), Some(dst)) = (meta.pii, meta.src_ip, meta.dst_ip) {
+                    tracker.observe_pii(src, dst, meta.dst_port, kind);
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -220,6 +268,7 @@ pub fn run_source(
                 &mut stats,
                 &mut tracker,
                 &mut writer,
+                on_flow,
                 &mut sink_err,
             );
             if let Some(e) = sink_err.take() {
@@ -239,6 +288,7 @@ pub fn run_source(
         &mut stats,
         &mut tracker,
         &mut writer,
+        on_flow,
         &mut sink_err,
     );
     if let Some(e) = sink_err.take() {
@@ -251,9 +301,17 @@ pub fn run_source(
     // Cross-flow behavioral detection runs once, after every flow's contact has been folded in.
     // Its findings uplift the implicated hosts' per-IP threat cards *before* the summary sorts
     // and truncates them, so a beaconing host/C2 surfaces in the Top Threats panel.
+    let lateral = detect_lateral_movement(&tracker, &cfg.lateral);
+    // An established admin fan-out is lateral movement (real sessions), not a probe sweep, so the
+    // more-specific lateral finding suppresses any host-sweep on the same (src, port).
+    let sweeps = suppress_swept_by_lateral(detect_sweeps(&tracker, &cfg.sweep), &lateral);
     let mut findings = detect_beacons(&tracker, &cfg.beacon);
     findings.extend(detect_exfil(&tracker, &cfg.exfil));
-    findings.extend(detect_sweeps(&tracker, &cfg.sweep));
+    findings.extend(sweeps);
+    findings.extend(detect_brute_force(&tracker, &cfg.brute_force));
+    findings.extend(detect_cleartext_creds(&tracker, &cfg.cleartext_creds));
+    findings.extend(detect_pii_exposure(&tracker, &cfg.pii));
+    findings.extend(lateral);
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     stats.apply_findings(&findings);
 
@@ -280,7 +338,11 @@ pub fn run_source(
         link_type: link.as_str().to_string(),
         summary,
         flows_parquet_path,
+        // No platform clock on wasm; report 0 there rather than panicking in `Instant::now`.
+        #[cfg(not(target_arch = "wasm32"))]
         elapsed_ms: start.elapsed().as_millis() as u64,
+        #[cfg(target_arch = "wasm32")]
+        elapsed_ms: 0,
     })
 }
 
@@ -296,6 +358,7 @@ fn process_flow(
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
 ) {
     classifier.classify(record);
@@ -349,6 +412,9 @@ fn process_flow(
             }
         }
     }
+
+    // Hand the finalized record to the in-memory visitor (no-op for the native path).
+    on_flow(record);
 }
 
 /// Drive periodic idle/active + cap eviction.
@@ -363,6 +429,7 @@ fn evict(
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
 ) {
     flow.evict_expired(now_ns, |mut record| {
@@ -375,6 +442,7 @@ fn evict(
             stats,
             tracker,
             writer,
+            on_flow,
             sink_err,
         );
     });
@@ -391,6 +459,7 @@ fn drain(
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
 ) {
     flow.drain_all(|mut record| {
@@ -403,6 +472,7 @@ fn drain(
             stats,
             tracker,
             writer,
+            on_flow,
             sink_err,
         );
     });
@@ -821,8 +891,9 @@ mod tests {
             "c2 {c2} not High in ip_threats"
         );
 
-        // The beacon host also ran a recon sweep and exfiltrated data, so it correlates into one
-        // Critical, full kill-chain incident (Discovery -> Command & Control -> Exfiltration).
+        // The beacon host also ran a recon sweep, brute-forced credentials, and exfiltrated data,
+        // so it correlates into one Critical, full kill-chain incident
+        // (Discovery -> Credential Access -> Command & Control -> Exfiltration).
         let incident = out
             .summary
             .incidents
@@ -835,21 +906,93 @@ mod tests {
             "incident: {incident:?}"
         );
         assert!(
-            incident.findings.len() >= 4,
+            incident.findings.len() >= 6,
             "expected full kill-chain incident: {incident:?}"
         );
         assert_eq!(
             incident.stages,
-            vec!["Discovery", "Command & Control", "Exfiltration"],
+            vec![
+                "Discovery",
+                "Credential Access",
+                "Lateral Movement",
+                "Command & Control",
+                "Exfiltration"
+            ],
             "incident: {incident:?}"
         );
-        // The kill chain includes DNS tunneling (exfil over DNS).
+        // The kill chain includes a credential brute force, pinned to its identity: SSH (22)
+        // against the FIRST host the recon stage swept (10.66.0.1), so Discovery and Credential
+        // Access are coupled to the same victim, at or above the detector's attempt floor.
+        let brute = incident
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::BruteForce)
+            .unwrap_or_else(|| panic!("incident missing brute-force finding: {incident:?}"));
+        assert_eq!(brute.dst_ip.as_deref(), Some("10.66.0.1"), "brute victim");
+        assert_eq!(brute.dst_port, Some(22), "brute targets SSH");
+        assert!(
+            brute.contacts.unwrap() >= 20,
+            "brute attempts below the detector floor: {brute:?}"
+        );
+        // ...lateral movement: established RDP (3389) sessions across several internal hosts...
+        let lateral = incident
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::LateralMovement)
+            .unwrap_or_else(|| panic!("incident missing lateral-movement finding: {incident:?}"));
+        assert_eq!(lateral.dst_port, Some(3389), "lateral over RDP");
+        assert!(lateral.dst_ip.is_none(), "fan-out finding has no single dst");
+        assert!(
+            lateral.contacts.unwrap() >= 4,
+            "lateral host count below the detector floor: {lateral:?}"
+        );
+        // ...and DNS tunneling (exfil over DNS).
         assert!(
             incident
                 .findings
                 .iter()
                 .any(|f| f.kind == crate::model::finding::FindingKind::DnsTunnel),
             "incident missing DNS-tunnel finding: {incident:?}"
+        );
+
+        // *Separate* victim hosts exposed credentials in cleartext — their own single-stage
+        // incidents, distinct from the attacker's chain: one over HTTP Basic, one over FTP.
+        let http_cred = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| {
+                f.kind == crate::model::finding::FindingKind::CleartextCreds && f.dst_port == Some(80)
+            })
+            .unwrap_or_else(|| panic!("no HTTP cleartext-cred finding: {:?}", out.summary.findings));
+        assert_eq!(http_cred.src_ip, "10.0.0.50", "HTTP cleartext-cred victim");
+        assert!(http_cred.attack.iter().any(|a| a == "T1552"));
+        assert!(
+            out.summary
+                .findings
+                .iter()
+                .any(|f| f.kind == crate::model::finding::FindingKind::CleartextCreds
+                    && f.dst_port == Some(21)),
+            "expected an FTP cleartext-cred finding"
+        );
+        assert!(
+            out.summary.incidents.iter().any(|i| i.host == "10.0.0.50"),
+            "cleartext-cred victim should have its own incident"
+        );
+
+        // ...and a third victim leaked a credit-card number over cleartext HTTP (PII exposure).
+        let pii = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::PiiExposure)
+            .unwrap_or_else(|| panic!("no PII finding: {:?}", out.summary.findings));
+        assert_eq!(pii.src_ip, "10.0.0.52", "PII victim");
+        assert_eq!(pii.dst_port, Some(80));
+        assert!(pii.attack.iter().any(|a| a == "T1040"));
+        assert!(
+            out.summary.incidents.iter().any(|i| i.host == "10.0.0.52"),
+            "PII victim should have its own incident"
         );
     }
 
@@ -998,6 +1141,330 @@ mod tests {
                 .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
             "sweeper not High in ip_threats"
         );
+    }
+
+    #[test]
+    fn pipeline_surfaces_brute_force_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let attacker = Ipv4Addr::new(10, 0, 0, 9);
+        let victim = Ipv4Addr::new(10, 0, 0, 5);
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        // 25 separate SSH connection attempts (distinct ephemeral source ports => distinct flows)
+        // from one attacker to one victim — a credential brute force.
+        for i in 0..25i64 {
+            let sport = 40000 + i as u16;
+            let tcp = frames::build_tcp(attacker, victim, sport, 22, frames::TCP_SYN, &[]);
+            let ip = frames::build_ipv4(attacker, victim, frames::IP_PROTO_TCP, 64, tcp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 9],
+                [0x02, 0, 0, 0, 0, 5],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            let ts = base + i * 1_000_000;
+            let wl = frame.len() as u32;
+            container::write_legacy_record(&mut buf, ts, wl, wl).unwrap();
+            buf.write_all(&frame).unwrap();
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        // No threat feed: the verdict comes from the repeated auth attempts alone.
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let bf = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::BruteForce)
+            .unwrap_or_else(|| panic!("no brute-force finding: {:?}", out.summary.findings));
+        assert_eq!(bf.severity, crate::model::severity::Severity::High);
+        assert_eq!(bf.src_ip, "10.0.0.9");
+        assert_eq!(bf.dst_ip.as_deref(), Some("10.0.0.5"));
+        assert_eq!(bf.dst_port, Some(22));
+        assert!(bf.attack.iter().any(|a| a == "T1110"));
+        assert!(bf.contacts.unwrap() >= 20);
+        // The attacker is surfaced as a High threat card (behavior alone).
+        assert!(
+            out.summary
+                .ip_threats
+                .iter()
+                .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
+            "brute-forcer not High in ip_threats"
+        );
+    }
+
+    #[test]
+    fn pipeline_surfaces_lateral_movement_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let attacker = Ipv4Addr::new(10, 0, 0, 9); // internal
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        let mut ts = base;
+        let push = |buf: &mut Vec<u8>, frame: &[u8], ts: i64| {
+            let wl = frame.len() as u32;
+            container::write_legacy_record(buf, ts, wl, wl).unwrap();
+            buf.write_all(frame).unwrap();
+        };
+        // Established RDP (3389) sessions to 5 distinct internal hosts: for each, a fixed ephemeral
+        // source port keeps both directions in one flow, and ~700 B payloads each way clear the
+        // detector's per-direction session-byte floor (a SYN probe never would).
+        let payload = [0x77u8; 700];
+        for h in 1..=5u8 {
+            let victim = Ipv4Addr::new(10, 0, 1, h);
+            let sport = 52000 + h as u16;
+            for round in 0..2i64 {
+                // client -> server
+                let tcp = frames::build_tcp(
+                    attacker,
+                    victim,
+                    sport,
+                    3389,
+                    frames::TCP_PSH | frames::TCP_ACK,
+                    &payload,
+                );
+                let ip = frames::build_ipv4(attacker, victim, frames::IP_PROTO_TCP, 64, tcp.len());
+                let mut frame = frames::build_ethernet(
+                    [0x02, 0, 0, 0, 0, 9],
+                    [0x02, 0, 0, 0, 1, h],
+                    frames::ETHERTYPE_IPV4,
+                );
+                frame.extend_from_slice(&ip);
+                frame.extend_from_slice(&tcp);
+                push(&mut buf, &frame, ts);
+                ts += 1_000_000;
+                // server -> client
+                let tcp = frames::build_tcp(
+                    victim,
+                    attacker,
+                    3389,
+                    sport,
+                    frames::TCP_PSH | frames::TCP_ACK,
+                    &payload,
+                );
+                let ip = frames::build_ipv4(victim, attacker, frames::IP_PROTO_TCP, 64, tcp.len());
+                let mut frame = frames::build_ethernet(
+                    [0x02, 0, 0, 0, 1, h],
+                    [0x02, 0, 0, 0, 0, 9],
+                    frames::ETHERTYPE_IPV4,
+                );
+                frame.extend_from_slice(&ip);
+                frame.extend_from_slice(&tcp);
+                push(&mut buf, &frame, ts);
+                ts += 1_000_000;
+                let _ = round;
+            }
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let lm = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::LateralMovement)
+            .unwrap_or_else(|| panic!("no lateral-movement finding: {:?}", out.summary.findings));
+        assert_eq!(lm.severity, crate::model::severity::Severity::High);
+        assert_eq!(lm.src_ip, "10.0.0.9");
+        assert!(lm.dst_ip.is_none());
+        assert_eq!(lm.dst_port, Some(3389));
+        assert!(lm.attack.iter().any(|a| a == "T1021"));
+        assert!(lm.contacts.unwrap() >= 4);
+        assert!(
+            out.summary
+                .ip_threats
+                .iter()
+                .any(|t| t.ip == "10.0.0.9" && t.severity == crate::model::severity::Severity::High),
+            "lateral mover not High in ip_threats"
+        );
+    }
+
+    #[test]
+    fn pipeline_surfaces_pii_exposure_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let client = Ipv4Addr::new(10, 0, 0, 52);
+        let server = Ipv4Addr::new(10, 0, 0, 80);
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+        // An HTTP POST whose form body carries a Luhn-valid card number in cleartext.
+        let body = "name=Jane&card=4111111111111111&cvv=123";
+        let payload = frames::http_post_payload("shop", "/checkout", body);
+        let tcp = frames::build_tcp(
+            client,
+            server,
+            55000,
+            80,
+            frames::TCP_PSH | frames::TCP_ACK,
+            &payload,
+        );
+        let ip = frames::build_ipv4(client, server, frames::IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(
+            [0x02, 0, 0, 0, 0, 52],
+            [0x02, 0, 0, 0, 0, 80],
+            frames::ETHERTYPE_IPV4,
+        );
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        let wl = frame.len() as u32;
+        container::write_legacy_record(&mut buf, base, wl, wl).unwrap();
+        buf.write_all(&frame).unwrap();
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+        let pii = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::PiiExposure)
+            .unwrap_or_else(|| panic!("no PII finding: {:?}", out.summary.findings));
+        assert_eq!(pii.severity, crate::model::severity::Severity::High);
+        assert_eq!(pii.src_ip, "10.0.0.52");
+        assert_eq!(pii.dst_ip.as_deref(), Some("10.0.0.80"));
+        assert_eq!(pii.dst_port, Some(80));
+        assert!(pii.attack.iter().any(|a| a == "T1040"));
+        assert!(pii.title.contains("credit card"), "title: {}", pii.title);
+    }
+
+    #[test]
+    fn benign_mixed_traffic_yields_no_brute_force_even_at_low_host_diversity() {
+        use crate::gen::{GenConfig, Scenario, SynthGen};
+        // Regression for the adversarial-review false positive: a tiny host set concentrates the
+        // generator's random TCP connections onto a few channels, so a naive auth-port gate would
+        // accumulate >=20 "attempts" on a port that merely happened to be an auth service. With
+        // other-TCP confined to high non-auth ports AND the detector gated to interactive-auth
+        // ports, benign Mixed traffic must never trip brute force — regardless of host diversity.
+        let cfg = GenConfig {
+            scenario: Scenario::Mixed,
+            packets: 200_000,
+            seed: 0x5061_636B_6574_5069,
+            host_count: 2,
+            ..Default::default()
+        };
+        let tf = tempfile::NamedTempFile::new().unwrap();
+        SynthGen::new(cfg).write_pcap(tf.path()).unwrap();
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+        // None of the payload/credential/lateral detectors may fire on benign Mixed traffic:
+        // other-TCP is SYN-only on high non-admin ports, the HTTP requests carry no auth header or
+        // card/SSN body, so no channel trips brute force, lateral movement, cleartext creds, or PII.
+        use crate::model::finding::FindingKind as Fk;
+        let spurious: Vec<_> = out
+            .summary
+            .findings
+            .iter()
+            .filter(|f| {
+                matches!(
+                    f.kind,
+                    Fk::BruteForce | Fk::LateralMovement | Fk::CleartextCreds | Fk::PiiExposure
+                )
+            })
+            .collect();
+        assert!(
+            spurious.is_empty(),
+            "spurious exposure/credential/lateral finding on benign Mixed traffic: {spurious:?}"
+        );
+    }
+
+    #[test]
+    fn pipeline_surfaces_cleartext_cred_findings_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+        let mut ts = base;
+        let push = |buf: &mut Vec<u8>, frame: &[u8], ts: i64| {
+            let wl = frame.len() as u32;
+            container::write_legacy_record(buf, ts, wl, wl).unwrap();
+            buf.write_all(frame).unwrap();
+        };
+        let tcp_frame = |src: Ipv4Addr, dst: Ipv4Addr, sp: u16, dp: u16, payload: &[u8]| {
+            let tcp = frames::build_tcp(src, dst, sp, dp, frames::TCP_PSH | frames::TCP_ACK, payload);
+            let ip = frames::build_ipv4(src, dst, frames::IP_PROTO_TCP, 64, tcp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 1],
+                [0x02, 0, 0, 0, 0, 2],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            frame
+        };
+
+        // An HTTP request with Basic auth over cleartext (port 80).
+        let web_client = Ipv4Addr::new(10, 0, 0, 50);
+        let web_server = Ipv4Addr::new(10, 0, 0, 80);
+        let basic = frames::http_basic_auth_payload("intranet", "/portal", "dXNlcjpwdw==");
+        push(&mut buf, &tcp_frame(web_client, web_server, 50000, 80, &basic), ts);
+        ts += 1_000_000;
+
+        // An FTP USER + PASS exchange over cleartext (port 21), same channel -> two exposures.
+        let ftp_client = Ipv4Addr::new(10, 0, 0, 51);
+        let ftp_server = Ipv4Addr::new(10, 0, 0, 90);
+        let user = frames::ftp_command_payload("USER alice");
+        let pass = frames::ftp_command_payload("PASS s3cr3t");
+        push(&mut buf, &tcp_frame(ftp_client, ftp_server, 40000, 21, &user), ts);
+        ts += 1_000_000;
+        push(&mut buf, &tcp_frame(ftp_client, ftp_server, 40000, 21, &pass), ts);
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+        let creds: Vec<_> = out
+            .summary
+            .findings
+            .iter()
+            .filter(|f| f.kind == crate::model::finding::FindingKind::CleartextCreds)
+            .collect();
+        assert_eq!(creds.len(), 2, "findings: {:?}", out.summary.findings);
+
+        let http = creds
+            .iter()
+            .find(|f| f.dst_port == Some(80))
+            .expect("HTTP Basic finding");
+        assert_eq!(http.severity, crate::model::severity::Severity::High);
+        assert_eq!(http.src_ip, "10.0.0.50");
+        assert_eq!(http.dst_ip.as_deref(), Some("10.0.0.80"));
+        assert!(http.attack.iter().any(|a| a == "T1552"));
+        assert!(http.title.contains("HTTP Basic"), "title: {}", http.title);
+
+        let ftp = creds
+            .iter()
+            .find(|f| f.dst_port == Some(21))
+            .expect("FTP finding");
+        assert_eq!(ftp.src_ip, "10.0.0.51");
+        assert_eq!(ftp.contacts, Some(2), "USER + PASS = 2 exposures");
     }
 
     #[test]

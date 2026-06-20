@@ -1,22 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
-import type { AnalysisOutput, Severity, SeverityCounts } from "../types";
-import { cn } from "../lib/cn";
+import type { AnalysisOutput, Incident, IpThreat, Severity } from "../types";
+import { SEVERITY_ORDER } from "../lib/severity";
+import { humanBytes, humanNumber } from "../lib/format";
 
-import { SeverityStrip } from "./triage/SeverityStrip";
-import { IncidentsPanel } from "./triage/IncidentsPanel";
-import { ThreatsPanel } from "./triage/ThreatsPanel";
-import { SummaryCard } from "./triage/SummaryCard";
-import { CategoryChart } from "./triage/CategoryChart";
-import { TimelineChart } from "./triage/TimelineChart";
-import { ProtocolPanel } from "./triage/ProtocolPanel";
-import { TopTalkers } from "./TopTalkers";
+import { sevColor } from "../redesign/viz";
+import { Card, SectionLabel, ScoreBar, IocDot, MitreTag } from "../redesign/primitives";
+import { KpiCluster } from "../redesign/KpiCluster";
+import { IncidentHero } from "../redesign/IncidentHero";
+import { DetailFlyout } from "../redesign/DetailFlyout";
+import { ActivityHeatmap } from "../redesign/ActivityHeatmap";
+import { CategoryMatrix } from "../redesign/CategoryMatrix";
+import { ProtocolMix } from "../redesign/ProtocolMix";
+import { TopTalkersCard } from "../redesign/TopTalkersCard";
+import { CaptureIntegrity } from "../redesign/CaptureIntegrity";
 
 /**
  * Navigation request raised from the dashboard when the analyst drills into a
  * slice of the capture (a severity band, a traffic category, or a host). The
- * parent decides how to honor it — typically by switching to the Flows tab with
- * the matching filter applied.
+ * parent (App) honors it by switching to the Flows view with the filter applied.
  */
 export interface DashboardDrilldown {
   severity?: Severity;
@@ -27,131 +29,158 @@ export interface DashboardDrilldown {
 export interface DashboardProps {
   /** The engine's AnalysisOutput (parsed from summary.json). */
   output: AnalysisOutput;
-  /** Optional drill-down handler; wired to the Flows view by the shell. */
+  /** Optional drill-down handler; wired to the Flows view by the App. */
   onJumpToFlows?: (filter: DashboardDrilldown) => void;
 }
 
+const worstFirst = (
+  a: { severity: Severity; score: number },
+  b: { severity: Severity; score: number },
+) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || b.score - a.score;
+
 /**
- * Summary-first landing view: the one-click triage screen. A full-width
- * severity strip sits on top, followed by a responsive grid of the at-a-glance
- * panels. Pure composition over `output` — no data fetching happens here.
+ * The "PacketPilot — Cockpit" home: a severity-first mission canvas over the
+ * engine output. KPI cluster → kill-chain incident hero → threat watchlist →
+ * activity heatmap → category / integrity / protocol / talkers, with a right
+ * detail flyout for any incident. Pure composition over `output`.
  */
 export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
-  const { summary } = output;
+  const s = output.summary;
+  const [selected, setSelected] = useState<Incident | null>(null);
 
-  // Source descriptor for the SummaryCard, narrowed to exactly what it needs.
-  const source = useMemo(
-    () => ({
-      source_path: output.source_path,
-      source_bytes: output.source_bytes,
-      link_type: output.link_type,
-    }),
-    [output.source_path, output.source_bytes, output.link_type],
-  );
+  const incidents = useMemo(() => [...(s.incidents ?? [])].sort(worstFirst), [s.incidents]);
+  const [hero, ...secondary] = incidents;
+  const incidentByHost = useMemo(() => new Map(incidents.map((i) => [i.host, i])), [incidents]);
 
-  // Engine severity histogram; fall back to a zeroed bucket set if absent.
-  const severityCounts: SeverityCounts = summary.severity_counts ?? {
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-    info: 0,
+  // Selecting a host opens its incident in the flyout when one exists.
+  const openHost = (host: string) => {
+    const inc = incidentByHost.get(host);
+    if (inc) setSelected(inc);
   };
+  const toFlowsIp = (ip: string) => onJumpToFlows?.({ ip });
+  const toFlowsCat = (category: string) => onJumpToFlows?.({ category });
 
   return (
-    <div
-      data-component="Dashboard"
-      className="flex flex-col gap-4 p-4 sm:p-6"
-    >
-      {/* Severity triage strip — full width, top of the fold. */}
-      <SeverityStrip
-        counts={severityCounts}
-        onSelect={
-          onJumpToFlows
-            ? (severity) => onJumpToFlows({ severity })
-            : undefined
-        }
-      />
+    <div className="app-bg min-h-full">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-3 p-4 sm:p-5">
+        {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
+        <KpiCluster output={output} />
 
-      {/* Correlated incidents — the highest-signal surface; only shown when present. */}
-      <IncidentsPanel incidents={summary.incidents ?? []} />
-
-      {/* Top threats — full width, directly under the severity strip. */}
-      <ThreatsPanel threats={summary.ip_threats ?? []} />
-
-      {/* Responsive summary grid. TimelineChart spans the full width. */}
-      <div
-        className={cn(
-          "grid grid-cols-1 gap-4",
-          "lg:grid-cols-2 xl:grid-cols-3",
+        {/* Zone 2 — kill-chain incident hero (only the top critical breathes) */}
+        {hero && (
+          <IncidentHero
+            incident={hero}
+            primary={hero.severity === "critical"}
+            onPivot={toFlowsIp}
+            onOpen={() => setSelected(hero)}
+          />
         )}
-      >
-        <DashboardCell title="Capture overview">
-          <SummaryCard summary={summary} source={source} />
-        </DashboardCell>
+        {secondary.length > 0 && (
+          <div>
+            <SectionLabel className="mb-2">Other incidents · {secondary.length}</SectionLabel>
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {secondary.map((inc, i) => (
+                <IncidentHero
+                  key={`${inc.host}-${i}`}
+                  incident={inc}
+                  onPivot={toFlowsIp}
+                  onOpen={() => setSelected(inc)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
-        <DashboardCell title="Traffic by category">
-          <CategoryChart
-            breakdown={summary.category_breakdown}
-            metric="flows"
-            onBarClick={
-              onJumpToFlows
-                ? (category) => onJumpToFlows({ category })
-                : undefined
-            }
-          />
-        </DashboardCell>
+        {/* Threat watchlist — the ranked scored hosts (the rail, as a card) */}
+        <ThreatWatchlist threats={s.ip_threats ?? []} onSelect={openHost} />
 
-        <DashboardCell title="Protocols">
-          <ProtocolPanel proto={summary.proto} />
-        </DashboardCell>
+        {/* Zone 3 — activity heatmap ribbon */}
+        <ActivityHeatmap
+          histogram={s.time_histogram}
+          bucketSecs={s.time_bucket_secs}
+          findings={s.findings}
+        />
 
-        {/* Timeline spans every column at all breakpoints. */}
-        <DashboardCell
-          title="Timeline"
-          className="lg:col-span-2 xl:col-span-3"
-        >
-          <TimelineChart histogram={summary.time_histogram} metric="pkts" />
-        </DashboardCell>
-
-        {/* Top talkers fills the remaining width below the timeline. */}
-        <DashboardCell
-          title="Top talkers"
-          className="lg:col-span-2 xl:col-span-3"
-        >
-          <TopTalkers
-            talkers={summary.top_talkers}
-            onSelect={
-              onJumpToFlows ? (ip) => onJumpToFlows({ ip }) : undefined
-            }
-          />
-        </DashboardCell>
+        {/* Zones 4 & 5 — category / integrity / protocol / talkers */}
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+          <div className="lg:col-span-7">
+            <CategoryMatrix breakdown={s.category_breakdown} onJump={toFlowsCat} />
+          </div>
+          <div className="lg:col-span-5">
+            <CaptureIntegrity output={output} />
+          </div>
+          <div className="lg:col-span-6">
+            <ProtocolMix proto={s.proto} />
+          </div>
+          <div className="lg:col-span-6">
+            <TopTalkersCard talkers={s.top_talkers} onSelect={openHost} />
+          </div>
+        </div>
       </div>
+
+      <DetailFlyout incident={selected} onClose={() => setSelected(null)} onJumpToFlows={toFlowsIp} />
     </div>
   );
 }
 
-interface DashboardCellProps {
-  title: string;
-  className?: string;
-  children: React.ReactNode;
-}
+/** The ranked threat watchlist, surfaced as a grid of compact host cards. */
+function ThreatWatchlist({
+  threats,
+  onSelect,
+}: {
+  threats: IpThreat[];
+  onSelect: (ip: string) => void;
+}) {
+  const top = useMemo(() => [...threats].sort(worstFirst).slice(0, 9), [threats]);
+  if (top.length === 0) return null;
 
-/**
- * Lightweight surface wrapper around each panel. Keeps the dashboard's grid
- * concerns (span, surface chrome) out of the individual triage components.
- */
-function DashboardCell({ title, className, children }: DashboardCellProps) {
   return (
-    <section
-      className={cn(
-        "min-w-0 rounded-lg border border-border bg-surface p-4 shadow-sm",
-        className,
-      )}
-      aria-label={title}
+    <Card
+      label="THREATS"
+      title="Threat watchlist"
+      right={
+        <span className="font-mono-num t-tag text-[var(--color-text-dim)]">
+          {humanNumber(threats.length)} scored
+        </span>
+      }
     >
-      {children}
-    </section>
+      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {top.map((t) => {
+          const color = sevColor(t.severity);
+          return (
+            <li key={t.ip}>
+              <button
+                type="button"
+                onClick={() => onSelect(t.ip)}
+                aria-label={`${t.ip}, ${t.severity}, score ${t.score} of 100${t.ioc ? ", on an indicator feed" : ""}`}
+                className="flex w-full flex-col gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 text-left transition-colors hover:border-[var(--color-border-strong)]"
+                style={{ borderLeftColor: color, borderLeftWidth: 2 }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-mono-num min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
+                    {t.ip}
+                  </span>
+                  {t.ioc && <IocDot />}
+                  <span className="font-mono-num shrink-0 text-xs font-semibold tabular-nums" style={{ color }}>
+                    {t.score}
+                  </span>
+                </div>
+                <ScoreBar score={t.score} severity={t.severity} />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="t-tag uppercase text-[var(--color-text-faint)]">{t.ip_class}</span>
+                  <span className="font-mono-num t-tag text-[var(--color-text-faint)]">
+                    {humanNumber(t.flows)} fl · {humanBytes(t.bytes)}
+                  </span>
+                  {t.attack.slice(0, 3).map((a) => (
+                    <MitreTag key={a} id={a} />
+                  ))}
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
 

@@ -101,6 +101,8 @@ fn observe_folds_fwd_and_rev() {
         app_proto: ppcap_core::model::packet::AppProto::Unknown,
         sni: None,
         dns_qname: None,
+        cleartext_cred: None,
+        pii: None,
     };
     let mut rev = fwd.clone();
     rev.ts_ns = 900;

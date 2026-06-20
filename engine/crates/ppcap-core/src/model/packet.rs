@@ -134,6 +134,72 @@ impl AppProto {
     }
 }
 
+/// A cleartext credential-exposure scheme sniffed from an L4 payload peek. Only the *derived*
+/// scheme is retained — never the credential itself — so detection stays within the engine's
+/// no-payload-retention / privacy contract.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum CredScheme {
+    /// HTTP `Authorization: Basic` over cleartext (base64 user:pass, trivially reversible).
+    HttpBasic,
+    /// HTTP `Authorization: Digest` over cleartext (hashed, but replayable / crackable).
+    HttpDigest,
+    /// FTP `USER` / `PASS` control commands (credentials sent verbatim).
+    Ftp,
+}
+
+impl CredScheme {
+    /// Stable kebab-case token.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CredScheme::HttpBasic => "http-basic",
+            CredScheme::HttpDigest => "http-digest",
+            CredScheme::Ftp => "ftp",
+        }
+    }
+
+    /// Human label for evidence/title text.
+    pub fn label(self) -> &'static str {
+        match self {
+            CredScheme::HttpBasic => "HTTP Basic auth",
+            CredScheme::HttpDigest => "HTTP Digest auth",
+            CredScheme::Ftp => "FTP login",
+        }
+    }
+}
+
+/// A class of personally-identifiable information sniffed from a cleartext L4 payload peek. Only
+/// the *kind* is retained — never the value — so detection stays within the no-payload-retention /
+/// privacy contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PiiKind {
+    /// A payment card number (issuer-prefix + length + Luhn-valid).
+    CreditCard,
+    /// A US Social Security Number in the dashed `NNN-NN-NNNN` form.
+    Ssn,
+}
+
+impl PiiKind {
+    /// Stable kebab-case token.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PiiKind::CreditCard => "credit-card",
+            PiiKind::Ssn => "ssn",
+        }
+    }
+
+    /// Human label for evidence/title text.
+    pub fn label(self) -> &'static str {
+        match self {
+            PiiKind::CreditCard => "credit card number",
+            PiiKind::Ssn => "US SSN",
+        }
+    }
+}
+
 // TCP flag bit positions (host-readable; matches the on-wire TCP flags byte).
 const TCP_FIN: u8 = 0x01;
 const TCP_SYN: u8 = 0x02;
@@ -178,6 +244,12 @@ pub struct PacketMeta {
     /// otherwise. Transient (folded into per-resolver stats, then dropped) — used for DNS
     /// tunneling / DGA detection.
     pub dns_qname: Option<String>,
+    /// Cleartext credential scheme sniffed from the payload (HTTP Basic/Digest, FTP USER/PASS);
+    /// `None` on the common path. A derived flag only — the credential itself is never retained.
+    pub cleartext_cred: Option<CredScheme>,
+    /// Plaintext PII class sniffed from the payload (credit card, SSN); `None` on the common path.
+    /// A derived flag only — the PII value itself is never retained.
+    pub pii: Option<PiiKind>,
 }
 
 impl PacketMeta {

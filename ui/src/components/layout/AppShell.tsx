@@ -21,6 +21,7 @@ import {
 import type { AnalysisOutput, FlowRow, SummaryState, TabId } from "../../types";
 import type { ExportResult } from "../../lib/platform";
 import { loadFlows } from "../../lib/data";
+import { isCaptureFile } from "../../lib/wasmEngine";
 import { basename, compactNumber, humanBytes } from "../../lib/format";
 import { cn } from "../../lib/cn";
 
@@ -34,11 +35,18 @@ export interface AppShellProps {
   onTabChange: (t: TabId) => void;
   /** App-owned summary load state, used for the header capture label. */
   summary: SummaryState;
+  /** Number of recent captures, shown as a badge on the Recent tab. */
+  recentCount?: number;
   /** Lift a user-provided capture up to App state, replacing the active data. */
   onReplaceData: (next: { summary?: AnalysisOutput; flows?: FlowRow[] }) => void;
-  /** Desktop (Tauri) only: when set, the "Load capture" button calls this
-   *  instead of opening the in-app drag/drop dialog. */
-  onNativeLoad?: () => void;
+  /** Analyze a dropped/picked raw .pcap/.pcapng in-browser (WebAssembly engine). */
+  onAnalyzePcap: (file: File) => Promise<void>;
+  /** Invoked by the "Load capture" button — App routes it to the native dialog
+   *  (desktop) or opens the in-app drop dialog (browser). */
+  onRequestLoad: () => void;
+  /** Controlled open-state of the in-app drop dialog (lifted so the Recent tab can open it). */
+  loadDialogOpen: boolean;
+  onLoadDialogOpenChange: (open: boolean) => void;
   /** Export the active analysis (HTML report on desktop, JSON in the browser).
    *  Resolves to a result the shell can surface, or undefined if nothing to export. */
   onExport: () => Promise<ExportResult | undefined>;
@@ -48,6 +56,7 @@ export interface AppShellProps {
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "flows", label: "Flows" },
+  { id: "recent", label: "Recent" },
 ];
 
 type LoadStatus =
@@ -65,12 +74,15 @@ export function AppShell({
   activeTab,
   onTabChange,
   summary,
+  recentCount = 0,
   onReplaceData,
-  onNativeLoad,
+  onAnalyzePcap,
+  onRequestLoad,
+  loadDialogOpen,
+  onLoadDialogOpenChange,
   onExport,
   children,
 }: AppShellProps) {
-  const [loadOpen, setLoadOpen] = useState(false);
   const [load, setLoad] = useState<LoadStatus>({ phase: "idle" });
   const [exportHint, setExportHint] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -135,7 +147,11 @@ export function AppShell({
           </div>
         </div>
 
-        <TabSwitcher activeTab={activeTab} onTabChange={onTabChange} />
+        <TabSwitcher
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+          recentCount={recentCount}
+        />
 
         <div className="ml-auto flex items-center gap-3">
           <CaptureLabel
@@ -145,7 +161,7 @@ export function AppShell({
           />
           <button
             type="button"
-            onClick={() => (onNativeLoad ? onNativeLoad() : setLoadOpen(true))}
+            onClick={onRequestLoad}
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
           >
             <Upload className="h-3.5 w-3.5" aria-hidden />
@@ -179,12 +195,13 @@ export function AppShell({
 
       <main className="min-h-0 flex-1 overflow-auto">{children}</main>
 
-      {loadOpen && (
+      {loadDialogOpen && (
         <LoadCaptureDialog
           status={load}
           onStatusChange={setLoad}
           onReplaceData={onReplaceData}
-          onClose={() => setLoadOpen(false)}
+          onAnalyzePcap={onAnalyzePcap}
+          onClose={() => onLoadDialogOpenChange(false)}
         />
       )}
     </div>
@@ -194,7 +211,8 @@ export function AppShell({
 function TabSwitcher({
   activeTab,
   onTabChange,
-}: Pick<AppShellProps, "activeTab" | "onTabChange">) {
+  recentCount = 0,
+}: Pick<AppShellProps, "activeTab" | "onTabChange"> & { recentCount?: number }) {
   return (
     <nav
       role="tablist"
@@ -203,6 +221,7 @@ function TabSwitcher({
     >
       {TABS.map((tab) => {
         const active = tab.id === activeTab;
+        const badge = tab.id === "recent" && recentCount > 0 ? recentCount : null;
         return (
           <button
             key={tab.id}
@@ -211,13 +230,18 @@ function TabSwitcher({
             aria-selected={active}
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               active
                 ? "bg-bg text-[var(--color-text)] shadow-sm"
                 : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]",
             )}
           >
             {tab.label}
+            {badge !== null && (
+              <span className="inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-semibold text-[var(--color-accent)]">
+                {badge}
+              </span>
+            )}
           </button>
         );
       })}
@@ -265,11 +289,13 @@ function LoadCaptureDialog({
   status,
   onStatusChange,
   onReplaceData,
+  onAnalyzePcap,
   onClose,
 }: {
   status: LoadStatus;
   onStatusChange: (s: LoadStatus) => void;
   onReplaceData: (next: { summary?: AnalysisOutput; flows?: FlowRow[] }) => void;
+  onAnalyzePcap: (file: File) => Promise<void>;
   onClose: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
@@ -280,6 +306,26 @@ function LoadCaptureDialog({
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
       const list = Array.from(files);
+
+      // A raw capture takes priority: analyze it in-browser via the wasm engine, then close.
+      const captureFile = list.find((f) => isCaptureFile(f.name));
+      if (captureFile) {
+        onStatusChange({
+          phase: "loading",
+          note: `Analyzing ${captureFile.name}…`,
+        });
+        try {
+          await onAnalyzePcap(captureFile);
+          onClose();
+        } catch (err: unknown) {
+          onStatusChange({
+            phase: "error",
+            message: String((err as Error)?.message ?? err),
+          });
+        }
+        return;
+      }
+
       const summaryFile = list.find((f) => f.name.toLowerCase().endsWith(".json"));
       const flowsFile = list.find((f) =>
         f.name.toLowerCase().endsWith(".parquet"),
@@ -287,7 +333,8 @@ function LoadCaptureDialog({
       if (!summaryFile && !flowsFile) {
         onStatusChange({
           phase: "error",
-          message: "Drop a summary.json and/or a flows.parquet file.",
+          message:
+            "Drop a .pcap/.pcapng capture, or a summary.json and/or flows.parquet.",
         });
         return;
       }
@@ -317,7 +364,7 @@ function LoadCaptureDialog({
         });
       }
     },
-    [onStatusChange, onReplaceData],
+    [onStatusChange, onReplaceData, onAnalyzePcap, onClose],
   );
 
   const onDrop = useCallback(
@@ -384,14 +431,18 @@ function LoadCaptureDialog({
               Drag &amp; drop, or click to browse
             </div>
             <div className="text-xs text-[var(--color-text-dim)]">
-              <span className="font-mono-num">summary.json</span> +{" "}
-              <span className="font-mono-num">flows.parquet</span>
+              <span className="font-mono-num">.pcap</span> /{" "}
+              <span className="font-mono-num">.pcapng</span> — analyzed in your browser
+            </div>
+            <div className="text-[11px] text-[var(--color-text-faint)]">
+              or a <span className="font-mono-num">summary.json</span> +{" "}
+              <span className="font-mono-num">flows.parquet</span> export
             </div>
             <input
               ref={inputRef}
               type="file"
               multiple
-              accept=".json,.parquet,application/json"
+              accept=".pcap,.pcapng,.cap,.json,.parquet,application/json"
               className="hidden"
               onChange={(e) => void handleFiles(e.target.files)}
             />

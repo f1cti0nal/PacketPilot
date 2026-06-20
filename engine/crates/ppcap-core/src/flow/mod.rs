@@ -438,6 +438,8 @@ mod tests {
             app_proto: crate::model::packet::AppProto::Unknown,
             sni: None,
             dns_qname: None,
+            cleartext_cred: None,
+            pii: None,
         }
     }
 

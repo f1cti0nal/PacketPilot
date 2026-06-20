@@ -1,0 +1,31 @@
+# PacketPilot WebAssembly analysis binding.
+#
+# Its OWN workspace (note the empty [workspace] table) so the engine workspace's
+# `cargo test` / `cargo build` never tries to build this wasm cdylib for the host gnu
+# target. Build it explicitly: `cargo build --release` from this directory (the local
+# .cargo/config.toml defaults the target to wasm32-unknown-unknown), then run wasm-bindgen.
+[package]
+name = "ppcap-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "PacketPilot analysis engine compiled to WebAssembly (browser pcap analysis)"
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ppcap-core = { path = "../ppcap-core" }
+wasm-bindgen = "=0.2.125"
+serde = { version = "1", features = ["derive"] }
+# Return the result as a JSON string: serde_json emits i64 nanosecond timestamps (~1.7e18)
+# as plain JSON integers, which `JSON.parse` reads as f64 — exactly like the native
+# summary.json. (serde-wasm-bindgen instead *errors* on integers above 2^53.)
+serde_json = "1"
+
+[profile.release]
+opt-level = "s" # favor a small .wasm; the engine is already bounded-memory
+lto = true
+codegen-units = 1
+
+[workspace]

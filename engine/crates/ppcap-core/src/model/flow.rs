@@ -275,6 +275,8 @@ mod tests {
             app_proto: AppProto::Unknown,
             sni: None,
             dns_qname: None,
+            cleartext_cred: None,
+            pii: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);

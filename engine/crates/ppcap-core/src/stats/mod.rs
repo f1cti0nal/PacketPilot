@@ -6,7 +6,7 @@
 //! captures. Designed as a commutative monoid (mergeable) for a future Phase-0.5 parallel
 //! split.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::IpAddr;
 
 use crate::enrich::classify_ip;
@@ -38,6 +38,11 @@ pub struct StatsConfig {
     /// a Critical flow are never crowded out by earlier benign flows), rather than reflecting
     /// flow-close arrival order.
     pub max_evidence_per_ip: usize,
+    /// Upper bound on emitted `time_histogram` buckets. Packets are tallied per-second while
+    /// streaming, then re-bucketed at [`finish`](StatsAccumulator::finish) into at most this
+    /// many "nice"-width buckets (see [`choose_bucket_width`]). Keeps the timeline series — and
+    /// the downstream summary JSON / report SVG — small and readable for any capture duration.
+    pub max_time_buckets: usize,
 }
 
 impl Default for StatsConfig {
@@ -49,6 +54,7 @@ impl Default for StatsConfig {
             max_tracked_keys: 2_000_000,
             top_k_ip_threats: 50,
             max_evidence_per_ip: 6,
+            max_time_buckets: 1_000,
         }
     }
 }
@@ -461,17 +467,12 @@ impl StatsAccumulator {
         });
         ports.truncate(self.cfg.top_k_ports);
 
-        // Time histogram: ascending epoch_sec, gaps omitted.
-        let mut time: Vec<TimeBucket> = self
-            .per_second
-            .iter()
-            .map(|(sec, s)| TimeBucket {
-                epoch_sec: *sec,
-                pkts: s.pkts,
-                bytes: s.bytes,
-            })
-            .collect();
-        time.sort_by_key(|a| a.epoch_sec);
+        // Time histogram: re-bucket the per-second tallies into at most `max_time_buckets`
+        // buckets of an adaptive "nice" width so the emitted series (and the report sparkline)
+        // stays bounded and readable regardless of capture length. Re-bucketing only re-groups
+        // existing tallies, so Σ pkts/bytes is conserved.
+        let (time, time_bucket_secs) =
+            build_time_histogram(&self.per_second, self.cfg.max_time_buckets);
 
         // Category breakdown: fixed Category::all() order.
         let category_breakdown: Vec<CategoryCount> = Category::all()
@@ -542,6 +543,7 @@ impl StatsAccumulator {
             protocol_hierarchy: hierarchy,
             port_histogram: ports,
             time_histogram: time,
+            time_bucket_secs,
             category_breakdown,
             severity_counts: self.severity_counts,
             ip_threats,
@@ -704,6 +706,94 @@ fn category_index(c: Category) -> usize {
     }
 }
 
+/// "Nice" time-bucket widths in seconds, strictly ascending. Chosen so the timeline axis lands
+/// on human round numbers: sub-minute (1/2/5/10/15/30 s), minutes (1/2/5/10/15/30 min), hours
+/// (1/2/3/6/12 h), then days/weeks. The accumulator picks the smallest width whose aligned
+/// bucket count fits under the cap.
+const NICE_BUCKET_WIDTHS_SECS: &[i64] = &[
+    1, 2, 5, 10, 15, 30, // seconds
+    60, 120, 300, 600, 900, 1800, // 1–30 min
+    3600, 7200, 10800, 21600, 43200, // 1–12 h
+    86400, 172800, 432000, 604800, // 1 d, 2 d, 5 d, 1 wk
+];
+
+/// Re-bucket per-second tallies into at most `max_buckets` buckets of an adaptive "nice" width,
+/// returning `(buckets, width_secs)`. Buckets are ascending by start second, with empty windows
+/// omitted; Σ pkts/bytes is conserved (this only re-groups existing per-second tallies). The
+/// width is `1` for short captures and widens to a round interval as the span grows.
+fn build_time_histogram(
+    per_second: &HashMap<i64, SecStat>,
+    max_buckets: usize,
+) -> (Vec<TimeBucket>, i64) {
+    if per_second.is_empty() {
+        return (Vec::new(), 1);
+    }
+    // first/last second of the capture window (the per-second map is keyed by epoch second).
+    let first = *per_second.keys().min().expect("per_second is non-empty");
+    let last = *per_second.keys().max().expect("per_second is non-empty");
+    let width = choose_bucket_width(first, last, max_buckets);
+
+    if width <= 1 {
+        // Per-second granularity already fits under the cap: emit buckets as-is.
+        let mut time: Vec<TimeBucket> = per_second
+            .iter()
+            .map(|(sec, s)| TimeBucket {
+                epoch_sec: *sec,
+                pkts: s.pkts,
+                bytes: s.bytes,
+            })
+            .collect();
+        time.sort_by_key(|b| b.epoch_sec);
+        return (time, 1);
+    }
+
+    // Merge per-second tallies into width-aligned buckets. `div_euclid` floors toward negative
+    // infinity so pre-epoch seconds align consistently. BTreeMap keeps the output ascending.
+    let mut merged: BTreeMap<i64, SecStat> = BTreeMap::new();
+    for (sec, s) in per_second {
+        let start = sec.div_euclid(width) * width;
+        let e = merged.entry(start).or_default();
+        e.pkts += s.pkts;
+        e.bytes += s.bytes;
+    }
+    let time: Vec<TimeBucket> = merged
+        .into_iter()
+        .map(|(start, s)| TimeBucket {
+            epoch_sec: start,
+            pkts: s.pkts,
+            bytes: s.bytes,
+        })
+        .collect();
+    (time, width)
+}
+
+/// Smallest [`NICE_BUCKET_WIDTHS_SECS`] width whose aligned bucket count over `[first_sec,
+/// last_sec]` is `<= max_buckets`. For spans too long for even the largest listed width, grows
+/// in whole-week steps until the cap holds, so the bound is honored for any capture duration.
+fn choose_bucket_width(first_sec: i64, last_sec: i64, max_buckets: usize) -> i64 {
+    let cap = max_buckets.max(1) as i64;
+    for &w in NICE_BUCKET_WIDTHS_SECS {
+        if aligned_bucket_count(first_sec, last_sec, w) <= cap {
+            return w;
+        }
+    }
+    let largest = *NICE_BUCKET_WIDTHS_SECS.last().expect("widths list is non-empty");
+    let mut w = largest;
+    while aligned_bucket_count(first_sec, last_sec, w) > cap {
+        // Saturating so a pathological (i64-spanning) window can't overflow into a panic.
+        w = w.saturating_add(largest);
+    }
+    w
+}
+
+/// Count of `width`-aligned buckets spanning `[first_sec, last_sec]` inclusive (>= 1, since
+/// `last_sec >= first_sec`). Each endpoint is floored toward negative infinity so the count
+/// matches how [`build_time_histogram`] aligns buckets.
+fn aligned_bucket_count(first_sec: i64, last_sec: i64, width: i64) -> i64 {
+    let width = width.max(1);
+    last_sec.div_euclid(width) - first_sec.div_euclid(width) + 1
+}
+
 /// Insert-or-update a bounded map with a heavy-hitter-preserving eviction policy.
 ///
 /// If `key` exists, `update` is applied. Otherwise, when the map is below `cap` the key is
@@ -805,6 +895,8 @@ mod tests {
             app_proto: crate::model::packet::AppProto::Unknown,
             sni: None,
             dns_qname: None,
+            cleartext_cred: None,
+            pii: None,
         }
     }
 
@@ -844,6 +936,8 @@ mod tests {
         assert_eq!(s.total_packets, 0);
         assert_eq!(s.duration_ns, 0);
         assert!(s.first_ts_ns.is_none());
+        assert!(s.time_histogram.is_empty());
+        assert_eq!(s.time_bucket_secs, 1);
         assert!(s.top_talkers.is_empty());
         // Category breakdown always covers all 12 categories in fixed order.
         assert_eq!(s.category_breakdown.len(), 12);
@@ -1070,11 +1164,109 @@ mod tests {
             0,
         ));
         let s = acc.finish();
+        // A 3-second span stays at per-second granularity (well under the bucket cap).
+        assert_eq!(s.time_bucket_secs, 1);
         assert_eq!(s.time_histogram.len(), 2);
         assert_eq!(s.time_histogram[0].epoch_sec, 2);
         assert_eq!(s.time_histogram[0].pkts, 1);
         assert_eq!(s.time_histogram[1].epoch_sec, 5);
         assert_eq!(s.time_histogram[1].pkts, 2);
+    }
+
+    #[test]
+    fn choose_bucket_width_picks_smallest_nice_interval_under_cap() {
+        // A short span fits at per-second granularity.
+        assert_eq!(choose_bucket_width(0, 100, 1_000), 1);
+        // Exactly at the cap (1000 buckets) still fits per-second.
+        assert_eq!(choose_bucket_width(0, 999, 1_000), 1);
+        // One second past the cap bumps to the next nice width (2 s -> 501 buckets).
+        assert_eq!(choose_bucket_width(0, 1_000, 1_000), 2);
+        // A ~25 h span with a 1000 cap lands on 2-minute buckets.
+        assert_eq!(choose_bucket_width(0, 90_000, 1_000), 120);
+        // Every chosen width is one of the published "nice" intervals.
+        for &last in &[5_000i64, 50_000, 500_000, 5_000_000] {
+            let w = choose_bucket_width(0, last, 1_000);
+            assert!(
+                NICE_BUCKET_WIDTHS_SECS.contains(&w),
+                "width {w} for span {last} is not a nice interval"
+            );
+            assert!(aligned_bucket_count(0, last, w) <= 1_000);
+        }
+        // Negative (pre-epoch) seconds align without panicking and still honor the cap.
+        let w = choose_bucket_width(-50_000, 40_000, 1_000);
+        assert!(w >= 1 && aligned_bucket_count(-50_000, 40_000, w) <= 1_000);
+    }
+
+    #[test]
+    fn long_capture_histogram_is_capped_and_conserves_packets() {
+        // A ~25 h capture at per-second granularity would be ~90k buckets; re-bucketing must
+        // collapse it to <= max_time_buckets adaptive buckets while conserving Σ pkts/bytes
+        // (the invariant the golden/e2e tests assert).
+        let cap = 600usize;
+        let cfg = StatsConfig {
+            max_time_buckets: cap,
+            ..StatsConfig::default()
+        };
+        let mut acc = StatsAccumulator::new(cfg);
+        let base_ns = 1_700_000_000i64 * 1_000_000_000;
+        let span_secs = 90_000i64; // 25 hours
+        let step = 30i64; // a packet every 30 s -> ~3001 distinct seconds (>> cap)
+        let mut n = 0u64;
+        let mut sec = 0i64;
+        while sec <= span_secs {
+            acc.observe_packet(&pkt(
+                n,
+                base_ns + sec * 1_000_000_000,
+                100,
+                Transport::Tcp,
+                Some(ip4(10, 0, 0, 1)),
+                Some(ip4(10, 0, 0, 2)),
+                1234,
+                443,
+                0,
+            ));
+            n += 1;
+            sec += step;
+        }
+        let s = acc.finish();
+
+        assert!(
+            s.time_histogram.len() <= cap,
+            "bucket count {} exceeds cap {cap}",
+            s.time_histogram.len()
+        );
+        assert!(
+            s.time_bucket_secs > 1,
+            "adaptive width should widen beyond per-second, got {}",
+            s.time_bucket_secs
+        );
+        assert!(
+            NICE_BUCKET_WIDTHS_SECS.contains(&s.time_bucket_secs),
+            "width {} is not a nice interval",
+            s.time_bucket_secs
+        );
+
+        // Σ conservation across re-bucketing.
+        let hist_pkts: u64 = s.time_histogram.iter().map(|b| b.pkts).sum();
+        assert_eq!(hist_pkts, s.total_packets, "Σ bucket.pkts == total_packets");
+        let hist_bytes: u64 = s.time_histogram.iter().map(|b| b.bytes).sum();
+        assert_eq!(hist_bytes, s.total_bytes, "Σ bucket.bytes == total_bytes");
+
+        // Buckets are width-aligned and strictly ascending.
+        let w = s.time_bucket_secs;
+        let mut prev: Option<i64> = None;
+        for b in &s.time_histogram {
+            assert_eq!(
+                b.epoch_sec.rem_euclid(w),
+                0,
+                "bucket start {} not aligned to width {w}",
+                b.epoch_sec
+            );
+            if let Some(p) = prev {
+                assert!(b.epoch_sec > p, "buckets must be strictly ascending");
+            }
+            prev = Some(b.epoch_sec);
+        }
     }
 
     #[test]
@@ -1191,6 +1383,7 @@ mod tests {
             max_tracked_keys: 1,
             top_k_ip_threats: 50,
             max_evidence_per_ip: 6,
+            max_time_buckets: 1_000,
         };
         let mut acc = StatsAccumulator::new(cfg);
         // Talkers are tracked per IP endpoint, so a packet needs BOTH a src and dst IP

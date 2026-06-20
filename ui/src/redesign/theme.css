@@ -1,16 +1,15 @@
+/* ============================================================================
+   PacketPilot — Cockpit · self-contained theme for the redesign demo entry.
+   Loaded ONLY by src/redesign/main.tsx (not the production index.css), so it
+   can redefine :root tokens freely. Tailwind utilities are generated here too.
+   ============================================================================ */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================================================
-   PacketPilot — Cockpit design system (global). Adopted from the redesign so the
-   whole app shares one futuristic dark language. --color-surface is retained for
-   the existing AppShell (`bg-surface`); the cockpit widgets use surface-1/2/3.
-   ============================================================================ */
 :root {
   /* Surfaces & structure */
   --color-bg: #070b11;
-  --color-surface: #0d121b; /* AppShell header/cards (was #111722) */
   --color-surface-1: #0d121b;
   --color-surface-2: #121a26;
   --color-surface-3: #1a2230;
@@ -74,10 +73,9 @@ body {
 .font-body {
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
-/* Monospace utility for IPs / ports / hashes (now Roboto Mono, tabular). */
 .font-mono-num {
-  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
-    Consolas, "Liberation Mono", monospace;
+  font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
@@ -158,7 +156,8 @@ body {
 .score-glow { filter: drop-shadow(0 0 18px color-mix(in srgb, var(--color-sev-critical) 45%, transparent)); }
 .stroke-glow { filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 60%, transparent)); }
 
-/* Keyboard focus — cyan = focus is on-contract (Tailwind preflight resets it). */
+/* Keyboard focus — cyan = focus is on-contract. Tailwind preflight resets the
+   native outline, so every interactive control needs this. */
 :where(button, a, [role="tab"], [tabindex]):focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
@@ -168,6 +167,8 @@ body {
   from { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-sev-critical) 40%, transparent), 0 0 22px -8px color-mix(in srgb, var(--color-sev-critical) 35%, transparent); }
   to   { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-sev-critical) 60%, transparent), 0 0 34px -6px color-mix(in srgb, var(--color-sev-critical) 55%, transparent); }
 }
+
+/* Kill-chain spine charge + radar sweep + heat shimmer */
 @keyframes spine-charge { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 @keyframes node-pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 @keyframes radar-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
