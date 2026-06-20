@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
+  ActiveSource,
   AnalysisOutput,
   FlowRow,
   Incident,
@@ -48,6 +49,9 @@ const FLOWS_URL = "/sample/flows.parquet";
 
 const IS_TAURI = isTauri();
 
+/** Cap on browser-retained pcap bytes for packet drill-down; larger captures skip retention. */
+const MAX_RETAIN_BYTES = 64 * 1024 * 1024;
+
 /** Everything needed to install a freshly-analyzed (or restored) capture as the active one. */
 interface ApplyCaptureInput {
   summary: AnalysisOutput;
@@ -59,6 +63,8 @@ interface ApplyCaptureInput {
   sizeBytes?: number;
   sha256?: string;
   origin: RecentOrigin;
+  /** Capture source retained for on-demand packet extraction; null disables drill-down. */
+  source?: ActiveSource;
 }
 
 export function App() {
@@ -70,6 +76,9 @@ export function App() {
   // App owns both datasets so the AppShell upload affordance can replace them.
   const [summary, setSummary] = useState<SummaryState>({ status: "idle" });
   const [flows, setFlows] = useState<FlowsState>({ status: "idle", rows: [] });
+  // The active capture's source (pcap path or retained bytes), enabling per-flow packet
+  // drill-down. null whenever packets can't be re-extracted (sample, summary import, etc.).
+  const [activeSource, setActiveSource] = useState<ActiveSource>(null);
 
   // Recent captures: the persisted list, which entry is currently shown, and which (if any)
   // is mid-re-analysis. The load dialog's open state is lifted here so the Recent tab can
@@ -88,6 +97,7 @@ export function App() {
     if (IS_TAURI) return; // desktop shows empty state until a capture is opened
     let cancelled = false;
 
+    setActiveSource(null); // the bundled sample has no re-extractable source
     setSummary({ status: "loading" });
     loadSummary(SUMMARY_URL)
       .then((data) => {
@@ -138,6 +148,7 @@ export function App() {
       if (input.flows) setFlows({ status: "ready", rows: input.flows });
       setSelectedIncident(null);
       setActiveIp(null);
+      setActiveSource(input.source ?? null);
 
       const name = input.fileName ?? basename(data.source_path);
       const sizeBytes = input.sizeBytes ?? data.source_bytes;
@@ -178,9 +189,11 @@ export function App() {
           summary: next.summary,
           flows: next.flows,
           origin: "upload",
+          source: null, // an imported summary/parquet has no original pcap to re-read
         });
       } else if (next.flows) {
         setFlows({ status: "ready", rows: next.flows });
+        setActiveSource(null); // swapped flows out of band — old source no longer matches
       }
     },
     [applyCapture],
@@ -200,6 +213,7 @@ export function App() {
         path,
         fileName: basename(path),
         origin: "native",
+        source: { kind: "path", path },
       });
     } catch (err: unknown) {
       const message = String((err as Error)?.message ?? err);
@@ -220,6 +234,9 @@ export function App() {
         fileName: file.name,
         sizeBytes: file.size,
         origin: "wasm",
+        // Retain the pcap bytes for in-browser packet extraction, but only under the size
+        // cap so we don't pin huge captures in memory.
+        source: bytes.byteLength <= MAX_RETAIN_BYTES ? { kind: "bytes", bytes } : null,
       });
       setTab("dashboard");
     },
@@ -239,6 +256,9 @@ export function App() {
     setTab("dashboard");
     setSelectedIncident(null);
     setActiveIp(null);
+    // Recent entries restore cached stats only — we no longer hold the original pcap bytes,
+    // so packet drill-down stays disabled until the capture is re-analyzed.
+    setActiveSource(null);
     setFlows({ status: "loading", rows: [] });
     const cached = await getFlows(entry.id);
     setFlows({ status: "ready", rows: cached ?? [] });
@@ -262,6 +282,7 @@ export function App() {
             path: entry.path,
             fileName: entry.name,
             origin: "native",
+            source: { kind: "path", path: entry.path },
           });
         } catch (err: unknown) {
           const message = String((err as Error)?.message ?? err);
@@ -332,7 +353,7 @@ export function App() {
       onPaletteOpenChange={setPaletteOpen}
     >
       {tab === "flows" ? (
-        <FlowsView state={flows} initialFilter={flowsFilter} />
+        <FlowsView state={flows} initialFilter={flowsFilter} activeSource={activeSource} />
       ) : tab === "recent" ? (
         <RecentView
           entries={recent}

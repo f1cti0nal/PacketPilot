@@ -12,6 +12,7 @@ import {
   Info,
   Globe,
   ShieldAlert,
+  Binary,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -22,7 +23,8 @@ import {
   YAxis,
   Tooltip,
 } from "recharts";
-import type { FlowRow } from "../types";
+import type { ActiveSource, FlowRow } from "../types";
+import { packetsAvailable } from "../lib/packets";
 import { cn } from "../lib/cn";
 import {
   humanBytes,
@@ -46,6 +48,10 @@ export interface FlowDetailProps {
   flow: FlowRow | null;
   /** Invoked when the user dismisses the panel. */
   onClose: () => void;
+  /** The active capture source — gates whether packets can be extracted for this flow. */
+  activeSource: ActiveSource;
+  /** Invoked when the user requests the packet inspector for the selected flow. */
+  onInspectPackets: () => void;
 }
 
 /** Human label for a TCP flags bitmask (bits per RFC 793 + ECN/NS). */
@@ -284,8 +290,15 @@ function EmptyDetail() {
  * chip, a directional byte/packet breakdown, and timestamps as readable dates.
  * Shows an empty state when `flow` is `null`.
  */
-export function FlowDetail({ flow, onClose }: FlowDetailProps) {
+export function FlowDetail({
+  flow,
+  onClose,
+  activeSource,
+  onInspectPackets,
+}: FlowDetailProps) {
   if (!flow) return <EmptyDetail />;
+
+  const canInspect = packetsAvailable(activeSource);
 
   const startDate = new Date(flow.startMs);
   const endDate = new Date(flow.endMs);
@@ -317,6 +330,28 @@ export function FlowDetail({ flow, onClose }: FlowDetailProps) {
           className="shrink-0 rounded-md p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         >
           <X size={18} />
+        </button>
+      </div>
+
+      {/* Inspect packets */}
+      <div className="border-b border-[var(--color-border)] px-4 py-2">
+        <button
+          type="button"
+          onClick={onInspectPackets}
+          disabled={!canInspect}
+          title={
+            canInspect
+              ? "Inspect this flow's packets"
+              : "Packets are only available for captures analyzed from a pcap"
+          }
+          className={cn(
+            "flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
+            canInspect
+              ? "border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+              : "cursor-not-allowed border-[var(--color-border)] text-[var(--color-text-faint)]",
+          )}
+        >
+          <Binary size={14} /> Inspect packets
         </button>
       </div>
 

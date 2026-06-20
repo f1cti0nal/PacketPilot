@@ -1,14 +1,54 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act } from "react";
-import { render, screen, userEvent, sizeScrollElement } from "../test/render";
+import type { ReactNode } from "react";
+import {
+  render,
+  screen,
+  userEvent,
+  sizeScrollElement,
+  waitFor,
+} from "../test/render";
 import { FlowsView } from "./FlowsView";
-import { makeFlows } from "../test/fixtures";
+import { makeFlows, makePackets } from "../test/fixtures";
+import type { ActiveSource, FlowPackets, FlowRow } from "../types";
+
+// FlowDetail (rendered when a row is selected) draws a recharts chart whose
+// ResponsiveContainer reads a container rect jsdom doesn't populate; stub it so
+// selecting a flow doesn't crash. Mirrors the stub in FlowDetail.test.tsx.
+vi.mock("recharts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("recharts")>();
+  return {
+    ...actual,
+    ResponsiveContainer: ({ children }: { children: ReactNode }) => (
+      <div data-testid="recharts-stub">{children}</div>
+    ),
+  };
+});
+
+// FlowsView calls extractFlowPackets to fill the inspector; FlowDetail imports
+// packetsAvailable from the same module, so the mock MUST export it too (else the
+// button gating breaks). packetsAvailable mirrors the real impl: source !== null.
+const mockExtract = vi.fn<[ActiveSource, FlowRow], Promise<FlowPackets>>(
+  async () => makePackets(),
+);
+vi.mock("../lib/packets", () => ({
+  extractFlowPackets: (source: ActiveSource, flow: FlowRow) =>
+    mockExtract(source, flow),
+  packetsAvailable: (s: ActiveSource) => s !== null,
+}));
+
+const bytesSource: ActiveSource = { kind: "bytes", bytes: new ArrayBuffer(8) };
 
 describe("FlowsView", () => {
+  beforeEach(() => {
+    mockExtract.mockReset();
+    mockExtract.mockResolvedValue(makePackets());
+  });
+
   it("renders rows: the filter bar is visible and the table grid exists", () => {
     const rows = makeFlows(20);
     const { container } = render(
-      <FlowsView state={{ status: "ready", rows }} />,
+      <FlowsView state={{ status: "ready", rows }} activeSource={null} />,
     );
     // Filter bar is always present when rows exist
     expect(screen.getByLabelText("Filter flows")).toBeInTheDocument();
@@ -29,7 +69,9 @@ describe("FlowsView", () => {
   it("typing in 'Filter flows' narrows the rows", async () => {
     const u = userEvent.setup();
     const rows = makeFlows(5);
-    const { container } = render(<FlowsView state={{ status: "ready", rows }} />);
+    const { container } = render(
+      <FlowsView state={{ status: "ready", rows }} activeSource={null} />,
+    );
 
     // Size the scroll element so the virtualizer renders row cells
     const grid = container.querySelector('[role="grid"]') as HTMLElement;
@@ -44,7 +86,7 @@ describe("FlowsView", () => {
   });
 
   it("shows loading state when status is loading", () => {
-    render(<FlowsView state={{ status: "loading", rows: [] }} />);
+    render(<FlowsView state={{ status: "loading", rows: [] }} activeSource={null} />);
     expect(screen.getByText(/Loading flows/i)).toBeInTheDocument();
   });
 
@@ -52,13 +94,14 @@ describe("FlowsView", () => {
     render(
       <FlowsView
         state={{ status: "error", rows: [], error: "network failure" }}
+        activeSource={null}
       />,
     );
     expect(screen.getByText(/network failure/i)).toBeInTheDocument();
   });
 
   it("shows empty state when rows is empty", () => {
-    render(<FlowsView state={{ status: "ready", rows: [] }} />);
+    render(<FlowsView state={{ status: "ready", rows: [] }} activeSource={null} />);
     expect(screen.getByText(/No flows in this capture/i)).toBeInTheDocument();
   });
 
@@ -67,6 +110,7 @@ describe("FlowsView", () => {
       <FlowsView
         state={{ status: "ready", rows: makeFlows(5) }}
         initialFilter={{ ip: "10.0.0.1" }}
+        activeSource={null}
       />,
     );
     const filter = screen.getByLabelText("Filter flows");
@@ -78,7 +122,7 @@ describe("FlowsView", () => {
     expect(
       () =>
         render(
-          <FlowsView state={{ status: "ready", rows: makeFlows(3) }} />,
+          <FlowsView state={{ status: "ready", rows: makeFlows(3) }} activeSource={null} />,
         ).unmount(),
     ).not.toThrow();
   });
@@ -86,7 +130,7 @@ describe("FlowsView", () => {
   it("clearFilters button appears and resets the text filter when clicked", async () => {
     const u = userEvent.setup();
     const rows = makeFlows(5);
-    render(<FlowsView state={{ status: "ready", rows }} />);
+    render(<FlowsView state={{ status: "ready", rows }} activeSource={null} />);
 
     const filter = screen.getByLabelText("Filter flows");
     // Type something to activate filters
@@ -102,9 +146,65 @@ describe("FlowsView", () => {
   it("shows 'No flows match the current filters' when filter excludes everything", async () => {
     const u = userEvent.setup();
     const rows = makeFlows(5);
-    render(<FlowsView state={{ status: "ready", rows }} />);
+    render(<FlowsView state={{ status: "ready", rows }} activeSource={null} />);
     const filter = screen.getByLabelText("Filter flows");
     await u.type(filter, "zzz-no-match-xyz");
     expect(screen.getByText(/No flows match the current filters/i)).toBeInTheDocument();
+  });
+
+  // Select the first flow row, returning once FlowDetail is mounted. The table is
+  // virtualized, so size the scroll element before clicking the row cell.
+  async function selectFirstFlow(u: ReturnType<typeof userEvent.setup>) {
+    const rows = makeFlows(5);
+    const { container } = render(
+      <FlowsView state={{ status: "ready", rows }} activeSource={bytesSource} />,
+    );
+    const grid = container.querySelector('[role="grid"]') as HTMLElement;
+    act(() => { sizeScrollElement(grid); });
+    // Row 0's dst IP (185.220.101.5) is unique to the first flow.
+    await u.click(screen.getByText("185.220.101.5"));
+    // FlowDetail (and thus its Inspect packets button) is now mounted.
+    return screen.getByRole("button", { name: /Inspect packets/i });
+  }
+
+  it("opens the PacketInspector with extracted packets when Inspect packets is clicked", async () => {
+    const u = userEvent.setup();
+    const inspectBtn = await selectFirstFlow(u);
+    expect(inspectBtn).toBeEnabled();
+    await u.click(inspectBtn);
+
+    // The inspector dialog mounts and renders the extracted packets. The first packet's
+    // payload "GET / HTTP/1.1" shows as hex bytes (47 = 'G') only in the hex viewer.
+    const dialog = await screen.findByRole("dialog", { name: /Packets for/i });
+    expect(dialog).toBeInTheDocument();
+    expect(mockExtract).toHaveBeenCalledTimes(1);
+    // "47 45 54" = "GET" in hex — appears only in the hex-dump pane.
+    await waitFor(() =>
+      expect(screen.getByText(/47 45 54/)).toBeInTheDocument(),
+    );
+  });
+
+  it("shows the error message in the inspector when extraction rejects", async () => {
+    mockExtract.mockRejectedValue(new Error("boom extracting packets"));
+    const u = userEvent.setup();
+    const inspectBtn = await selectFirstFlow(u);
+    await u.click(inspectBtn);
+
+    expect(await screen.findByRole("dialog", { name: /Packets for/i })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/boom extracting packets/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("disables the Inspect packets button when there is no active source", async () => {
+    const u = userEvent.setup();
+    const rows = makeFlows(5);
+    const { container } = render(
+      <FlowsView state={{ status: "ready", rows }} activeSource={null} />,
+    );
+    const grid = container.querySelector('[role="grid"]') as HTMLElement;
+    act(() => { sizeScrollElement(grid); });
+    await u.click(screen.getByText("185.220.101.5"));
+    expect(screen.getByRole("button", { name: /Inspect packets/i })).toBeDisabled();
   });
 });
