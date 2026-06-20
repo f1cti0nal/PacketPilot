@@ -7,12 +7,14 @@ import {
   Upload,
   FileDown,
   Command as CommandIcon,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { shortHash } from "../lib/format";
 import type { TabId } from "../types";
 
-const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
+const DEFAULT_TABS: ReadonlyArray<{ id: TabId; label: string; badge?: number }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "flows", label: "Flows" },
 ];
@@ -24,6 +26,14 @@ export function CommandBar({
   onTab,
   collapsed,
   onToggleCollapse,
+  tabs = DEFAULT_TABS,
+  captureStatus = "ready",
+  captureError,
+  onRequestLoad,
+  onExport,
+  exporting = false,
+  exportHint,
+  onOpenPalette,
 }: {
   captureName: string;
   sha256?: string;
@@ -31,6 +41,14 @@ export function CommandBar({
   onTab: (t: TabId) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  tabs?: ReadonlyArray<{ id: TabId; label: string; badge?: number }>;
+  captureStatus?: "idle" | "loading" | "ready" | "error";
+  captureError?: string;
+  onRequestLoad?: () => void;
+  onExport?: () => void;
+  exporting?: boolean;
+  exportHint?: string;
+  onOpenPalette?: () => void;
 }) {
   return (
     <header className="glass-band relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-3">
@@ -55,24 +73,42 @@ export function CommandBar({
 
       {/* Capture identity (center) */}
       <div className="ml-3 hidden min-w-0 items-center gap-2.5 md:flex">
-        <span className="font-mono-num truncate text-xs text-[var(--color-text-dim)]" title={captureName}>
-          {captureName}
-        </span>
-        {sha256 && (
-          <span className="font-mono-num hidden text-xs text-[var(--color-text-faint)] lg:inline" title={sha256}>
-            {shortHash(sha256, 8, 6)}
+        {captureStatus === "loading" && (
+          <>
+            <Loader2 size={13} className="animate-spin text-[var(--color-text-faint)]" aria-hidden />
+            <span className="font-mono-num truncate text-xs text-[var(--color-text-dim)]">Loading…</span>
+          </>
+        )}
+        {captureStatus === "ready" && (
+          <>
+            <span className="font-mono-num truncate text-xs text-[var(--color-text-dim)]" title={captureName}>
+              {captureName}
+            </span>
+            {sha256 && (
+              <span className="font-mono-num hidden text-xs text-[var(--color-text-faint)] lg:inline" title={sha256}>
+                {shortHash(sha256, 8, 6)}
+              </span>
+            )}
+            <span className="glow-live inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" style={{ boxShadow: "0 0 6px var(--color-accent)" }} />
+              <span className="t-tag font-semibold uppercase text-[var(--color-accent)]">Analyzed</span>
+            </span>
+          </>
+        )}
+        {captureStatus === "error" && (
+          <span className="font-mono-num truncate text-xs text-[var(--color-text-faint)]">
+            {captureError ?? "Error loading capture"}
           </span>
         )}
-        <span className="glow-live inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" style={{ boxShadow: "0 0 6px var(--color-accent)" }} />
-          <span className="t-tag font-semibold uppercase text-[var(--color-accent)]">Analyzed</span>
-        </span>
+        {captureStatus === "idle" && (
+          <span className="font-mono-num truncate text-xs text-[var(--color-text-faint)]">No capture</span>
+        )}
       </div>
 
       {/* Right: view switcher + actions */}
       <div className="ml-auto flex items-center gap-2">
         <nav aria-label="Views" className="flex items-center gap-0.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-0.5">
-          {TABS.map((tab) => {
+          {tabs.map((tab) => {
             const active = tab.id === activeTab;
             return (
               <button
@@ -88,17 +124,40 @@ export function CommandBar({
                 )}
               >
                 {tab.label}
+                {tab.badge ? (
+                  <span className="ml-1.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-semibold text-[var(--color-accent)]">
+                    {tab.badge}
+                  </span>
+                ) : null}
               </button>
             );
           })}
         </nav>
 
-        <ActionButton icon={<Upload size={14} />} label="Load capture" />
-        <ActionButton icon={<FileDown size={14} />} label="Export" />
+        <ActionButton
+          icon={<Upload size={14} />}
+          label="Load capture"
+          onClick={onRequestLoad}
+          disabled={!onRequestLoad}
+        />
+        <ActionButton
+          icon={exporting ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
+          label="Export"
+          onClick={onExport}
+          disabled={!onExport || exporting}
+        />
+        {exportHint && (
+          <span className="hidden items-center gap-1 text-xs text-[var(--color-text-dim)] lg:inline-flex">
+            <CheckCircle2 size={12} className="text-[var(--color-accent)]" />
+            {exportHint}
+          </span>
+        )}
         <button
           type="button"
           aria-label="Command palette"
-          className="hidden items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)] sm:inline-flex"
+          onClick={onOpenPalette}
+          disabled={!onOpenPalette}
+          className="hidden items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)] disabled:cursor-default disabled:opacity-50 sm:inline-flex"
         >
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
@@ -108,11 +167,26 @@ export function CommandBar({
   );
 }
 
-function ActionButton({ icon, label }: { icon: React.ReactNode; label: string }) {
+function ActionButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  title,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  title?: string;
+}) {
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[color:color-mix(in_srgb,var(--color-accent)_50%,var(--color-border))] hover:text-[var(--color-text)]"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[color:color-mix(in_srgb,var(--color-accent)_50%,var(--color-border))] hover:text-[var(--color-text)] disabled:cursor-default disabled:opacity-50"
     >
       {icon}
       <span className="hidden lg:inline">{label}</span>
