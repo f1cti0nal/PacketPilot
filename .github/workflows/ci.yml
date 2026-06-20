@@ -56,6 +56,19 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - run: npm ci
+      # The wasm engine bundle (ui/src/wasm/) is gitignored and regenerated from
+      # engine/crates/ppcap-wasm; `tsc -b` and `vite build` need it present to
+      # resolve the `../wasm/ppcap_wasm.js` import, so build it before the UI build.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine/crates/ppcap-wasm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.125
+      - run: npm run build:wasm
       - run: npm run build
 
   desktop:
