@@ -92,9 +92,7 @@ describe("AppShell", () => {
 
   it("renders the CommandPalette when paletteOpen is true", () => {
     render(<AppShell {...minimalProps({ paletteOpen: true })} />);
-    // The CommandPalette renders as a dialog
-    const dialogs = screen.getAllByRole("dialog");
-    // At least one dialog should be present (the palette)
-    expect(dialogs.length).toBeGreaterThanOrEqual(1);
+    // The CommandPalette renders with a specific aria-label on its input
+    expect(screen.getByLabelText("Command palette query")).toBeInTheDocument();
   });
 });

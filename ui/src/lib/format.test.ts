@@ -33,9 +33,8 @@ describe("format", () => {
     expect(durationHumanMs(Infinity)).toBe("—");
   });
   it("msToTime formats millisecond epoch as HH:MM:SS.mmm", () => {
-    // Just check it returns a string with colons
-    const result = msToTime(1_700_000_000_000);
-    expect(typeof result).toBe("string");
-    expect(result).toMatch(/\d{2}:\d{2}:\d{2}/);
+    // toISOString() is always UTC, so this is deterministic regardless of local timezone.
+    // 1_700_000_000_000 ms = 2023-11-14T22:13:20.000Z
+    expect(msToTime(1_700_000_000_000)).toBe("22:13:20.000");
   });
 });

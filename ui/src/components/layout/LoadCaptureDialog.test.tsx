@@ -166,10 +166,18 @@ describe("LoadCaptureDialog", () => {
       (el) => el.getAttribute("tabindex") === "0" && !el.getAttribute("aria-label"),
     )!;
 
+    // Spy on HTMLInputElement.prototype.click to verify the hidden file input is triggered
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
+
     // Focus the drop zone and press Enter to cover the keydown handler
     await u.click(dropZone);
-    // The Enter press would trigger inputRef.current?.click() — just verify no throw
     fireEvent.keyDown(dropZone, { key: "Enter" });
+    expect(clickSpy).toHaveBeenCalled();
+
+    clickSpy.mockClear();
     fireEvent.keyDown(dropZone, { key: " " });
+    expect(clickSpy).toHaveBeenCalled();
+
+    clickSpy.mockRestore();
   });
 });
