@@ -254,6 +254,37 @@ export interface RawFlowRow {
   ioc: boolean;
 }
 
+/**
+ * One flow row as returned by the WebAssembly engine (`ppcap-wasm`). Mirrors {@link RawFlowRow}
+ * but in JS-native types: 64-bit ints arrive as plain `number`s and timestamps as nanoseconds
+ * since the epoch (the parquet path uses `bigint`/`Date`). `serde-wasm-bindgen` emits absent
+ * `Option`s as `undefined`, so nullable fields are `... | null | undefined`.
+ */
+export interface WasmFlow {
+  flow_id: number;
+  capture_id: number;
+  src_ip: string;
+  dst_ip: string;
+  src_port: number;
+  dst_port: number;
+  proto: number;
+  app_proto: string | null;
+  bytes_c2s: number;
+  bytes_s2c: number;
+  pkts: number;
+  start_ts_ns: number;
+  end_ts_ns: number;
+  tcp_flags_c2s: number;
+  tcp_flags_s2c: number;
+  ttl_min_c2s: number;
+  category: string;
+  app_proto_src: string | null;
+  sni: string | null;
+  severity: string;
+  threat_score: number;
+  ioc: boolean;
+}
+
 export type Severity =
   | "critical"
   | "high"

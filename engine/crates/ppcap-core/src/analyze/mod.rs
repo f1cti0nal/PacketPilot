@@ -7,6 +7,10 @@
 //! One streaming pass; bounded memory.
 
 use std::path::{Path, PathBuf};
+// `Instant::now()` panics on `wasm32-unknown-unknown` (no platform clock), and the wasm
+// build reaches the pipeline via `run_source_visiting`, so the elapsed-time instrumentation
+// is compiled out there.
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 use crate::classify::{Classifier, ClassifyConfig};
@@ -131,6 +135,24 @@ pub fn run_source(
     source_label: &str,
     source_bytes: u64,
     cfg: &PipelineConfig,
+    progress: impl FnMut(u64, u64, Option<u64>),
+) -> Result<AnalysisOutput> {
+    run_source_visiting(source, source_label, source_bytes, cfg, &mut |_| {}, progress)
+}
+
+/// Like [`run_source`], but invokes `on_flow` once per finalized flow record — after
+/// classify + scan-uplift + enrich + score, so the record carries its final category,
+/// severity, threat score, and IOC flag (exactly what the Parquet writer would persist).
+///
+/// This is the seam for filesystem-free consumers (e.g. the WebAssembly build) that need
+/// the per-flow rows in memory rather than written to a Parquet path. `on_flow` runs in
+/// addition to the optional `cfg.flows_parquet` writer, so a native caller can do both.
+pub fn run_source_visiting(
+    source: Box<dyn PacketSource>,
+    source_label: &str,
+    source_bytes: u64,
+    cfg: &PipelineConfig,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     mut progress: impl FnMut(u64, u64, Option<u64>),
 ) -> Result<AnalysisOutput> {
     if cfg.evict_interval_pkts == 0 {
@@ -139,6 +161,7 @@ pub fn run_source(
         ));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     let start = Instant::now();
     let mut source = source;
     let link = source.link_type();
@@ -245,6 +268,7 @@ pub fn run_source(
                 &mut stats,
                 &mut tracker,
                 &mut writer,
+                on_flow,
                 &mut sink_err,
             );
             if let Some(e) = sink_err.take() {
@@ -264,6 +288,7 @@ pub fn run_source(
         &mut stats,
         &mut tracker,
         &mut writer,
+        on_flow,
         &mut sink_err,
     );
     if let Some(e) = sink_err.take() {
@@ -313,7 +338,11 @@ pub fn run_source(
         link_type: link.as_str().to_string(),
         summary,
         flows_parquet_path,
+        // No platform clock on wasm; report 0 there rather than panicking in `Instant::now`.
+        #[cfg(not(target_arch = "wasm32"))]
         elapsed_ms: start.elapsed().as_millis() as u64,
+        #[cfg(target_arch = "wasm32")]
+        elapsed_ms: 0,
     })
 }
 
@@ -329,6 +358,7 @@ fn process_flow(
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
 ) {
     classifier.classify(record);
@@ -382,6 +412,9 @@ fn process_flow(
             }
         }
     }
+
+    // Hand the finalized record to the in-memory visitor (no-op for the native path).
+    on_flow(record);
 }
 
 /// Drive periodic idle/active + cap eviction.
@@ -396,6 +429,7 @@ fn evict(
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
 ) {
     flow.evict_expired(now_ns, |mut record| {
@@ -408,6 +442,7 @@ fn evict(
             stats,
             tracker,
             writer,
+            on_flow,
             sink_err,
         );
     });
@@ -424,6 +459,7 @@ fn drain(
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
     writer: &mut Option<FlowParquetWriter>,
+    on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
 ) {
     flow.drain_all(|mut record| {
@@ -436,6 +472,7 @@ fn drain(
             stats,
             tracker,
             writer,
+            on_flow,
             sink_err,
         );
     });

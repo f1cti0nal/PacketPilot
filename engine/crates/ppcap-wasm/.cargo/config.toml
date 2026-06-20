@@ -1,0 +1,4 @@
+# Default this crate's builds to wasm. This file is closer to the cwd than the engine's
+# ../../.cargo/config.toml (which pins x86_64-pc-windows-gnu), so it wins for `build.target`.
+[build]
+target = "wasm32-unknown-unknown"
