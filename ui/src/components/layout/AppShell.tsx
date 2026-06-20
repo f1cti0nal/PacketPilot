@@ -125,7 +125,7 @@ export function AppShell({
         captureStatus={captureStatus}
         captureError={summary.status === "error" ? summary.error : undefined}
         onRequestLoad={onRequestLoad}
-        onExport={() => void handleExportClick()}
+        onExport={canExport ? () => void handleExportClick() : undefined}
         exporting={exporting}
         exportHint={exportHint ?? undefined}
         onOpenPalette={onOpenPalette}
