@@ -14,16 +14,16 @@ const worstFirst = (a: IpThreat, b: IpThreat) =>
 export function ThreatRail({
   threats,
   collapsed,
-  activeIp,
+  activeIp = null,
   activeTab,
   onTab,
   onSelect,
 }: {
   threats: IpThreat[];
   collapsed: boolean;
-  activeIp: string | null;
-  activeTab: TabId;
-  onTab: (t: TabId) => void;
+  activeIp?: string | null;
+  activeTab?: TabId;
+  onTab?: (t: TabId) => void;
   onSelect: (ip: string) => void;
 }) {
   const sorted = [...threats].sort(worstFirst);
@@ -35,13 +35,17 @@ export function ThreatRail({
         collapsed ? "w-16" : "w-[280px]",
       )}
     >
-      {/* Icon nav */}
-      <nav className="flex flex-col gap-1 p-2">
-        <NavItem icon={<Radar size={18} />} label="Triage" active={activeTab === "dashboard"} collapsed={collapsed} onClick={() => onTab("dashboard")} />
-        <NavItem icon={<Table2 size={18} />} label="Flows" active={activeTab === "flows"} collapsed={collapsed} onClick={() => onTab("flows")} />
-      </nav>
+      {activeTab && onTab && (
+        <>
+          {/* Icon nav */}
+          <nav className="flex flex-col gap-1 p-2">
+            <NavItem icon={<Radar size={18} />} label="Triage" active={activeTab === "dashboard"} collapsed={collapsed} onClick={() => onTab("dashboard")} />
+            <NavItem icon={<Table2 size={18} />} label="Flows" active={activeTab === "flows"} collapsed={collapsed} onClick={() => onTab("flows")} />
+          </nav>
 
-      <div className="mx-2 border-t border-[var(--color-border)]" />
+          <div className="mx-2 border-t border-[var(--color-border)]" />
+        </>
+      )}
 
       {/* Watchlist header */}
       {!collapsed && (

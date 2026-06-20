@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import type { AnalysisOutput, Incident, IpThreat, Severity } from "../types";
 import { SEVERITY_ORDER } from "../lib/severity";
@@ -31,6 +31,10 @@ export interface DashboardProps {
   output: AnalysisOutput;
   /** Optional drill-down handler; wired to the Flows view by the App. */
   onJumpToFlows?: (filter: DashboardDrilldown) => void;
+  /** Controlled flyout incident (lifted to App so shell/palette can share it). */
+  selectedIncident: Incident | null;
+  /** Setter for the controlled flyout incident. */
+  onSelectIncident: (incident: Incident | null) => void;
 }
 
 const worstFirst = (
@@ -44,9 +48,8 @@ const worstFirst = (
  * activity heatmap → category / integrity / protocol / talkers, with a right
  * detail flyout for any incident. Pure composition over `output`.
  */
-export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
+export function Dashboard({ output, onJumpToFlows, selectedIncident, onSelectIncident }: DashboardProps) {
   const s = output.summary;
-  const [selected, setSelected] = useState<Incident | null>(null);
 
   const incidents = useMemo(() => [...(s.incidents ?? [])].sort(worstFirst), [s.incidents]);
   const [hero, ...secondary] = incidents;
@@ -55,7 +58,7 @@ export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
   // Selecting a host opens its incident in the flyout when one exists.
   const openHost = (host: string) => {
     const inc = incidentByHost.get(host);
-    if (inc) setSelected(inc);
+    if (inc) onSelectIncident(inc);
   };
   const toFlowsIp = (ip: string) => onJumpToFlows?.({ ip });
   const toFlowsCat = (category: string) => onJumpToFlows?.({ category });
@@ -72,7 +75,7 @@ export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
             incident={hero}
             primary={hero.severity === "critical"}
             onPivot={toFlowsIp}
-            onOpen={() => setSelected(hero)}
+            onOpen={() => onSelectIncident(hero)}
           />
         )}
         {secondary.length > 0 && (
@@ -84,7 +87,7 @@ export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
                   key={`${inc.host}-${i}`}
                   incident={inc}
                   onPivot={toFlowsIp}
-                  onOpen={() => setSelected(inc)}
+                  onOpen={() => onSelectIncident(inc)}
                 />
               ))}
             </div>
@@ -118,7 +121,7 @@ export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
         </div>
       </div>
 
-      <DetailFlyout incident={selected} onClose={() => setSelected(null)} onJumpToFlows={toFlowsIp} />
+      <DetailFlyout incident={selectedIncident} onClose={() => onSelectIncident(null)} onJumpToFlows={toFlowsIp} />
     </div>
   );
 }

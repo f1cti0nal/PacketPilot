@@ -1,29 +1,18 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
-  useRef,
   useState,
-  type DragEvent,
   type ReactNode,
 } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  FileDown,
-  FileUp,
-  Loader2,
-  Radar,
-  Upload,
-  X,
-} from "lucide-react";
-import type { AnalysisOutput, FlowRow, SummaryState, TabId } from "../../types";
+import type { AnalysisOutput, FlowRow, IpThreat, SummaryState, TabId } from "../../types";
 import type { ExportResult } from "../../lib/platform";
-import { loadFlows } from "../../lib/data";
-import { isCaptureFile } from "../../lib/wasmEngine";
-import { basename, compactNumber, humanBytes } from "../../lib/format";
-import { cn } from "../../lib/cn";
+import { basename } from "../../lib/format";
+import { LoadCaptureDialog } from "./LoadCaptureDialog";
+import { CommandBar } from "../../cockpit/CommandBar";
+import { ThreatRail } from "../../cockpit/ThreatRail";
+import { CommandPalette } from "../../cockpit/CommandPalette";
+import type { PaletteAction } from "../../cockpit/CommandPalette";
 
 // The shell derives the capture filename from the App-owned summary state and
 // provides a self-contained "load capture" affordance (drag-drop / file picker)
@@ -50,25 +39,24 @@ export interface AppShellProps {
   /** Export the active analysis (HTML report on desktop, JSON in the browser).
    *  Resolves to a result the shell can surface, or undefined if nothing to export. */
   onExport: () => Promise<ExportResult | undefined>;
+  /** Threat rail data from the active capture. */
+  threats: IpThreat[];
+  /** Currently active/focused IP in the threat rail. */
+  activeIp: string | null;
+  /** Called when the user clicks a threat in the rail. */
+  onSelectThreat: (ip: string) => void;
+  /** Whether the threat rail is collapsed to 64px. */
+  collapsed: boolean;
+  /** Toggle the collapse state. */
+  onToggleCollapse: () => void;
+  /** Open the ⌘K command palette. */
+  onOpenPalette: () => void;
+  /** Controlled open-state of the ⌘K command palette. */
+  paletteOpen: boolean;
+  /** Called to change the palette open state. */
+  onPaletteOpenChange: (open: boolean) => void;
   children: ReactNode;
 }
-
-const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "flows", label: "Flows" },
-  { id: "recent", label: "Recent" },
-];
-
-type LoadStatus =
-  | { phase: "idle" }
-  | { phase: "loading"; note: string }
-  | {
-      phase: "ready";
-      summary?: AnalysisOutput;
-      flows?: FlowRow[];
-      fileNames: string[];
-    }
-  | { phase: "error"; message: string };
 
 export function AppShell({
   activeTab,
@@ -81,9 +69,16 @@ export function AppShell({
   loadDialogOpen,
   onLoadDialogOpenChange,
   onExport,
+  threats,
+  activeIp,
+  onSelectThreat,
+  collapsed,
+  onToggleCollapse,
+  onOpenPalette,
+  paletteOpen,
+  onPaletteOpenChange,
   children,
 }: AppShellProps) {
-  const [load, setLoad] = useState<LoadStatus>({ phase: "idle" });
   const [exportHint, setExportHint] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -95,6 +90,18 @@ export function AppShell({
     const t = window.setTimeout(() => setExportHint(null), 2500);
     return () => window.clearTimeout(t);
   }, [exportHint]);
+
+  // Global ⌘K / Ctrl+K shortcut to open the command palette.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        if (!paletteOpen && !loadDialogOpen) onPaletteOpenChange(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paletteOpen, loadDialogOpen, onPaletteOpenChange]);
 
   const handleExportClick = useCallback(async () => {
     if (!canExport || exporting) return;
@@ -109,381 +116,71 @@ export function AppShell({
     }
   }, [canExport, exporting, onExport]);
 
-  // Capture filename: prefer a freshly dropped capture, else the auto-loaded one.
+  // Capture filename: derived from the App-owned summary state.
   const captureName = useMemo(() => {
-    if (load.phase === "ready") {
-      if (load.summary) return basename(load.summary.source_path);
-      const json = load.fileNames.find((n) => n.endsWith(".json"));
-      if (json) return json;
-      if (load.fileNames[0]) return load.fileNames[0];
-    }
     if (summary.status === "ready" && summary.data)
       return basename(summary.data.source_path);
     return null;
-  }, [load, summary]);
+  }, [summary]);
+
+  const tabs = [
+    { id: "dashboard" as const, label: "Dashboard" },
+    { id: "flows" as const, label: "Flows" },
+    { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
+  ];
+  const captureStatus =
+    summary.status === "ready" ? "ready" :
+    summary.status === "loading" ? "loading" :
+    summary.status === "error" ? "error" : "idle";
+
+  const paletteActions = useMemo<PaletteAction[]>(() => [
+    { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
+    { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
+    { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
+    { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
+    { id: "toggle-rail", label: collapsed ? "Expand sidebar" : "Collapse sidebar", hint: "action", run: onToggleCollapse },
+    ...(canExport ? [{ id: "export", label: "Export report", hint: "action", run: () => void handleExportClick() }] : []),
+  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, canExport, handleExportClick]);
 
   return (
-    <div
-      data-component="AppShell"
-      className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]"
-    >
-      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-surface px-4">
-        <div className="flex items-center gap-2.5">
-          <span
-            className="flex h-8 w-8 items-center justify-center rounded-md"
-            style={{ background: "color-mix(in srgb, var(--color-accent) 18%, transparent)" }}
-          >
-            <Radar
-              className="h-5 w-5"
-              style={{ color: "var(--color-accent)" }}
-              aria-hidden
-            />
-          </span>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">PacketPilot</div>
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
-              Packet triage
-            </div>
-          </div>
-        </div>
-
-        <TabSwitcher
-          activeTab={activeTab}
-          onTabChange={onTabChange}
-          recentCount={recentCount}
+    <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
+      <CommandBar
+        captureName={captureName ?? ""}
+        sha256={summary.status === "ready" ? summary.data?.source_sha256 ?? undefined : undefined}
+        activeTab={activeTab}
+        onTab={onTabChange}
+        tabs={tabs}
+        captureStatus={captureStatus}
+        captureError={summary.status === "error" ? summary.error : undefined}
+        onRequestLoad={onRequestLoad}
+        onExport={canExport ? () => void handleExportClick() : undefined}
+        exporting={exporting}
+        exportHint={exportHint ?? undefined}
+        onOpenPalette={onOpenPalette}
+        collapsed={collapsed}
+        onToggleCollapse={onToggleCollapse}
+      />
+      <div className="flex min-h-0 flex-1">
+        <ThreatRail
+          threats={threats}
+          collapsed={collapsed}
+          activeIp={activeIp}
+          onSelect={onSelectThreat}
         />
-
-        <div className="ml-auto flex items-center gap-3">
-          <CaptureLabel
-            name={captureName}
-            loading={summary.status === "loading" || summary.status === "idle"}
-            error={summary.status === "error" ? summary.error : undefined}
-          />
-          <button
-            type="button"
-            onClick={onRequestLoad}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-          >
-            <Upload className="h-3.5 w-3.5" aria-hidden />
-            Load capture
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleExportClick()}
-            disabled={!canExport || exporting}
-            title={canExport ? "Export report" : "Load a capture to export"}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-[var(--color-text)]"
-          >
-            {exporting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <FileDown className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Export report
-          </button>
-          {exportHint && (
-            <span
-              className="inline-flex items-center gap-1.5 text-xs text-sev-info"
-              aria-live="polite"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-              {exportHint}
-            </span>
-          )}
-        </div>
-      </header>
-
-      <main className="min-h-0 flex-1 overflow-auto">{children}</main>
-
-      {loadDialogOpen && (
-        <LoadCaptureDialog
-          status={load}
-          onStatusChange={setLoad}
-          onReplaceData={onReplaceData}
-          onAnalyzePcap={onAnalyzePcap}
-          onClose={() => onLoadDialogOpenChange(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function TabSwitcher({
-  activeTab,
-  onTabChange,
-  recentCount = 0,
-}: Pick<AppShellProps, "activeTab" | "onTabChange"> & { recentCount?: number }) {
-  return (
-    <nav
-      role="tablist"
-      aria-label="Views"
-      className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-2 p-0.5"
-    >
-      {TABS.map((tab) => {
-        const active = tab.id === activeTab;
-        const badge = tab.id === "recent" && recentCount > 0 ? recentCount : null;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onTabChange(tab.id)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              active
-                ? "bg-bg text-[var(--color-text)] shadow-sm"
-                : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]",
-            )}
-          >
-            {tab.label}
-            {badge !== null && (
-              <span className="inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-semibold text-[var(--color-accent)]">
-                {badge}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-function CaptureLabel({
-  name,
-  loading,
-  error,
-}: {
-  name: string | null;
-  loading: boolean;
-  error?: string;
-}) {
-  if (error) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-sev-high">
-        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-        No capture
-      </span>
-    );
-  }
-  if (loading && !name) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-dim)]">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-        Loading…
-      </span>
-    );
-  }
-  if (!name) return null;
-  return (
-    <span className="hidden items-center gap-1.5 sm:inline-flex" title={name}>
-      <FileUp className="h-3.5 w-3.5 text-[var(--color-text-faint)]" aria-hidden />
-      <span className="font-mono-num max-w-[16rem] truncate text-xs text-[var(--color-text-dim)]">
-        {name}
-      </span>
-    </span>
-  );
-}
-
-function LoadCaptureDialog({
-  status,
-  onStatusChange,
-  onReplaceData,
-  onAnalyzePcap,
-  onClose,
-}: {
-  status: LoadStatus;
-  onStatusChange: (s: LoadStatus) => void;
-  onReplaceData: (next: { summary?: AnalysisOutput; flows?: FlowRow[] }) => void;
-  onAnalyzePcap: (file: File) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const titleId = useId();
-
-  const handleFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
-      const list = Array.from(files);
-
-      // A raw capture takes priority: analyze it in-browser via the wasm engine, then close.
-      const captureFile = list.find((f) => isCaptureFile(f.name));
-      if (captureFile) {
-        onStatusChange({
-          phase: "loading",
-          note: `Analyzing ${captureFile.name}…`,
-        });
-        try {
-          await onAnalyzePcap(captureFile);
-          onClose();
-        } catch (err: unknown) {
-          onStatusChange({
-            phase: "error",
-            message: String((err as Error)?.message ?? err),
-          });
-        }
-        return;
-      }
-
-      const summaryFile = list.find((f) => f.name.toLowerCase().endsWith(".json"));
-      const flowsFile = list.find((f) =>
-        f.name.toLowerCase().endsWith(".parquet"),
-      );
-      if (!summaryFile && !flowsFile) {
-        onStatusChange({
-          phase: "error",
-          message:
-            "Drop a .pcap/.pcapng capture, or a summary.json and/or flows.parquet.",
-        });
-        return;
-      }
-      onStatusChange({ phase: "loading", note: "Parsing capture…" });
-      try {
-        let summary: AnalysisOutput | undefined;
-        let flows: FlowRow[] | undefined;
-        if (summaryFile) {
-          summary = JSON.parse(await summaryFile.text()) as AnalysisOutput;
-        }
-        if (flowsFile) {
-          const buf = await flowsFile.arrayBuffer();
-          flows = await loadFlows(buf);
-        }
-        // Lift the parsed capture up to App state, replacing the active dataset.
-        onReplaceData({ summary, flows });
-        onStatusChange({
-          phase: "ready",
-          summary,
-          flows,
-          fileNames: list.map((f) => f.name),
-        });
-      } catch (err: unknown) {
-        onStatusChange({
-          phase: "error",
-          message: String((err as Error)?.message ?? err),
-        });
-      }
-    },
-    [onStatusChange, onReplaceData, onAnalyzePcap, onClose],
-  );
-
-  const onDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setDragging(false);
-      void handleFiles(e.dataTransfer.files);
-    },
-    [handleFiles],
-  );
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-xl border border-border bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 id={titleId} className="text-sm font-semibold">
-            Load capture
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-
-        <div className="p-4">
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            onClick={() => inputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-            }}
-            className={cn(
-              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors",
-              dragging
-                ? "border-[var(--color-accent)] bg-surface-2"
-                : "border-border hover:border-[var(--color-text-faint)]",
-            )}
-          >
-            <Upload
-              className="h-7 w-7 text-[var(--color-text-faint)]"
-              aria-hidden
-            />
-            <div className="text-sm text-[var(--color-text)]">
-              Drag &amp; drop, or click to browse
-            </div>
-            <div className="text-xs text-[var(--color-text-dim)]">
-              <span className="font-mono-num">.pcap</span> /{" "}
-              <span className="font-mono-num">.pcapng</span> — analyzed in your browser
-            </div>
-            <div className="text-[11px] text-[var(--color-text-faint)]">
-              or a <span className="font-mono-num">summary.json</span> +{" "}
-              <span className="font-mono-num">flows.parquet</span> export
-            </div>
-            <input
-              ref={inputRef}
-              type="file"
-              multiple
-              accept=".pcap,.pcapng,.cap,.json,.parquet,application/json"
-              className="hidden"
-              onChange={(e) => void handleFiles(e.target.files)}
-            />
-          </div>
-
-          <div className="mt-3 min-h-[1.25rem] text-xs" aria-live="polite">
-            {status.phase === "loading" && (
-              <span className="inline-flex items-center gap-1.5 text-[var(--color-text-dim)]">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                {status.note}
-              </span>
-            )}
-            {status.phase === "error" && (
-              <span className="inline-flex items-center gap-1.5 text-sev-critical">
-                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                {status.message}
-              </span>
-            )}
-            {status.phase === "ready" && (
-              <span className="inline-flex items-center gap-1.5 text-sev-info">
-                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                Loaded {loadedSummaryLabel(status)}
-              </span>
-            )}
-          </div>
-        </div>
+        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
+      {loadDialogOpen && (
+        <LoadCaptureDialog onReplaceData={onReplaceData} onAnalyzePcap={onAnalyzePcap} onClose={() => onLoadDialogOpenChange(false)} />
+      )}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => onPaletteOpenChange(false)}
+        actions={paletteActions}
+        threats={threats}
+        onSelectHost={onSelectThreat}
+      />
     </div>
   );
-}
-
-function loadedSummaryLabel(s: Extract<LoadStatus, { phase: "ready" }>): string {
-  const parts: string[] = [];
-  if (s.summary) {
-    parts.push(
-      `${compactNumber(s.summary.summary.total_packets)} pkts`,
-      humanBytes(s.summary.summary.total_bytes),
-    );
-  }
-  if (s.flows) parts.push(`${compactNumber(s.flows.length)} flows`);
-  return parts.length ? parts.join(" · ") : s.fileNames.join(", ");
 }
 
 export default AppShell;
