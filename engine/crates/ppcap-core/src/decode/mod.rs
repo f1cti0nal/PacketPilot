@@ -526,8 +526,26 @@ fn has_card_prefix(d: &[u8]) -> bool {
     }
 }
 
+/// Whether any of `keywords` (lowercase ASCII) appears, case-insensitively, within the `window`
+/// bytes of `buf` immediately preceding `pos`. Used to require a field-name hint (`card`, `ssn`,
+/// …) near a candidate, so a bare numeric run that merely passes Luhn / the dashed shape is not
+/// reported — the dominant false-positive source.
+fn keyword_before(buf: &[u8], pos: usize, window: usize, keywords: &[&[u8]]) -> bool {
+    let start = pos.saturating_sub(window);
+    let ctx = &buf[start..pos];
+    keywords.iter().any(|kw| find_ci(ctx, kw).is_some())
+}
+
+/// Field-name hints that must precede a card-number run for it to be reported.
+const CARD_KEYWORDS: &[&[u8]] = &[b"card", b"pan", b"credit"];
+/// Field-name hints that must precede an SSN-shaped run for it to be reported.
+const SSN_KEYWORDS: &[&[u8]] = &[b"ssn", b"social"];
+
 /// Scan `buf` for a payment-card number: a run of 13–19 digits (single space/dash separators
-/// allowed, as cards are often grouped) with a recognized issuer prefix and a valid Luhn checksum.
+/// allowed, as cards are often grouped) with a recognized issuer prefix, a valid Luhn checksum,
+/// **and** a card-ish field-name keyword within the preceding bytes. The keyword corroboration is
+/// what keeps a benign Luhn-valid numeric id (which Visa's `4`-anything range would otherwise
+/// admit ~10% of the time) from being mislabeled as a card.
 fn contains_credit_card(buf: &[u8]) -> bool {
     let mut i = 0;
     while i < buf.len() {
@@ -536,6 +554,7 @@ fn contains_credit_card(buf: &[u8]) -> bool {
             continue;
         }
         // Collect the (separator-tolerant) digit group starting here.
+        let start = i;
         let mut digits = [0u8; 19];
         let mut len = 0usize;
         let mut j = i;
@@ -555,7 +574,10 @@ fn contains_credit_card(buf: &[u8]) -> bool {
                 break;
             }
         }
-        if has_card_prefix(&digits[..len]) && luhn_valid(&digits[..len]) {
+        if has_card_prefix(&digits[..len])
+            && luhn_valid(&digits[..len])
+            && keyword_before(buf, start, 40, CARD_KEYWORDS)
+        {
             return true;
         }
         // Skip past the run we just consumed (j advanced past at least one digit), avoiding
@@ -565,9 +587,10 @@ fn contains_credit_card(buf: &[u8]) -> bool {
     false
 }
 
-/// Scan `buf` for a US SSN in the dashed `NNN-NN-NNNN` form, excluding obviously-invalid area
-/// numbers (000, 666, 900–999) and matches embedded in a longer digit string. The dashed shape
-/// keeps this from matching bare 9-digit IDs.
+/// Scan `buf` for a US SSN in the dashed `NNN-NN-NNNN` form: a structurally-valid run (area not
+/// 000/666/900–999, group not 00, serial not 0000), not embedded in a longer digit string, **and**
+/// preceded by an `ssn`/`social` field-name keyword. Both the structure and the keyword are needed
+/// because a bare dashed 3-2-4 number is also a common product/serial-code shape.
 fn contains_ssn(buf: &[u8]) -> bool {
     let d = |b: u8| b.is_ascii_digit();
     let n = buf.len();
@@ -594,7 +617,17 @@ fn contains_ssn(buf: &[u8]) -> bool {
             let next_ok = i + 11 >= n || !buf[i + 11].is_ascii_digit();
             let area =
                 (w[0] - b'0') as u16 * 100 + (w[1] - b'0') as u16 * 10 + (w[2] - b'0') as u16;
-            if prev_ok && next_ok && area != 0 && area != 666 && area < 900 {
+            let group_ok = w[4] != b'0' || w[5] != b'0'; // group 00 is never a valid SSN
+            let serial_ok = w[7] != b'0' || w[8] != b'0' || w[9] != b'0' || w[10] != b'0'; // serial 0000
+            if prev_ok
+                && next_ok
+                && area != 0
+                && area != 666
+                && area < 900
+                && group_ok
+                && serial_ok
+                && keyword_before(buf, i, 40, SSN_KEYWORDS)
+            {
                 return true;
             }
         }
@@ -603,18 +636,20 @@ fn contains_ssn(buf: &[u8]) -> bool {
     false
 }
 
-/// True if the first up-to-64 payload bytes look like printable text (so the PII scan skips
-/// binary / TLS / compressed payloads cheaply). Tabs/CR/LF count as printable.
+/// True if the first up-to-64 payload bytes look like text (so the PII scan skips binary / TLS /
+/// compressed payloads cheaply). Gates on *control-byte* density rather than ASCII-printable
+/// density, so UTF-8 text with high bytes (≥ 0x80) is still admitted while NUL/control-heavy
+/// binary is rejected. Tab/CR/LF do not count as control.
 fn looks_like_text(buf: &[u8]) -> bool {
     let sample = &buf[..buf.len().min(64)];
     if sample.is_empty() {
         return false;
     }
-    let printable = sample
+    let control = sample
         .iter()
-        .filter(|&&b| b == b'\t' || b == b'\r' || b == b'\n' || (0x20..=0x7e).contains(&b))
+        .filter(|&&b| b < 0x20 && b != b'\t' && b != b'\r' && b != b'\n')
         .count();
-    printable * 10 >= sample.len() * 9 // >= 90% printable
+    control * 10 <= sample.len() // ≤ 10% control bytes
 }
 
 /// Sniff plaintext PII (a credit-card number or a US SSN) from a bounded TCP-payload peek.
@@ -1300,16 +1335,19 @@ mod tests {
     #[test]
     fn pii_sniff_detects_credit_cards() {
         let tcp = Transport::Tcp;
-        // Visa / Amex / Mastercard / Discover test numbers (all Luhn-valid), in a cleartext body.
+        // Visa / Amex / Mastercard test numbers (all Luhn-valid), each near a card field name.
         let visa = b"POST /pay HTTP/1.1\r\n\r\ncard=4111111111111111&cvv=123";
         assert_eq!(sniff_pii(tcp, visa), Some(PiiKind::CreditCard));
-        let amex = b"number: 378282246310005";
+        let amex = b"card number: 378282246310005";
         assert_eq!(sniff_pii(tcp, amex), Some(PiiKind::CreditCard));
-        // Grouped with spaces/dashes (as cards are often written).
+        // Grouped with spaces (as cards are often written).
         let grouped = b"pan=5555 5555 5555 4444 exp=12/30";
         assert_eq!(sniff_pii(tcp, grouped), Some(PiiKind::CreditCard));
-        let dashed = b"4012-8888-8888-1881"; // Visa test number, dash-grouped
+        let dashed = b"credit card: 4012-8888-8888-1881"; // Visa test number, dash-grouped
         assert_eq!(sniff_pii(tcp, dashed), Some(PiiKind::CreditCard));
+        // UTF-8 text with high bytes is still scanned (control-byte text gate, not ASCII-only).
+        let utf8 = "café — card=4111111111111111".as_bytes();
+        assert_eq!(sniff_pii(tcp, utf8), Some(PiiKind::CreditCard));
     }
 
     #[test]
@@ -1318,27 +1356,37 @@ mod tests {
             sniff_pii(Transport::Tcp, b"ssn=123-45-6789 dob=..."),
             Some(PiiKind::Ssn)
         );
+        assert_eq!(
+            sniff_pii(Transport::Tcp, b"Social Security: 078-05-1120"),
+            Some(PiiKind::Ssn)
+        );
     }
 
     #[test]
     fn pii_sniff_negatives() {
         let tcp = Transport::Tcp;
-        // A 16-digit run that FAILS Luhn (last digit wrong) must not match.
-        assert_eq!(sniff_pii(tcp, b"id=4111111111111112"), None);
-        // Luhn-valid but no recognized issuer prefix / length (e.g. an 8-digit order id).
-        assert_eq!(sniff_pii(tcp, b"order=00000000"), None);
+        // A Luhn-valid Visa-shaped run with NO card keyword nearby is NOT reported (the dominant
+        // false-positive: a benign 4-prefixed numeric id).
+        assert_eq!(sniff_pii(tcp, b"orderId=4111111111111111 ok"), None);
+        // A card keyword but a Luhn-FAILING number must not match.
+        assert_eq!(sniff_pii(tcp, b"card=4111111111111112"), None);
+        // Luhn-valid but no recognized issuer prefix / length (an 8-digit order id), with keyword.
+        assert_eq!(sniff_pii(tcp, b"card=00000000"), None);
         // A bare 9-digit number is NOT an SSN (requires the dashed shape).
-        assert_eq!(sniff_pii(tcp, b"acct 123456789 ok"), None);
+        assert_eq!(sniff_pii(tcp, b"ssn 123456789 ok"), None);
         // An SSN-shaped run embedded in a longer digit string is rejected.
-        assert_eq!(sniff_pii(tcp, b"x=9123-45-67890"), None);
-        // Invalid SSN area (666) rejected.
-        assert_eq!(sniff_pii(tcp, b"666-12-3456"), None);
+        assert_eq!(sniff_pii(tcp, b"ssn=9123-45-67890"), None);
+        // SSN-shaped with a keyword but an invalid group (00) or all-zero serial is rejected.
+        assert_eq!(sniff_pii(tcp, b"ssn=123-00-6789"), None);
+        assert_eq!(sniff_pii(tcp, b"ssn=123-45-0000"), None);
+        // A dashed 3-2-4 code with NO ssn keyword (a benign product code) is NOT reported.
+        assert_eq!(sniff_pii(tcp, b"part 123-45-6789 qty 2"), None);
         // Binary / non-text payload skips the scan even if digits line up.
         let mut bin = vec![0x00u8, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
-        bin.extend_from_slice(b"4111111111111111");
+        bin.extend_from_slice(b"card=4111111111111111");
         assert_eq!(sniff_pii(tcp, &bin), None);
         // UDP and empty never match.
-        assert_eq!(sniff_pii(Transport::Udp, b"4111111111111111"), None);
+        assert_eq!(sniff_pii(Transport::Udp, b"card=4111111111111111"), None);
         assert_eq!(sniff_pii(tcp, b""), None);
     }
 
