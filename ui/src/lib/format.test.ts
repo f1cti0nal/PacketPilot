@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { humanBytes, humanNumber, compactNumber, percent, durationHumanNs, shortHash, basename } from "./format";
+import { humanBytes, humanNumber, compactNumber, percent, durationHumanNs, durationHumanMs, msToTime, shortHash, basename } from "./format";
 
 describe("format", () => {
   it("humanBytes", () => {
@@ -22,5 +22,20 @@ describe("format", () => {
     expect(shortHash("abcdef0123456789", 4, 4)).toBe("abcd…6789");
     expect(basename("a/b/c.pcap")).toBe("c.pcap");
     expect(basename("a\\b\\c.pcap")).toBe("c.pcap");
+  });
+  it("durationHumanMs covers ms, seconds, minutes, and hours branches", () => {
+    expect(durationHumanMs(0)).toBe("0 ms");
+    expect(durationHumanMs(0.5)).toBe("1 ms"); // toFixed(0) rounds 0.5 up to "1"
+    expect(durationHumanMs(5_000)).toBe("5.00s");
+    expect(durationHumanMs(90_000)).toBe("1m 30.0s");
+    // hours branch: 2 hours 5 minutes
+    expect(durationHumanMs(2 * 3_600_000 + 5 * 60_000)).toBe("2h 5m");
+    expect(durationHumanMs(Infinity)).toBe("—");
+  });
+  it("msToTime formats millisecond epoch as HH:MM:SS.mmm", () => {
+    // Just check it returns a string with colons
+    const result = msToTime(1_700_000_000_000);
+    expect(typeof result).toBe("string");
+    expect(result).toMatch(/\d{2}:\d{2}:\d{2}/);
   });
 });

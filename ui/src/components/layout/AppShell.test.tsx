@@ -63,4 +63,38 @@ describe("AppShell", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(onPaletteOpenChange).not.toHaveBeenCalledWith(true);
   });
+
+  it("clicking Export calls onExport and shows a hint message on success", async () => {
+    const userEv = await import("@testing-library/user-event").then((m) => m.default);
+    const u = userEv.setup();
+    const onExport = vi.fn(async () => ({ ok: true as const, message: "Report saved" }));
+    render(
+      <AppShell {...minimalProps({ onExport })} />,
+    );
+    // The Export button is rendered in the CommandBar
+    const exportBtn = screen.getByRole("button", { name: /export/i });
+    await u.click(exportBtn);
+    expect(onExport).toHaveBeenCalled();
+    // After a successful export, a hint message appears
+    await screen.findByText(/Report saved/i);
+  });
+
+  it("shows the capture filename from the summary source_path", () => {
+    render(<AppShell {...minimalProps()} />);
+    // makeOutput().source_path = "captures/test.pcap" → basename = "test.pcap"
+    expect(screen.getByText("test.pcap")).toBeInTheDocument();
+  });
+
+  it("renders the LoadCaptureDialog when loadDialogOpen is true", () => {
+    render(<AppShell {...minimalProps({ loadDialogOpen: true })} />);
+    expect(screen.getByRole("dialog", { name: /load capture/i })).toBeInTheDocument();
+  });
+
+  it("renders the CommandPalette when paletteOpen is true", () => {
+    render(<AppShell {...minimalProps({ paletteOpen: true })} />);
+    // The CommandPalette renders as a dialog
+    const dialogs = screen.getAllByRole("dialog");
+    // At least one dialog should be present (the palette)
+    expect(dialogs.length).toBeGreaterThanOrEqual(1);
+  });
 });

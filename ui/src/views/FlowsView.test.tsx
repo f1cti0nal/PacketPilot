@@ -82,4 +82,29 @@ describe("FlowsView", () => {
         ).unmount(),
     ).not.toThrow();
   });
+
+  it("clearFilters button appears and resets the text filter when clicked", async () => {
+    const u = userEvent.setup();
+    const rows = makeFlows(5);
+    render(<FlowsView state={{ status: "ready", rows }} />);
+
+    const filter = screen.getByLabelText("Filter flows");
+    // Type something to activate filters
+    await u.type(filter, "185");
+    // "Clear filters" button should now appear
+    const clearBtn = screen.getByRole("button", { name: /Clear filters/i });
+    expect(clearBtn).toBeInTheDocument();
+    // Click it — the filter should reset
+    await u.click(clearBtn);
+    expect((screen.getByLabelText("Filter flows") as HTMLInputElement).value).toBe("");
+  });
+
+  it("shows 'No flows match the current filters' when filter excludes everything", async () => {
+    const u = userEvent.setup();
+    const rows = makeFlows(5);
+    render(<FlowsView state={{ status: "ready", rows }} />);
+    const filter = screen.getByLabelText("Filter flows");
+    await u.type(filter, "zzz-no-match-xyz");
+    expect(screen.getByText(/No flows match the current filters/i)).toBeInTheDocument();
+  });
 });
