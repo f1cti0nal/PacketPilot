@@ -134,8 +134,10 @@ describe("LoadCaptureDialog", () => {
 
     // Trigger dragOver — covers the setDragging(true) callback
     fireEvent.dragOver(dropZone);
+    expect(dropZone.className).toMatch(/accent/);
     // Trigger dragLeave — covers setDragging(false)
     fireEvent.dragLeave(dropZone);
+    expect(dropZone.className).not.toMatch(/accent/);
 
     // Now drop an unsupported file — covers onDrop and handleFiles error path
     const file = new File(["data"], "test.txt", { type: "text/plain" });

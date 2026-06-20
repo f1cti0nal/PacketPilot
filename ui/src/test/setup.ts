@@ -3,6 +3,7 @@ import { afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 afterEach(() => cleanup());
+afterEach(() => { _roRegistry.length = 0; });
 
 // App auto-collapse reads matchMedia.
 if (!window.matchMedia) {

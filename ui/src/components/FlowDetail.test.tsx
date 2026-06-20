@@ -92,7 +92,7 @@ describe("FlowDetail", () => {
     render(<FlowDetail flow={flow} onClose={vi.fn()} />);
     expect(screen.getByText("Identity")).toBeInTheDocument();
     // The h2 reads "Flow #0" but is split: "Flow " + <span>"#" + "0"</span>
-    // so we query the heading by its accessible role
-    expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+    // so we query the heading by its accessible role and pin its text content
+    expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent(/Flow/i);
   });
 });

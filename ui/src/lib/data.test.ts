@@ -136,8 +136,8 @@ describe("flowRowFromWasm", () => {
 
   it("timestamps convert from nanoseconds to milliseconds", () => {
     // 1_700_000_000_000_000_000 ns / 1e6 = 1_700_000_000_000 ms
-    expect(row.startMs).toBeCloseTo(1_700_000_000_000, 0);
-    expect(row.durationMs).toBeCloseTo(1_000, 0);
+    expect(row.startMs).toBe(1_700_000_000_000);
+    expect(row.durationMs).toBe(1_000);
   });
 
   it("protoLabel is UDP for proto 17", () => {

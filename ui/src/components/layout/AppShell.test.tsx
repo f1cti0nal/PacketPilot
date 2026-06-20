@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "../../test/render";
+import { render, screen, fireEvent, userEvent } from "../../test/render";
 import { AppShell } from "./AppShell";
 import type { AppShellProps } from "./AppShell";
 import { makeOutput } from "../../test/fixtures";
@@ -65,8 +65,7 @@ describe("AppShell", () => {
   });
 
   it("clicking Export calls onExport and shows a hint message on success", async () => {
-    const userEv = await import("@testing-library/user-event").then((m) => m.default);
-    const u = userEv.setup();
+    const u = userEvent.setup();
     const onExport = vi.fn(async () => ({ ok: true as const, message: "Report saved" }));
     render(
       <AppShell {...minimalProps({ onExport })} />,

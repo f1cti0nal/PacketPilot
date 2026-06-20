@@ -29,6 +29,7 @@ const time_histogram = Array.from({ length: 12 }, (_, i) => ({
   bytes: i === 5 ? 1_180_000 : 16_000,
 }));
 
+/** overrides are shallow-merged at the AnalysisOutput level; to patch summary fields, spread makeOutput().summary explicitly. */
 export function makeOutput(overrides: Partial<AnalysisOutput> = {}): AnalysisOutput {
   return {
     schema_version: 1, engine_version: "0.1.0",

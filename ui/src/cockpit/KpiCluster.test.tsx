@@ -6,6 +6,7 @@ import { makeOutput } from "../test/fixtures";
 describe("KpiCluster", () => {
   it("renders a smoke test without throwing", () => {
     expect(() => render(<KpiCluster output={makeOutput()} />)).not.toThrow();
+    expect(screen.getByText('Incidents')).toBeInTheDocument();
   });
 
   it("shows incident count 1 and CRITICAL marker", () => {
@@ -30,8 +31,10 @@ describe("KpiCluster", () => {
         ],
       },
     });
-    render(<KpiCluster output={output} />);
+    const { container } = render(<KpiCluster output={output} />);
     // "1 critical" should NOT appear because worst incident is high
     expect(screen.queryByText(/1 critical/i)).toBeNull();
+    // The verdict cell should not be styled with the critical color
+    expect(container.innerHTML).not.toContain('sev-critical');
   });
 });

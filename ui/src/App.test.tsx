@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, userEvent, waitFor } from "./test/render";
+import { render, screen, userEvent, waitFor, within } from "./test/render";
 import { makeOutput, makeFlows } from "./test/fixtures";
 
 const mockLoadSummary = vi.fn(async () => makeOutput());
@@ -41,10 +41,10 @@ describe("App routing", () => {
   it("rail click on the incident host opens its flyout on the dashboard", async () => {
     const u = userEvent.setup();
     render(<App />);
-    // Wait for the rail to be populated (data loaded); may have multiple matching buttons
-    const buttons10 = await screen.findAllByRole("button", { name: /^10\.13\.37\.7/ });
-    // Click the first (rail button)
-    await u.click(buttons10[0]);
+    // Wait for the rail (aside/complementary) to be populated (data loaded)
+    const rail = await screen.findByRole("complementary");
+    const railBtn = await within(rail).findByRole("button", { name: /^10\.13\.37\.7/ });
+    await u.click(railBtn);
     await waitFor(() =>
       expect(
         screen.getByRole("dialog", { name: /Incident detail for 10\.13\.37\.7/i }),
@@ -55,9 +55,10 @@ describe("App routing", () => {
   it("rail click on a non-incident host routes to filtered Flows", async () => {
     const u = userEvent.setup();
     render(<App />);
-    // There may be multiple buttons for 45.77.13.37 (rail + watchlist); use the first
-    const buttons = await screen.findAllByRole("button", { name: /^45\.77\.13\.37/ });
-    await u.click(buttons[0]);
+    // Click the rail (aside/complementary) button for the non-incident host
+    const rail = await screen.findByRole("complementary");
+    const railBtn = await within(rail).findByRole("button", { name: /^45\.77\.13\.37/ });
+    await u.click(railBtn);
     const filter = await screen.findByLabelText("Filter flows");
     expect((filter as HTMLInputElement).value).toBe("45.77.13.37");
   });
