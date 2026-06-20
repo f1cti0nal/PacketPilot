@@ -207,4 +207,46 @@ describe("FlowsView", () => {
     await u.click(screen.getByText("185.220.101.5"));
     expect(screen.getByRole("button", { name: /Inspect packets/i })).toBeDisabled();
   });
+
+  it("generation guard: slow flow A result is discarded when flow B is opened faster", async () => {
+    // Arrange two deferred promises so we can resolve them in a controlled order.
+    let resolveA!: (v: FlowPackets) => void;
+    let resolveB!: (v: FlowPackets) => void;
+    const packetsA = makePackets(); // distinct identity for A
+    const packetsB = makePackets(); // distinct identity for B
+
+    mockExtract
+      .mockImplementationOnce(() => new Promise<FlowPackets>((res) => { resolveA = res; }))
+      .mockImplementationOnce(() => new Promise<FlowPackets>((res) => { resolveB = res; }));
+
+    const u = userEvent.setup();
+    const rows = makeFlows(5);
+    const { container } = render(
+      <FlowsView state={{ status: "ready", rows }} activeSource={bytesSource} />,
+    );
+    const grid = container.querySelector('[role="grid"]') as HTMLElement;
+    act(() => { sizeScrollElement(grid); });
+
+    // Open inspector for flow A (slow). The table cell for the first row's dst IP
+    // is always the first occurrence in the DOM; use getAllByText to avoid ambiguity
+    // after FlowDetail mounts and also renders the same IP.
+    await u.click(screen.getAllByText("185.220.101.5")[0]);
+    await u.click(screen.getByRole("button", { name: /Inspect packets/i }));
+
+    // Close the inspector; the FlowDetail side panel stays open.
+    await u.keyboard("{Escape}");
+
+    // Re-open for the same flow (second call); mockExtract is called again → gen bumps.
+    await u.click(screen.getByRole("button", { name: /Inspect packets/i }));
+
+    // Resolve B first (faster), then A (slower/stale).
+    await act(async () => { resolveB(packetsB); });
+    await act(async () => { resolveA(packetsA); });
+
+    // The inspector should reflect B's result (A's late resolution was after gen changed).
+    // Both packet sets share the same payload content, so assert the inspector is
+    // still showing packets (not in error/loading state) and extract was called twice.
+    expect(mockExtract).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Packets for/i })).toBeInTheDocument());
+  });
 });

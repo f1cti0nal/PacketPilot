@@ -29,4 +29,12 @@ describe("extractFlowPackets", () => {
     expect(new TextDecoder().decode(fp.packets[0].payload)).toBe("GET");
     expect(fp.packets[0].direction).toBe("c2s");
   });
+
+  it("throws a descriptive error for path source outside Tauri (isTauri=false)", async () => {
+    // The platform mock above sets isTauri() → false, so a {kind:"path"} source
+    // must produce a clear diagnostic rather than the generic PacketsUnavailableError.
+    await expect(
+      extractFlowPackets({ kind: "path", path: "/captures/test.pcap" }, flow),
+    ).rejects.toThrow("Path-based packet sources require the Tauri desktop runtime.");
+  });
 });

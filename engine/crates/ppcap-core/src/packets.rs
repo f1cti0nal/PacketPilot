@@ -317,4 +317,18 @@ mod tests {
         // All four flow packets fall within 1_000_000_000 ± 1ms, so all match.
         assert_eq!(fp.total, 4);
     }
+
+    #[test]
+    fn window_excludes_all_packets_when_far_outside_capture_time() {
+        // A window far in the future: no packet in the capture falls within ±1ms, so the
+        // filter must reject every packet and return total == 0.
+        let src = open_reader(Cursor::new(tcp_pcap()), None).unwrap();
+        let q = PacketQuery {
+            start_ns: 9_000_000_000,
+            end_ns: 9_000_000_000,
+            ..query()
+        };
+        let fp = extract_flow_packets(src, &q, &PacketCaps::default()).unwrap();
+        assert_eq!(fp.total, 0);
+    }
 }

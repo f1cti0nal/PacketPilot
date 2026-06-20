@@ -36,7 +36,7 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
           <div className="min-w-0 flex-1">
             <div className="font-mono-num truncate text-[13px] text-[var(--color-text)]">{flow.srcIp}:{flow.srcPort} → {flow.dstIp}:{flow.dstPort}</div>
             <div className="t-tag text-[var(--color-text-faint)]">
-              {String(flow.proto)}
+              {flow.protoLabel}
               {packets?.truncated ? ` · first ${humanNumber(rows.length)} of ${humanNumber(packets.total)} packets` : packets ? ` · ${humanNumber(packets.total)} packets` : ""}
             </div>
           </div>

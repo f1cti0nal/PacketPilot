@@ -164,8 +164,9 @@ describe("PacketInspector", () => {
     const scrollEl = document.querySelector(".min-h-0.flex-1.overflow-y-auto") as HTMLElement;
     act(() => { sizeScrollElement(scrollEl); });
 
+    const u2 = userEvent.setup();
     const row1Previews = screen.getAllByText(/HTTP\/1\.1 200 OK/);
-    await userEvent.setup().click(row1Previews[0]);
+    await u2.click(row1Previews[0]);
 
     // Verify row 1 is now selected (hex viewer shows "HTTP/1.1 200 OK\r\n").
     expect(screen.getByText("48 54 54 50 2f 31 2e 31 20 32 30 30 20 4f 4b 0d")).toBeInTheDocument();

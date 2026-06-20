@@ -25,7 +25,7 @@ function b64ToBytes(b64: string): Uint8Array {
 function normalize(wire: WireFlowPackets, flow: FlowRow): FlowPackets {
   const startNs = flow.startMs * 1_000_000;
   const packets: PacketRow[] = wire.packets.map((p) => ({
-    index: p.index, tsNs: p.ts_ns, relMs: (p.ts_ns - startNs) / 1e6,
+    index: p.index, tsNs: p.ts_ns, relMs: Math.max(0, (p.ts_ns - startNs) / 1e6),
     direction: p.direction, wireLen: p.wire_len, capLen: p.cap_len,
     tcpFlags: p.tcp_flags, seq: p.seq, ack: p.ack,
     payloadLen: p.payload_len, payload: b64ToBytes(p.payload_b64), payloadTruncated: p.payload_truncated,
@@ -35,6 +35,9 @@ function normalize(wire: WireFlowPackets, flow: FlowRow): FlowPackets {
 
 export async function extractFlowPackets(source: ActiveSource, flow: FlowRow): Promise<FlowPackets> {
   if (!source) throw new PacketsUnavailableError();
+  if (source.kind === "path" && !isTauri()) {
+    throw new Error("Path-based packet sources require the Tauri desktop runtime.");
+  }
   const query = queryFor(flow);
   const wire = source.kind === "path" && isTauri()
     ? await extractPacketsViaTauri(source.path, query)

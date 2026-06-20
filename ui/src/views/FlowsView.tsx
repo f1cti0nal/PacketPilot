@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SortingState } from "@tanstack/react-table";
 import { Search, X } from "lucide-react";
 import type {
@@ -57,22 +57,29 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
   const [pktLoading, setPktLoading] = useState(false);
   const [pktError, setPktError] = useState<string | null>(null);
 
+  // Generation counter: each openInspector call bumps it; async callbacks check
+  // the generation still matches before committing state, preventing a slow
+  // extractFlowPackets for flow A from overwriting a faster result for flow B.
+  const inspectGen = useRef(0);
+
   const openInspector = useCallback(
     (flow: FlowRow) => {
+      const gen = ++inspectGen.current;
       setInspecting(flow);
       setPackets(null);
       setPktError(null);
       setPktLoading(true);
       extractFlowPackets(activeSource, flow)
-        .then(setPackets)
-        .catch((e) => setPktError(String((e as Error)?.message ?? e)))
-        .finally(() => setPktLoading(false));
+        .then((fp) => { if (gen === inspectGen.current) setPackets(fp); })
+        .catch((e) => { if (gen === inspectGen.current) setPktError(String((e as Error)?.message ?? e)); })
+        .finally(() => { if (gen === inspectGen.current) setPktLoading(false); });
     },
     [activeSource],
   );
 
   // Stable identity so PacketInspector's focus/Esc effect doesn't re-fire on every render.
-  const closeInspector = useCallback(() => setInspecting(null), []);
+  // Also bumps the generation so any in-flight extraction for the closed flow is discarded.
+  const closeInspector = useCallback(() => { inspectGen.current++; setInspecting(null); }, []);
   // Default "busiest flows first". Must reference the column's id ("bytes"),
   // not the accessorKey ("bytesTotal") — the explicit column id wins, and a
   // mismatch makes TanStack drop the sort and warn "Column ... does not exist".
