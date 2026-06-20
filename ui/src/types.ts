@@ -359,6 +359,30 @@ export interface RecentEntry {
   flowsCached: boolean;
 }
 
+// ---------- per-flow packet extraction (wire contract, snake_case) ----------
+
+/** One extracted packet as returned by the `extract_flow_packets` Tauri command. */
+export interface WirePacket {
+  index: number;
+  ts_ns: number;
+  direction: "c2s" | "s2c";
+  wire_len: number;
+  cap_len: number;
+  tcp_flags: number;
+  seq: number | null;
+  ack: number | null;
+  payload_len: number;
+  payload_b64: string;
+  payload_truncated: boolean;
+}
+
+/** The result of `extract_flow_packets`: bounded packet list for one flow. */
+export interface WireFlowPackets {
+  total: number;
+  truncated: boolean;
+  packets: WirePacket[];
+}
+
 export interface SummaryState {
   status: "idle" | "loading" | "ready" | "error";
   data?: AnalysisOutput;
