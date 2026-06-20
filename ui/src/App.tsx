@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   AnalysisOutput,
   FlowRow,
+  Incident,
   RecentEntry,
   RecentOrigin,
   Severity,
@@ -76,6 +77,7 @@ export function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
   // Eagerly load the bundled sample capture on mount.
   useEffect(() => {
@@ -121,6 +123,7 @@ export function App() {
       const data = input.summary;
       setSummary({ status: "ready", data });
       if (input.flows) setFlows({ status: "ready", rows: input.flows });
+      setSelectedIncident(null);
 
       const name = input.fileName ?? basename(data.source_path);
       const sizeBytes = input.sizeBytes ?? data.source_bytes;
@@ -220,6 +223,7 @@ export function App() {
     setActiveId(entry.id);
     setSummary({ status: "ready", data: entry.summary });
     setTab("dashboard");
+    setSelectedIncident(null);
     setFlows({ status: "loading", rows: [] });
     const cached = await getFlows(entry.id);
     setFlows({ status: "ready", rows: cached ?? [] });
@@ -324,7 +328,12 @@ export function App() {
       ) : summary.status === "error" ? (
         <ErrorState message={summary.error ?? "Failed to load summary"} />
       ) : (
-        <Dashboard output={summary.data!} onJumpToFlows={jumpToFlows} />
+        <Dashboard
+          output={summary.data!}
+          onJumpToFlows={jumpToFlows}
+          selectedIncident={selectedIncident}
+          onSelectIncident={setSelectedIncident}
+        />
       )}
     </AppShell>
   );
