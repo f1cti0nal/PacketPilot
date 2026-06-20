@@ -38,8 +38,11 @@ export function FlowsView({ state, initialFilter }: FlowsViewProps) {
   const [severity, setSeverity] = useState<Severity | undefined>(undefined);
   const [proto, setProto] = useState<number | undefined>(undefined);
   const [selected, setSelected] = useState<FlowRow | null>(null);
+  // Default "busiest flows first". Must reference the column's id ("bytes"),
+  // not the accessorKey ("bytesTotal") — the explicit column id wins, and a
+  // mismatch makes TanStack drop the sort and warn "Column ... does not exist".
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "bytesTotal", desc: true },
+    { id: "bytes", desc: true },
   ]);
 
   // Apply an inbound deep-link filter (e.g. "show me scan flows" from the
