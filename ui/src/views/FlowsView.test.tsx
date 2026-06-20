@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, userEvent } from "../test/render";
+import { act } from "react";
+import { render, screen, userEvent, sizeScrollElement } from "../test/render";
 import { FlowsView } from "./FlowsView";
 import { makeFlows } from "../test/fixtures";
 
@@ -12,16 +13,26 @@ describe("FlowsView", () => {
     // Filter bar is always present when rows exist
     expect(screen.getByLabelText("Filter flows")).toBeInTheDocument();
     // The grid element is rendered
-    expect(container.querySelector('[role="grid"]')).toBeInTheDocument();
+    const grid = container.querySelector('[role="grid"]')!;
+    expect(grid).toBeInTheDocument();
+    // Size the scroll element so TanStack Virtual renders row cells, then
+    // force a synchronous re-render so the virtualizer picks up the new dims.
+    act(() => { sizeScrollElement(grid as HTMLElement); });
     // Flow count shown in the bar (filtered / total — both show 20 when no filter)
     const twenties = screen.getAllByText("20");
     expect(twenties.length).toBeGreaterThan(0);
+    // Default sort is bytes-desc; row 0 has bytesTotal=1_200_500 → "1.14 MB"
+    expect(screen.getByText("1.14 MB")).toBeInTheDocument();
   });
 
   it("typing in 'Filter flows' narrows the rows", async () => {
     const u = userEvent.setup();
     const rows = makeFlows(5);
-    render(<FlowsView state={{ status: "ready", rows }} />);
+    const { container } = render(<FlowsView state={{ status: "ready", rows }} />);
+
+    // Size the scroll element so the virtualizer renders row cells
+    const grid = container.querySelector('[role="grid"]') as HTMLElement;
+    act(() => { sizeScrollElement(grid); });
 
     const filter = screen.getByLabelText("Filter flows");
     // Filter to the specific dst IP of row 0

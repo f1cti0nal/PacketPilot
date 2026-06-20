@@ -16,6 +16,8 @@ describe("Dashboard", () => {
     expect(screen.getAllByText("10.13.37.7").length).toBeGreaterThan(0);
     // Threat watchlist card
     expect(screen.getByText("Threat watchlist")).toBeInTheDocument();
+    // ActivityHeatmap renders its card title
+    expect(screen.getByText("Activity")).toBeInTheDocument();
     // CategoryMatrix renders its card
     expect(screen.getByText(/Category threat matrix/i)).toBeInTheDocument();
   });
