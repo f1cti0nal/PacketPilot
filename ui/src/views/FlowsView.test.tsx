@@ -214,6 +214,9 @@ describe("FlowsView", () => {
     let resolveB!: (v: FlowPackets) => void;
     const packetsA = makePackets(); // distinct identity for A
     const packetsB = makePackets(); // distinct identity for B
+    // Make B's first packet visibly different so the test can witness which result wins.
+    // "ZZZZ" encodes to hex "5a 5a 5a 5a"; A keeps default "GET / HTTP/1.1\r\n" → "47 45 54..."
+    packetsB.packets[0] = { ...packetsB.packets[0], payload: new TextEncoder().encode("ZZZZ") };
 
     mockExtract
       .mockImplementationOnce(() => new Promise<FlowPackets>((res) => { resolveA = res; }))
@@ -244,9 +247,9 @@ describe("FlowsView", () => {
     await act(async () => { resolveA(packetsA); });
 
     // The inspector should reflect B's result (A's late resolution was after gen changed).
-    // Both packet sets share the same payload content, so assert the inspector is
-    // still showing packets (not in error/loading state) and extract was called twice.
     expect(mockExtract).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Packets for/i })).toBeInTheDocument());
+    // Assert B's distinctive hex bytes are shown and A's stale result did not clobber B.
+    expect(screen.getByText("5a 5a 5a 5a")).toBeInTheDocument();   // B won
+    expect(screen.queryByText(/47 45 54/)).not.toBeInTheDocument(); // A's stale result did NOT clobber B
   });
 });
