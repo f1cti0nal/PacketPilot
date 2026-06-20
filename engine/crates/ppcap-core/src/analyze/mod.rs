@@ -13,10 +13,10 @@ use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
-    detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_lateral_movement, detect_sweeps,
-    suppress_swept_by_lateral, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams, LateralMovementParams,
-    SweepParams,
+    detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_lateral_movement,
+    detect_pii_exposure, detect_sweeps, suppress_swept_by_lateral, BeaconParams, BehaviorTracker,
+    BruteForceParams, CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams,
+    LateralMovementParams, PiiExposureParams, SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -57,6 +57,8 @@ pub struct PipelineConfig {
     pub brute_force: BruteForceParams,
     /// Cleartext-credential-exposure-detector tuning.
     pub cleartext_creds: CleartextCredsParams,
+    /// Plaintext-PII-exposure-detector tuning.
+    pub pii: PiiExposureParams,
     /// Lateral-movement-detector tuning.
     pub lateral: LateralMovementParams,
     /// DNS-tunneling-detector tuning.
@@ -85,6 +87,7 @@ impl Default for PipelineConfig {
             sweep: SweepParams::default(),
             brute_force: BruteForceParams::default(),
             cleartext_creds: CleartextCredsParams::default(),
+            pii: PiiExposureParams::default(),
             lateral: LateralMovementParams::default(),
             dns_tunnel: DnsTunnelParams::default(),
         }
@@ -216,6 +219,10 @@ pub fn run_source(
                 {
                     tracker.observe_cleartext_cred(src, dst, meta.dst_port, scheme);
                 }
+                // Plaintext PII exposure: same fold for sniffed PII (kind only, never the value).
+                if let (Some(kind), Some(src), Some(dst)) = (meta.pii, meta.src_ip, meta.dst_ip) {
+                    tracker.observe_pii(src, dst, meta.dst_port, kind);
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -278,6 +285,7 @@ pub fn run_source(
     findings.extend(sweeps);
     findings.extend(detect_brute_force(&tracker, &cfg.brute_force));
     findings.extend(detect_cleartext_creds(&tracker, &cfg.cleartext_creds));
+    findings.extend(detect_pii_exposure(&tracker, &cfg.pii));
     findings.extend(lateral);
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     stats.apply_findings(&findings);
@@ -934,6 +942,21 @@ mod tests {
             out.summary.incidents.iter().any(|i| i.host == "10.0.0.50"),
             "cleartext-cred victim should have its own incident"
         );
+
+        // ...and a third victim leaked a credit-card number over cleartext HTTP (PII exposure).
+        let pii = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::PiiExposure)
+            .unwrap_or_else(|| panic!("no PII finding: {:?}", out.summary.findings));
+        assert_eq!(pii.src_ip, "10.0.0.52", "PII victim");
+        assert_eq!(pii.dst_port, Some(80));
+        assert!(pii.attack.iter().any(|a| a == "T1040"));
+        assert!(
+            out.summary.incidents.iter().any(|i| i.host == "10.0.0.52"),
+            "PII victim should have its own incident"
+        );
     }
 
     #[test]
@@ -1240,6 +1263,60 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_surfaces_pii_exposure_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let client = Ipv4Addr::new(10, 0, 0, 52);
+        let server = Ipv4Addr::new(10, 0, 0, 80);
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+        // An HTTP POST whose form body carries a Luhn-valid card number in cleartext.
+        let body = "name=Jane&card=4111111111111111&cvv=123";
+        let payload = frames::http_post_payload("shop", "/checkout", body);
+        let tcp = frames::build_tcp(
+            client,
+            server,
+            55000,
+            80,
+            frames::TCP_PSH | frames::TCP_ACK,
+            &payload,
+        );
+        let ip = frames::build_ipv4(client, server, frames::IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(
+            [0x02, 0, 0, 0, 0, 52],
+            [0x02, 0, 0, 0, 0, 80],
+            frames::ETHERTYPE_IPV4,
+        );
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        let wl = frame.len() as u32;
+        container::write_legacy_record(&mut buf, base, wl, wl).unwrap();
+        buf.write_all(&frame).unwrap();
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+        let pii = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::PiiExposure)
+            .unwrap_or_else(|| panic!("no PII finding: {:?}", out.summary.findings));
+        assert_eq!(pii.severity, crate::model::severity::Severity::High);
+        assert_eq!(pii.src_ip, "10.0.0.52");
+        assert_eq!(pii.dst_ip.as_deref(), Some("10.0.0.80"));
+        assert_eq!(pii.dst_port, Some(80));
+        assert!(pii.attack.iter().any(|a| a == "T1040"));
+        assert!(pii.title.contains("credit card"), "title: {}", pii.title);
+    }
+
+    #[test]
     fn benign_mixed_traffic_yields_no_brute_force_even_at_low_host_diversity() {
         use crate::gen::{GenConfig, Scenario, SynthGen};
         // Regression for the adversarial-review false positive: a tiny host set concentrates the
@@ -1257,21 +1334,24 @@ mod tests {
         let tf = tempfile::NamedTempFile::new().unwrap();
         SynthGen::new(cfg).write_pcap(tf.path()).unwrap();
         let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
-        // Neither the credential nor the lateral-movement detector may fire on benign Mixed
-        // traffic: other-TCP is SYN-only on high non-admin ports, so no channel is both on an
-        // auth/admin port AND an established bidirectional session.
+        // None of the payload/credential/lateral detectors may fire on benign Mixed traffic:
+        // other-TCP is SYN-only on high non-admin ports, the HTTP requests carry no auth header or
+        // card/SSN body, so no channel trips brute force, lateral movement, cleartext creds, or PII.
+        use crate::model::finding::FindingKind as Fk;
         let spurious: Vec<_> = out
             .summary
             .findings
             .iter()
             .filter(|f| {
-                f.kind == crate::model::finding::FindingKind::BruteForce
-                    || f.kind == crate::model::finding::FindingKind::LateralMovement
+                matches!(
+                    f.kind,
+                    Fk::BruteForce | Fk::LateralMovement | Fk::CleartextCreds | Fk::PiiExposure
+                )
             })
             .collect();
         assert!(
             spurious.is_empty(),
-            "spurious credential/lateral finding on benign Mixed traffic: {spurious:?}"
+            "spurious exposure/credential/lateral finding on benign Mixed traffic: {spurious:?}"
         );
     }
 

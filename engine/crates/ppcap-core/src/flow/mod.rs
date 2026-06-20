@@ -439,6 +439,7 @@ mod tests {
             sni: None,
             dns_qname: None,
             cleartext_cred: None,
+            pii: None,
         }
     }
 

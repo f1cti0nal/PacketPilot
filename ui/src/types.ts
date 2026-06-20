@@ -124,6 +124,7 @@ export type FindingKind =
   | "host_sweep"
   | "brute_force"
   | "cleartext_creds"
+  | "pii_exposure"
   | "lateral_movement"
   | "data_exfil"
   | "dns_tunnel";
@@ -292,7 +293,40 @@ export interface FlowRow {
 }
 
 // ---------- load state ----------
-export type TabId = "dashboard" | "flows";
+export type TabId = "dashboard" | "flows" | "recent";
+
+/** How a capture entered the app — drives whether it can be re-analyzed in place. */
+export type RecentOrigin = "native" | "wasm" | "upload" | "sample";
+
+/**
+ * A persisted "last opened capture" record. The cached {@link AnalysisOutput} lets the
+ * Recent tab render a card — and restore the dashboard — instantly, with no re-analysis.
+ * Flows are cached separately (IndexedDB, keyed by {@link id}) because they are large.
+ */
+export interface RecentEntry {
+  /** Stable identity: source SHA-256 when known, else a name+size+time digest. */
+  id: string;
+  /** Display name (basename of the source path / dropped file name). */
+  name: string;
+  /** Absolute file path — present for native (desktop) loads; enables in-place re-analyze. */
+  path?: string;
+  /** On-disk source size in bytes. */
+  sizeBytes: number;
+  /** Lowercase hex SHA-256 of the source, when computed. */
+  sha256?: string;
+  /** When this capture was last analyzed (epoch ms). */
+  analyzedAt: number;
+  /** Engine version that produced the cached summary. */
+  engineVersion: string;
+  /** Entry provenance. */
+  origin: RecentOrigin;
+  /** Cached capture-wide stats — enough to render the full dashboard offline. */
+  summary: AnalysisOutput;
+  /** Number of flows in the capture (shown on the card even if flows aren't cached). */
+  flowCount: number;
+  /** Whether the normalized flows are cached in IndexedDB under {@link id}. */
+  flowsCached: boolean;
+}
 
 export interface SummaryState {
   status: "idle" | "loading" | "ready" | "error";

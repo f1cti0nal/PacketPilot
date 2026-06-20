@@ -3,12 +3,12 @@
   "engine_version": "0.1.0",
   "source_path": "target/beacon-sample.pcap",
   "source_sha256": null,
-  "source_bytes": 6362957,
+  "source_bytes": 6363362,
   "link_type": "EN10MB",
   "summary": {
     "total_packets": 40000,
-    "total_bytes": 5722933,
-    "captured_bytes": 5722933,
+    "total_bytes": 5723338,
+    "captured_bytes": 5723338,
     "total_flows": 39081,
     "decode_errors": 0,
     "non_ip_frames": 0,
@@ -16,23 +16,23 @@
       "tcp": 27838,
       "udp": 12162,
       "dns": 12162,
-      "http": 11922,
-      "tls": 15836,
+      "http": 11924,
+      "tls": 15834,
       "other_tcp": 80,
       "other_udp": 0,
       "truncated": 0,
       "non_ipv4": 0
     },
     "first_ts_ns": 1700000000000000000,
-    "last_ts_ns": 1700089940591905000,
-    "duration_ns": 89940591905000,
-    "unique_hosts": 96,
+    "last_ts_ns": 1700089910421043000,
+    "duration_ns": 89910421043000,
+    "unique_hosts": 97,
     "top_talkers": [
       {
         "ip": "10.13.37.7",
-        "pkts": 4017,
-        "bytes": 1738997,
-        "flows": 3100
+        "pkts": 4016,
+        "bytes": 1738862,
+        "flows": 3099
       },
       {
         "ip": "185.220.101.5",
@@ -42,15 +42,15 @@
       },
       {
         "ip": "45.77.13.37",
-        "pkts": 2999,
-        "bytes": 404865,
-        "flows": 2999
+        "pkts": 2998,
+        "bytes": 404730,
+        "flows": 2998
       },
       {
         "ip": "10.0.63.10",
-        "pkts": 1181,
-        "bytes": 132848,
-        "flows": 1181
+        "pkts": 1180,
+        "bytes": 132724,
+        "flows": 1180
       },
       {
         "ip": "10.0.49.10",
@@ -101,16 +101,16 @@
         "flows": 1152
       },
       {
-        "ip": "10.0.48.10",
-        "pkts": 1161,
-        "bytes": 128322,
-        "flows": 1161
-      },
-      {
         "ip": "10.0.37.10",
         "pkts": 1158,
         "bytes": 128286,
         "flows": 1158
+      },
+      {
+        "ip": "10.0.48.10",
+        "pkts": 1160,
+        "bytes": 128190,
+        "flows": 1160
       },
       {
         "ip": "10.0.18.10",
@@ -198,9 +198,9 @@
       },
       {
         "ip": "10.0.5.10",
-        "pkts": 1135,
-        "bytes": 125447,
-        "flows": 1135
+        "pkts": 1134,
+        "bytes": 125323,
+        "flows": 1134
       },
       {
         "ip": "10.0.44.10",
@@ -332,13 +332,13 @@
     "protocol_hierarchy": [
       {
         "path": "ip.tcp.https",
-        "pkts": 15836,
-        "bytes": 3309555
+        "pkts": 15834,
+        "bytes": 3309288
       },
       {
         "path": "ip.tcp.http",
-        "pkts": 11922,
-        "bytes": 1478553
+        "pkts": 11924,
+        "bytes": 1479225
       },
       {
         "path": "ip.udp.dns",
@@ -355,8 +355,8 @@
       {
         "port": 443,
         "transport": "TCP",
-        "pkts": 15836,
-        "bytes": 3309555
+        "pkts": 15834,
+        "bytes": 3309288
       },
       {
         "port": 53,
@@ -367,8 +367,8 @@
       {
         "port": 80,
         "transport": "TCP",
-        "pkts": 11922,
-        "bytes": 1478553
+        "pkts": 11924,
+        "bytes": 1479225
       },
       {
         "port": 22,
@@ -398,8 +398,8 @@
     "time_histogram": [
       {
         "epoch_sec": 1699999920,
-        "pkts": 1043,
-        "bytes": 1337191
+        "pkts": 1047,
+        "bytes": 1338111
       },
       {
         "epoch_sec": 1700000040,
@@ -4143,13 +4143,8 @@
       },
       {
         "epoch_sec": 1700089800,
-        "pkts": 38,
-        "bytes": 4395
-      },
-      {
-        "epoch_sec": 1700089920,
-        "pkts": 1,
-        "bytes": 135
+        "pkts": 35,
+        "bytes": 4015
       }
     ],
     "time_bucket_secs": 120,
@@ -4158,7 +4153,7 @@
         "category": "web",
         "flows": 26859,
         "pkts": 27758,
-        "bytes": 4788108
+        "bytes": 4788513
       },
       {
         "category": "dns",
@@ -4231,8 +4226,8 @@
       "critical": 0,
       "high": 0,
       "medium": 0,
-      "low": 3000,
-      "info": 36081
+      "low": 2999,
+      "info": 36082
     },
     "ip_threats": [
       {
@@ -4240,8 +4235,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 74,
-        "flows": 3100,
-        "bytes": 1738997,
+        "flows": 3099,
+        "bytes": 1738862,
         "ioc": false,
         "tags": [
           "internal"
@@ -4305,8 +4300,8 @@
         "ip_class": "public",
         "severity": "high",
         "score": 70,
-        "flows": 2999,
-        "bytes": 404865,
+        "flows": 2998,
+        "bytes": 404730,
         "ioc": false,
         "tags": [
           "public"
@@ -4315,7 +4310,7 @@
           "T1071"
         ],
         "evidence": [
-          "periodic beaconing: 2999 contacts to 45.77.13.37:443",
+          "periodic beaconing: 2998 contacts to 45.77.13.37:443",
           "interval ~30s, jitter CV 0.013 (low = machine-regular)",
           "external destination"
         ]
@@ -4340,26 +4335,29 @@
         ]
       },
       {
-        "ip": "10.0.0.50",
+        "ip": "10.0.0.80",
         "ip_class": "private",
         "severity": "high",
         "score": 66,
-        "flows": 5,
-        "bytes": 845,
+        "flows": 9,
+        "bytes": 1765,
         "ioc": false,
         "tags": [
           "internal"
         ],
         "attack": [
+          "T1040",
           "T1552"
         ],
         "evidence": [
           "HTTP Basic auth sent in cleartext to 10.0.0.80:80 (5 exposures)",
-          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
+          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)",
+          "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
+          "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
         ]
       },
       {
-        "ip": "10.0.0.80",
+        "ip": "10.0.0.50",
         "ip_class": "private",
         "severity": "high",
         "score": 66,
@@ -4416,6 +4414,25 @@
         ]
       },
       {
+        "ip": "10.0.0.52",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 64,
+        "flows": 4,
+        "bytes": 920,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [
+          "T1040"
+        ],
+        "evidence": [
+          "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
+          "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
+        ]
+      },
+      {
         "ip": "10.0.28.10",
         "ip_class": "private",
         "severity": "info",
@@ -4458,8 +4475,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1181,
-        "bytes": 132848,
+        "flows": 1180,
+        "bytes": 132724,
         "ioc": false,
         "tags": [
           "internal"
@@ -4572,8 +4589,8 @@
         "ip_class": "private",
         "severity": "info",
         "score": 0,
-        "flows": 1161,
-        "bytes": 128322,
+        "flows": 1160,
+        "bytes": 128190,
         "ioc": false,
         "tags": [
           "internal"
@@ -4872,25 +4889,6 @@
         ]
       },
       {
-        "ip": "10.0.5.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1135,
-        "bytes": 125447,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
         "ip": "10.0.50.10",
         "ip_class": "private",
         "severity": "info",
@@ -4907,6 +4905,25 @@
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
           "category web (+3)"
+        ]
+      },
+      {
+        "ip": "10.0.5.10",
+        "ip_class": "private",
+        "severity": "info",
+        "score": 0,
+        "flows": 1134,
+        "bytes": 125323,
+        "ioc": false,
+        "tags": [
+          "internal"
+        ],
+        "attack": [],
+        "evidence": [
+          "category web (+3)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
         ]
       },
       {
@@ -5174,25 +5191,6 @@
           "clamp: raw -7 -> 0",
           "category dns (+3)"
         ]
-      },
-      {
-        "ip": "10.0.40.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1112,
-        "bytes": 123047,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
       }
     ],
     "findings": [
@@ -5208,13 +5206,13 @@
           "T1071"
         ],
         "evidence": [
-          "periodic beaconing: 2999 contacts to 45.77.13.37:443",
+          "periodic beaconing: 2998 contacts to 45.77.13.37:443",
           "interval ~30s, jitter CV 0.013 (low = machine-regular)",
           "external destination"
         ],
-        "interval_ns": 29999902800,
-        "jitter_cv": 0.013473454423667854,
-        "contacts": 2999
+        "interval_ns": 29999845757,
+        "jitter_cv": 0.013475325495046495,
+        "contacts": 2998
       },
       {
         "kind": "data_exfil",
@@ -5311,6 +5309,25 @@
         "interval_ns": null,
         "jitter_cv": null,
         "contacts": 2
+      },
+      {
+        "kind": "pii_exposure",
+        "severity": "high",
+        "score": 64,
+        "title": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
+        "src_ip": "10.0.0.52",
+        "dst_ip": "10.0.0.80",
+        "dst_port": 80,
+        "attack": [
+          "T1040"
+        ],
+        "evidence": [
+          "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
+          "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": 4
       },
       {
         "kind": "lateral_movement",
@@ -5446,13 +5463,13 @@
               "T1071"
             ],
             "evidence": [
-              "periodic beaconing: 2999 contacts to 45.77.13.37:443",
+              "periodic beaconing: 2998 contacts to 45.77.13.37:443",
               "interval ~30s, jitter CV 0.013 (low = machine-regular)",
               "external destination"
             ],
-            "interval_ns": 29999902800,
-            "jitter_cv": 0.013473454423667854,
-            "contacts": 2999
+            "interval_ns": 29999845757,
+            "jitter_cv": 0.013475325495046495,
+            "contacts": 2998
           },
           {
             "kind": "dns_tunnel",
@@ -5563,9 +5580,43 @@
             "contacts": 2
           }
         ]
+      },
+      {
+        "host": "10.0.0.52",
+        "severity": "high",
+        "score": 64,
+        "title": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
+        "narrative": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
+        "stages": [
+          "Collection"
+        ],
+        "attack": [
+          "T1040"
+        ],
+        "findings": [
+          {
+            "kind": "pii_exposure",
+            "severity": "high",
+            "score": 64,
+            "title": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
+            "src_ip": "10.0.0.52",
+            "dst_ip": "10.0.0.80",
+            "dst_port": 80,
+            "attack": [
+              "T1040"
+            ],
+            "evidence": [
+              "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
+              "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": 4
+          }
+        ]
       }
     ]
   },
   "flows_parquet_path": "D:/Project/PacketPilot/ui/public/sample/flows.parquet",
-  "elapsed_ms": 698
+  "elapsed_ms": 667
 }

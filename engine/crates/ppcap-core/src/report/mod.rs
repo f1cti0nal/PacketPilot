@@ -397,6 +397,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::HostSweep => "Host Sweep",
         FindingKind::BruteForce => "Brute Force",
         FindingKind::CleartextCreds => "Cleartext Credentials",
+        FindingKind::PiiExposure => "Plaintext PII",
         FindingKind::LateralMovement => "Lateral Movement",
         FindingKind::DataExfil => "Data Exfiltration",
         FindingKind::DnsTunnel => "DNS Tunnel",
