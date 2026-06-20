@@ -416,25 +416,42 @@ fn find_ci(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     (0..=haystack.len() - needle.len()).find(|&i| starts_with_ci(&haystack[i..], needle))
 }
 
-/// If an HTTP request header block carries an `Authorization` / `Proxy-Authorization` header with
-/// a Basic or Digest scheme, return the scheme. The credential itself is neither parsed nor kept.
+/// If an HTTP request's header block carries an `Authorization` / `Proxy-Authorization` header
+/// with a Basic or Digest scheme, return the scheme. The credential itself is neither parsed nor
+/// kept. The match is anchored to the **start of a header line** and the **request body is never
+/// scanned** (truncated at the first blank line), so the literal `authorization:` appearing in a
+/// request URI/query or body does not false-positive.
 fn http_auth_scheme(buf: &[u8]) -> Option<CredScheme> {
-    // "proxy-authorization:" contains "authorization:" as a substring, so this finds both.
-    let pos = find_ci(buf, b"authorization:")?;
-    let after = &buf[pos + b"authorization:".len()..];
-    // Skip optional leading whitespace, then match the scheme token.
-    let token_start = after
-        .iter()
-        .position(|&b| b != b' ' && b != b'\t')
-        .unwrap_or(after.len());
-    let token = &after[token_start..];
-    if starts_with_ci(token, b"basic") {
-        Some(CredScheme::HttpBasic)
-    } else if starts_with_ci(token, b"digest") {
-        Some(CredScheme::HttpDigest)
-    } else {
-        None
+    // Headers end at the first blank line (`\r\n\r\n`); if it is not in the bounded peek, the
+    // payload is all headers (truncated), so scan what we have.
+    let headers = match find_ci(buf, b"\r\n\r\n") {
+        Some(end) => &buf[..end],
+        None => buf,
+    };
+    // Each header sits on its own CRLF-delimited line; the first line is the request line, which
+    // never starts with the header name, so it is naturally skipped.
+    for raw in headers.split(|&b| b == b'\n') {
+        let line = raw.strip_suffix(b"\r").unwrap_or(raw);
+        let value = if starts_with_ci(line, b"authorization:") {
+            &line[b"authorization:".len()..]
+        } else if starts_with_ci(line, b"proxy-authorization:") {
+            &line[b"proxy-authorization:".len()..]
+        } else {
+            continue;
+        };
+        // Skip optional leading whitespace, then match the scheme token.
+        let start = value
+            .iter()
+            .position(|&b| b != b' ' && b != b'\t')
+            .unwrap_or(value.len());
+        let token = &value[start..];
+        if starts_with_ci(token, b"basic") {
+            return Some(CredScheme::HttpBasic);
+        } else if starts_with_ci(token, b"digest") {
+            return Some(CredScheme::HttpDigest);
+        }
     }
+    None
 }
 
 /// Sniff a *cleartext* credential exposure from a bounded TCP-payload peek — HTTP Basic/Digest
@@ -1091,6 +1108,37 @@ mod tests {
         // UDP and empty payloads never match.
         assert_eq!(sniff_cleartext_cred(Transport::Udp, 0, 80, b"Authorization: Basic x"), None);
         assert_eq!(sniff_cleartext_cred(tcp, 50000, 80, b""), None);
+
+        // The literal in a request URI/query must NOT match (anchored to header lines).
+        assert_eq!(
+            sniff_cleartext_cred(
+                tcp,
+                50000,
+                80,
+                b"GET /r?h=authorization:basic%20x HTTP/1.1\r\nHost: x\r\n\r\n"
+            ),
+            None
+        );
+        // The literal echoed in a request BODY must NOT match (body is never scanned).
+        assert_eq!(
+            sniff_cleartext_cred(
+                tcp,
+                50000,
+                80,
+                b"POST /log HTTP/1.1\r\nHost: x\r\n\r\n{\"h\":\"Authorization: Basic QQ==\"}"
+            ),
+            None
+        );
+        // ...but a real header line after a body-less request still fires.
+        assert_eq!(
+            sniff_cleartext_cred(
+                tcp,
+                50000,
+                80,
+                b"GET / HTTP/1.1\r\nHost: x\r\nAuthorization: Basic QQ==\r\n\r\n"
+            ),
+            Some(CredScheme::HttpBasic)
+        );
     }
 
     #[test]
