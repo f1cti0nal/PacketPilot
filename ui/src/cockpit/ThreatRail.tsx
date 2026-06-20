@@ -1,10 +1,9 @@
 // Persistent left threat rail — the "who do I chase" spine that never scrolls
 // away. Ranked ip_threats[], severity→score, with a compact 64px collapsed mode.
-import { Radar, Table2 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { humanBytes, humanNumber } from "../lib/format";
 import { SEVERITY_ORDER } from "../lib/severity";
-import type { IpThreat, Severity, TabId } from "../types";
+import type { IpThreat, Severity } from "../types";
 import { sevColor } from "./viz";
 import { ScoreBar, IocDot } from "./primitives";
 
@@ -15,15 +14,11 @@ export function ThreatRail({
   threats,
   collapsed,
   activeIp = null,
-  activeTab,
-  onTab,
   onSelect,
 }: {
   threats: IpThreat[];
   collapsed: boolean;
   activeIp?: string | null;
-  activeTab?: TabId;
-  onTab?: (t: TabId) => void;
   onSelect: (ip: string) => void;
 }) {
   const sorted = [...threats].sort(worstFirst);
@@ -35,18 +30,6 @@ export function ThreatRail({
         collapsed ? "w-16" : "w-[280px]",
       )}
     >
-      {activeTab && onTab && (
-        <>
-          {/* Icon nav */}
-          <nav className="flex flex-col gap-1 p-2">
-            <NavItem icon={<Radar size={18} />} label="Triage" active={activeTab === "dashboard"} collapsed={collapsed} onClick={() => onTab("dashboard")} />
-            <NavItem icon={<Table2 size={18} />} label="Flows" active={activeTab === "flows"} collapsed={collapsed} onClick={() => onTab("flows")} />
-          </nav>
-
-          <div className="mx-2 border-t border-[var(--color-border)]" />
-        </>
-      )}
-
       {/* Watchlist header */}
       {!collapsed && (
         <div className="flex items-baseline justify-between px-3 pb-1.5 pt-3">
@@ -109,38 +92,6 @@ function RailRow({ threat, color }: { threat: IpThreat; color: string }) {
         <span className="font-mono-num t-tag">{humanBytes(threat.bytes)}</span>
       </div>
     </div>
-  );
-}
-
-function NavItem({
-  icon,
-  label,
-  active,
-  collapsed,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  collapsed: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "relative flex items-center rounded-[var(--r-tile)] text-sm font-medium transition-colors",
-        collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2",
-        active ? "text-[var(--color-text)]" : "text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]",
-      )}
-      style={active ? { background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" } : undefined}
-    >
-      {active && <span aria-hidden className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[var(--color-accent)]" style={{ boxShadow: "0 0 8px var(--color-accent)" }} />}
-      <span style={{ color: active ? "var(--color-accent)" : undefined }}>{icon}</span>
-      {!collapsed && <span>{label}</span>}
-    </button>
   );
 }
 
