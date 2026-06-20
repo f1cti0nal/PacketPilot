@@ -58,7 +58,6 @@ export interface AppShellProps {
   children: ReactNode;
 }
 
-
 export function AppShell({
   activeTab,
   onTabChange,
@@ -134,14 +133,14 @@ export function AppShell({
     summary.status === "loading" ? "loading" :
     summary.status === "error" ? "error" : "idle";
 
-  const paletteActions: PaletteAction[] = [
+  const paletteActions = useMemo<PaletteAction[]>(() => [
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
     { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
     { id: "toggle-rail", label: collapsed ? "Expand sidebar" : "Collapse sidebar", hint: "action", run: onToggleCollapse },
     ...(canExport ? [{ id: "export", label: "Export report", hint: "action", run: () => void handleExportClick() }] : []),
-  ];
+  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, canExport, handleExportClick]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">

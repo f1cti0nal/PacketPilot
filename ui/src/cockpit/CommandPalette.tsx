@@ -34,15 +34,20 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
 
-  // Reset + focus on open.
+  // Reset + focus on open; capture opener so we can restore focus on close.
   useEffect(() => {
     if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
     setQuery("");
     setActive(0);
     const id = window.setTimeout(() => inputRef.current?.focus(), 0);
-    return () => window.clearTimeout(id);
+    return () => {
+      window.clearTimeout(id);
+      opener?.focus?.();
+    };
   }, [open]);
 
   const items = useMemo<Item[]>(() => {
@@ -76,7 +81,22 @@ export function CommandPalette({
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") onClose();
-    else if (e.key === "ArrowDown") {
+    else if (e.key === "Tab" && panelRef.current) {
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+        'input, button, [href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length > 0) {
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((a) => Math.min(a + 1, items.length - 1));
     } else if (e.key === "ArrowUp") {
@@ -93,6 +113,7 @@ export function CommandPalette({
     <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[12vh]" role="dialog" aria-modal="true" aria-labelledby={labelId}>
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
+        ref={panelRef}
         className="glass-panel relative w-full max-w-lg rounded-[var(--r-card)] border border-[var(--color-border)]"
         style={{ boxShadow: "var(--sh-float)" }}
         onKeyDown={onKeyDown}
@@ -111,7 +132,10 @@ export function CommandPalette({
           <kbd className="t-tag shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-text-faint)]">ESC</kbd>
         </div>
         <ul className="max-h-[50vh] overflow-y-auto p-1.5">
-          {items.length === 0 && (
+          {items.length === 0 && threats.length === 0 && query.trim() !== "" && (
+            <li className="px-3 py-2 t-label">load a capture to search hosts</li>
+          )}
+          {items.length === 0 && !(threats.length === 0 && query.trim() !== "") && (
             <li className="px-3 py-6 text-center text-sm text-[var(--color-text-faint)]">No matches</li>
           )}
           {items.map((it, i) => (
@@ -123,9 +147,6 @@ export function CommandPalette({
               onClick={() => run(it)}
             />
           ))}
-          {threats.length === 0 && query.trim() !== "" && (
-            <li className="px-3 py-2 t-label">load a capture to search hosts</li>
-          )}
         </ul>
       </div>
     </div>
