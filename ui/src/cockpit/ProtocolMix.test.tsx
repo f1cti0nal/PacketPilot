@@ -7,9 +7,16 @@ describe("ProtocolMix", () => {
   it("renders the legend with percent values", () => {
     const proto = makeOutput().summary.proto;
     render(<ProtocolMix proto={proto} />);
-    // TLS = 15836 out of 40000 total leaf packets → 39.6%
-    // Hardcoded so a regression in percent() is caught independently
+    // Leaf segments (total = dns+http+tls+other_tcp = 40000):
+    //   TLS       15836 / 40000 → 39.6%
+    //   DNS       12162 / 40000 → 30.4%
+    //   HTTP      11922 / 40000 → 29.8%
+    //   other_tcp    80 / 40000 →  0.2%
+    // Hardcoded so a regression in percent() is caught independently for each protocol.
     expect(screen.getByText("39.6%")).toBeInTheDocument();
+    expect(screen.getByText("30.4%")).toBeInTheDocument();
+    expect(screen.getByText("29.8%")).toBeInTheDocument();
+    expect(screen.getByText("0.2%")).toBeInTheDocument();
   });
 
   it("renders the TLS-heavy caption when TLS dominates", () => {
