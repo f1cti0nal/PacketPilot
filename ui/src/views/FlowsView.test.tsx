@@ -19,8 +19,9 @@ describe("FlowsView", () => {
     // force a synchronous re-render so the virtualizer picks up the new dims.
     act(() => { sizeScrollElement(grid as HTMLElement); });
     // Flow count shown in the bar (filtered / total — both show 20 when no filter)
+    // Both the filtered-count and the total-count slots in the bar render "20"
     const twenties = screen.getAllByText("20");
-    expect(twenties.length).toBeGreaterThan(0);
+    expect(twenties.length).toBeGreaterThanOrEqual(2);
     // Default sort is bytes-desc; row 0 has bytesTotal=1_200_500 → "1.14 MB"
     expect(screen.getByText("1.14 MB")).toBeInTheDocument();
   });

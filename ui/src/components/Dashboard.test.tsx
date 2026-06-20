@@ -12,8 +12,8 @@ describe("Dashboard", () => {
         onSelectIncident={vi.fn()}
       />,
     );
-    // Hero host appears at least once (may appear in hero + watchlist + talkers)
-    expect(screen.getAllByText("10.13.37.7").length).toBeGreaterThan(0);
+    // Hero host appears in both the hero card and the watchlist (≥2 occurrences)
+    expect(screen.getAllByText("10.13.37.7").length).toBeGreaterThanOrEqual(2);
     // Threat watchlist card
     expect(screen.getByText("Threat watchlist")).toBeInTheDocument();
     // ActivityHeatmap renders its card title
