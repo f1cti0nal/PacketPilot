@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { AnalysisOutput, FlowRow } from "../types";
+import type { AnalysisOutput, FlowRow, WireFlowPackets } from "../types";
 import { loadFlows } from "./data";
 
 /** True only inside the Tauri webview (the injected internals object). */
@@ -20,6 +20,13 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
   const bytes = new Uint8Array(buf);
   for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
   return buf;
+}
+
+export async function extractPacketsViaTauri(
+  path: string,
+  query: object,
+): Promise<WireFlowPackets> {
+  return invoke<WireFlowPackets>("extract_flow_packets", { path, query });
 }
 
 export async function analyzeViaTauri(

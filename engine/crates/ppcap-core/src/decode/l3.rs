@@ -3,7 +3,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use crate::error::PpError;
-use crate::model::packet::PacketMeta;
+use crate::model::packet::{PacketMeta, Transport};
 use crate::Result;
 
 /// Maximum number of IPv6 extension headers we will walk before giving up. A legitimate
@@ -247,4 +247,79 @@ pub fn decode_ipv6<'a>(bytes: &'a [u8], meta: &mut PacketMeta) -> Result<(u8, &'
         packet_index: meta.index,
         detail: format!("extension-header chain exceeded {MAX_IPV6_EXT_HEADERS} headers"),
     })
+}
+
+/// Strip the L3 (IPv4/IPv6) header from `l3` and return `(l4_slice, transport)`, or `None`
+/// when the header is undecodable (too short, bad version, non-first fragment, or an
+/// extension-header chain that overflows the bound).
+///
+/// The allocation-free, `PacketMeta`-free counterpart of [`decode_ipv4`]/[`decode_ipv6`] used
+/// by [`crate::decode::l4_payload`]: it walks the same IPv4 IHL (`(b[0] & 0x0f) * 4`) and IPv6
+/// fixed-40 + bounded extension-header chain that those functions walk, but returns only the L4
+/// slice and the [`Transport`] (derived via [`Transport::from_ip_proto`]). Callers that also
+/// need IPs/ttl already have them from `decode_frame`. Never panics: every access is
+/// bounds-checked, and a non-first fragment yields `None` (no L4 header is present here).
+pub fn strip_to_l4(l3: &[u8]) -> Option<(&[u8], Transport)> {
+    let version = l3.first()? >> 4;
+    match version {
+        4 => {
+            if l3.len() < 20 {
+                return None;
+            }
+            let header_len = ((l3[0] & 0x0F) as usize) * 4;
+            if header_len < 20 || header_len > l3.len() {
+                return None;
+            }
+            let proto = l3[9];
+            // Non-first fragment: the L4 header lives in fragment #0, not here.
+            let frag_offset = be_u16(l3, 6)? & 0x1FFF;
+            if frag_offset != 0 {
+                return None;
+            }
+            let l4 = l3.get(header_len..)?;
+            Some((l4, Transport::from_ip_proto(proto)))
+        }
+        6 => {
+            if l3.len() < 40 {
+                return None;
+            }
+            let mut next_header = l3[6];
+            let mut offset = 40usize;
+            for _ in 0..MAX_IPV6_EXT_HEADERS {
+                match next_header {
+                    NH_HOPOPT | NH_ROUTING | NH_DESTOPTS => {
+                        let nh = *l3.get(offset)?;
+                        let hdr_ext_len = *l3.get(offset + 1)? as usize;
+                        let ext_len = hdr_ext_len.saturating_add(1).saturating_mul(8);
+                        next_header = nh;
+                        offset = offset.saturating_add(ext_len);
+                    }
+                    NH_AH => {
+                        let nh = *l3.get(offset)?;
+                        let ah_len = *l3.get(offset + 1)? as usize;
+                        let ext_len = ah_len.saturating_add(2).saturating_mul(4);
+                        next_header = nh;
+                        offset = offset.saturating_add(ext_len);
+                    }
+                    NH_FRAGMENT => {
+                        let nh = *l3.get(offset)?;
+                        let frag_field = be_u16(l3, offset + 2)?;
+                        // A non-first fragment carries no L4 header here.
+                        if (frag_field >> 3) != 0 {
+                            return None;
+                        }
+                        next_header = nh;
+                        offset = offset.saturating_add(8);
+                    }
+                    NH_NO_NEXT => return None,
+                    _ => {
+                        let l4 = l3.get(offset..)?;
+                        return Some((l4, Transport::from_ip_proto(next_header)));
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }

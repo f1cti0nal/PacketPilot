@@ -1,19 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SortingState } from "@tanstack/react-table";
 import { Search, X } from "lucide-react";
-import type { FlowsState, FlowRow, Severity, FlowCategory } from "../types";
+import type {
+  ActiveSource,
+  FlowsState,
+  FlowRow,
+  FlowPackets,
+  Severity,
+  FlowCategory,
+} from "../types";
 import { normCategory } from "../lib/severity";
 import { humanNumber } from "../lib/format";
+import { extractFlowPackets } from "../lib/packets";
 import { cn } from "../lib/cn";
 import { LoadingState } from "../components/state/LoadingState";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { FlowsTable } from "../components/flows/FlowsTable";
 import { FlowDetail } from "../components/FlowDetail";
+import { PacketInspector } from "../cockpit/PacketInspector";
 
 export interface FlowsViewProps {
   state: FlowsState;
   initialFilter?: { severity?: Severity; category?: string; proto?: number; ip?: string };
+  /** The active capture source — enables per-flow packet drill-down when non-null. */
+  activeSource: ActiveSource;
 }
 
 const ALL_CATEGORIES = "__all__";
@@ -32,12 +43,43 @@ function categoryLabel(token: string): string {
  * when a row is selected. Owns the selected-row, free-text, category, severity
  * and proto filter state, and feeds the already-filtered rows to FlowsTable.
  */
-export function FlowsView({ state, initialFilter }: FlowsViewProps) {
+export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [severity, setSeverity] = useState<Severity | undefined>(undefined);
   const [proto, setProto] = useState<number | undefined>(undefined);
   const [selected, setSelected] = useState<FlowRow | null>(null);
+
+  // Packet inspector: which flow is being inspected, its extracted packets, and the
+  // async load status. `inspecting` non-null mounts the PacketInspector overlay.
+  const [inspecting, setInspecting] = useState<FlowRow | null>(null);
+  const [packets, setPackets] = useState<FlowPackets | null>(null);
+  const [pktLoading, setPktLoading] = useState(false);
+  const [pktError, setPktError] = useState<string | null>(null);
+
+  // Generation counter: each openInspector call bumps it; async callbacks check
+  // the generation still matches before committing state, preventing a slow
+  // extractFlowPackets for flow A from overwriting a faster result for flow B.
+  const inspectGen = useRef(0);
+
+  const openInspector = useCallback(
+    (flow: FlowRow) => {
+      const gen = ++inspectGen.current;
+      setInspecting(flow);
+      setPackets(null);
+      setPktError(null);
+      setPktLoading(true);
+      extractFlowPackets(activeSource, flow)
+        .then((fp) => { if (gen === inspectGen.current) setPackets(fp); })
+        .catch((e) => { if (gen === inspectGen.current) setPktError(String((e as Error)?.message ?? e)); })
+        .finally(() => { if (gen === inspectGen.current) setPktLoading(false); });
+    },
+    [activeSource],
+  );
+
+  // Stable identity so PacketInspector's focus/Esc effect doesn't re-fire on every render.
+  // Also bumps the generation so any in-flight extraction for the closed flow is discarded.
+  const closeInspector = useCallback(() => { inspectGen.current++; setInspecting(null); }, []);
   // Default "busiest flows first". Must reference the column's id ("bytes"),
   // not the accessorKey ("bytesTotal") — the explicit column id wins, and a
   // mismatch makes TanStack drop the sort and warn "Column ... does not exist".
@@ -239,10 +281,22 @@ export function FlowsView({ state, initialFilter }: FlowsViewProps) {
             <FlowDetail
               flow={selected}
               onClose={() => setSelected(null)}
+              activeSource={activeSource}
+              onInspectPackets={() => openInspector(selected)}
             />
           </aside>
         )}
       </div>
+
+      {inspecting && (
+        <PacketInspector
+          flow={inspecting}
+          packets={packets}
+          loading={pktLoading}
+          error={pktError}
+          onClose={closeInspector}
+        />
+      )}
     </div>
   );
 }
