@@ -52,9 +52,9 @@ export interface AppShellProps {
   /** Open the ⌘K command palette. */
   onOpenPalette: () => void;
   /** Controlled open-state of the ⌘K command palette. */
-  paletteOpen?: boolean;
+  paletteOpen: boolean;
   /** Called to change the palette open state. */
-  onPaletteOpenChange?: (open: boolean) => void;
+  onPaletteOpenChange: (open: boolean) => void;
   children: ReactNode;
 }
 
@@ -76,7 +76,7 @@ export function AppShell({
   collapsed,
   onToggleCollapse,
   onOpenPalette,
-  paletteOpen = false,
+  paletteOpen,
   onPaletteOpenChange,
   children,
 }: AppShellProps) {
@@ -97,7 +97,7 @@ export function AppShell({
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
-        if (!paletteOpen && !loadDialogOpen) onPaletteOpenChange?.(true);
+        if (!paletteOpen && !loadDialogOpen) onPaletteOpenChange(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -175,7 +175,7 @@ export function AppShell({
       )}
       <CommandPalette
         open={paletteOpen}
-        onClose={() => onPaletteOpenChange?.(false)}
+        onClose={() => onPaletteOpenChange(false)}
         actions={paletteActions}
         threats={threats}
         onSelectHost={onSelectThreat}
