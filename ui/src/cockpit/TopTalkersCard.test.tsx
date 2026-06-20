@@ -15,11 +15,19 @@ describe("TopTalkersCard", () => {
 
   it("flags the known-bad host (45.77.13.37) with a critical marker dot", () => {
     render(<TopTalkersCard talkers={talkers} />);
-    // The flagged host text is brighter (font-medium text-[--color-text] vs dim)
-    // The flagged dot is an aria-hidden span — check the host text is rendered at all
-    // and that 45.77.13.37 is in the flagged set (default DEFAULT_FLAGGED includes it)
+    // The flagged dot is an aria-hidden span with class rounded-full, rendered only
+    // when flaggedSet.has(t.ip). The bar span shares aria-hidden but not rounded-full.
     const ip = screen.getByText("45.77.13.37");
-    expect(ip).toBeInTheDocument();
+    const li = ip.closest("li")!;
+    expect(li.querySelector("[aria-hidden].rounded-full")).not.toBeNull();
+  });
+
+  it("omits the critical marker dot when host is not flagged", () => {
+    // Render with no flagged IPs — the dot span should not appear for any host
+    render(<TopTalkersCard talkers={talkers} flagged={[]} />);
+    const ip = screen.getByText("45.77.13.37");
+    const li = ip.closest("li")!;
+    expect(li.querySelector("[aria-hidden].rounded-full")).toBeNull();
   });
 
   it("calls onSelect with the IP when a row button is clicked", async () => {
