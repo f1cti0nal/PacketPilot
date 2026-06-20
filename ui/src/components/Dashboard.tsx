@@ -4,16 +4,16 @@ import type { AnalysisOutput, Incident, IpThreat, Severity } from "../types";
 import { SEVERITY_ORDER } from "../lib/severity";
 import { humanBytes, humanNumber } from "../lib/format";
 
-import { sevColor } from "../redesign/viz";
-import { Card, SectionLabel, ScoreBar, IocDot, MitreTag } from "../redesign/primitives";
-import { KpiCluster } from "../redesign/KpiCluster";
-import { IncidentHero } from "../redesign/IncidentHero";
-import { DetailFlyout } from "../redesign/DetailFlyout";
-import { ActivityHeatmap } from "../redesign/ActivityHeatmap";
-import { CategoryMatrix } from "../redesign/CategoryMatrix";
-import { ProtocolMix } from "../redesign/ProtocolMix";
-import { TopTalkersCard } from "../redesign/TopTalkersCard";
-import { CaptureIntegrity } from "../redesign/CaptureIntegrity";
+import { sevColor } from "../cockpit/viz";
+import { Card, SectionLabel, ScoreBar, IocDot, MitreTag } from "../cockpit/primitives";
+import { KpiCluster } from "../cockpit/KpiCluster";
+import { IncidentHero } from "../cockpit/IncidentHero";
+import { DetailFlyout } from "../cockpit/DetailFlyout";
+import { ActivityHeatmap } from "../cockpit/ActivityHeatmap";
+import { CategoryMatrix } from "../cockpit/CategoryMatrix";
+import { ProtocolMix } from "../cockpit/ProtocolMix";
+import { TopTalkersCard } from "../cockpit/TopTalkersCard";
+import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
 
 /**
  * Navigation request raised from the dashboard when the analyst drills into a
