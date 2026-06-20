@@ -12,6 +12,7 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
   flow: FlowRow; packets: FlowPackets | null; loading: boolean; error: string | null; onClose: () => void;
 }) {
   const [sel, setSel] = useState(0);
+  useEffect(() => { setSel(0); }, [packets]);
   const closeRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 

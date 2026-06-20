@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { act } from "react";
 import { render, screen, userEvent, sizeScrollElement } from "../test/render";
+import type { RenderResult } from "@testing-library/react";
 import { PacketInspector } from "./PacketInspector";
 import { makePackets, makeFlows } from "../test/fixtures";
 
@@ -141,5 +142,49 @@ describe("PacketInspector", () => {
     );
     // Header shows "first N of 5,000 packets"
     expect(screen.getByText(/first.*of.*5,000/i)).toBeInTheDocument();
+  });
+
+  it("resets selection to row 0 when packets prop changes", async () => {
+    // Render with first packet set.
+    const firstPackets = makePackets();
+    const { rerender } = render(
+      <PacketInspector
+        flow={flow}
+        packets={firstPackets}
+        loading={false}
+        error={null}
+        onClose={() => {}}
+      />
+    ) as RenderResult & { rerender: (element: React.ReactElement) => void };
+
+    // Hex viewer should show the first packet's payload ("GET / HTTP/1.1\r\n").
+    expect(screen.getByText("47 45 54 20 2f 20 48 54 54 50 2f 31 2e 31 0d 0a")).toBeInTheDocument();
+
+    // Size scroll container and select a different row (index 1).
+    const scrollEl = document.querySelector(".min-h-0.flex-1.overflow-y-auto") as HTMLElement;
+    act(() => { sizeScrollElement(scrollEl); });
+
+    const row1Previews = screen.getAllByText(/HTTP\/1\.1 200 OK/);
+    await userEvent.setup().click(row1Previews[0]);
+
+    // Verify row 1 is now selected (hex viewer shows "HTTP/1.1 200 OK\r\n").
+    expect(screen.getByText("48 54 54 50 2f 31 2e 31 20 32 30 30 20 4f 4b 0d")).toBeInTheDocument();
+
+    // Create a DIFFERENT packet object (new identity).
+    const secondPackets = makePackets();
+
+    // Rerender with the new packets prop.
+    rerender(
+      <PacketInspector
+        flow={flow}
+        packets={secondPackets}
+        loading={false}
+        error={null}
+        onClose={() => {}}
+      />
+    );
+
+    // Selection should have reset to row 0, so hex viewer shows the first packet's payload again.
+    expect(screen.getByText("47 45 54 20 2f 20 48 54 54 50 2f 31 2e 31 0d 0a")).toBeInTheDocument();
   });
 });
