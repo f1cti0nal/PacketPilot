@@ -2,6 +2,7 @@
 
 use crate::error::PpError;
 use crate::model::packet::PacketMeta;
+use crate::reader::LinkType;
 use crate::Result;
 
 /// EtherType for an 802.1Q VLAN tag.
@@ -88,5 +89,43 @@ pub fn strip_l2<'a>(data: &'a [u8], meta: &mut PacketMeta) -> Result<(u16, &'a [
             had: data.len(),
             offset: meta.index,
         }),
+    }
+}
+
+/// Strip the L2 framing for `link_type` and return the L3 (IP) byte slice, or `None` when the
+/// frame is too short or carries no IP payload (ARP / unknown ethertype / unsupported DLT).
+///
+/// This is the allocation-free, `PacketMeta`-free counterpart of [`strip_l2`] used by
+/// [`crate::decode::l4_payload`]: it reuses the exact same per-link-type header sizes the
+/// `decode_frame` walk uses (Ethernet 14 + 4/VLAN tag, SLL 16, SLL2 20, Null 4, raw-IP 0) but
+/// returns only the L3 slice — callers that need IPs/transport already have them from
+/// `decode_frame`. Never panics: every access is bounds-checked.
+pub fn strip_to_l3(link_type: LinkType, data: &[u8]) -> Option<&[u8]> {
+    match link_type {
+        LinkType::Ethernet => {
+            // Ethernet header (14) + up to two stacked VLAN tags (4 bytes each).
+            let mut ethertype = be_u16(data, 12)?;
+            let mut l3_off = 14usize;
+            let mut depth = 0u8;
+            while (ethertype == ETHERTYPE_VLAN || ethertype == ETHERTYPE_QINQ) && depth < 2 {
+                ethertype = be_u16(data, l3_off + 2)?;
+                l3_off += 4;
+                depth += 1;
+            }
+            // Only IPv4/IPv6 carry an L4 payload we can extract; ARP/unknown have none.
+            if ethertype != ETHERTYPE_IPV4 && ethertype != ETHERTYPE_IPV6 {
+                return None;
+            }
+            data.get(l3_off..)
+        }
+        // Linux cooked v1 (SLL): 16-byte header, IP slice follows.
+        LinkType::LinuxSll => data.get(16..),
+        // Linux cooked v2 (SLL2): 20-byte header.
+        LinkType::LinuxSll2 => data.get(20..),
+        // BSD loopback / null: 4-byte address-family word, then the IP packet.
+        LinkType::Null => data.get(4..),
+        // Raw-IP link types: the data already starts at L3.
+        LinkType::RawIpv4 | LinkType::RawIpv6 | LinkType::Raw => Some(data),
+        LinkType::Unsupported(_) => None,
     }
 }
