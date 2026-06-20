@@ -111,7 +111,11 @@ export function Dashboard({ output, onJumpToFlows }: DashboardProps) {
           title="Timeline"
           className="lg:col-span-2 xl:col-span-3"
         >
-          <TimelineChart histogram={summary.time_histogram} metric="pkts" />
+          <TimelineChart
+            histogram={summary.time_histogram}
+            metric="pkts"
+            bucketSecs={summary.time_bucket_secs}
+          />
         </DashboardCell>
 
         {/* Top talkers fills the remaining width below the timeline. */}

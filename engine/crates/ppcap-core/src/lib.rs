@@ -51,8 +51,8 @@ pub mod stats;
 
 pub use analyze::{run, run_source, PipelineConfig};
 pub use detect::{
-    BeaconParams, BehaviorTracker, BruteForceParams, DetectConfig, DnsTunnelParams, ExfilParams,
-    LateralMovementParams, SweepParams,
+    BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams, DetectConfig,
+    DnsTunnelParams, ExfilParams, LateralMovementParams, SweepParams,
 };
 pub use enrich::{
     attack_for, classify_ip, AttackTechnique, Enricher, FeedMatch, FlowEnrichment, IpClass,

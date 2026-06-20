@@ -12,10 +12,11 @@ use std::time::Instant;
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force, detect_dns_tunnel,
-    detect_exfil, detect_lateral_movement, detect_sweeps, suppress_swept_by_lateral, BeaconParams,
-    BehaviorTracker, BruteForceParams, DetectConfig, DnsTunnelParams, ExfilParams,
-    LateralMovementParams, SweepParams,
+    contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
+    detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_lateral_movement, detect_sweeps,
+    suppress_swept_by_lateral, BeaconParams, BehaviorTracker, BruteForceParams,
+    CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams, LateralMovementParams,
+    SweepParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -54,6 +55,8 @@ pub struct PipelineConfig {
     pub sweep: SweepParams,
     /// Credential brute-force-detector tuning.
     pub brute_force: BruteForceParams,
+    /// Cleartext-credential-exposure-detector tuning.
+    pub cleartext_creds: CleartextCredsParams,
     /// Lateral-movement-detector tuning.
     pub lateral: LateralMovementParams,
     /// DNS-tunneling-detector tuning.
@@ -81,6 +84,7 @@ impl Default for PipelineConfig {
             exfil: ExfilParams::default(),
             sweep: SweepParams::default(),
             brute_force: BruteForceParams::default(),
+            cleartext_creds: CleartextCredsParams::default(),
             lateral: LateralMovementParams::default(),
             dns_tunnel: DnsTunnelParams::default(),
         }
@@ -205,6 +209,13 @@ pub fn run_source(
                         tracker.observe_dns_query(src, dst, qname);
                     }
                 }
+                // Cleartext credential exposure: fold each packet that carried a credential in the
+                // clear (the decode sniff set the derived scheme; the secret is never retained).
+                if let (Some(scheme), Some(src), Some(dst)) =
+                    (meta.cleartext_cred, meta.src_ip, meta.dst_ip)
+                {
+                    tracker.observe_cleartext_cred(src, dst, meta.dst_port, scheme);
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -266,6 +277,7 @@ pub fn run_source(
     findings.extend(detect_exfil(&tracker, &cfg.exfil));
     findings.extend(sweeps);
     findings.extend(detect_brute_force(&tracker, &cfg.brute_force));
+    findings.extend(detect_cleartext_creds(&tracker, &cfg.cleartext_creds));
     findings.extend(lateral);
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     stats.apply_findings(&findings);
@@ -897,6 +909,31 @@ mod tests {
                 .any(|f| f.kind == crate::model::finding::FindingKind::DnsTunnel),
             "incident missing DNS-tunnel finding: {incident:?}"
         );
+
+        // *Separate* victim hosts exposed credentials in cleartext — their own single-stage
+        // incidents, distinct from the attacker's chain: one over HTTP Basic, one over FTP.
+        let http_cred = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| {
+                f.kind == crate::model::finding::FindingKind::CleartextCreds && f.dst_port == Some(80)
+            })
+            .unwrap_or_else(|| panic!("no HTTP cleartext-cred finding: {:?}", out.summary.findings));
+        assert_eq!(http_cred.src_ip, "10.0.0.50", "HTTP cleartext-cred victim");
+        assert!(http_cred.attack.iter().any(|a| a == "T1552"));
+        assert!(
+            out.summary
+                .findings
+                .iter()
+                .any(|f| f.kind == crate::model::finding::FindingKind::CleartextCreds
+                    && f.dst_port == Some(21)),
+            "expected an FTP cleartext-cred finding"
+        );
+        assert!(
+            out.summary.incidents.iter().any(|i| i.host == "10.0.0.50"),
+            "cleartext-cred victim should have its own incident"
+        );
     }
 
     #[test]
@@ -1236,6 +1273,81 @@ mod tests {
             spurious.is_empty(),
             "spurious credential/lateral finding on benign Mixed traffic: {spurious:?}"
         );
+    }
+
+    #[test]
+    fn pipeline_surfaces_cleartext_cred_findings_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+        let mut ts = base;
+        let push = |buf: &mut Vec<u8>, frame: &[u8], ts: i64| {
+            let wl = frame.len() as u32;
+            container::write_legacy_record(buf, ts, wl, wl).unwrap();
+            buf.write_all(frame).unwrap();
+        };
+        let tcp_frame = |src: Ipv4Addr, dst: Ipv4Addr, sp: u16, dp: u16, payload: &[u8]| {
+            let tcp = frames::build_tcp(src, dst, sp, dp, frames::TCP_PSH | frames::TCP_ACK, payload);
+            let ip = frames::build_ipv4(src, dst, frames::IP_PROTO_TCP, 64, tcp.len());
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 1],
+                [0x02, 0, 0, 0, 0, 2],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            frame
+        };
+
+        // An HTTP request with Basic auth over cleartext (port 80).
+        let web_client = Ipv4Addr::new(10, 0, 0, 50);
+        let web_server = Ipv4Addr::new(10, 0, 0, 80);
+        let basic = frames::http_basic_auth_payload("intranet", "/portal", "dXNlcjpwdw==");
+        push(&mut buf, &tcp_frame(web_client, web_server, 50000, 80, &basic), ts);
+        ts += 1_000_000;
+
+        // An FTP USER + PASS exchange over cleartext (port 21), same channel -> two exposures.
+        let ftp_client = Ipv4Addr::new(10, 0, 0, 51);
+        let ftp_server = Ipv4Addr::new(10, 0, 0, 90);
+        let user = frames::ftp_command_payload("USER alice");
+        let pass = frames::ftp_command_payload("PASS s3cr3t");
+        push(&mut buf, &tcp_frame(ftp_client, ftp_server, 40000, 21, &user), ts);
+        ts += 1_000_000;
+        push(&mut buf, &tcp_frame(ftp_client, ftp_server, 40000, 21, &pass), ts);
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+        let creds: Vec<_> = out
+            .summary
+            .findings
+            .iter()
+            .filter(|f| f.kind == crate::model::finding::FindingKind::CleartextCreds)
+            .collect();
+        assert_eq!(creds.len(), 2, "findings: {:?}", out.summary.findings);
+
+        let http = creds
+            .iter()
+            .find(|f| f.dst_port == Some(80))
+            .expect("HTTP Basic finding");
+        assert_eq!(http.severity, crate::model::severity::Severity::High);
+        assert_eq!(http.src_ip, "10.0.0.50");
+        assert_eq!(http.dst_ip.as_deref(), Some("10.0.0.80"));
+        assert!(http.attack.iter().any(|a| a == "T1552"));
+        assert!(http.title.contains("HTTP Basic"), "title: {}", http.title);
+
+        let ftp = creds
+            .iter()
+            .find(|f| f.dst_port == Some(21))
+            .expect("FTP finding");
+        assert_eq!(ftp.src_ip, "10.0.0.51");
+        assert_eq!(ftp.contacts, Some(2), "USER + PASS = 2 exposures");
     }
 
     #[test]

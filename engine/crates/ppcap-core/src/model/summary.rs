@@ -55,7 +55,9 @@ pub struct PortCount {
     pub bytes: u64,
 }
 
-/// One per-second time bucket.
+/// One time-histogram bucket. `epoch_sec` is the bucket's start (Unix seconds, aligned to a
+/// multiple of the summary's [`Summary::time_bucket_secs`] width); `pkts`/`bytes` are the
+/// totals that fell inside the `[epoch_sec, epoch_sec + width)` window.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TimeBucket {
     pub epoch_sec: i64,
@@ -146,8 +148,16 @@ pub struct Summary {
     pub protocol_hierarchy: Vec<ProtoCount>,
     /// len <= top_k_ports, desc by pkts.
     pub port_histogram: Vec<PortCount>,
-    /// ascending epoch_sec, gaps omitted (per-second).
+    /// Activity timeline: ascending `epoch_sec`, empty buckets omitted. Bounded to
+    /// `stats.max_time_buckets` buckets via an adaptive [`time_bucket_secs`](Self::time_bucket_secs)
+    /// width, so the series stays small (and the report sparkline readable) for any capture
+    /// length. Σ `pkts` still equals `total_packets` (re-bucketing only re-groups).
     pub time_histogram: Vec<TimeBucket>,
+    /// Width, in seconds, of each [`time_histogram`](Self::time_histogram) bucket (>= 1). 1 for
+    /// short captures (per-second), widening to a "nice" interval (2/5/.../min/hour/day) as the
+    /// capture lengthens. `#[serde(default)]` -> 1 keeps older (per-second) summaries readable.
+    #[serde(default = "default_time_bucket_secs")]
+    pub time_bucket_secs: i64,
     /// fixed `Category::all()` order, covers all flows.
     pub category_breakdown: Vec<CategoryCount>,
     /// Flow counts per severity band.
@@ -162,6 +172,12 @@ pub struct Summary {
     /// keeps older summaries readable.
     #[serde(default)]
     pub incidents: Vec<Incident>,
+}
+
+/// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
+/// existed: those used a fixed per-second histogram, so 1 is the faithful interpretation.
+fn default_time_bucket_secs() -> i64 {
+    1
 }
 
 impl Summary {
@@ -183,6 +199,7 @@ impl Summary {
             protocol_hierarchy: Vec::new(),
             port_histogram: Vec::new(),
             time_histogram: Vec::new(),
+            time_bucket_secs: 1,
             category_breakdown: Vec::new(),
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),

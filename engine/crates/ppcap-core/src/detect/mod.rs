@@ -124,6 +124,8 @@ impl StreamStats {
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
+use crate::model::packet::CredScheme;
+
 /// Identity of a directed "destination contact channel": one source reaching one
 /// `(dst_ip, dst_port)` service. Beaconing periodicity is measured per channel because each
 /// callback is a *separate* flow (new ephemeral source port), so the signal cannot live on a
@@ -248,6 +250,16 @@ pub struct LateralCandidate {
     pub targets: Vec<IpAddr>,
 }
 
+/// A `(source, dst, dst_port)` channel that transmitted credentials in cleartext.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CleartextCredCandidate {
+    pub src: IpAddr,
+    pub dst: IpAddr,
+    pub dst_port: u16,
+    pub scheme: CredScheme,
+    pub exposures: u64,
+}
+
 /// Per-`(source, resolver)` DNS query statistics.
 #[derive(Debug, Clone, Default)]
 struct DnsStats {
@@ -302,6 +314,9 @@ pub struct BehaviorTracker {
     fanout: HashMap<(IpAddr, u16), HashSet<IpAddr>>,
     /// Per-`(source, resolver)` DNS query statistics for tunneling / DGA detection.
     dns: HashMap<(IpAddr, IpAddr), DnsStats>,
+    /// Per-`(source, dst, dst_port)` cleartext credential exposures: the sniffed scheme and the
+    /// number of packets that exposed a credential on that channel.
+    creds: HashMap<(IpAddr, IpAddr, u16), (CredScheme, u64)>,
 }
 
 impl BehaviorTracker {
@@ -312,7 +327,26 @@ impl BehaviorTracker {
             channels: HashMap::new(),
             fanout: HashMap::new(),
             dns: HashMap::new(),
+            creds: HashMap::new(),
         }
+    }
+
+    /// Fold one cleartext credential exposure: `src` sent a credential (`scheme`) to `dst:port` in
+    /// the clear. Counts exposures per channel and keeps the first scheme seen. Bounded: a
+    /// brand-new channel at capacity is dropped.
+    pub fn observe_cleartext_cred(
+        &mut self,
+        src: IpAddr,
+        dst: IpAddr,
+        dst_port: u16,
+        scheme: CredScheme,
+    ) {
+        let key = (src, dst, dst_port);
+        if !self.creds.contains_key(&key) && self.creds.len() >= self.cfg.max_tracked_keys.max(1) {
+            return;
+        }
+        let e = self.creds.entry(key).or_insert((scheme, 0));
+        e.1 += 1;
     }
 
     /// Fold one DNS query: `src` asked `resolver` for `qname`. Accumulates the volume, the
@@ -553,6 +587,31 @@ impl BehaviorTracker {
                 targets: set.into_iter().collect(),
             })
             .collect()
+    }
+
+    /// All `(src, dst, dst_port)` channels that exposed at least `min_exposures` cleartext
+    /// credentials. Returned strongest (most exposures) first, then by channel for determinism.
+    pub fn cleartext_cred_candidates(&self, min_exposures: u64) -> Vec<CleartextCredCandidate> {
+        let mut out: Vec<CleartextCredCandidate> = self
+            .creds
+            .iter()
+            .filter(|(_, (_, n))| *n >= min_exposures)
+            .map(|(&(src, dst, dst_port), &(scheme, exposures))| CleartextCredCandidate {
+                src,
+                dst,
+                dst_port,
+                scheme,
+                exposures,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.exposures
+                .cmp(&a.exposures)
+                .then(a.src.cmp(&b.src))
+                .then(a.dst.cmp(&b.dst))
+                .then(a.dst_port.cmp(&b.dst_port))
+        });
+        out
     }
 }
 
@@ -1139,6 +1198,68 @@ pub fn suppress_swept_by_lateral(sweeps: Vec<Finding>, lateral: &[Finding]) -> V
         .collect()
 }
 
+/// Tuning for the cleartext-credential-exposure detector.
+#[derive(Debug, Clone)]
+pub struct CleartextCredsParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum exposures on a `(src, dst, port)` channel before it is reported. One exposed
+    /// credential is already a finding, so the default is 1.
+    pub min_exposures: u64,
+}
+
+impl Default for CleartextCredsParams {
+    fn default() -> Self {
+        CleartextCredsParams {
+            enabled: true,
+            min_exposures: 1,
+        }
+    }
+}
+
+/// Detect cleartext credential exposure from the behavioral tracker: one [`Finding`] per
+/// `(src, dst, port)` channel that transmitted credentials in the clear (HTTP Basic/Digest, FTP
+/// USER/PASS). The credential itself is never captured — only that an exposure occurred, its
+/// scheme, the endpoints, and the count. High severity, ATT&CK T1552. Deterministic order.
+pub fn detect_cleartext_creds(
+    tracker: &BehaviorTracker,
+    params: &CleartextCredsParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.cleartext_cred_candidates(params.min_exposures) {
+        let scheme = c.scheme.label();
+        let plural = if c.exposures == 1 { "" } else { "s" };
+        findings.push(Finding {
+            kind: FindingKind::CleartextCreds,
+            severity: Severity::High,
+            score: 66,
+            title: format!(
+                "Cleartext credentials: {} -> {}:{} ({})",
+                c.src, c.dst, c.dst_port, scheme
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: Some(c.dst.to_string()),
+            dst_port: Some(c.dst_port),
+            attack: vec!["T1552".to_string()],
+            evidence: vec![
+                format!(
+                    "{} sent in cleartext to {}:{} ({} exposure{})",
+                    scheme, c.dst, c.dst_port, c.exposures, plural
+                ),
+                "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
+                    .to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.exposures),
+        });
+    }
+    findings
+}
+
 /// Tuning for the DNS tunneling / DGA detector.
 #[derive(Debug, Clone)]
 pub struct DnsTunnelParams {
@@ -1332,6 +1453,7 @@ pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
 fn stage_ordinal(kind: FindingKind) -> u8 {
     match kind {
         FindingKind::HostSweep => 0,       // discovery
+        FindingKind::CleartextCreds => 1,  // credential access (exposure)
         FindingKind::BruteForce => 1,      // credential access
         FindingKind::LateralMovement => 2, // lateral movement
         FindingKind::Beacon => 3,          // command-and-control
@@ -1344,6 +1466,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
 fn stage_label(kind: FindingKind) -> &'static str {
     match kind {
         FindingKind::HostSweep => "Discovery",
+        FindingKind::CleartextCreds => "Credential Access",
         FindingKind::BruteForce => "Credential Access",
         FindingKind::LateralMovement => "Lateral Movement",
         FindingKind::Beacon => "Command & Control",
@@ -1356,6 +1479,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
 fn kind_phrase(kind: FindingKind) -> &'static str {
     match kind {
         FindingKind::HostSweep => "swept the network",
+        FindingKind::CleartextCreds => "exposed credentials in cleartext",
         FindingKind::BruteForce => "brute-forced credentials",
         FindingKind::LateralMovement => "moved laterally",
         FindingKind::Beacon => "beaconed to a C2",
@@ -1895,6 +2019,48 @@ mod tests {
         let inc = correlate_incidents(&all);
         assert_eq!(inc.len(), 1);
         assert_eq!(inc[0].stages, vec!["Credential Access", "Lateral Movement"]);
+    }
+
+    #[test]
+    fn detect_cleartext_creds_flags_exposure_high() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let victim = ip(10, 0, 0, 50);
+        let server = ip(10, 0, 0, 80);
+        // 3 HTTP Basic auth requests on one channel -> one finding with 3 exposures.
+        for _ in 0..3 {
+            t.observe_cleartext_cred(victim, server, 80, CredScheme::HttpBasic);
+        }
+        // An unrelated FTP login exposes credentials on a different channel.
+        t.observe_cleartext_cred(ip(10, 0, 0, 51), ip(10, 0, 0, 90), 21, CredScheme::Ftp);
+
+        let findings = detect_cleartext_creds(&t, &CleartextCredsParams::default());
+        assert_eq!(findings.len(), 2, "findings: {findings:?}");
+        // Strongest (most exposures) first: the 3-exposure HTTP Basic channel.
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::CleartextCreds);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.src_ip, "10.0.0.50");
+        assert_eq!(f.dst_ip.as_deref(), Some("10.0.0.80"));
+        assert_eq!(f.dst_port, Some(80));
+        assert!(f.attack.iter().any(|a| a == "T1552"), "attack: {:?}", f.attack);
+        assert_eq!(f.contacts, Some(3));
+        assert!(f.title.contains("HTTP Basic"), "title: {}", f.title);
+    }
+
+    #[test]
+    fn detect_cleartext_creds_disabled_or_below_threshold() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_cleartext_cred(ip(10, 0, 0, 50), ip(10, 0, 0, 80), 80, CredScheme::HttpBasic);
+        let off = CleartextCredsParams {
+            enabled: false,
+            ..CleartextCredsParams::default()
+        };
+        assert!(detect_cleartext_creds(&t, &off).is_empty());
+        let hi = CleartextCredsParams {
+            enabled: true,
+            min_exposures: 2,
+        };
+        assert!(detect_cleartext_creds(&t, &hi).is_empty());
     }
 
     #[test]

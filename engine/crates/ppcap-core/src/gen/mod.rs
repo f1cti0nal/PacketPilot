@@ -540,7 +540,9 @@ impl SynthGen {
         let lateral_count = self.beacon_lateral_count();
         let exfil_count = self.beacon_exfil_count();
         let dns_count = self.beacon_dns_count();
-        let prefix = sweep_count + brute_count + lateral_count + exfil_count + dns_count;
+        let creds_count = self.beacon_creds_count();
+        let prefix =
+            sweep_count + brute_count + lateral_count + exfil_count + dns_count + creds_count;
 
         // Stage 1 (recon): a short SYN sweep — the beacon host probes many internal hosts on
         // 445. Combined with the C2 beacon below, this gives the host a multi-stage incident.
@@ -597,7 +599,7 @@ impl SynthGen {
 
         // Stage 5 (DNS tunneling): a burst of high-entropy DNS queries to the internal resolver,
         // smuggling data out over DNS.
-        if i < prefix {
+        if i < sweep_count + brute_count + lateral_count + exfil_count + dns_count {
             let k = i - sweep_count - brute_count - lateral_count - exfil_count;
             let frame = self.build_beacon_dns(k);
             let ts = self
@@ -609,7 +611,22 @@ impl SynthGen {
             return Some((ts, FrameKind::Dns, frame));
         }
 
-        // Stage 6 (C2): the periodic beacon + benign background.
+        // Stage 6 (credential exposure): a *separate* internal host logs into an intranet web app
+        // over cleartext HTTP Basic auth — an unrelated victim whose credentials are exposed,
+        // surfacing as its own single-stage incident alongside the attacker's chain.
+        if i < prefix {
+            let k = i - sweep_count - brute_count - lateral_count - exfil_count - dns_count;
+            let frame = self.build_beacon_creds(k);
+            let ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(8_000_000_000)
+                .saturating_add(k as i64 * 100_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::Http, frame));
+        }
+
+        // Stage 7 (C2): the periodic beacon + benign background.
         let j = i - prefix;
         let pos = j % BEACON_CYCLE_LEN;
 
@@ -731,6 +748,60 @@ impl SynthGen {
         frame.extend_from_slice(&ip);
         frame.extend_from_slice(&tcp);
         frame
+    }
+
+    /// Number of cleartext-credential frames emitted (0 for small captures): some HTTP Basic
+    /// requests from one victim, then an FTP USER + PASS exchange from another.
+    fn beacon_creds_count(&self) -> u64 {
+        if self.cfg.packets >= 2_000 {
+            BEACON_CREDS_HTTP + 2
+        } else {
+            0
+        }
+    }
+
+    /// Build one cleartext-credential frame. The first [`BEACON_CREDS_HTTP`] are HTTP GETs with an
+    /// `Authorization: Basic` header from one victim to an intranet web app (80); the last two are
+    /// an FTP `USER`/`PASS` exchange from a second victim to an FTP server (21) — credentials
+    /// exposed in the clear, surfacing as two separate single-stage incidents.
+    fn build_beacon_creds(&mut self, idx: u64) -> Vec<u8> {
+        if idx < BEACON_CREDS_HTTP {
+            let victim = beacon_creds_victim();
+            let server = beacon_creds_server();
+            let sport = 53000 + (idx % 2000) as u16;
+            self.record_flow(victim, server, sport, 80, IP_PROTO_TCP);
+            let payload = frames::http_basic_auth_payload(
+                "intranet.corp.example",
+                "/portal",
+                BEACON_CREDS_TOKEN,
+            );
+            let tcp = frames::build_tcp(victim, server, sport, 80, TCP_PSH | TCP_ACK, &payload);
+            let ip = frames::build_ipv4(victim, server, IP_PROTO_TCP, 64, tcp.len());
+            let mut frame =
+                frames::build_ethernet(BEACON_CREDS_MAC, BEACON_CREDS_SRV_MAC, ETHERTYPE_IPV4);
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            frame
+        } else {
+            // FTP USER then PASS, one flow (fixed source port) to the FTP server's control port.
+            let victim = beacon_ftp_victim();
+            let server = beacon_ftp_server();
+            let line = if idx == BEACON_CREDS_HTTP {
+                "USER svc-backup"
+            } else {
+                "PASS Spr1ng2024!"
+            };
+            self.record_flow(victim, server, BEACON_FTP_SPORT, 21, IP_PROTO_TCP);
+            let payload = frames::ftp_command_payload(line);
+            let tcp =
+                frames::build_tcp(victim, server, BEACON_FTP_SPORT, 21, TCP_PSH | TCP_ACK, &payload);
+            let ip = frames::build_ipv4(victim, server, IP_PROTO_TCP, 64, tcp.len());
+            let mut frame =
+                frames::build_ethernet(BEACON_CREDS_MAC, BEACON_CREDS_SRV_MAC, ETHERTYPE_IPV4);
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&tcp);
+            frame
+        }
     }
 
     /// Number of exfil-upload packets emitted after the sweep (0 for small captures). Sized so
@@ -881,6 +952,33 @@ const BEACON_LATERAL_HOSTS: u64 = 6;
 const BEACON_LATERAL_FRAMES_PER_HOST: u64 = 4;
 const BEACON_LATERAL_PAYLOAD: usize = 700;
 const BEACON_LATERAL_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x06];
+/// Cleartext-credential stage: HTTP Basic auth requests from a victim host to an intranet web
+/// app, the (opaque) base64 token, the victim / server MACs, and the FTP source port.
+const BEACON_CREDS_HTTP: u64 = 5;
+const BEACON_CREDS_TOKEN: &str = "dXNlcjpodW50ZXIy"; // base64("user:hunter2"); opaque to the sniffer
+const BEACON_CREDS_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xC0, 0xDE, 0x01];
+const BEACON_CREDS_SRV_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xC0, 0xDE, 0x02];
+const BEACON_FTP_SPORT: u16 = 54000;
+
+/// The victim host that exposes its credentials over cleartext HTTP Basic auth (internal).
+fn beacon_creds_victim() -> Ipv4Addr {
+    Ipv4Addr::new(10, 0, 0, 50)
+}
+
+/// The intranet web app the victim authenticates to in the clear (internal).
+fn beacon_creds_server() -> Ipv4Addr {
+    Ipv4Addr::new(10, 0, 0, 80)
+}
+
+/// The victim that logs into FTP in the clear (internal).
+fn beacon_ftp_victim() -> Ipv4Addr {
+    Ipv4Addr::new(10, 0, 0, 51)
+}
+
+/// The FTP server reached in the clear (internal).
+fn beacon_ftp_server() -> Ipv4Addr {
+    Ipv4Addr::new(10, 0, 0, 91)
+}
 /// Exfil upload: number of large data packets, their payload size, and the fixed source port
 /// (one flow). 900 × 1400 B ≈ 1.2 MB outbound — clears the 1 MB exfil floor.
 const BEACON_EXFIL_PACKETS: u64 = 900;

@@ -82,6 +82,12 @@ export interface Summary {
   protocol_hierarchy: ProtocolHierarchyNode[];
   port_histogram: PortHistogramEntry[];
   time_histogram: TimeHistogramEntry[];
+  /**
+   * Width, in seconds, of each {@link TimeHistogramEntry} bucket (>= 1). 1 = per-second; widens
+   * to a "nice" interval for long captures so the series stays bounded. Absent (=> treat as 1)
+   * in summaries written before adaptive bucketing.
+   */
+  time_bucket_secs?: number;
   category_breakdown: CategoryBreakdownEntry[];
   severity_counts?: SeverityCounts;
   ip_threats?: IpThreat[];
@@ -117,6 +123,7 @@ export type FindingKind =
   | "beacon"
   | "host_sweep"
   | "brute_force"
+  | "cleartext_creds"
   | "lateral_movement"
   | "data_exfil"
   | "dns_tunnel";
