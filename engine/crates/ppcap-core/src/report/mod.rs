@@ -21,6 +21,8 @@ use time::macros::format_description;
 use time::OffsetDateTime;
 
 use crate::model::category::Category;
+use crate::model::finding::{Finding, FindingKind};
+use crate::model::incident::Incident;
 use crate::model::output::AnalysisOutput;
 use crate::model::severity::Severity;
 
@@ -98,6 +100,7 @@ pub fn render_html(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
     let crit = sum.severity_counts.critical;
     let high = sum.severity_counts.high;
     let ioc_cards = sum.ip_threats.iter().filter(|t| t.ioc).count();
+    let n_inc = sum.incidents.len();
     let _ = write!(
         s,
         "<section class=\"card\">\
@@ -108,18 +111,30 @@ pub fn render_html(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
          <div class=\"tile\"><div class=\"v\">{bytes}</div><div class=\"k\">Bytes</div></div>\
          <div class=\"tile\"><div class=\"v\">{dur}</div><div class=\"k\">Duration</div></div>\
          <div class=\"tile\"><div class=\"v\">{hosts}</div><div class=\"k\">Unique hosts</div></div>\
+         <div class=\"tile\"><div class=\"v\">{inc}</div><div class=\"k\">Incidents</div></div>\
          </div>",
         pkts = group_thousands(sum.total_packets),
         flows = group_thousands(sum.total_flows),
         bytes = human_bytes(sum.total_bytes),
         dur = human_duration_ns(sum.duration_ns),
         hosts = group_thousands(sum.unique_hosts),
+        inc = group_thousands(n_inc as u64),
     );
-    if crit > 0 || ioc_cards > 0 {
+    if n_inc > 0 || crit > 0 || ioc_cards > 0 {
+        // Lead with the correlated incidents (the headline answer), then the flow/IOC tallies.
+        let inc_part = match sum.incidents.first() {
+            Some(worst) => format!(
+                "{n} correlated incident(s), worst {sev}. ",
+                n = n_inc,
+                sev = esc(worst.severity.as_str()),
+            ),
+            None => String::new(),
+        };
         let _ = write!(
             s,
-            "<div class=\"callout danger\">{crit} critical and {high} high-severity flows; \
-             {ioc} IP(s) matched the offline IOC feed.</div>",
+            "<div class=\"callout danger\">{inc_part}{crit} critical and {high} high-severity \
+             flows; {ioc} IP(s) matched the offline IOC feed.</div>",
+            inc_part = inc_part,
             crit = crit,
             high = high,
             ioc = ioc_cards,
@@ -128,6 +143,9 @@ pub fn render_html(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         s.push_str("<div class=\"callout\">No critical or high-severity activity detected.</div>");
     }
     s.push_str("</section>\n");
+
+    // ---- Section 3: active incidents (the headline triage unit) ----------------------
+    s.push_str(&incidents_html(&sum.incidents));
 
     // ---- Section 3: severity distribution (inline SVG) -------------------------------
     s.push_str("<section class=\"card\"><h2>Severity distribution</h2>");
@@ -372,6 +390,112 @@ fn sev_color(s: Severity) -> &'static str {
     }
 }
 
+/// Short human label for a behavioral finding kind (the report badge text).
+fn kind_label(k: FindingKind) -> &'static str {
+    match k {
+        FindingKind::Beacon => "C2 Beacon",
+        FindingKind::HostSweep => "Host Sweep",
+        FindingKind::BruteForce => "Brute Force",
+        FindingKind::LateralMovement => "Lateral Movement",
+        FindingKind::DataExfil => "Data Exfiltration",
+        FindingKind::DnsTunnel => "DNS Tunnel",
+    }
+}
+
+/// Compact metric pills for a finding (`every 30s · CV 0.013 · 16 contacts`); empty when none.
+fn finding_metrics(f: &Finding) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(ns) = f.interval_ns {
+        if ns > 0 {
+            parts.push(format!("every {}", human_duration_ns(ns)));
+        }
+    }
+    if let Some(cv) = f.jitter_cv {
+        parts.push(format!("CV {cv:.3}"));
+    }
+    if let Some(c) = f.contacts {
+        parts.push(format!("{} contacts", group_thousands(c)));
+    }
+    parts.join(" · ")
+}
+
+/// The "Active incidents" section: behavioral findings correlated into per-host stories, ordered
+/// along the kill chain (worst-first, as `correlate_incidents` already sorted them). Mirrors the
+/// app's IncidentsPanel in static, dependency-free HTML. Every capture-derived string is escaped.
+fn incidents_html(incidents: &[Incident]) -> String {
+    let mut s = String::with_capacity(2048);
+    s.push_str("<section class=\"card\"><h2>Active incidents</h2>");
+    if incidents.is_empty() {
+        s.push_str(
+            "<p class=\"muted\">No active incidents — no correlated multi-flow behavior \
+             detected.</p></section>\n",
+        );
+        return s;
+    }
+    s.push_str(
+        "<p class=\"muted\">Behavioral findings correlated into per-host stories, ordered along \
+         the kill chain (worst first).</p>",
+    );
+    for inc in incidents {
+        let color = sev_color(inc.severity);
+        let score = inc.score.min(100);
+        let _ = write!(
+            s,
+            "<div class=\"incident\" style=\"border-left-color:{color}\">\
+             <div class=\"inc-head\">\
+             <span class=\"chip\" style=\"background:{color}\">{sev}</span>\
+             <span class=\"mono inc-host\">{host}</span>\
+             <span class=\"inc-score\">{score}/100</span></div>",
+            color = color,
+            sev = esc(inc.severity.as_str()),
+            host = esc(&inc.host),
+            score = score,
+        );
+        // Kill-chain stage badges.
+        s.push_str("<div class=\"stages\">");
+        for (i, st) in inc.stages.iter().enumerate() {
+            if i > 0 {
+                s.push_str("<span class=\"arrow\">&rarr;</span>");
+            }
+            let _ = write!(s, "<span class=\"stage\">{}</span>", esc(st));
+        }
+        s.push_str("</div>");
+        // ATT&CK technique chips.
+        if !inc.attack.is_empty() {
+            s.push_str("<div class=\"techs\">");
+            for t in &inc.attack {
+                let _ = write!(s, "<span class=\"tech\">{}</span>", esc(t));
+            }
+            s.push_str("</div>");
+        }
+        // Narrative.
+        let _ = write!(s, "<p class=\"narr\">{}</p>", esc(&inc.narrative));
+        // Contributing findings.
+        s.push_str("<ul class=\"findings\">");
+        for f in &inc.findings {
+            let fcolor = sev_color(f.severity);
+            let metrics = finding_metrics(f);
+            let metrics_html = if metrics.is_empty() {
+                String::new()
+            } else {
+                format!(" <span class=\"fmetrics\">{}</span>", esc(&metrics))
+            };
+            let _ = write!(
+                s,
+                "<li><span class=\"fkind\" style=\"color:{fcolor}\">{label}</span> \
+                 <span class=\"ftitle\">{title}</span>{metrics}</li>",
+                fcolor = fcolor,
+                label = esc(kind_label(f.kind)),
+                title = esc(&f.title),
+                metrics = metrics_html,
+            );
+        }
+        s.push_str("</ul></div>");
+    }
+    s.push_str("</section>\n");
+    s
+}
+
 /// Category -> a severity-flavored hue ("colored by category severity").
 fn cat_color(c: Category) -> &'static str {
     match c {
@@ -580,6 +704,20 @@ th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);ver
 th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
 .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;color:#0a0e14}
 .ioc{color:var(--crit);font-weight:700}
+.incident{background:var(--surface-2);border:1px solid var(--border);border-left:4px solid var(--info);
+  border-radius:10px;padding:14px 16px;margin:12px 0}
+.inc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.inc-host{font-weight:700} .inc-score{margin-left:auto;font-weight:700;font-family:ui-monospace,monospace}
+.stages{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0}
+.stage{border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--text)}
+.arrow{color:var(--muted)}
+.techs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.tech{border:1px solid var(--border);border-radius:6px;padding:1px 7px;font-size:11px;
+  font-family:ui-monospace,monospace;color:var(--muted)}
+.narr{margin:8px 0;color:var(--text)}
+.findings{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.findings li{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px}
+.fkind{font-weight:700} .ftitle{color:var(--muted)} .fmetrics{color:var(--muted);font-family:ui-monospace,monospace;font-size:11px}
 .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 18px;margin:0}
 .kv dt{color:var(--muted)} .kv dd{margin:0}
 .muted{color:var(--muted)} footer{color:var(--muted);font-size:12px;margin-top:24px}
@@ -590,6 +728,6 @@ svg{display:block;max-width:100%;height:auto}
          --muted:#475569; --border:#cbd5e1; --accent:#0369a1; }
   body{font-size:11pt}
   .report{max-width:none;padding:0}
-  .card,.tile,table,tr,.callout{break-inside:avoid;page-break-inside:avoid}
+  .card,.tile,table,tr,.callout,.incident{break-inside:avoid;page-break-inside:avoid}
   a[href]:after{content:""}
 }"#;

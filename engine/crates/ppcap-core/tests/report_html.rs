@@ -5,7 +5,8 @@
 //! and the presence of every section.
 
 use ppcap_core::{
-    render_html, AnalysisOutput, IpClass, IpThreat, Severity, SeverityCounts, Summary,
+    render_html, AnalysisOutput, Finding, FindingKind, Incident, IpClass, IpThreat, Severity,
+    SeverityCounts, Summary,
 };
 
 fn sample() -> AnalysisOutput {
@@ -56,6 +57,7 @@ fn renders_well_formed_document_with_all_sections() {
 
     for heading in [
         "Executive summary",
+        "Active incidents",
         "Severity distribution",
         "Top threats",
         "Traffic categories",
@@ -117,4 +119,59 @@ fn empty_summary_still_renders_valid_document() {
     assert!(html.contains("No scored IP threats."));
     assert!(html.contains("No categorized flows."));
     assert!(html.contains("Insufficient timeline data."));
+    assert!(html.contains("No active incidents"));
+}
+
+/// An output carrying one correlated, multi-stage incident.
+fn incident_sample() -> AnalysisOutput {
+    let mut out = sample();
+    let finding = Finding {
+        kind: FindingKind::Beacon,
+        severity: Severity::High,
+        score: 70,
+        title: "Periodic beacon: 10.0.0.5 -> 8.8.8.8:443 every ~60s".into(),
+        src_ip: "10.0.0.5".into(),
+        dst_ip: Some("8.8.8.8".into()),
+        dst_port: Some(443),
+        attack: vec!["T1071".into()],
+        evidence: vec!["periodic beaconing".into()],
+        interval_ns: Some(60_000_000_000),
+        jitter_cv: Some(0.013),
+        contacts: Some(16),
+    };
+    out.summary.incidents = vec![Incident {
+        host: "10.0.0.5".into(),
+        severity: Severity::Critical,
+        score: 89,
+        title: "Multi-stage incident on 10.0.0.5".into(),
+        // Includes a raw '<' to exercise escaping in the narrative.
+        narrative: "10.0.0.5 swept the network, then beaconed to a C2 <b>".into(),
+        stages: vec!["Discovery".into(), "Command & Control".into()],
+        attack: vec!["T1046".into(), "T1071".into()],
+        findings: vec![finding],
+    }];
+    out
+}
+
+#[test]
+fn renders_active_incidents_with_kill_chain() {
+    let html = render_html(&incident_sample(), 1_700_000_000);
+
+    // The incident card surfaces host, score, kill-chain stages, ATT&CK, the finding kind label,
+    // and its metric pills.
+    assert!(html.contains("Active incidents"));
+    assert!(html.contains("10.0.0.5"), "incident host missing");
+    assert!(html.contains("89/100"), "incident score missing");
+    assert!(html.contains("Command &amp; Control"), "kill-chain stage missing/escaped wrong");
+    assert!(html.contains("C2 Beacon"), "finding kind label missing");
+    assert!(html.contains("16 contacts"), "finding metric missing");
+    assert!(html.contains("T1046"), "ATT&CK technique missing");
+
+    // The executive-summary callout leads with the correlated-incident count + worst severity.
+    assert!(html.contains("correlated incident"), "exec summary omits incident count");
+    assert!(html.contains("worst critical"), "exec summary omits worst severity");
+
+    // Narrative is escaped: the raw '<b>' must be neutralized.
+    assert!(html.contains("a C2 &lt;b&gt;"), "incident narrative not escaped");
+    assert!(!html.contains("a C2 <b>"), "raw '<b>' leaked from narrative");
 }
