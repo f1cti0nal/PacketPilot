@@ -251,7 +251,7 @@ pub fn render_html(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
 
     // ---- Section 8: activity timeline (inline SVG sparkline) -------------------------
     s.push_str("<section class=\"card\"><h2>Activity timeline</h2>");
-    s.push_str(&timeline_svg(&sum.time_histogram));
+    s.push_str(&timeline_svg(&sum.time_histogram, sum.time_bucket_secs));
     s.push_str("</section>\n");
 
     // ---- Section 9: footer methodology -----------------------------------------------
@@ -396,6 +396,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::Beacon => "C2 Beacon",
         FindingKind::HostSweep => "Host Sweep",
         FindingKind::BruteForce => "Brute Force",
+        FindingKind::CleartextCreds => "Cleartext Credentials",
         FindingKind::LateralMovement => "Lateral Movement",
         FindingKind::DataExfil => "Data Exfiltration",
         FindingKind::DnsTunnel => "DNS Tunnel",
@@ -599,9 +600,16 @@ fn category_svg(cats: &[crate::model::summary::CategoryCount]) -> String {
     s
 }
 
-/// Activity timeline: an area sparkline of packets/second, plotted against the real time
-/// axis (the histogram omits gap seconds, so index-based plotting would distort).
-fn timeline_svg(hist: &[crate::model::summary::TimeBucket]) -> String {
+/// Defense-in-depth cap on the number of points plotted in the timeline sparkline. The stats
+/// accumulator already bounds the histogram (`stats.max_time_buckets`), but a summary produced
+/// by an older engine — or a future, larger cap — could still carry a huge series; downsampling
+/// here guarantees the SVG can never balloon to hundreds of KB.
+const MAX_TIMELINE_POINTS: usize = 1_000;
+
+/// Activity timeline: an area sparkline of packets per bucket, plotted against the real time
+/// axis (empty buckets are omitted, so index-based plotting would distort). `bucket_secs` is the
+/// histogram's bucket width (>= 1), used only to label the peak rate accurately.
+fn timeline_svg(hist: &[crate::model::summary::TimeBucket], bucket_secs: i64) -> String {
     let w = 680i32;
     let h = 120i32;
     let pad_l = 8i32;
@@ -624,14 +632,20 @@ fn timeline_svg(hist: &[crate::model::summary::TimeBucket]) -> String {
         return s;
     }
 
+    // Axis bounds and peak come from the FULL series so labels stay exact even when the plotted
+    // points are downsampled below.
     let t0 = hist[0].epoch_sec;
     let t1 = hist[hist.len() - 1].epoch_sec;
     let span = (t1 - t0).max(1) as f64;
     let real_peak = hist.iter().map(|b| b.pkts).max().unwrap_or(0);
     let ymax = real_peak.max(1) as f64;
 
-    let mut points = String::with_capacity(hist.len() * 12);
-    for b in hist {
+    // Defense-in-depth: never plot more than MAX_TIMELINE_POINTS points (window-max keeps the
+    // peak shape and each point's true time position).
+    let plotted = downsample_timeline(hist, MAX_TIMELINE_POINTS);
+
+    let mut points = String::with_capacity(plotted.len() * 12);
+    for b in &plotted {
         let x = pad_l as f64 + plot_w * ((b.epoch_sec - t0) as f64) / span;
         let y = pad_t as f64 + plot_h * (1.0 - (b.pkts as f64) / ymax);
         let _ = write!(points, "{x:.1},{y:.1} ");
@@ -639,16 +653,17 @@ fn timeline_svg(hist: &[crate::model::summary::TimeBucket]) -> String {
     let x_last = pad_l as f64 + plot_w; // last point sits at the right edge (epoch == t1)
     let x_first = pad_l as f64;
 
-    let mut s = String::with_capacity(hist.len() * 14 + 1024);
+    let unit = per_bucket_unit(bucket_secs);
+    let mut s = String::with_capacity(plotted.len() * 14 + 1024);
     let _ = write!(
         s,
-        "<svg viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"Activity timeline (packets per second)\">\
+        "<svg viewBox=\"0 0 {w} {h}\" role=\"img\" aria-label=\"Activity timeline (packets per bucket)\">\
          <polygon points=\"{pts}{xl:.1},{base:.1} {xf:.1},{base:.1}\" fill=\"rgba(56,189,248,0.18)\"/>\
          <polyline points=\"{pts}\" fill=\"none\" stroke=\"#38bdf8\" stroke-width=\"1.5\"/>\
          <line x1=\"{pad_l}\" y1=\"{base:.1}\" x2=\"{x2}\" y2=\"{base:.1}\" stroke=\"#1e293b\"/>\
          <text x=\"{pad_l}\" y=\"{ty}\" fill=\"#94a3b8\" font-size=\"11\">{lo}</text>\
          <text x=\"{w}\" y=\"{ty}\" text-anchor=\"end\" fill=\"#94a3b8\" font-size=\"11\">{hi}</text>\
-         <text x=\"{xmid}\" y=\"{ty}\" text-anchor=\"middle\" fill=\"#94a3b8\" font-size=\"11\">peak {peak} pkts/s</text>\
+         <text x=\"{xmid}\" y=\"{ty}\" text-anchor=\"middle\" fill=\"#94a3b8\" font-size=\"11\">peak {peak} pkts/{unit}</text>\
          </svg>",
         pts = points,
         xl = x_last,
@@ -660,8 +675,53 @@ fn timeline_svg(hist: &[crate::model::summary::TimeBucket]) -> String {
         lo = esc(&hhmmss_utc(t0)),
         hi = esc(&hhmmss_utc(t1)),
         peak = group_thousands(real_peak),
+        unit = esc(&unit),
     );
     s
+}
+
+/// Downsample a timeline series to at most `max_points` points by splitting it into that many
+/// contiguous windows and keeping the max-`pkts` bucket of each (preserves the visual peak and
+/// the bucket's real time position). Returns the input unchanged when it already fits.
+fn downsample_timeline(
+    hist: &[crate::model::summary::TimeBucket],
+    max_points: usize,
+) -> Vec<crate::model::summary::TimeBucket> {
+    let n = hist.len();
+    if max_points == 0 || n <= max_points {
+        return hist.to_vec();
+    }
+    let mut out = Vec::with_capacity(max_points);
+    for i in 0..max_points {
+        let start = i * n / max_points;
+        let end = (((i + 1) * n / max_points).max(start + 1)).min(n);
+        // Each window is non-empty by construction; pick its tallest bucket.
+        let rep = hist[start..end]
+            .iter()
+            .max_by_key(|b| b.pkts)
+            .expect("non-empty window");
+        out.push(rep.clone());
+    }
+    out
+}
+
+/// Per-bucket rate unit for the timeline peak label: `s` for per-second (width <= 1), else a
+/// compact round interval (`2m`, `5m`, `1h`, `1d`). Histogram widths are always "nice", so the
+/// modulo checks divide cleanly.
+fn per_bucket_unit(bucket_secs: i64) -> String {
+    if bucket_secs <= 1 {
+        return "s".to_string();
+    }
+    if bucket_secs % 86_400 == 0 {
+        return format!("{}d", bucket_secs / 86_400);
+    }
+    if bucket_secs % 3_600 == 0 {
+        return format!("{}h", bucket_secs / 3_600);
+    }
+    if bucket_secs % 60 == 0 {
+        return format!("{}m", bucket_secs / 60);
+    }
+    format!("{bucket_secs}s")
 }
 
 /// `HH:MM:SS` (UTC) of a Unix-seconds value; `—` on overflow. For sparkline axis labels.
@@ -731,3 +791,85 @@ svg{display:block;max-width:100%;height:auto}
   .card,.tile,table,tr,.callout,.incident{break-inside:avoid;page-break-inside:avoid}
   a[href]:after{content:""}
 }"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::summary::TimeBucket;
+
+    fn bucket(sec: i64, pkts: u64) -> TimeBucket {
+        TimeBucket {
+            epoch_sec: sec,
+            pkts,
+            bytes: pkts * 100,
+        }
+    }
+
+    #[test]
+    fn per_bucket_unit_formats_nice_widths() {
+        assert_eq!(per_bucket_unit(0), "s");
+        assert_eq!(per_bucket_unit(1), "s");
+        assert_eq!(per_bucket_unit(2), "2s");
+        assert_eq!(per_bucket_unit(30), "30s");
+        assert_eq!(per_bucket_unit(120), "2m");
+        assert_eq!(per_bucket_unit(300), "5m");
+        assert_eq!(per_bucket_unit(3_600), "1h");
+        assert_eq!(per_bucket_unit(43_200), "12h");
+        assert_eq!(per_bucket_unit(86_400), "1d");
+    }
+
+    #[test]
+    fn downsample_caps_points_and_preserves_peak() {
+        // A long series with one tall spike: downsampling must bound the point count yet keep
+        // the peak (window-max), so the rendered sparkline isn't flattened.
+        let mut hist: Vec<TimeBucket> = (0..5_000).map(|i| bucket(i, 1)).collect();
+        hist[2_500] = bucket(2_500, 9_999);
+        let out = downsample_timeline(&hist, MAX_TIMELINE_POINTS);
+        assert_eq!(out.len(), MAX_TIMELINE_POINTS, "point count not capped");
+        assert!(
+            out.iter().any(|b| b.pkts == 9_999),
+            "peak lost during downsample"
+        );
+    }
+
+    #[test]
+    fn downsample_returns_input_when_already_small() {
+        let hist: Vec<TimeBucket> = (0..10).map(|i| bucket(i, i as u64)).collect();
+        let out = downsample_timeline(&hist, MAX_TIMELINE_POINTS);
+        assert_eq!(out.len(), 10);
+    }
+
+    #[test]
+    fn timeline_svg_labels_peak_with_bucket_unit() {
+        // A wide (2-minute) bucket width must be reflected in the peak-rate label.
+        let hist = vec![bucket(0, 10), bucket(120, 50), bucket(240, 30)];
+        let svg = timeline_svg(&hist, 120);
+        assert!(svg.contains("peak 50 pkts/2m"), "svg: {svg}");
+    }
+
+    #[test]
+    fn timeline_svg_uses_per_second_label_for_unit_width() {
+        let hist = vec![bucket(0, 10), bucket(1, 50)];
+        let svg = timeline_svg(&hist, 1);
+        assert!(svg.contains("peak 50 pkts/s"), "svg: {svg}");
+    }
+
+    #[test]
+    fn timeline_svg_point_count_is_bounded_for_huge_histograms() {
+        // Even a 20k-bucket series must produce a bounded number of plotted points. The polyline
+        // writes each point as "x,y " — one comma per point — so the comma count of the polyline
+        // attribute is exactly the plotted-point count.
+        let hist: Vec<TimeBucket> = (0..20_000).map(|i| bucket(i, (i % 7) as u64 + 1)).collect();
+        let svg = timeline_svg(&hist, 1);
+        let marker = "<polyline points=\"";
+        let start = svg.find(marker).expect("polyline present") + marker.len();
+        let rest = &svg[start..];
+        let end = rest.find('"').expect("points attribute closed");
+        let points = rest[..end].matches(',').count();
+        assert!(points > 1, "sanity: some points were plotted");
+        assert!(
+            points <= MAX_TIMELINE_POINTS,
+            "plotted {points} points exceeds cap {MAX_TIMELINE_POINTS}"
+        );
+    }
+}

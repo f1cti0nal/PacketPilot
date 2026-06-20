@@ -21,6 +21,8 @@ import {
 export interface TimelineChartProps {
   histogram: TimeHistogramEntry[];
   metric?: "pkts" | "bytes"; // default "pkts"
+  /** Bucket width in seconds (>= 1); drives the per-bucket unit label. Defaults to 1 (per-second). */
+  bucketSecs?: number;
 }
 
 interface ChartDatum {
@@ -35,10 +37,24 @@ const ACCENT = "var(--color-accent)";
 /** epoch_sec (whole seconds) -> UTC HH:MM:SS via the shared ns helper. */
 const fmtTime = (epochSec: number): string => nsToTime(epochSec * 1e9);
 
+/**
+ * Per-bucket rate unit: "s" for per-second (width <= 1), else a compact round interval
+ * ("2m", "5m", "1h", "1d"). Mirrors the engine's report renderer so the web and HTML
+ * timelines read identically.
+ */
+function perBucketUnit(bucketSecs: number): string {
+  if (!Number.isFinite(bucketSecs) || bucketSecs <= 1) return "s";
+  if (bucketSecs % 86400 === 0) return `${bucketSecs / 86400}d`;
+  if (bucketSecs % 3600 === 0) return `${bucketSecs / 3600}h`;
+  if (bucketSecs % 60 === 0) return `${bucketSecs / 60}m`;
+  return `${bucketSecs}s`;
+}
+
 function CustomTooltip({
   active,
   payload,
-}: TooltipProps<number, string>): JSX.Element | null {
+  unit,
+}: TooltipProps<number, string> & { unit: string }): JSX.Element | null {
   if (!active || !payload || payload.length === 0) return null;
   const datum = payload[0]?.payload as ChartDatum | undefined;
   if (!datum) return null;
@@ -48,13 +64,13 @@ function CustomTooltip({
         {fmtTime(datum.epoch_sec)}
       </div>
       <div className="flex items-center justify-between gap-4">
-        <span className="text-[var(--color-text-dim)]">Packets/s</span>
+        <span className="text-[var(--color-text-dim)]">Packets/{unit}</span>
         <span className="font-mono-num text-[var(--color-text)]">
           {humanNumber(datum.pkts)}
         </span>
       </div>
       <div className="flex items-center justify-between gap-4">
-        <span className="text-[var(--color-text-dim)]">Bytes/s</span>
+        <span className="text-[var(--color-text-dim)]">Bytes/{unit}</span>
         <span className="font-mono-num text-[var(--color-text)]">
           {humanBytes(datum.bytes)}
         </span>
@@ -66,7 +82,9 @@ function CustomTooltip({
 export function TimelineChart({
   histogram,
   metric = "pkts",
+  bucketSecs = 1,
 }: TimelineChartProps): JSX.Element {
+  const unit = perBucketUnit(bucketSecs);
   const data = useMemo<ChartDatum[]>(
     () =>
       histogram.map((h) => ({
@@ -135,13 +153,13 @@ export function TimelineChart({
             tickMargin={4}
           />
           <Tooltip
-            content={<CustomTooltip />}
+            content={<CustomTooltip unit={unit} />}
             cursor={{ stroke: ACCENT, strokeWidth: 1, strokeOpacity: 0.4 }}
           />
           <Area
             type="monotone"
             dataKey="value"
-            name={metric === "bytes" ? "Bytes/s" : "Packets/s"}
+            name={metric === "bytes" ? `Bytes/${unit}` : `Packets/${unit}`}
             stroke={ACCENT}
             strokeWidth={1.75}
             fill="url(#timeline-fill)"

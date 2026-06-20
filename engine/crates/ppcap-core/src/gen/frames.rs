@@ -237,6 +237,21 @@ pub fn http_request_payload(host: &str, path: &str) -> Vec<u8> {
     s.into_bytes()
 }
 
+/// An HTTP GET request carrying an `Authorization: Basic` header (the base64 of `user:pass`) — a
+/// cleartext credential exposure for the sniffer to flag. The token is opaque to the sniffer,
+/// which only recognizes the scheme, never the credential.
+pub fn http_basic_auth_payload(host: &str, path: &str, basic_token: &str) -> Vec<u8> {
+    let s = format!(
+        "GET {path} HTTP/1.1\r\nHost: {host}\r\nAuthorization: Basic {basic_token}\r\nUser-Agent: ppcap-gen\r\n\r\n"
+    );
+    s.into_bytes()
+}
+
+/// An FTP control command line (e.g. `"USER bob"`, `"PASS hunter2"`) as a CRLF-terminated payload.
+pub fn ftp_command_payload(line: &str) -> Vec<u8> {
+    format!("{line}\r\n").into_bytes()
+}
+
 /// A well-formed TLS ClientHello record carrying a real SNI `server_name` extension.
 ///
 /// Emits a complete (if minimal) ClientHello — client_version, 32-byte random, empty

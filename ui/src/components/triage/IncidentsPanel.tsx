@@ -9,6 +9,7 @@ import {
   Radar,
   Radio,
   Siren,
+  Unlock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   beacon: { label: "C2 Beacon", Icon: Radio },
   host_sweep: { label: "Host Sweep", Icon: Radar },
   brute_force: { label: "Brute Force", Icon: KeyRound },
+  cleartext_creds: { label: "Cleartext Credentials", Icon: Unlock },
   lateral_movement: { label: "Lateral Movement", Icon: Network },
   data_exfil: { label: "Data Exfiltration", Icon: ArrowUpFromLine },
   dns_tunnel: { label: "DNS Tunnel", Icon: Globe },

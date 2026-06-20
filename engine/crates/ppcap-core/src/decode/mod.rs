@@ -33,7 +33,7 @@
 //! exercised by this module's unit tests.
 
 use crate::error::PpError;
-use crate::model::packet::{AppProto, PacketMeta, Protocol, Transport};
+use crate::model::packet::{AppProto, CredScheme, PacketMeta, Protocol, Transport};
 use crate::reader::{LinkType, RawFrame};
 use crate::Result;
 
@@ -61,6 +61,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         app_proto: AppProto::Unknown,
         sni: None,
         dns_qname: None,
+        cleartext_cred: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -174,6 +175,10 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                 }
             }
         }
+        // Cleartext credential exposure: a second, payload-free sniff over the same peek. Sets
+        // only the derived scheme (never the credential), so the no-retention contract holds.
+        meta.cleartext_cred =
+            sniff_cleartext_cred(meta.transport, meta.src_port, meta.dst_port, payload);
     }
 
     Ok(())
@@ -393,6 +398,73 @@ pub fn sniff_http_method(payload: &[u8]) -> Option<String> {
     None
 }
 
+/// ASCII case-insensitive prefix test (`haystack` starts with `needle`).
+fn starts_with_ci(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.len() >= needle.len()
+        && haystack[..needle.len()]
+            .iter()
+            .zip(needle)
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
+}
+
+/// First index in `haystack` where `needle` matches, ASCII case-insensitively; `None` if absent.
+/// O(n·m) but `n` is the bounded header peek and `m` is a short literal.
+fn find_ci(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| starts_with_ci(&haystack[i..], needle))
+}
+
+/// If an HTTP request header block carries an `Authorization` / `Proxy-Authorization` header with
+/// a Basic or Digest scheme, return the scheme. The credential itself is neither parsed nor kept.
+fn http_auth_scheme(buf: &[u8]) -> Option<CredScheme> {
+    // "proxy-authorization:" contains "authorization:" as a substring, so this finds both.
+    let pos = find_ci(buf, b"authorization:")?;
+    let after = &buf[pos + b"authorization:".len()..];
+    // Skip optional leading whitespace, then match the scheme token.
+    let token_start = after
+        .iter()
+        .position(|&b| b != b' ' && b != b'\t')
+        .unwrap_or(after.len());
+    let token = &after[token_start..];
+    if starts_with_ci(token, b"basic") {
+        Some(CredScheme::HttpBasic)
+    } else if starts_with_ci(token, b"digest") {
+        Some(CredScheme::HttpDigest)
+    } else {
+        None
+    }
+}
+
+/// Sniff a *cleartext* credential exposure from a bounded TCP-payload peek — HTTP Basic/Digest
+/// auth (the request is plaintext, so an HTTPS request would be TLS-wrapped and never match) or
+/// FTP `USER`/`PASS` control commands. Returns only the derived [`CredScheme`]; the credential is
+/// never extracted or retained. Pure, bounds-checked, and never panics on malformed input.
+pub fn sniff_cleartext_cred(
+    transport: Transport,
+    _src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) -> Option<CredScheme> {
+    if transport != Transport::Tcp || payload.is_empty() {
+        return None;
+    }
+    // Credentials live in the request line / header block near the start; bound the scan.
+    let scan = &payload[..payload.len().min(1024)];
+
+    // FTP control commands to the server (port 21): USER/PASS carry the credential verbatim.
+    if dst_port == 21 && (starts_with_ci(scan, b"USER ") || starts_with_ci(scan, b"PASS ")) {
+        return Some(CredScheme::Ftp);
+    }
+
+    // HTTP Authorization header — only on an actual request, to avoid matching response bodies.
+    if sniff_http_method(payload).is_some() {
+        return http_auth_scheme(scan);
+    }
+    None
+}
+
 /// Sniff a TLS ClientHello and, if present, the SNI host. Returns:
 /// - `Some(Some(host))` — ClientHello with an SNI extension,
 /// - `Some(None)` — ClientHello but no SNI,
@@ -510,6 +582,7 @@ mod tests {
             app_proto: AppProto::Unknown,
             sni: None,
             dns_qname: None,
+            cleartext_cred: None,
         }
     }
 
@@ -956,6 +1029,68 @@ mod tests {
         assert_eq!(sniff_http_method(b"NOTAVERB / HTTP"), None);
         assert_eq!(sniff_http_method(b"GE"), None);
         assert_eq!(sniff_http_method(b""), None);
+    }
+
+    #[test]
+    fn cleartext_cred_sniff_http_basic_and_digest() {
+        let tcp = Transport::Tcp;
+        // HTTP Basic auth over cleartext -> HttpBasic (case-insensitive header match).
+        let basic = b"GET /p HTTP/1.1\r\nHost: x\r\nAuthorization: Basic dXNlcjpwYXNz\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, basic),
+            Some(CredScheme::HttpBasic)
+        );
+        // Lowercased header + no space after the colon still matches.
+        let basic2 = b"POST /login HTTP/1.1\r\nauthorization:Basic QQ==\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 8080, basic2),
+            Some(CredScheme::HttpBasic)
+        );
+        // Digest scheme.
+        let digest = b"GET / HTTP/1.1\r\nAuthorization: Digest username=\"bob\"\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, digest),
+            Some(CredScheme::HttpDigest)
+        );
+        // Proxy-Authorization is also covered (contains "authorization:").
+        let proxy = b"GET / HTTP/1.1\r\nProxy-Authorization: Basic QQ==\r\n\r\n";
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, proxy),
+            Some(CredScheme::HttpBasic)
+        );
+    }
+
+    #[test]
+    fn cleartext_cred_sniff_ftp() {
+        let tcp = Transport::Tcp;
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 40000, 21, b"USER alice\r\n"),
+            Some(CredScheme::Ftp)
+        );
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 40000, 21, b"pass s3cret\r\n"),
+            Some(CredScheme::Ftp)
+        );
+        // FTP commands only count when addressed to the control port (21).
+        assert_eq!(sniff_cleartext_cred(tcp, 40000, 8021, b"USER alice\r\n"), None);
+    }
+
+    #[test]
+    fn cleartext_cred_sniff_negatives() {
+        let tcp = Transport::Tcp;
+        // A plain HTTP request with no auth header.
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, b"GET / HTTP/1.1\r\nHost: x\r\n\r\n"),
+            None
+        );
+        // "Authorization:" in a non-request body must not match (we require an HTTP request).
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 50000, 80, b"random bytes Authorization: Basic xx"),
+            None
+        );
+        // UDP and empty payloads never match.
+        assert_eq!(sniff_cleartext_cred(Transport::Udp, 0, 80, b"Authorization: Basic x"), None);
+        assert_eq!(sniff_cleartext_cred(tcp, 50000, 80, b""), None);
     }
 
     #[test]
