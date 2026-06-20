@@ -1,11 +1,8 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
-  useRef,
   useState,
-  type DragEvent,
   type ReactNode,
 } from "react";
 import {
@@ -16,14 +13,12 @@ import {
   Loader2,
   Radar,
   Upload,
-  X,
 } from "lucide-react";
 import type { AnalysisOutput, FlowRow, SummaryState, TabId } from "../../types";
 import type { ExportResult } from "../../lib/platform";
-import { loadFlows } from "../../lib/data";
-import { isCaptureFile } from "../../lib/wasmEngine";
-import { basename, compactNumber, humanBytes } from "../../lib/format";
+import { basename } from "../../lib/format";
 import { cn } from "../../lib/cn";
+import { LoadCaptureDialog } from "./LoadCaptureDialog";
 
 // The shell derives the capture filename from the App-owned summary state and
 // provides a self-contained "load capture" affordance (drag-drop / file picker)
@@ -59,17 +54,6 @@ const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: "recent", label: "Recent" },
 ];
 
-type LoadStatus =
-  | { phase: "idle" }
-  | { phase: "loading"; note: string }
-  | {
-      phase: "ready";
-      summary?: AnalysisOutput;
-      flows?: FlowRow[];
-      fileNames: string[];
-    }
-  | { phase: "error"; message: string };
-
 export function AppShell({
   activeTab,
   onTabChange,
@@ -83,7 +67,6 @@ export function AppShell({
   onExport,
   children,
 }: AppShellProps) {
-  const [load, setLoad] = useState<LoadStatus>({ phase: "idle" });
   const [exportHint, setExportHint] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -109,18 +92,12 @@ export function AppShell({
     }
   }, [canExport, exporting, onExport]);
 
-  // Capture filename: prefer a freshly dropped capture, else the auto-loaded one.
+  // Capture filename: derived from the App-owned summary state.
   const captureName = useMemo(() => {
-    if (load.phase === "ready") {
-      if (load.summary) return basename(load.summary.source_path);
-      const json = load.fileNames.find((n) => n.endsWith(".json"));
-      if (json) return json;
-      if (load.fileNames[0]) return load.fileNames[0];
-    }
     if (summary.status === "ready" && summary.data)
       return basename(summary.data.source_path);
     return null;
-  }, [load, summary]);
+  }, [summary]);
 
   return (
     <div
@@ -197,8 +174,6 @@ export function AppShell({
 
       {loadDialogOpen && (
         <LoadCaptureDialog
-          status={load}
-          onStatusChange={setLoad}
           onReplaceData={onReplaceData}
           onAnalyzePcap={onAnalyzePcap}
           onClose={() => onLoadDialogOpenChange(false)}
@@ -283,207 +258,6 @@ function CaptureLabel({
       </span>
     </span>
   );
-}
-
-function LoadCaptureDialog({
-  status,
-  onStatusChange,
-  onReplaceData,
-  onAnalyzePcap,
-  onClose,
-}: {
-  status: LoadStatus;
-  onStatusChange: (s: LoadStatus) => void;
-  onReplaceData: (next: { summary?: AnalysisOutput; flows?: FlowRow[] }) => void;
-  onAnalyzePcap: (file: File) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const titleId = useId();
-
-  const handleFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
-      const list = Array.from(files);
-
-      // A raw capture takes priority: analyze it in-browser via the wasm engine, then close.
-      const captureFile = list.find((f) => isCaptureFile(f.name));
-      if (captureFile) {
-        onStatusChange({
-          phase: "loading",
-          note: `Analyzing ${captureFile.name}…`,
-        });
-        try {
-          await onAnalyzePcap(captureFile);
-          onClose();
-        } catch (err: unknown) {
-          onStatusChange({
-            phase: "error",
-            message: String((err as Error)?.message ?? err),
-          });
-        }
-        return;
-      }
-
-      const summaryFile = list.find((f) => f.name.toLowerCase().endsWith(".json"));
-      const flowsFile = list.find((f) =>
-        f.name.toLowerCase().endsWith(".parquet"),
-      );
-      if (!summaryFile && !flowsFile) {
-        onStatusChange({
-          phase: "error",
-          message:
-            "Drop a .pcap/.pcapng capture, or a summary.json and/or flows.parquet.",
-        });
-        return;
-      }
-      onStatusChange({ phase: "loading", note: "Parsing capture…" });
-      try {
-        let summary: AnalysisOutput | undefined;
-        let flows: FlowRow[] | undefined;
-        if (summaryFile) {
-          summary = JSON.parse(await summaryFile.text()) as AnalysisOutput;
-        }
-        if (flowsFile) {
-          const buf = await flowsFile.arrayBuffer();
-          flows = await loadFlows(buf);
-        }
-        // Lift the parsed capture up to App state, replacing the active dataset.
-        onReplaceData({ summary, flows });
-        onStatusChange({
-          phase: "ready",
-          summary,
-          flows,
-          fileNames: list.map((f) => f.name),
-        });
-      } catch (err: unknown) {
-        onStatusChange({
-          phase: "error",
-          message: String((err as Error)?.message ?? err),
-        });
-      }
-    },
-    [onStatusChange, onReplaceData, onAnalyzePcap, onClose],
-  );
-
-  const onDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setDragging(false);
-      void handleFiles(e.dataTransfer.files);
-    },
-    [handleFiles],
-  );
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-xl border border-border bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 id={titleId} className="text-sm font-semibold">
-            Load capture
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-
-        <div className="p-4">
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            onClick={() => inputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-            }}
-            className={cn(
-              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors",
-              dragging
-                ? "border-[var(--color-accent)] bg-surface-2"
-                : "border-border hover:border-[var(--color-text-faint)]",
-            )}
-          >
-            <Upload
-              className="h-7 w-7 text-[var(--color-text-faint)]"
-              aria-hidden
-            />
-            <div className="text-sm text-[var(--color-text)]">
-              Drag &amp; drop, or click to browse
-            </div>
-            <div className="text-xs text-[var(--color-text-dim)]">
-              <span className="font-mono-num">.pcap</span> /{" "}
-              <span className="font-mono-num">.pcapng</span> — analyzed in your browser
-            </div>
-            <div className="text-[11px] text-[var(--color-text-faint)]">
-              or a <span className="font-mono-num">summary.json</span> +{" "}
-              <span className="font-mono-num">flows.parquet</span> export
-            </div>
-            <input
-              ref={inputRef}
-              type="file"
-              multiple
-              accept=".pcap,.pcapng,.cap,.json,.parquet,application/json"
-              className="hidden"
-              onChange={(e) => void handleFiles(e.target.files)}
-            />
-          </div>
-
-          <div className="mt-3 min-h-[1.25rem] text-xs" aria-live="polite">
-            {status.phase === "loading" && (
-              <span className="inline-flex items-center gap-1.5 text-[var(--color-text-dim)]">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                {status.note}
-              </span>
-            )}
-            {status.phase === "error" && (
-              <span className="inline-flex items-center gap-1.5 text-sev-critical">
-                <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                {status.message}
-              </span>
-            )}
-            {status.phase === "ready" && (
-              <span className="inline-flex items-center gap-1.5 text-sev-info">
-                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                Loaded {loadedSummaryLabel(status)}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function loadedSummaryLabel(s: Extract<LoadStatus, { phase: "ready" }>): string {
-  const parts: string[] = [];
-  if (s.summary) {
-    parts.push(
-      `${compactNumber(s.summary.summary.total_packets)} pkts`,
-      humanBytes(s.summary.summary.total_bytes),
-    );
-  }
-  if (s.flows) parts.push(`${compactNumber(s.flows.length)} flows`);
-  return parts.length ? parts.join(" · ") : s.fileNames.join(", ");
 }
 
 export default AppShell;
