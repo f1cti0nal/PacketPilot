@@ -11,6 +11,8 @@ import { basename } from "../../lib/format";
 import { LoadCaptureDialog } from "./LoadCaptureDialog";
 import { CommandBar } from "../../cockpit/CommandBar";
 import { ThreatRail } from "../../cockpit/ThreatRail";
+import { CommandPalette } from "../../cockpit/CommandPalette";
+import type { PaletteAction } from "../../cockpit/CommandPalette";
 
 // The shell derives the capture filename from the App-owned summary state and
 // provides a self-contained "load capture" affordance (drag-drop / file picker)
@@ -49,6 +51,10 @@ export interface AppShellProps {
   onToggleCollapse: () => void;
   /** Open the ⌘K command palette. */
   onOpenPalette: () => void;
+  /** Controlled open-state of the ⌘K command palette. */
+  paletteOpen?: boolean;
+  /** Called to change the palette open state. */
+  onPaletteOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }
 
@@ -70,6 +76,8 @@ export function AppShell({
   collapsed,
   onToggleCollapse,
   onOpenPalette,
+  paletteOpen = false,
+  onPaletteOpenChange,
   children,
 }: AppShellProps) {
   const [exportHint, setExportHint] = useState<string | null>(null);
@@ -83,6 +91,18 @@ export function AppShell({
     const t = window.setTimeout(() => setExportHint(null), 2500);
     return () => window.clearTimeout(t);
   }, [exportHint]);
+
+  // Global ⌘K / Ctrl+K shortcut to open the command palette.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        if (!paletteOpen && !loadDialogOpen) onPaletteOpenChange?.(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paletteOpen, loadDialogOpen, onPaletteOpenChange]);
 
   const handleExportClick = useCallback(async () => {
     if (!canExport || exporting) return;
@@ -114,6 +134,15 @@ export function AppShell({
     summary.status === "loading" ? "loading" :
     summary.status === "error" ? "error" : "idle";
 
+  const paletteActions: PaletteAction[] = [
+    { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
+    { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
+    { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
+    { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
+    { id: "toggle-rail", label: collapsed ? "Expand sidebar" : "Collapse sidebar", hint: "action", run: onToggleCollapse },
+    ...(canExport ? [{ id: "export", label: "Export report", hint: "action", run: () => void handleExportClick() }] : []),
+  ];
+
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
       <CommandBar
@@ -144,6 +173,13 @@ export function AppShell({
       {loadDialogOpen && (
         <LoadCaptureDialog onReplaceData={onReplaceData} onAnalyzePcap={onAnalyzePcap} onClose={() => onLoadDialogOpenChange(false)} />
       )}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => onPaletteOpenChange?.(false)}
+        actions={paletteActions}
+        threats={threats}
+        onSelectHost={onSelectThreat}
+      />
     </div>
   );
 }

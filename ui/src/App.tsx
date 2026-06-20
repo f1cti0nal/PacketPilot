@@ -81,6 +81,7 @@ export function App() {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [activeIp, setActiveIp] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Eagerly load the bundled sample capture on mount.
   useEffect(() => {
@@ -326,7 +327,9 @@ export function App() {
       onSelectThreat={openThreat}
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed((c) => !c)}
-      onOpenPalette={() => {}}
+      onOpenPalette={() => setPaletteOpen(true)}
+      paletteOpen={paletteOpen}
+      onPaletteOpenChange={setPaletteOpen}
     >
       {tab === "flows" ? (
         <FlowsView state={flows} initialFilter={flowsFilter} />
