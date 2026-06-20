@@ -4,10 +4,16 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, FlowRow, WasmFlow } from "../types";
+import type { AnalysisOutput, FlowRow, WasmFlow, WireFlowPackets } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
-import initWasm, { analyze as wasmAnalyze } from "../wasm/ppcap_wasm.js";
+import initWasm, { analyze as wasmAnalyze, extract_packets as wasmExtractPackets } from "../wasm/ppcap_wasm.js";
+
+export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): Promise<WireFlowPackets> {
+  await ensureWasm();
+  const json = wasmExtractPackets(new Uint8Array(bytes), JSON.stringify(query), "{}") as string;
+  return JSON.parse(json) as WireFlowPackets;
+}
 
 /** Capture extensions the in-browser engine can analyze. */
 export const CAPTURE_EXTENSIONS = ["pcap", "pcapng", "cap"] as const;

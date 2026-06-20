@@ -44,6 +44,7 @@ pub mod flow;
 pub mod gen;
 pub mod metrics;
 pub mod model;
+pub mod packets;
 pub mod reader;
 pub mod report;
 pub mod score;
@@ -70,5 +71,6 @@ pub use model::summary::{
     CategoryCount, IpThreat, PortCount, ProtoCount, ProtoCounts, SeverityCounts, Summary,
     TimeBucket, TopTalker,
 };
+pub use packets::{extract_flow_packets, FlowPackets, PacketCaps, PacketQuery, PacketRecord};
 pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};

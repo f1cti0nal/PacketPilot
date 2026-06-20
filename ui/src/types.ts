@@ -359,6 +359,41 @@ export interface RecentEntry {
   flowsCached: boolean;
 }
 
+// ---------- per-flow packet extraction (wire contract, snake_case) ----------
+
+/** One extracted packet as returned by the `extract_flow_packets` Tauri command. */
+export interface WirePacket {
+  index: number;
+  ts_ns: number;
+  direction: "c2s" | "s2c";
+  wire_len: number;
+  cap_len: number;
+  tcp_flags: number;
+  seq: number | null;
+  ack: number | null;
+  payload_len: number;
+  payload_b64: string;
+  payload_truncated: boolean;
+}
+
+/** The result of `extract_flow_packets`: bounded packet list for one flow. */
+export interface WireFlowPackets {
+  total: number;
+  truncated: boolean;
+  packets: WirePacket[];
+}
+
+export interface PacketRow {
+  index: number; tsNs: number; relMs: number;
+  direction: "c2s" | "s2c"; wireLen: number; capLen: number;
+  tcpFlags: number; seq: number | null; ack: number | null;
+  payloadLen: number; payload: Uint8Array; payloadTruncated: boolean;
+}
+export interface FlowPackets { total: number; truncated: boolean; packets: PacketRow[]; }
+
+/** Active capture source — drives whether packet drill-down is available and which backend serves it. */
+export type ActiveSource = { kind: "path"; path: string } | { kind: "bytes"; bytes: ArrayBuffer } | null;
+
 export interface SummaryState {
   status: "idle" | "loading" | "ready" | "error";
   data?: AnalysisOutput;

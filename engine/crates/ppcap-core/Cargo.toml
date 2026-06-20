@@ -10,6 +10,7 @@ name = "ppcap_core"
 path = "src/lib.rs"
 
 [dependencies]
+base64       = "0.22"
 pcap-parser  = { workspace = true }
 etherparse   = { workspace = true }
 arrow        = { workspace = true }

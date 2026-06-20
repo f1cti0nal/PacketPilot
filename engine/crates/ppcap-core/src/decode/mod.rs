@@ -187,6 +187,57 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
     Ok(())
 }
 
+/// The L4 seq/ack (TCP only) plus the L4 payload slice for a raw frame.
+///
+/// Returned by [`l4_payload`]; the borrow lives as long as the frame's `data`. `seq`/`ack`
+/// are `Some` only for TCP; `payload` is the bytes after the transport header (empty when the
+/// segment is header-only, undecodable, or a transport without an extractable payload here).
+pub(crate) struct L4Info<'a> {
+    pub seq: Option<u32>,
+    pub ack: Option<u32>,
+    pub payload: &'a [u8],
+}
+
+/// Derive the L4 seq/ack (TCP) and payload slice for a raw frame; `None` when the frame is
+/// undecodable down to L3 (too short / ARP / non-IP / unsupported DLT / non-first fragment).
+///
+/// Reuses the existing strip walk: [`l2::strip_to_l3`] handles the per-link-type L2 header
+/// (Ethernet/VLAN, SLL/SLL2, Null, raw-IP), and [`l3::strip_to_l4`] handles the IPv4 IHL /
+/// IPv6 extension-header chain — the same offset arithmetic `decode_frame`/`decode_l3` use, so
+/// no offsets are duplicated here. `PacketMeta` (from `decode_frame`) does not expose TCP
+/// seq/ack or the payload bytes, so this is where the UI's hexdump bytes come from.
+pub(crate) fn l4_payload<'a>(frame: &crate::reader::RawFrame<'a>) -> Option<L4Info<'a>> {
+    let l3 = l2::strip_to_l3(frame.link_type, frame.data)?;
+    let (l4, transport) = l3::strip_to_l4(l3)?;
+    match transport {
+        Transport::Tcp if l4.len() >= 20 => {
+            let data_off = ((l4[12] >> 4) as usize) * 4;
+            let seq = u32::from_be_bytes([l4[4], l4[5], l4[6], l4[7]]);
+            let ack = u32::from_be_bytes([l4[8], l4[9], l4[10], l4[11]]);
+            let payload = if l4.len() > data_off {
+                &l4[data_off..]
+            } else {
+                &[][..]
+            };
+            Some(L4Info {
+                seq: Some(seq),
+                ack: Some(ack),
+                payload,
+            })
+        }
+        Transport::Udp if l4.len() >= 8 => Some(L4Info {
+            seq: None,
+            ack: None,
+            payload: &l4[8..],
+        }),
+        _ => Some(L4Info {
+            seq: None,
+            ack: None,
+            payload: &[][..],
+        }),
+    }
+}
+
 // ---------------------------------------------------------------------------------------
 // Link-type framing helpers for the non-Ethernet DLTs (hand-rolled, bounds-checked).
 // ---------------------------------------------------------------------------------------
@@ -564,10 +615,7 @@ fn contains_credit_card(buf: &[u8]) -> bool {
                 digits[len] = b;
                 len += 1;
                 j += 1;
-            } else if (b == b' ' || b == b'-')
-                && j + 1 < buf.len()
-                && buf[j + 1].is_ascii_digit()
-            {
+            } else if (b == b' ' || b == b'-') && j + 1 < buf.len() && buf[j + 1].is_ascii_digit() {
                 // A single separator inside the run.
                 j += 1;
             } else {
@@ -1280,7 +1328,10 @@ mod tests {
             Some(CredScheme::Ftp)
         );
         // FTP commands only count when addressed to the control port (21).
-        assert_eq!(sniff_cleartext_cred(tcp, 40000, 8021, b"USER alice\r\n"), None);
+        assert_eq!(
+            sniff_cleartext_cred(tcp, 40000, 8021, b"USER alice\r\n"),
+            None
+        );
     }
 
     #[test]
@@ -1297,7 +1348,10 @@ mod tests {
             None
         );
         // UDP and empty payloads never match.
-        assert_eq!(sniff_cleartext_cred(Transport::Udp, 0, 80, b"Authorization: Basic x"), None);
+        assert_eq!(
+            sniff_cleartext_cred(Transport::Udp, 0, 80, b"Authorization: Basic x"),
+            None
+        );
         assert_eq!(sniff_cleartext_cred(tcp, 50000, 80, b""), None);
 
         // The literal in a request URI/query must NOT match (anchored to header lines).
