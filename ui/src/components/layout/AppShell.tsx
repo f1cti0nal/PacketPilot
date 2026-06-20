@@ -5,20 +5,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  FileDown,
-  FileUp,
-  Loader2,
-  Radar,
-  Upload,
-} from "lucide-react";
-import type { AnalysisOutput, FlowRow, SummaryState, TabId } from "../../types";
+import type { AnalysisOutput, FlowRow, IpThreat, SummaryState, TabId } from "../../types";
 import type { ExportResult } from "../../lib/platform";
 import { basename } from "../../lib/format";
-import { cn } from "../../lib/cn";
 import { LoadCaptureDialog } from "./LoadCaptureDialog";
+import { CommandBar } from "../../cockpit/CommandBar";
+import { ThreatRail } from "../../cockpit/ThreatRail";
 
 // The shell derives the capture filename from the App-owned summary state and
 // provides a self-contained "load capture" affordance (drag-drop / file picker)
@@ -45,14 +37,21 @@ export interface AppShellProps {
   /** Export the active analysis (HTML report on desktop, JSON in the browser).
    *  Resolves to a result the shell can surface, or undefined if nothing to export. */
   onExport: () => Promise<ExportResult | undefined>;
+  /** Threat rail data from the active capture. */
+  threats: IpThreat[];
+  /** Currently active/focused IP in the threat rail. */
+  activeIp: string | null;
+  /** Called when the user clicks a threat in the rail. */
+  onSelectThreat: (ip: string) => void;
+  /** Whether the threat rail is collapsed to 64px. */
+  collapsed: boolean;
+  /** Toggle the collapse state. */
+  onToggleCollapse: () => void;
+  /** Open the ⌘K command palette. */
+  onOpenPalette: () => void;
   children: ReactNode;
 }
 
-const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "flows", label: "Flows" },
-  { id: "recent", label: "Recent" },
-];
 
 export function AppShell({
   activeTab,
@@ -65,6 +64,12 @@ export function AppShell({
   loadDialogOpen,
   onLoadDialogOpenChange,
   onExport,
+  threats,
+  activeIp,
+  onSelectThreat,
+  collapsed,
+  onToggleCollapse,
+  onOpenPalette,
   children,
 }: AppShellProps) {
   const [exportHint, setExportHint] = useState<string | null>(null);
@@ -99,164 +104,47 @@ export function AppShell({
     return null;
   }, [summary]);
 
+  const tabs = [
+    { id: "dashboard" as const, label: "Dashboard" },
+    { id: "flows" as const, label: "Flows" },
+    { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
+  ];
+  const captureStatus =
+    summary.status === "ready" ? "ready" :
+    summary.status === "loading" ? "loading" :
+    summary.status === "error" ? "error" : "idle";
+
   return (
-    <div
-      data-component="AppShell"
-      className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]"
-    >
-      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-border bg-surface px-4">
-        <div className="flex items-center gap-2.5">
-          <span
-            className="flex h-8 w-8 items-center justify-center rounded-md"
-            style={{ background: "color-mix(in srgb, var(--color-accent) 18%, transparent)" }}
-          >
-            <Radar
-              className="h-5 w-5"
-              style={{ color: "var(--color-accent)" }}
-              aria-hidden
-            />
-          </span>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">PacketPilot</div>
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]">
-              Packet triage
-            </div>
-          </div>
-        </div>
-
-        <TabSwitcher
-          activeTab={activeTab}
-          onTabChange={onTabChange}
-          recentCount={recentCount}
+    <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
+      <CommandBar
+        captureName={captureName ?? ""}
+        sha256={summary.status === "ready" ? summary.data?.source_sha256 ?? undefined : undefined}
+        activeTab={activeTab}
+        onTab={onTabChange}
+        tabs={tabs}
+        captureStatus={captureStatus}
+        captureError={summary.status === "error" ? summary.error : undefined}
+        onRequestLoad={onRequestLoad}
+        onExport={() => void handleExportClick()}
+        exporting={exporting}
+        exportHint={exportHint ?? undefined}
+        onOpenPalette={onOpenPalette}
+        collapsed={collapsed}
+        onToggleCollapse={onToggleCollapse}
+      />
+      <div className="flex min-h-0 flex-1">
+        <ThreatRail
+          threats={threats}
+          collapsed={collapsed}
+          activeIp={activeIp}
+          onSelect={onSelectThreat}
         />
-
-        <div className="ml-auto flex items-center gap-3">
-          <CaptureLabel
-            name={captureName}
-            loading={summary.status === "loading" || summary.status === "idle"}
-            error={summary.status === "error" ? summary.error : undefined}
-          />
-          <button
-            type="button"
-            onClick={onRequestLoad}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-          >
-            <Upload className="h-3.5 w-3.5" aria-hidden />
-            Load capture
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleExportClick()}
-            disabled={!canExport || exporting}
-            title={canExport ? "Export report" : "Load a capture to export"}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-[var(--color-text)]"
-          >
-            {exporting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <FileDown className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Export report
-          </button>
-          {exportHint && (
-            <span
-              className="inline-flex items-center gap-1.5 text-xs text-sev-info"
-              aria-live="polite"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-              {exportHint}
-            </span>
-          )}
-        </div>
-      </header>
-
-      <main className="min-h-0 flex-1 overflow-auto">{children}</main>
-
+        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
+      </div>
       {loadDialogOpen && (
-        <LoadCaptureDialog
-          onReplaceData={onReplaceData}
-          onAnalyzePcap={onAnalyzePcap}
-          onClose={() => onLoadDialogOpenChange(false)}
-        />
+        <LoadCaptureDialog onReplaceData={onReplaceData} onAnalyzePcap={onAnalyzePcap} onClose={() => onLoadDialogOpenChange(false)} />
       )}
     </div>
-  );
-}
-
-function TabSwitcher({
-  activeTab,
-  onTabChange,
-  recentCount = 0,
-}: Pick<AppShellProps, "activeTab" | "onTabChange"> & { recentCount?: number }) {
-  return (
-    <nav
-      role="tablist"
-      aria-label="Views"
-      className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-2 p-0.5"
-    >
-      {TABS.map((tab) => {
-        const active = tab.id === activeTab;
-        const badge = tab.id === "recent" && recentCount > 0 ? recentCount : null;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onTabChange(tab.id)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              active
-                ? "bg-bg text-[var(--color-text)] shadow-sm"
-                : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]",
-            )}
-          >
-            {tab.label}
-            {badge !== null && (
-              <span className="inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-semibold text-[var(--color-accent)]">
-                {badge}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-function CaptureLabel({
-  name,
-  loading,
-  error,
-}: {
-  name: string | null;
-  loading: boolean;
-  error?: string;
-}) {
-  if (error) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-sev-high">
-        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-        No capture
-      </span>
-    );
-  }
-  if (loading && !name) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-dim)]">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-        Loading…
-      </span>
-    );
-  }
-  if (!name) return null;
-  return (
-    <span className="hidden items-center gap-1.5 sm:inline-flex" title={name}>
-      <FileUp className="h-3.5 w-3.5 text-[var(--color-text-faint)]" aria-hidden />
-      <span className="font-mono-num max-w-[16rem] truncate text-xs text-[var(--color-text-dim)]">
-        {name}
-      </span>
-    </span>
   );
 }
 

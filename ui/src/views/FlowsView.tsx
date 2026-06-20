@@ -13,7 +13,7 @@ import { FlowDetail } from "../components/FlowDetail";
 
 export interface FlowsViewProps {
   state: FlowsState;
-  initialFilter?: { severity?: Severity; category?: string; proto?: number };
+  initialFilter?: { severity?: Severity; category?: string; proto?: number; ip?: string };
 }
 
 const ALL_CATEGORIES = "__all__";
@@ -56,7 +56,7 @@ export function FlowsView({ state, initialFilter }: FlowsViewProps) {
         ? normCategory(initialFilter.category)
         : ALL_CATEGORIES,
     );
-    setQuery("");
+    setQuery(initialFilter.ip ?? "");
     setSelected(null);
   }, [initialFilter]);
 

@@ -40,6 +40,7 @@ export interface FlowsInitialFilter {
   severity?: Severity;
   category?: string;
   proto?: number;
+  ip?: string;
 }
 
 const SUMMARY_URL = "/sample/summary.json";
@@ -78,6 +79,8 @@ export function App() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [activeIp, setActiveIp] = useState<string | null>(null);
 
   // Eagerly load the bundled sample capture on mount.
   useEffect(() => {
@@ -116,6 +119,15 @@ export function App() {
     };
   }, []);
 
+  // Auto-collapse the threat rail on narrow viewports.
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1100px)");
+    const apply = () => setCollapsed(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
   // Install a capture as the active dataset AND record it in the Recent list (caching its
   // flows in IndexedDB for instant reopen). The single funnel for every load path.
   const applyCapture = useCallback(
@@ -124,6 +136,7 @@ export function App() {
       setSummary({ status: "ready", data });
       if (input.flows) setFlows({ status: "ready", rows: input.flows });
       setSelectedIncident(null);
+      setActiveIp(null);
 
       const name = input.fileName ?? basename(data.source_path);
       const sizeBytes = input.sizeBytes ?? data.source_bytes;
@@ -224,6 +237,7 @@ export function App() {
     setSummary({ status: "ready", data: entry.summary });
     setTab("dashboard");
     setSelectedIncident(null);
+    setActiveIp(null);
     setFlows({ status: "loading", rows: [] });
     const cached = await getFlows(entry.id);
     setFlows({ status: "ready", rows: cached ?? [] });
@@ -282,14 +296,18 @@ export function App() {
 
   const jumpToFlows = useCallback(
     (filter: { severity?: Severity; category?: string; ip?: string }) => {
-      setFlowsFilter({
-        severity: filter.severity,
-        category: filter.category,
-      });
+      setFlowsFilter({ severity: filter.severity, category: filter.category, ip: filter.ip });
       setTab("flows");
     },
     [],
   );
+
+  const openThreat = useCallback((ip: string) => {
+    setActiveIp(ip);
+    const inc = (summary.data?.summary.incidents ?? []).find((i) => i.host === ip);
+    if (inc) { setSelectedIncident(inc); setTab("dashboard"); }
+    else { jumpToFlows({ ip }); }
+  }, [summary, jumpToFlows]);
 
   return (
     <AppShell
@@ -303,6 +321,12 @@ export function App() {
       loadDialogOpen={loadDialogOpen}
       onLoadDialogOpenChange={setLoadDialogOpen}
       onExport={handleExport}
+      threats={summary.status === "ready" ? summary.data?.summary.ip_threats ?? [] : []}
+      activeIp={activeIp}
+      onSelectThreat={openThreat}
+      collapsed={collapsed}
+      onToggleCollapse={() => setCollapsed((c) => !c)}
+      onOpenPalette={() => {}}
     >
       {tab === "flows" ? (
         <FlowsView state={flows} initialFilter={flowsFilter} />
