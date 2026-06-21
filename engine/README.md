@@ -142,3 +142,27 @@ scopes to `-e no-dev`.
 ```sh
 cargo tree -e no-dev | grep -Ei "zstd-sys|lz4-sys|cc |cmake|bzip2-sys|openssl-sys|zlib" && exit 1 || exit 0
 ```
+
+### `online` cargo feature (native-only)
+
+```toml
+# ppcap-core/Cargo.toml
+[features]
+online = ["dep:ureq"]   # pulls ureq (rustls TLS + ring crypto) → requires a C compiler
+```
+
+The `online` feature enables the native reputation adapters
+(`enrich::online::{abuseipdb,greynoise,virustotal}`) used by the CLI (`--reputation`) and the
+Tauri desktop backend. It is **not** compiled into `ppcap-wasm` or the default engine build —
+those remain C-compiler-free.
+
+`apply_reputation` (the severity fold that applies provider verdicts to per-IP threat cards) is
+**always compiled and wasm-safe** — it has no network I/O and no dependency on `ureq`. The
+Browser build calls the same function via the WASM export, giving cross-surface scoring parity
+without the native HTTP stack.
+
+To build the CLI with reputation support:
+
+```sh
+cargo build -p ppcap-cli --release --features ppcap-core/online
+```
