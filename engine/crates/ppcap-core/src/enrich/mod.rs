@@ -412,6 +412,9 @@ pub fn attack_for(cat: Category) -> Option<AttackTechnique> {
 pub mod reputation;
 pub use reputation::{apply_reputation, RepStatus, ReputationVerdict};
 
+#[cfg(feature = "online")]
+pub mod online;
+
 /// Online IP/domain reputation. NOT wired into the Phase-2 pipeline. Real providers
 /// (AbuseIPDB/GreyNoise/VirusTotal) need a key + network and would return nothing on
 /// RFC1918/RFC5737 synthetic IPs, so they are intentionally omitted (offline-first). They
