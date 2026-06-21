@@ -8,18 +8,25 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [proxy, setProxy] = useState(getProxyUrl());
   const [keys, setKeys] = useState<Record<string, string>>(() =>
     Object.fromEntries(PROVIDERS.map((p) => [p, isTauri() ? "" : getKey(p)])));
+  const [error, setError] = useState<string | null>(null);
 
   async function save() {
+    setError(null);
     setRepEnabled(enabled);
     if (!isTauri()) setProxyUrl(proxy);
-    for (const p of PROVIDERS) {
-      if (!keys[p]) continue;
-      if (isTauri()) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("set_reputation_key", { provider: p, key: keys[p] });
-      } else {
-        setKey(p, keys[p]);
+    try {
+      for (const p of PROVIDERS) {
+        if (!keys[p]) continue;
+        if (isTauri()) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("set_reputation_key", { provider: p, key: keys[p] });
+        } else {
+          setKey(p, keys[p]);
+        }
       }
+    } catch (err) {
+      setError(`Failed to save key: ${String((err as Error)?.message ?? err)}`);
+      return;
     }
     onClose();
   }
@@ -43,6 +50,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               placeholder={isTauri() ? "stored in OS keychain" : "stored locally"} />
           </label>
         ))}
+        {error && (
+          <p className="mt-3 text-xs text-[var(--color-severity-high,#f87171)]">{error}</p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button className="t-tag" onClick={onClose}>Cancel</button>
           <button className="t-tag font-semibold" onClick={save}>Save</button>

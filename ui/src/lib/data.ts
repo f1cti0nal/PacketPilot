@@ -58,17 +58,27 @@ export async function loadFlows(
   return raw.map(normalizeFlow);
 }
 
-/** True if `ip` is a routable/public address worth a reputation lookup (mirrors engine is_external). */
+/**
+ * True if `ip` is a routable/public address worth a reputation lookup.
+ * Mirrors the engine's `IpClass::is_external` (Public only) — engine-computed `ip_class`
+ * is authoritative; this is a TS-side backstop for flows where `ip_class` isn't available.
+ */
 export function isPublicIp(ip: string): boolean {
   const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
   if (!m) return ip.includes(":") ? !/^(fe80|::1|fc|fd)/i.test(ip) : false; // coarse IPv6
-  const [a, b] = [Number(m[1]), Number(m[2])];
+  const [a, b, c] = [Number(m[1]), Number(m[2]), Number(m[3])];
   if (a === 10 || a === 127 || a === 0) return false;
   if (a === 172 && b >= 16 && b <= 31) return false;
   if (a === 192 && b === 168) return false;
   if (a === 169 && b === 254) return false;
-  if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT
+  if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT (RFC 6598)
   if (a >= 224) return false;                          // multicast/reserved
+  // RFC 5737 documentation ranges (engine classifies these as Documentation = non-external)
+  if (a === 192 && b === 0 && c === 2) return false;   // 192.0.2.0/24
+  if (a === 198 && b === 51 && c === 100) return false; // 198.51.100.0/24
+  if (a === 203 && b === 0 && c === 113) return false;  // 203.0.113.0/24
+  // IETF protocol assignments (RFC 6890)
+  if (a === 192 && b === 0 && c === 0) return false;   // 192.0.0.0/24
   return true;
 }
 

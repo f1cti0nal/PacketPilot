@@ -7,9 +7,10 @@ const fakeAbuse: HttpGet = async () => ({ status: 200, body: JSON.stringify({ da
 
 describe("lookupReputation", () => {
   it("only active providers run; keyed by ip; private IPs skipped", async () => {
-    const out = await lookupReputation(fakeAbuse, ["203.0.113.7", "10.0.0.5"], { abuseipdb: "k" }, 1000);
-    expect(Object.keys(out)).toEqual(["203.0.113.7"]);
-    expect(out["203.0.113.7"][0].source).toBe("abuseipdb");
-    expect(out["203.0.113.7"][0].status).toBe("malicious");
+    // 8.8.8.8 is a real public IP; 203.0.113.x is RFC 5737 documentation space (non-public).
+    const out = await lookupReputation(fakeAbuse, ["8.8.8.8", "10.0.0.5"], { abuseipdb: "k" }, 1000);
+    expect(Object.keys(out)).toEqual(["8.8.8.8"]);
+    expect(out["8.8.8.8"][0].source).toBe("abuseipdb");
+    expect(out["8.8.8.8"][0].status).toBe("malicious");
   });
 });

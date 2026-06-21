@@ -76,6 +76,14 @@ Scope note: IP reputation end-to-end (all 3 surfaces). SNI-domain reputation DEF
 ### PHASE G COMPLETE — parity test + CI online coverage + docs done.
 ### ALL 28 PLAN TASKS COMPLETE. Ready for final whole-branch review.
 
+## Final-review fixes
+
+- **Fix 1 — SettingsDialog.save() errors surfaced**: wrapped the per-provider keychain write loop in try/catch; added `const [error, setError] = useState<string | null>(null)`; renders inline error near buttons on failure; `onClose()` only called after all saves succeed. File: `ui/src/cockpit/SettingsDialog.tsx`.
+- **Fix 2 — Consent dialog providers from keychain**: added `providers: string[]` field to `consentPrompt` state; made `triggerReputationGate` fetch the real provider list (desktop: `invoke("reputation_key_status")`; browser: `Object.keys(browserKeys())`) before calling `setConsentPrompt`; JSX passes `consentPrompt.providers` to `<ReputationConsent>`. File: `ui/src/App.tsx`.
+- **Fix 3 — isPublicIp excludes RFC 5737 doc ranges**: added exclusions for `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24` (RFC 5737 doc) and `192.0.0.0/24` (IETF protocol assignments); updated comment to say this mirrors engine `IpClass::is_external`. File: `ui/src/lib/data.ts`. Orchestrator test updated to use `8.8.8.8` instead of `203.0.113.7` (was a doc-range fixture). File: `ui/src/lib/reputation/orchestrator.test.ts`.
+- **Fix 4 — Fixture _note field**: added `"_note"` at fixture top level (not inside `output`) so `serde_json::from_value::<AnalysisOutput>` is unaffected. File: `ui/src/test/reputation-parity.fixture.json`.
+- **Verification**: tsc → 0 errors; vitest → 179/179; Rust parity → 1/1.
+
 ## CI-gate fixes
 
 - **clippy "this impl can be derived"** (`enrich/reputation.rs`): removed manual `impl Default for RepStatus`, added `Default` to `#[derive(...)]`, marked `Unknown` variant with `#[default]`. `status_default_is_unknown` test still passes.

@@ -1,4 +1,5 @@
 {
+  "_note": "severity_counts is intentionally pre-apply: apply_reputation mutates ip_threats only; severity_counts tracks findings, not cards.",
   "output": {
     "schema_version": 1,
     "engine_version": "0.1.0",

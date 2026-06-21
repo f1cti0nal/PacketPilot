@@ -105,7 +105,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Consent prompt state: set when a newly-loaded capture has public IPs but consent hasn't
   // been given yet; cleared when the user proceeds or cancels.
-  const [consentPrompt, setConsentPrompt] = useState<{ output: AnalysisOutput; ipCount: number } | null>(null);
+  const [consentPrompt, setConsentPrompt] = useState<{ output: AnalysisOutput; ipCount: number; providers: string[] } | null>(null);
   // Tracks the source identity of the last capture we ran (or offered to run) the reputation
   // pass on, preventing double-triggers when summary state re-renders.
   const lastRepSourceRef = useRef<string | null>(null);
@@ -233,7 +233,14 @@ export function App() {
     if (consentGiven()) {
       void runReputation(output);
     } else {
-      setConsentPrompt({ output, ipCount: publicIps.length });
+      // Fetch the actual configured provider list so the consent dialog names only
+      // providers the user has set up (desktop: keychain; browser: localStorage keys).
+      const fetchProviders = IS_TAURI
+        ? import("@tauri-apps/api/core").then(({ invoke }) => invoke<string[]>("reputation_key_status"))
+        : Promise.resolve(Object.keys(browserKeys()));
+      void fetchProviders.then((providers) => {
+        setConsentPrompt({ output, ipCount: publicIps.length, providers });
+      });
     }
   }, [runReputation]);
 
@@ -468,7 +475,7 @@ export function App() {
     {consentPrompt && (
       <ReputationConsent
         ipCount={consentPrompt.ipCount}
-        providers={IS_TAURI ? ["abuseipdb", "greynoise", "virustotal"] : Object.keys(browserKeys())}
+        providers={consentPrompt.providers}
         onProceed={() => {
           giveConsent();
           const out = consentPrompt.output;
