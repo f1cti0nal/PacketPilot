@@ -19,6 +19,11 @@ jobs:
   engine:
     name: engine — fmt · clippy · test
     runs-on: ubuntu-latest
+    # engine/.cargo/config.toml defaults to the x86_64-pc-windows-gnu target (a local
+    # Windows-dev convenience); the Ubuntu runner has no MinGW cross toolchain, so
+    # build/test for the native Linux target here instead.
+    env:
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
     defaults:
       run:
         working-directory: engine
