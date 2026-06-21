@@ -9,6 +9,7 @@ import {
   Command as CommandIcon,
   Loader2,
   CheckCircle2,
+  Settings,
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { shortHash } from "../lib/format";
@@ -34,6 +35,7 @@ export function CommandBar({
   exporting = false,
   exportHint,
   onOpenPalette,
+  onOpenSettings,
 }: {
   captureName: string;
   sha256?: string;
@@ -49,6 +51,7 @@ export function CommandBar({
   exporting?: boolean;
   exportHint?: string;
   onOpenPalette?: () => void;
+  onOpenSettings?: () => void;
 }) {
   return (
     <header className="glass-band relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-3">
@@ -162,6 +165,16 @@ export function CommandBar({
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
         </button>
+        {onOpenSettings && (
+          <button
+            type="button"
+            aria-label="Settings"
+            onClick={onOpenSettings}
+            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
+          >
+            <Settings size={14} />
+          </button>
+        )}
       </div>
     </header>
   );

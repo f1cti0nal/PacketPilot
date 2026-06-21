@@ -55,6 +55,8 @@ export interface AppShellProps {
   paletteOpen: boolean;
   /** Called to change the palette open state. */
   onPaletteOpenChange: (open: boolean) => void;
+  /** Open the reputation settings dialog. */
+  onOpenSettings?: () => void;
   children: ReactNode;
 }
 
@@ -77,6 +79,7 @@ export function AppShell({
   onOpenPalette,
   paletteOpen,
   onPaletteOpenChange,
+  onOpenSettings,
   children,
 }: AppShellProps) {
   const [exportHint, setExportHint] = useState<string | null>(null);
@@ -159,6 +162,7 @@ export function AppShell({
         onOpenPalette={onOpenPalette}
         collapsed={collapsed}
         onToggleCollapse={onToggleCollapse}
+        onOpenSettings={onOpenSettings}
       />
       <div className="flex min-h-0 flex-1">
         <ThreatRail
