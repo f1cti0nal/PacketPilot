@@ -11,15 +11,16 @@
 // Everything is best-effort: a quota error or a private-mode block degrades to "no cache"
 // rather than throwing into the UI.
 
-import type { AnalysisOutput, FlowRow, RecentEntry, RecentOrigin } from "../types";
+import type { AnalysisOutput, FlowRow, RecentEntry, RecentOrigin, ReputationVerdict } from "../types";
 import { basename } from "./format";
 
 const RECENT_KEY = "packetpilot.recent.v1";
 const MAX_RECENT = 12;
 
 const DB_NAME = "packetpilot";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const FLOWS_STORE = "flows";
+const REPUTATION_STORE = "reputation";
 
 // ---------------------------------------------------------------------------
 // localStorage: the recent list (with cached summaries)
@@ -165,6 +166,9 @@ function openDb(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(FLOWS_STORE)) {
           db.createObjectStore(FLOWS_STORE);
         }
+        if (!db.objectStoreNames.contains(REPUTATION_STORE)) {
+          db.createObjectStore(REPUTATION_STORE);
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => resolve(null);
@@ -239,6 +243,59 @@ async function clearAllFlows(): Promise<void> {
       req.onerror = () => resolve();
     } catch {
       resolve();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// IndexedDB: per-indicator reputation cache
+// ---------------------------------------------------------------------------
+
+function repKey(source: string, indicator: string): string {
+  return `${source}|${indicator}`;
+}
+
+/** Cache a reputation verdict. Best-effort; resolves false on failure. */
+export async function putReputation(
+  source: string,
+  indicator: string,
+  verdict: ReputationVerdict,
+): Promise<boolean> {
+  const db = await openDb();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const store = db.transaction(REPUTATION_STORE, "readwrite").objectStore(REPUTATION_STORE);
+      const req = store.put(verdict, repKey(source, indicator));
+      req.onsuccess = () => resolve(true);
+      req.onerror = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/** Read a cached reputation verdict, or null if absent, expired, or unavailable. */
+export async function getReputation(
+  source: string,
+  indicator: string,
+  now: number,
+  ttlSecs: number,
+): Promise<ReputationVerdict | null> {
+  const db = await openDb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const store = db.transaction(REPUTATION_STORE, "readonly").objectStore(REPUTATION_STORE);
+      const req = store.get(repKey(source, indicator));
+      req.onsuccess = () => {
+        const v = req.result as ReputationVerdict | undefined;
+        if (v && now - v.fetched_at <= ttlSecs) resolve(v);
+        else resolve(null);
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
     }
   });
 }
