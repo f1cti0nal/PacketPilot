@@ -41,6 +41,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      - name: Test reputation online feature
+        run: cargo test -p ppcap-core --features online
       - name: C-compiler-free gate (shipped graph pulls no cc crate)
         run: |
           if cargo tree -e no-dev | grep -Ei "zstd-sys|lz4-sys|cc |cmake|bzip2-sys|openssl-sys|zlib-sys"; then
