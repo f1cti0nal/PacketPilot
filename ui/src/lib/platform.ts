@@ -2,11 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { AnalysisOutput, FlowRow, WireFlowPackets } from "../types";
 import { loadFlows } from "./data";
-
-/** True only inside the Tauri webview (the injected internals object). */
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
+import { isTauri } from "./tauri-detect";
+export { isTauri } from "./tauri-detect";
 
 interface AnalyzeDto {
   summary: AnalysisOutput;

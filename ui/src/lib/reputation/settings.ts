@@ -3,9 +3,7 @@
 const PROVIDERS = ["abuseipdb", "greynoise", "virustotal"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
-export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
+export { isTauri } from "../tauri-detect";
 
 export function repEnabled(): boolean { return localStorage.getItem("pp.rep.enabled") === "1"; }
 export function setRepEnabled(b: boolean): void { localStorage.setItem("pp.rep.enabled", b ? "1" : "0"); }
