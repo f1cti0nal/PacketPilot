@@ -11,9 +11,9 @@
  * export instead of the async `default` export (which does a network fetch).
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import type { AnalysisOutput } from "../../types";
 import fixture from "../../test/reputation-parity.fixture.json";
 import { initSync, apply_reputation } from "../../wasm/ppcap_wasm.js";
@@ -31,7 +31,7 @@ describe("cross-surface parity", () => {
     const verdictsJson = JSON.stringify((fixture as any).verdicts);
     const resultJson = apply_reputation(outputJson, verdictsJson);
     const enriched = JSON.parse(resultJson) as AnalysisOutput;
-    const got = enriched.summary.ip_threats.map((t) => ({ ip: t.ip, severity: t.severity, score: t.score }));
+    const got = (enriched.summary.ip_threats ?? []).map((t) => ({ ip: t.ip, severity: t.severity, score: t.score }));
     const want = (fixture as any).expected.ip_threats.map((t: any) => ({ ip: t.ip, severity: t.severity, score: t.score }));
     expect(got).toEqual(want);
   });
