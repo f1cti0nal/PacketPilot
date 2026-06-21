@@ -5,10 +5,10 @@
 use std::net::IpAddr;
 
 pub mod abuseipdb;
-pub mod greynoise;
-pub mod virustotal;
 mod budget;
 mod cache;
+pub mod greynoise;
+pub mod virustotal;
 
 pub use budget::Budget;
 pub use cache::ReputationCache;
@@ -57,14 +57,20 @@ pub(crate) struct FakeHttp {
 impl HttpGet for FakeHttp {
     fn get(&self, url: &str, _headers: &[(&str, &str)]) -> Result<HttpResponse, RepError> {
         *self.last_url.borrow_mut() = url.to_string();
-        Ok(HttpResponse { status: self.response.0, body: self.response.1.clone() })
+        Ok(HttpResponse {
+            status: self.response.0,
+            body: self.response.1.clone(),
+        })
     }
 }
 
 #[cfg(test)]
 impl FakeHttp {
     pub fn new(status: u16, body: &str) -> Self {
-        FakeHttp { response: (status, body.to_string()), last_url: std::cell::RefCell::new(String::new()) }
+        FakeHttp {
+            response: (status, body.to_string()),
+            last_url: std::cell::RefCell::new(String::new()),
+        }
     }
 }
 
@@ -88,14 +94,23 @@ pub struct Ttls {
 }
 impl Default for Ttls {
     fn default() -> Self {
-        Ttls { abuseipdb: 18 * 3600, greynoise: 24 * 3600, virustotal: 12 * 3600 }
+        Ttls {
+            abuseipdb: 18 * 3600,
+            greynoise: 24 * 3600,
+            virustotal: 12 * 3600,
+        }
     }
 }
 
 fn quota_unavailable(source: &str, now: i64) -> ReputationVerdict {
     ReputationVerdict {
-        source: source.to_string(), status: RepStatus::Unavailable, malicious: false,
-        score: None, tags: vec!["quota".to_string()], link: None, fetched_at: now,
+        source: source.to_string(),
+        status: RepStatus::Unavailable,
+        malicious: false,
+        score: None,
+        tags: vec!["quota".to_string()],
+        link: None,
+        fetched_at: now,
     }
 }
 
@@ -121,9 +136,12 @@ pub fn lookup_reputation(
         let mut verdicts = Vec::new();
 
         // One closure per active provider keeps the cache/budget/fetch flow uniform.
-        let run = |source: &str, ttl: i64, verdicts: &mut Vec<ReputationVerdict>,
-                       cache: &mut ReputationCache, budget: &mut Budget,
-                       fetch: &dyn Fn() -> ReputationVerdict| {
+        let run = |source: &str,
+                   ttl: i64,
+                   verdicts: &mut Vec<ReputationVerdict>,
+                   cache: &mut ReputationCache,
+                   budget: &mut Budget,
+                   fetch: &dyn Fn() -> ReputationVerdict| {
             if let Some(hit) = cache.get(source, &ind, now, ttl) {
                 verdicts.push(hit.clone());
             } else if budget.try_spend(source) {
@@ -136,16 +154,34 @@ pub fn lookup_reputation(
         };
 
         if let Some(k) = &keys.abuseipdb {
-            run("abuseipdb", ttls.abuseipdb, &mut verdicts, cache, budget,
-                &|| abuseipdb::verdict(http, k, ip, now));
+            run(
+                "abuseipdb",
+                ttls.abuseipdb,
+                &mut verdicts,
+                cache,
+                budget,
+                &|| abuseipdb::verdict(http, k, ip, now),
+            );
         }
         if let Some(k) = &keys.greynoise {
-            run("greynoise", ttls.greynoise, &mut verdicts, cache, budget,
-                &|| greynoise::verdict(http, k, ip, now));
+            run(
+                "greynoise",
+                ttls.greynoise,
+                &mut verdicts,
+                cache,
+                budget,
+                &|| greynoise::verdict(http, k, ip, now),
+            );
         }
         if let Some(k) = &keys.virustotal {
-            run("virustotal", ttls.virustotal, &mut verdicts, cache, budget,
-                &|| virustotal::verdict_ip(http, k, ip, now));
+            run(
+                "virustotal",
+                ttls.virustotal,
+                &mut verdicts,
+                cache,
+                budget,
+                &|| virustotal::verdict_ip(http, k, ip, now),
+            );
         }
 
         if !verdicts.is_empty() {
@@ -185,13 +221,16 @@ impl HttpGet for UreqClient {
         match req.call() {
             Ok(resp) => {
                 let status = resp.status();
-                let body = resp.into_string().map_err(|e| RepError::Network(e.to_string()))?;
+                let body = resp
+                    .into_string()
+                    .map_err(|e| RepError::Network(e.to_string()))?;
                 Ok(HttpResponse { status, body })
             }
             // ureq 2.x surfaces 4xx/5xx as Err(Status) — we still want the body (GreyNoise 404).
-            Err(ureq::Error::Status(code, resp)) => {
-                Ok(HttpResponse { status: code, body: resp.into_string().unwrap_or_default() })
-            }
+            Err(ureq::Error::Status(code, resp)) => Ok(HttpResponse {
+                status: code,
+                body: resp.into_string().unwrap_or_default(),
+            }),
             Err(e) => Err(RepError::Network(e.to_string())),
         }
     }
@@ -208,7 +247,15 @@ pub fn lookup_reputation_native(
     let http = UreqClient::default();
     let mut cache = ReputationCache::load(cache_dir);
     let mut budget = Budget::with_defaults();
-    let out = lookup_reputation(&http, ips, keys, &mut cache, &mut budget, &Ttls::default(), now);
+    let out = lookup_reputation(
+        &http,
+        ips,
+        keys,
+        &mut cache,
+        &mut budget,
+        &Ttls::default(),
+        now,
+    );
     let _ = cache.save();
     out
 }
@@ -222,7 +269,9 @@ mod tests {
     #[test]
     fn fake_http_captures_url() {
         let client = FakeHttp::new(200, r#"{"ok":true}"#);
-        let resp = client.get("https://example.com/api", &[("X-Key", "abc")]).unwrap();
+        let resp = client
+            .get("https://example.com/api", &[("X-Key", "abc")])
+            .unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, r#"{"ok":true}"#);
         assert_eq!(*client.last_url.borrow(), "https://example.com/api");
@@ -232,7 +281,10 @@ mod tests {
     fn reputation_keys_is_empty() {
         let k = ReputationKeys::default();
         assert!(k.is_empty());
-        let k2 = ReputationKeys { abuseipdb: Some("key".into()), ..Default::default() };
+        let k2 = ReputationKeys {
+            abuseipdb: Some("key".into()),
+            ..Default::default()
+        };
         assert!(!k2.is_empty());
     }
 
@@ -255,11 +307,23 @@ mod orchestrator_tests {
     fn only_active_providers_run_and_results_key_by_ip() {
         let body = r#"{"data":{"abuseConfidenceScore":96,"totalReports":5}}"#;
         let http = FakeHttp::new(200, body);
-        let keys = ReputationKeys { abuseipdb: Some("k".into()), greynoise: None, virustotal: None };
+        let keys = ReputationKeys {
+            abuseipdb: Some("k".into()),
+            greynoise: None,
+            virustotal: None,
+        };
         let mut cache = ReputationCache::load(std::env::temp_dir().as_path());
         let mut budget = Budget::with_defaults();
         let ips = vec!["8.8.8.8".parse().unwrap()];
-        let out = lookup_reputation(&http, &ips, &keys, &mut cache, &mut budget, &Ttls::default(), 1000);
+        let out = lookup_reputation(
+            &http,
+            &ips,
+            &keys,
+            &mut cache,
+            &mut budget,
+            &Ttls::default(),
+            1000,
+        );
         let vs = out.get("8.8.8.8").unwrap();
         assert_eq!(vs.len(), 1); // only abuseipdb active
         assert_eq!(vs[0].source, "abuseipdb");
@@ -269,24 +333,52 @@ mod orchestrator_tests {
     #[test]
     fn private_ips_are_skipped() {
         let http = FakeHttp::new(200, "{}");
-        let keys = ReputationKeys { abuseipdb: Some("k".into()), ..Default::default() };
+        let keys = ReputationKeys {
+            abuseipdb: Some("k".into()),
+            ..Default::default()
+        };
         let mut cache = ReputationCache::load(std::env::temp_dir().as_path());
         let mut budget = Budget::with_defaults();
         let ips = vec!["10.0.0.5".parse().unwrap()];
-        let out = lookup_reputation(&http, &ips, &keys, &mut cache, &mut budget, &Ttls::default(), 0);
+        let out = lookup_reputation(
+            &http,
+            &ips,
+            &keys,
+            &mut cache,
+            &mut budget,
+            &Ttls::default(),
+            0,
+        );
         assert!(out.is_empty());
     }
 
     #[test]
     fn exhausted_budget_yields_unavailable_not_skip() {
-        let http = FakeHttp::new(200, r#"{"data":{"abuseConfidenceScore":10,"totalReports":0}}"#);
-        let keys = ReputationKeys { abuseipdb: Some("k".into()), ..Default::default() };
+        let http = FakeHttp::new(
+            200,
+            r#"{"data":{"abuseConfidenceScore":10,"totalReports":0}}"#,
+        );
+        let keys = ReputationKeys {
+            abuseipdb: Some("k".into()),
+            ..Default::default()
+        };
         let mut cache = ReputationCache::load(std::env::temp_dir().as_path());
         let mut budget = Budget::with_defaults();
         // Drain abuseipdb.
         while budget.try_spend("abuseipdb") {}
         let ips = vec!["8.8.8.8".parse().unwrap()];
-        let out = lookup_reputation(&http, &ips, &keys, &mut cache, &mut budget, &Ttls::default(), 0);
-        assert_eq!(out.get("8.8.8.8").unwrap()[0].status, RepStatus::Unavailable);
+        let out = lookup_reputation(
+            &http,
+            &ips,
+            &keys,
+            &mut cache,
+            &mut budget,
+            &Ttls::default(),
+            0,
+        );
+        assert_eq!(
+            out.get("8.8.8.8").unwrap()[0].status,
+            RepStatus::Unavailable
+        );
     }
 }

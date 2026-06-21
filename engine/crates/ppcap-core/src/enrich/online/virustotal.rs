@@ -41,8 +41,13 @@ const SOURCE: &str = "virustotal";
 
 fn simple(status: RepStatus, score: Option<u8>, now: i64) -> ReputationVerdict {
     ReputationVerdict {
-        source: SOURCE.to_string(), status, malicious: status == RepStatus::Malicious,
-        score, tags: vec![], link: None, fetched_at: now,
+        source: SOURCE.to_string(),
+        status,
+        malicious: status == RepStatus::Malicious,
+        score,
+        tags: vec![],
+        link: None,
+        fetched_at: now,
     }
 }
 
@@ -68,8 +73,12 @@ fn parse(body: &str, status_code: u16, link: String, now: i64) -> ReputationVerd
         RepStatus::Unknown
     };
     let mut tags = r.data.attributes.tags;
-    if let Some(o) = r.data.attributes.as_owner { tags.push(o); }
-    if let Some(c) = r.data.attributes.country { tags.push(c); }
+    if let Some(o) = r.data.attributes.as_owner {
+        tags.push(o);
+    }
+    if let Some(c) = r.data.attributes.country {
+        tags.push(c);
+    }
     ReputationVerdict {
         source: SOURCE.to_string(),
         status,
@@ -84,7 +93,12 @@ fn parse(body: &str, status_code: u16, link: String, now: i64) -> ReputationVerd
 pub fn verdict_ip(http: &dyn HttpGet, key: &str, ip: IpAddr, now: i64) -> ReputationVerdict {
     let url = format!("https://www.virustotal.com/api/v3/ip_addresses/{ip}");
     match http.get(&url, &[("x-apikey", key)]) {
-        Ok(r) => parse(&r.body, r.status, format!("https://www.virustotal.com/gui/ip-address/{ip}"), now),
+        Ok(r) => parse(
+            &r.body,
+            r.status,
+            format!("https://www.virustotal.com/gui/ip-address/{ip}"),
+            now,
+        ),
         Err(RepError::Network(_)) => simple(RepStatus::Unavailable, None, now),
     }
 }
@@ -92,7 +106,12 @@ pub fn verdict_ip(http: &dyn HttpGet, key: &str, ip: IpAddr, now: i64) -> Reputa
 pub fn verdict_domain(http: &dyn HttpGet, key: &str, domain: &str, now: i64) -> ReputationVerdict {
     let url = format!("https://www.virustotal.com/api/v3/domains/{domain}");
     match http.get(&url, &[("x-apikey", key)]) {
-        Ok(r) => parse(&r.body, r.status, format!("https://www.virustotal.com/gui/domain/{domain}"), now),
+        Ok(r) => parse(
+            &r.body,
+            r.status,
+            format!("https://www.virustotal.com/gui/domain/{domain}"),
+            now,
+        ),
         Err(RepError::Network(_)) => simple(RepStatus::Unavailable, None, now),
     }
 }
@@ -102,7 +121,9 @@ mod tests {
     use super::*;
     use crate::enrich::online::FakeHttp;
     use std::net::IpAddr;
-    fn ip() -> IpAddr { "203.0.113.7".parse().unwrap() }
+    fn ip() -> IpAddr {
+        "203.0.113.7".parse().unwrap()
+    }
 
     #[test]
     fn malicious_engines_flag() {
@@ -126,7 +147,12 @@ mod tests {
 
     #[test]
     fn not_found_is_notfound() {
-        let v = verdict_ip(&FakeHttp::new(404, r#"{"error":{"code":"NotFoundError"}}"#), "k", ip(), 0);
+        let v = verdict_ip(
+            &FakeHttp::new(404, r#"{"error":{"code":"NotFoundError"}}"#),
+            "k",
+            ip(),
+            0,
+        );
         assert_eq!(v.status, RepStatus::NotFound);
     }
 
@@ -136,6 +162,9 @@ mod tests {
             {"malicious":3,"suspicious":0,"harmless":60,"undetected":7,"timeout":0}}}}"#;
         let v = verdict_domain(&FakeHttp::new(200, body), "k", "evil.example.com", 0);
         assert_eq!(v.status, RepStatus::Malicious);
-        assert_eq!(v.link.as_deref(), Some("https://www.virustotal.com/gui/domain/evil.example.com"));
+        assert_eq!(
+            v.link.as_deref(),
+            Some("https://www.virustotal.com/gui/domain/evil.example.com")
+        );
     }
 }

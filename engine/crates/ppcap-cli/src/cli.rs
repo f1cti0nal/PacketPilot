@@ -190,9 +190,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
 
             if reputation {
                 let keys = ppcap_core::ReputationKeys {
-                    abuseipdb: std::env::var("ABUSEIPDB_API_KEY").ok().filter(|s| !s.is_empty()),
-                    greynoise: std::env::var("GREYNOISE_API_KEY").ok().filter(|s| !s.is_empty()),
-                    virustotal: std::env::var("VIRUSTOTAL_API_KEY").ok().filter(|s| !s.is_empty()),
+                    abuseipdb: std::env::var("ABUSEIPDB_API_KEY")
+                        .ok()
+                        .filter(|s| !s.is_empty()),
+                    greynoise: std::env::var("GREYNOISE_API_KEY")
+                        .ok()
+                        .filter(|s| !s.is_empty()),
+                    virustotal: std::env::var("VIRUSTOTAL_API_KEY")
+                        .ok()
+                        .filter(|s| !s.is_empty()),
                 };
                 if keys.is_empty() {
                     if !quiet {
@@ -200,7 +206,10 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                             "reputation: no provider key set (ABUSEIPDB_API_KEY / GREYNOISE_API_KEY / VIRUSTOTAL_API_KEY); skipping");
                     }
                 } else {
-                    let ips: Vec<std::net::IpAddr> = out.summary.ip_threats.iter()
+                    let ips: Vec<std::net::IpAddr> = out
+                        .summary
+                        .ip_threats
+                        .iter()
                         .filter_map(|t| t.ip.parse().ok())
                         .filter(|ip| ppcap_core::enrich::classify_ip(*ip).is_external())
                         .collect();
@@ -208,8 +217,11 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs() as i64)
                         .unwrap_or(0);
-                    let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("packetpilot");
-                    let verdicts = ppcap_core::lookup_reputation_native(&ips, &keys, &cache_dir, now);
+                    let cache_dir = dirs::cache_dir()
+                        .unwrap_or_else(std::env::temp_dir)
+                        .join("packetpilot");
+                    let verdicts =
+                        ppcap_core::lookup_reputation_native(&ips, &keys, &cache_dir, now);
                     ppcap_core::apply_reputation(&mut out.summary, &verdicts);
                 }
             }

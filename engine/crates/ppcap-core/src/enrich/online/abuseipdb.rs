@@ -27,8 +27,13 @@ const SOURCE: &str = "abuseipdb";
 
 fn unavailable(now: i64) -> ReputationVerdict {
     ReputationVerdict {
-        source: SOURCE.to_string(), status: RepStatus::Unavailable, malicious: false,
-        score: None, tags: vec![], link: None, fetched_at: now,
+        source: SOURCE.to_string(),
+        status: RepStatus::Unavailable,
+        malicious: false,
+        score: None,
+        tags: vec![],
+        link: None,
+        fetched_at: now,
     }
 }
 
@@ -57,9 +62,15 @@ pub fn verdict(http: &dyn HttpGet, key: &str, ip: IpAddr, now: i64) -> Reputatio
         RepStatus::Unknown
     };
     let mut tags = Vec::new();
-    if let Some(u) = d.usage_type { tags.push(u); }
-    if d.is_tor == Some(true) { tags.push("tor".to_string()); }
-    if let Some(c) = d.country_code { tags.push(c); }
+    if let Some(u) = d.usage_type {
+        tags.push(u);
+    }
+    if d.is_tor == Some(true) {
+        tags.push("tor".to_string());
+    }
+    if let Some(c) = d.country_code {
+        tags.push(c);
+    }
     ReputationVerdict {
         source: SOURCE.to_string(),
         status,
@@ -78,7 +89,9 @@ mod tests {
     use crate::enrich::RepStatus;
     use std::net::IpAddr;
 
-    fn ip() -> IpAddr { "203.0.113.7".parse().unwrap() }
+    fn ip() -> IpAddr {
+        "203.0.113.7".parse().unwrap()
+    }
 
     #[test]
     fn high_confidence_is_malicious() {
@@ -91,7 +104,10 @@ mod tests {
         assert_eq!(v.source, "abuseipdb");
         assert_eq!(v.fetched_at, 1234);
         assert!(v.tags.iter().any(|t| t.contains("Data Center")));
-        assert_eq!(v.link.as_deref(), Some("https://www.abuseipdb.com/check/203.0.113.7"));
+        assert_eq!(
+            v.link.as_deref(),
+            Some("https://www.abuseipdb.com/check/203.0.113.7")
+        );
     }
 
     #[test]

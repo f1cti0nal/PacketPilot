@@ -24,8 +24,13 @@ const SOURCE: &str = "greynoise";
 
 fn simple(status: RepStatus, score: Option<u8>, now: i64) -> ReputationVerdict {
     ReputationVerdict {
-        source: SOURCE.to_string(), status, malicious: status == RepStatus::Malicious,
-        score, tags: vec![], link: None, fetched_at: now,
+        source: SOURCE.to_string(),
+        status,
+        malicious: status == RepStatus::Malicious,
+        score,
+        tags: vec![],
+        link: None,
+        fetched_at: now,
     }
 }
 
@@ -53,9 +58,15 @@ pub fn verdict(http: &dyn HttpGet, key: &str, ip: IpAddr, now: i64) -> Reputatio
     };
 
     let mut tags = Vec::new();
-    if !r.name.is_empty() && r.name != "unknown" { tags.push(r.name); }
-    if r.riot { tags.push("business-service".to_string()); }
-    if r.noise { tags.push("internet-scanner".to_string()); }
+    if !r.name.is_empty() && r.name != "unknown" {
+        tags.push(r.name);
+    }
+    if r.riot {
+        tags.push("business-service".to_string());
+    }
+    if r.noise {
+        tags.push("internet-scanner".to_string());
+    }
 
     ReputationVerdict {
         source: SOURCE.to_string(),
@@ -63,7 +74,9 @@ pub fn verdict(http: &dyn HttpGet, key: &str, ip: IpAddr, now: i64) -> Reputatio
         malicious: status == RepStatus::Malicious,
         score,
         tags,
-        link: r.link.or_else(|| Some(format!("https://viz.greynoise.io/ip/{ip}"))),
+        link: r
+            .link
+            .or_else(|| Some(format!("https://viz.greynoise.io/ip/{ip}"))),
         fetched_at: now,
     }
 }
@@ -74,7 +87,9 @@ mod tests {
     use crate::enrich::online::FakeHttp;
     use crate::enrich::RepStatus;
     use std::net::IpAddr;
-    fn ip() -> IpAddr { "203.0.113.7".parse().unwrap() }
+    fn ip() -> IpAddr {
+        "203.0.113.7".parse().unwrap()
+    }
 
     #[test]
     fn classification_malicious() {
@@ -104,7 +119,8 @@ mod tests {
 
     #[test]
     fn not_found_404_is_notfound_not_clean() {
-        let body = r#"{"ip":"203.0.113.7","noise":false,"riot":false,"message":"IP not observed..."}"#;
+        let body =
+            r#"{"ip":"203.0.113.7","noise":false,"riot":false,"message":"IP not observed..."}"#;
         let v = verdict(&FakeHttp::new(404, body), "k", ip(), 0);
         assert_eq!(v.status, RepStatus::NotFound);
     }

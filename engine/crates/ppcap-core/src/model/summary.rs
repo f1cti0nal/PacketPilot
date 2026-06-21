@@ -184,20 +184,6 @@ fn default_time_bucket_secs() -> i64 {
     1
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ipthreat_reputation_defaults_empty_on_old_json() {
-        // An older summary row written before the field existed must still deserialize.
-        let json = r#"{"ip":"203.0.113.7","ip_class":"public","severity":"low","score":20,
-            "flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#;
-        let row: IpThreat = serde_json::from_str(json).unwrap();
-        assert!(row.reputation.is_empty());
-    }
-}
-
 impl Summary {
     /// An all-zero summary for empty captures.
     pub fn empty() -> Summary {
@@ -234,5 +220,19 @@ impl Summary {
     /// Capture end in ns, defaulting to 0 when no packets were seen.
     pub fn capture_end_ns(&self) -> i64 {
         self.last_ts_ns.unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipthreat_reputation_defaults_empty_on_old_json() {
+        // An older summary row written before the field existed must still deserialize.
+        let json = r#"{"ip":"203.0.113.7","ip_class":"public","severity":"low","score":20,
+            "flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#;
+        let row: IpThreat = serde_json::from_str(json).unwrap();
+        assert!(row.reputation.is_empty());
     }
 }
