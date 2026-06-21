@@ -69,6 +69,7 @@ impl FakeHttp {
 }
 
 /// Helper: is this address worth a lookup (public/routable)?
+#[allow(dead_code)] // consumed by the B7 orchestrator; remove the allow when lookup_reputation lands
 pub(crate) fn is_lookupable(ip: IpAddr) -> bool {
     crate::enrich::classify_ip(ip).is_external()
 }
