@@ -515,6 +515,7 @@ impl StatsAccumulator {
                     tags,
                     attack: s.attack.iter().cloned().collect(), // BTreeSet => sorted
                     evidence: s.evidence.clone(),
+                    reputation: Vec::new(),
                 }
             })
             .collect();

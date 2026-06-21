@@ -37,7 +37,7 @@ impl Default for RepStatus {
 
 /// One provider's verdict for one indicator. `source` is a `String` (not `&'static str`) so it
 /// round-trips through JSON on the WASM boundary.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReputationVerdict {
     /// `"abuseipdb" | "greynoise" | "virustotal"`.
     pub source: String,

@@ -33,6 +33,7 @@ fn sample() -> AnalysisOutput {
         tags: vec!["public".into(), "ioc".into()],
         attack: vec!["T1071".into()],
         evidence: vec!["beacon <script>alert(1)</script> & co".into()],
+        reputation: Vec::new(),
     }];
 
     AnalysisOutput {

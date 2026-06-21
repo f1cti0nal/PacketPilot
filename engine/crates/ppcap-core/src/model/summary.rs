@@ -120,6 +120,10 @@ pub struct IpThreat {
     pub attack: Vec<String>,
     /// Capped, deduped union of flow evidence strings.
     pub evidence: Vec<String>,
+    /// Per-provider online reputation verdicts (empty unless the reputation pass ran).
+    /// `#[serde(default)]` keeps older summaries (written before this field) readable.
+    #[serde(default)]
+    pub reputation: Vec<crate::enrich::ReputationVerdict>,
 }
 
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
@@ -178,6 +182,20 @@ pub struct Summary {
 /// existed: those used a fixed per-second histogram, so 1 is the faithful interpretation.
 fn default_time_bucket_secs() -> i64 {
     1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipthreat_reputation_defaults_empty_on_old_json() {
+        // An older summary row written before the field existed must still deserialize.
+        let json = r#"{"ip":"203.0.113.7","ip_class":"public","severity":"low","score":20,
+            "flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#;
+        let row: IpThreat = serde_json::from_str(json).unwrap();
+        assert!(row.reputation.is_empty());
+    }
 }
 
 impl Summary {
