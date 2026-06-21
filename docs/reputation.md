@@ -62,7 +62,7 @@ the Settings panel. The browser also requires a **proxy URL** (see next section)
 ## CLI usage
 
 ```sh
-# Enable reputation enrichment (skips silently if no key is set):
+# Enable reputation enrichment (prints a notice and continues if no key is set):
 ppcap analyze capture.pcap --reputation
 
 # Also look up SNI domains via VirusTotal (opt-in sub-toggle):
