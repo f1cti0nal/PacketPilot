@@ -129,7 +129,6 @@ pub fn apply_reputation(
     });
 }
 
-#[allow(dead_code)]
 fn downgrade_one_band(sev: Severity, score: u16) -> (Severity, u16) {
     match sev {
         Severity::Critical => (Severity::High, score.min(84)),
@@ -140,8 +139,18 @@ fn downgrade_one_band(sev: Severity, score: u16) -> (Severity, u16) {
     }
 }
 
-// Placeholder until Task A4 fills it in.
-fn suppress(_card: &mut crate::model::summary::IpThreat, _vs: &[ReputationVerdict]) {}
+/// Downgrade a card one severity band on a positive known-benign attribution (GreyNoise
+/// benign / RIOT). Caller has already verified: no local IOC, no behavioral finding.
+fn suppress(card: &mut crate::model::summary::IpThreat, vs: &[ReputationVerdict]) {
+    let b = vs.iter().find(|v| v.status == RepStatus::Benign);
+    let (src, name) = b
+        .map(|v| (v.source.as_str(), v.tags.first().map(String::as_str).unwrap_or("known benign")))
+        .unwrap_or(("reputation", "known benign"));
+    card.evidence.push(format!("reputation: {src} benign '{name}' — known benign (-1 band)"));
+    let (sev, score) = downgrade_one_band(card.severity, card.score);
+    card.severity = sev;
+    card.score = score;
+}
 
 #[cfg(test)]
 mod tests {
@@ -228,6 +237,48 @@ mod apply_tests {
         assert_eq!(c.severity, Severity::Critical);
         assert!(c.score >= 90);
         assert!(c.evidence.iter().any(|e| e.contains("2+ providers agree malicious")));
+    }
+
+    fn benign(source: &str, name: &str) -> ReputationVerdict {
+        ReputationVerdict {
+            source: source.to_string(), status: RepStatus::Benign, malicious: false,
+            score: Some(5), tags: vec![name.to_string()], link: None, fetched_at: 0,
+        }
+    }
+
+    fn finding(src_ip: &str) -> crate::model::finding::Finding {
+        crate::model::finding::Finding {
+            kind: crate::model::finding::FindingKind::Beacon, severity: Severity::High, score: 70,
+            title: "t".to_string(), src_ip: src_ip.to_string(), dst_ip: None, dst_port: None,
+            attack: vec![], evidence: vec![], interval_ns: None, jitter_cv: None, contacts: None,
+        }
+    }
+
+    #[test]
+    fn benign_downgrades_one_band_when_unguarded() {
+        let mut s = summary_with(vec![card("203.0.113.9", IpClass::Public, Severity::Medium, 40, false)], vec![]);
+        apply_reputation(&mut s, &map(vec![("203.0.113.9", vec![benign("greynoise", "Shodan.io")])]));
+        let c = &s.ip_threats[0];
+        assert_eq!(c.severity, Severity::Low);
+        assert!(c.score <= 34);
+        assert!(c.evidence.iter().any(|e| e.contains("known benign")));
+    }
+
+    #[test]
+    fn benign_never_suppresses_a_card_with_local_ioc() {
+        let mut s = summary_with(vec![card("203.0.113.9", IpClass::Public, Severity::High, 65, true)], vec![]);
+        apply_reputation(&mut s, &map(vec![("203.0.113.9", vec![benign("greynoise", "Shodan.io")])]));
+        assert_eq!(s.ip_threats[0].severity, Severity::High);
+    }
+
+    #[test]
+    fn benign_never_suppresses_a_host_with_behavioral_finding() {
+        let mut s = summary_with(
+            vec![card("203.0.113.9", IpClass::Public, Severity::High, 70, false)],
+            vec![finding("203.0.113.9")],
+        );
+        apply_reputation(&mut s, &map(vec![("203.0.113.9", vec![benign("greynoise", "Shodan.io")])]));
+        assert_eq!(s.ip_threats[0].severity, Severity::High);
     }
 
     #[test]
