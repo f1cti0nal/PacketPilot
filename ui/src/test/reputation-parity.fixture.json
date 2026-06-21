@@ -1,0 +1,166 @@
+{
+  "output": {
+    "schema_version": 1,
+    "engine_version": "0.1.0",
+    "source_path": "parity-fixture.pcap",
+    "source_sha256": null,
+    "source_bytes": 1024,
+    "link_type": "EN10MB",
+    "elapsed_ms": 1,
+    "summary": {
+      "total_packets": 10,
+      "total_bytes": 1024,
+      "captured_bytes": 1024,
+      "total_flows": 3,
+      "decode_errors": 0,
+      "non_ip_frames": 0,
+      "proto": {
+        "tcp": 6,
+        "udp": 4,
+        "dns": 0,
+        "http": 0,
+        "tls": 0,
+        "other_tcp": 0,
+        "other_udp": 4,
+        "truncated": 0,
+        "non_ipv4": 0
+      },
+      "first_ts_ns": 1750000000000000000,
+      "last_ts_ns": 1750000010000000000,
+      "duration_ns": 10000000000,
+      "unique_hosts": 3,
+      "top_talkers": [
+        { "ip": "8.8.8.8",   "pkts": 5, "bytes": 500, "flows": 2 },
+        { "ip": "1.1.1.1",   "pkts": 3, "bytes": 300, "flows": 1 },
+        { "ip": "10.0.0.5",  "pkts": 2, "bytes": 224, "flows": 1 }
+      ],
+      "protocol_hierarchy": [
+        { "path": "ip.tcp", "pkts": 6, "bytes": 600 },
+        { "path": "ip.udp", "pkts": 4, "bytes": 424 }
+      ],
+      "port_histogram": [
+        { "port": 443, "transport": "tcp", "pkts": 6, "bytes": 600 },
+        { "port": 53,  "transport": "udp", "pkts": 4, "bytes": 424 }
+      ],
+      "time_histogram": [
+        { "epoch_sec": 1750000000, "pkts": 10, "bytes": 1024 }
+      ],
+      "time_bucket_secs": 10,
+      "category_breakdown": [
+        { "category": "web",           "flows": 2, "pkts": 6, "bytes": 600 },
+        { "category": "dns",           "flows": 1, "pkts": 4, "bytes": 424 },
+        { "category": "email",         "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "file-transfer", "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "remote-access", "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "voip",          "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "iot-ot",        "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "tunnel-vpn",    "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "scan",          "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "c2",            "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "anomalous",     "flows": 0, "pkts": 0, "bytes": 0 },
+        { "category": "unknown",       "flows": 0, "pkts": 0, "bytes": 0 }
+      ],
+      "severity_counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 1,
+        "low": 2,
+        "info": 0
+      },
+      "ip_threats": [
+        {
+          "ip": "8.8.8.8",
+          "ip_class": "public",
+          "severity": "low",
+          "score": 20,
+          "flows": 2,
+          "bytes": 500,
+          "ioc": false,
+          "tags": ["public"],
+          "attack": [],
+          "evidence": [],
+          "reputation": []
+        },
+        {
+          "ip": "1.1.1.1",
+          "ip_class": "public",
+          "severity": "medium",
+          "score": 40,
+          "flows": 1,
+          "bytes": 300,
+          "ioc": false,
+          "tags": ["public"],
+          "attack": [],
+          "evidence": [],
+          "reputation": []
+        },
+        {
+          "ip": "10.0.0.5",
+          "ip_class": "private",
+          "severity": "low",
+          "score": 25,
+          "flows": 1,
+          "bytes": 224,
+          "ioc": false,
+          "tags": ["internal"],
+          "attack": [],
+          "evidence": [],
+          "reputation": []
+        }
+      ],
+      "findings": [],
+      "incidents": []
+    }
+  },
+  "verdicts": {
+    "8.8.8.8": [
+      {
+        "source": "abuseipdb",
+        "status": "malicious",
+        "malicious": true,
+        "score": 95,
+        "tags": ["ssh", "brute-force"],
+        "link": null,
+        "fetched_at": 1750000000
+      },
+      {
+        "source": "virustotal",
+        "status": "malicious",
+        "malicious": true,
+        "score": 80,
+        "tags": [],
+        "link": null,
+        "fetched_at": 1750000000
+      }
+    ],
+    "1.1.1.1": [
+      {
+        "source": "greynoise",
+        "status": "benign",
+        "malicious": false,
+        "score": 5,
+        "tags": ["Cloudflare DNS"],
+        "link": null,
+        "fetched_at": 1750000000
+      }
+    ],
+    "10.0.0.5": [
+      {
+        "source": "abuseipdb",
+        "status": "malicious",
+        "malicious": true,
+        "score": 99,
+        "tags": [],
+        "link": null,
+        "fetched_at": 1750000000
+      }
+    ]
+  },
+  "expected": {
+    "ip_threats": [
+      { "ip": "8.8.8.8",  "severity": "critical", "score": 90 },
+      { "ip": "1.1.1.1",  "severity": "low",      "score": 34 },
+      { "ip": "10.0.0.5", "severity": "low",       "score": 25 }
+    ]
+  }
+}
