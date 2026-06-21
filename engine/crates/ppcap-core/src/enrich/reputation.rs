@@ -288,4 +288,32 @@ mod apply_tests {
         assert_eq!(s.ip_threats[0].severity, Severity::Low);
         assert!(s.ip_threats[0].reputation.is_empty());
     }
+
+    #[test]
+    fn unknown_and_notfound_attach_but_dont_move_score() {
+        let mut s = summary_with(vec![card("203.0.113.7", IpClass::Public, Severity::Low, 20, false)], vec![]);
+        apply_reputation(&mut s, &map(vec![("203.0.113.7", vec![
+            verdict("greynoise", RepStatus::NotFound, None),
+            verdict("virustotal", RepStatus::Unknown, None),
+        ])]));
+        let c = &s.ip_threats[0];
+        assert_eq!(c.severity, Severity::Low);
+        assert_eq!(c.score, 20);
+        assert_eq!(c.reputation.len(), 2);
+    }
+
+    #[test]
+    fn uplifted_card_resorts_to_top() {
+        let mut s = summary_with(vec![
+            card("203.0.113.1", IpClass::Public, Severity::High, 70, false),
+            card("203.0.113.2", IpClass::Public, Severity::Low, 20, false),
+        ], vec![]);
+        // The low card gets consensus-malicious -> Critical, must rise to index 0.
+        apply_reputation(&mut s, &map(vec![("203.0.113.2", vec![
+            verdict("abuseipdb", RepStatus::Malicious, Some(96)),
+            verdict("greynoise", RepStatus::Malicious, Some(90)),
+        ])]));
+        assert_eq!(s.ip_threats[0].ip, "203.0.113.2");
+        assert_eq!(s.ip_threats[0].severity, Severity::Critical);
+    }
 }
