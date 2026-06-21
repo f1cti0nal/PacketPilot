@@ -105,6 +105,19 @@ export interface SeverityCounts {
   info: number;
 }
 
+export type RepStatus =
+  | "malicious" | "benign" | "clean" | "unknown" | "notfound" | "unavailable";
+
+export interface ReputationVerdict {
+  source: string;            // "abuseipdb" | "greynoise" | "virustotal"
+  status: RepStatus;
+  malicious: boolean;
+  score: number | null;      // 0..=100; 0 when clean; null when unknown/notfound/unavailable
+  tags: string[];
+  link: string | null;
+  fetched_at: number;        // unix seconds
+}
+
 export interface IpThreat {
   ip: string;
   ip_class: string;
@@ -116,6 +129,7 @@ export interface IpThreat {
   tags: string[];
   attack: string[];
   evidence: string[];
+  reputation?: ReputationVerdict[];
 }
 
 /** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */
