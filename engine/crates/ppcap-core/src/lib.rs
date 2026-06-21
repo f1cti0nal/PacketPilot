@@ -74,3 +74,6 @@ pub use model::summary::{
 pub use packets::{extract_flow_packets, FlowPackets, PacketCaps, PacketQuery, PacketRecord};
 pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};
+
+#[cfg(feature = "online")]
+pub use crate::enrich::online::{lookup_reputation_native, ReputationKeys};
