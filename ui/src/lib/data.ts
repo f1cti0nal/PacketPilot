@@ -58,6 +58,20 @@ export async function loadFlows(
   return raw.map(normalizeFlow);
 }
 
+/** True if `ip` is a routable/public address worth a reputation lookup (mirrors engine is_external). */
+export function isPublicIp(ip: string): boolean {
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return ip.includes(":") ? !/^(fe80|::1|fc|fd)/i.test(ip) : false; // coarse IPv6
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  if (a === 10 || a === 127 || a === 0) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT
+  if (a >= 224) return false;                          // multicast/reserved
+  return true;
+}
+
 export function normalizeFlow(r: RawFlowRow): FlowRow {
   const bytesC2s = Number(r.bytes_c2s);
   const bytesS2c = Number(r.bytes_s2c);
