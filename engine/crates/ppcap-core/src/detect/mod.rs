@@ -622,13 +622,15 @@ impl BehaviorTracker {
             .creds
             .iter()
             .filter(|(_, (_, n))| *n >= min_exposures)
-            .map(|(&(src, dst, dst_port), &(scheme, exposures))| CleartextCredCandidate {
-                src,
-                dst,
-                dst_port,
-                scheme,
-                exposures,
-            })
+            .map(
+                |(&(src, dst, dst_port), &(scheme, exposures))| CleartextCredCandidate {
+                    src,
+                    dst,
+                    dst_port,
+                    scheme,
+                    exposures,
+                },
+            )
             .collect();
         out.sort_by(|a, b| {
             b.exposures
@@ -1886,7 +1888,11 @@ mod tests {
         assert_eq!(f.src_ip, "10.0.0.9");
         assert_eq!(f.dst_ip.as_deref(), Some("10.0.0.5"));
         assert_eq!(f.dst_port, Some(22));
-        assert!(f.attack.iter().any(|a| a == "T1110"), "attack: {:?}", f.attack);
+        assert!(
+            f.attack.iter().any(|a| a == "T1110"),
+            "attack: {:?}",
+            f.attack
+        );
         assert!(f.contacts.unwrap() >= 20);
         assert!(
             f.title.contains("SSH"),
@@ -1986,9 +1992,17 @@ mod tests {
         assert_eq!(f.src_ip, "10.0.0.9");
         assert!(f.dst_ip.is_none(), "fan-out finding has no single dst");
         assert_eq!(f.dst_port, Some(3389));
-        assert!(f.attack.iter().any(|a| a == "T1021"), "attack: {:?}", f.attack);
+        assert!(
+            f.attack.iter().any(|a| a == "T1021"),
+            "attack: {:?}",
+            f.attack
+        );
         assert_eq!(f.contacts, Some(5));
-        assert!(f.title.contains("RDP"), "title names the service: {}", f.title);
+        assert!(
+            f.title.contains("RDP"),
+            "title names the service: {}",
+            f.title
+        );
     }
 
     #[test]
@@ -2032,10 +2046,20 @@ mod tests {
     fn suppress_swept_by_lateral_drops_overlapping_sweep_only() {
         // A sweep and a lateral-movement finding on the SAME (src, port): the established-session
         // interpretation (lateral) wins, so that sweep is dropped. An unrelated sweep survives.
-        let overlap_sweep =
-            mk_finding(FindingKind::HostSweep, "10.0.0.9", Severity::High, 65, &["T1046"]);
-        let other_sweep =
-            mk_finding(FindingKind::HostSweep, "10.0.0.7", Severity::High, 65, &["T1046"]);
+        let overlap_sweep = mk_finding(
+            FindingKind::HostSweep,
+            "10.0.0.9",
+            Severity::High,
+            65,
+            &["T1046"],
+        );
+        let other_sweep = mk_finding(
+            FindingKind::HostSweep,
+            "10.0.0.7",
+            Severity::High,
+            65,
+            &["T1046"],
+        );
         let lateral = mk_finding(
             FindingKind::LateralMovement,
             "10.0.0.9",
@@ -2048,11 +2072,13 @@ mod tests {
         let mut other_sweep = other_sweep;
         other_sweep.dst_port = Some(445);
 
-        let kept = suppress_swept_by_lateral(
-            vec![overlap_sweep.clone(), other_sweep.clone()],
-            &[lateral],
+        let kept =
+            suppress_swept_by_lateral(vec![overlap_sweep.clone(), other_sweep.clone()], &[lateral]);
+        assert_eq!(
+            kept.len(),
+            1,
+            "only the overlapping sweep is dropped: {kept:?}"
         );
-        assert_eq!(kept.len(), 1, "only the overlapping sweep is dropped: {kept:?}");
         assert_eq!(kept[0].src_ip, "10.0.0.7");
     }
 
@@ -2128,7 +2154,11 @@ mod tests {
         }
         let brutes = detect_brute_force(&t, &BruteForceParams::default());
         let lateral = detect_lateral_movement(&t, &LateralMovementParams::default());
-        assert_eq!(brutes.len(), 4, "one brute finding per sprayed host: {brutes:?}");
+        assert_eq!(
+            brutes.len(),
+            4,
+            "one brute finding per sprayed host: {brutes:?}"
+        );
         assert_eq!(lateral.len(), 1, "one lateral fan-out finding: {lateral:?}");
         // Port 22 is in the beacon ignore set, so the regular cadence is NOT also a beacon.
         assert!(detect_beacons(&t, &BeaconParams::default()).is_empty());
@@ -2161,7 +2191,11 @@ mod tests {
         assert_eq!(f.src_ip, "10.0.0.50");
         assert_eq!(f.dst_ip.as_deref(), Some("10.0.0.80"));
         assert_eq!(f.dst_port, Some(80));
-        assert!(f.attack.iter().any(|a| a == "T1552"), "attack: {:?}", f.attack);
+        assert!(
+            f.attack.iter().any(|a| a == "T1552"),
+            "attack: {:?}",
+            f.attack
+        );
         assert_eq!(f.contacts, Some(3));
         assert!(f.title.contains("HTTP Basic"), "title: {}", f.title);
     }
@@ -2169,7 +2203,12 @@ mod tests {
     #[test]
     fn detect_cleartext_creds_disabled_or_below_threshold() {
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        t.observe_cleartext_cred(ip(10, 0, 0, 50), ip(10, 0, 0, 80), 80, CredScheme::HttpBasic);
+        t.observe_cleartext_cred(
+            ip(10, 0, 0, 50),
+            ip(10, 0, 0, 80),
+            80,
+            CredScheme::HttpBasic,
+        );
         let off = CleartextCredsParams {
             enabled: false,
             ..CleartextCredsParams::default()
@@ -2202,7 +2241,11 @@ mod tests {
         assert_eq!(f.src_ip, "10.0.0.52");
         assert_eq!(f.dst_ip.as_deref(), Some("10.0.0.80"));
         assert_eq!(f.dst_port, Some(80));
-        assert!(f.attack.iter().any(|a| a == "T1040"), "attack: {:?}", f.attack);
+        assert!(
+            f.attack.iter().any(|a| a == "T1040"),
+            "attack: {:?}",
+            f.attack
+        );
         assert_eq!(f.contacts, Some(3));
         assert!(f.title.contains("credit card"), "title: {}", f.title);
         // Disabled yields nothing.
@@ -2218,8 +2261,20 @@ mod tests {
         // A PII finding correlates as its own "Collection" stage; mixed with other stages it sorts
         // between Lateral Movement and Command & Control.
         let host = "10.0.0.52";
-        let pii = mk_finding(FindingKind::PiiExposure, host, Severity::High, 64, &["T1040"]);
-        let lateral = mk_finding(FindingKind::LateralMovement, host, Severity::High, 70, &["T1021"]);
+        let pii = mk_finding(
+            FindingKind::PiiExposure,
+            host,
+            Severity::High,
+            64,
+            &["T1040"],
+        );
+        let lateral = mk_finding(
+            FindingKind::LateralMovement,
+            host,
+            Severity::High,
+            70,
+            &["T1021"],
+        );
         let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
         let inc = correlate_incidents(&[beacon, pii, lateral]);
         assert_eq!(inc.len(), 1);
@@ -2561,7 +2616,13 @@ mod tests {
         // Added out of kill-chain order: beacon (C2), sweep (discovery), brute force (cred access).
         let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
         let sweep = mk_finding(FindingKind::HostSweep, host, Severity::High, 65, &["T1046"]);
-        let brute = mk_finding(FindingKind::BruteForce, host, Severity::High, 68, &["T1110"]);
+        let brute = mk_finding(
+            FindingKind::BruteForce,
+            host,
+            Severity::High,
+            68,
+            &["T1110"],
+        );
 
         let inc = correlate_incidents(&[beacon, sweep, brute]);
         assert_eq!(inc.len(), 1);
@@ -2593,7 +2654,13 @@ mod tests {
         );
         let beacon = mk_finding(FindingKind::Beacon, host, Severity::High, 70, &["T1071"]);
         let sweep = mk_finding(FindingKind::HostSweep, host, Severity::High, 65, &["T1046"]);
-        let brute = mk_finding(FindingKind::BruteForce, host, Severity::High, 68, &["T1110"]);
+        let brute = mk_finding(
+            FindingKind::BruteForce,
+            host,
+            Severity::High,
+            68,
+            &["T1110"],
+        );
 
         let inc = correlate_incidents(&[exfil, lateral, beacon, sweep, brute]);
         assert_eq!(inc.len(), 1);
@@ -2620,7 +2687,11 @@ mod tests {
                 FindingKind::DataExfil,
             ]
         );
-        assert!(i.narrative.contains("moved laterally"), "narrative: {}", i.narrative);
+        assert!(
+            i.narrative.contains("moved laterally"),
+            "narrative: {}",
+            i.narrative
+        );
     }
 
     #[test]

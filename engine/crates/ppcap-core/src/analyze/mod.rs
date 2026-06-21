@@ -137,7 +137,14 @@ pub fn run_source(
     cfg: &PipelineConfig,
     progress: impl FnMut(u64, u64, Option<u64>),
 ) -> Result<AnalysisOutput> {
-    run_source_visiting(source, source_label, source_bytes, cfg, &mut |_| {}, progress)
+    run_source_visiting(
+        source,
+        source_label,
+        source_bytes,
+        cfg,
+        &mut |_| {},
+        progress,
+    )
 }
 
 /// Like [`run_source`], but invokes `on_flow` once per finalized flow record — after
@@ -941,7 +948,10 @@ mod tests {
             .find(|f| f.kind == crate::model::finding::FindingKind::LateralMovement)
             .unwrap_or_else(|| panic!("incident missing lateral-movement finding: {incident:?}"));
         assert_eq!(lateral.dst_port, Some(3389), "lateral over RDP");
-        assert!(lateral.dst_ip.is_none(), "fan-out finding has no single dst");
+        assert!(
+            lateral.dst_ip.is_none(),
+            "fan-out finding has no single dst"
+        );
         assert!(
             lateral.contacts.unwrap() >= 4,
             "lateral host count below the detector floor: {lateral:?}"
@@ -962,17 +972,18 @@ mod tests {
             .findings
             .iter()
             .find(|f| {
-                f.kind == crate::model::finding::FindingKind::CleartextCreds && f.dst_port == Some(80)
+                f.kind == crate::model::finding::FindingKind::CleartextCreds
+                    && f.dst_port == Some(80)
             })
-            .unwrap_or_else(|| panic!("no HTTP cleartext-cred finding: {:?}", out.summary.findings));
+            .unwrap_or_else(|| {
+                panic!("no HTTP cleartext-cred finding: {:?}", out.summary.findings)
+            });
         assert_eq!(http_cred.src_ip, "10.0.0.50", "HTTP cleartext-cred victim");
         assert!(http_cred.attack.iter().any(|a| a == "T1552"));
         assert!(
-            out.summary
-                .findings
-                .iter()
-                .any(|f| f.kind == crate::model::finding::FindingKind::CleartextCreds
-                    && f.dst_port == Some(21)),
+            out.summary.findings.iter().any(|f| f.kind
+                == crate::model::finding::FindingKind::CleartextCreds
+                && f.dst_port == Some(21)),
             "expected an FTP cleartext-cred finding"
         );
         assert!(
@@ -1408,7 +1419,8 @@ mod tests {
             buf.write_all(frame).unwrap();
         };
         let tcp_frame = |src: Ipv4Addr, dst: Ipv4Addr, sp: u16, dp: u16, payload: &[u8]| {
-            let tcp = frames::build_tcp(src, dst, sp, dp, frames::TCP_PSH | frames::TCP_ACK, payload);
+            let tcp =
+                frames::build_tcp(src, dst, sp, dp, frames::TCP_PSH | frames::TCP_ACK, payload);
             let ip = frames::build_ipv4(src, dst, frames::IP_PROTO_TCP, 64, tcp.len());
             let mut frame = frames::build_ethernet(
                 [0x02, 0, 0, 0, 0, 1],
@@ -1424,7 +1436,11 @@ mod tests {
         let web_client = Ipv4Addr::new(10, 0, 0, 50);
         let web_server = Ipv4Addr::new(10, 0, 0, 80);
         let basic = frames::http_basic_auth_payload("intranet", "/portal", "dXNlcjpwdw==");
-        push(&mut buf, &tcp_frame(web_client, web_server, 50000, 80, &basic), ts);
+        push(
+            &mut buf,
+            &tcp_frame(web_client, web_server, 50000, 80, &basic),
+            ts,
+        );
         ts += 1_000_000;
 
         // An FTP USER + PASS exchange over cleartext (port 21), same channel -> two exposures.
@@ -1432,9 +1448,17 @@ mod tests {
         let ftp_server = Ipv4Addr::new(10, 0, 0, 90);
         let user = frames::ftp_command_payload("USER alice");
         let pass = frames::ftp_command_payload("PASS s3cr3t");
-        push(&mut buf, &tcp_frame(ftp_client, ftp_server, 40000, 21, &user), ts);
+        push(
+            &mut buf,
+            &tcp_frame(ftp_client, ftp_server, 40000, 21, &user),
+            ts,
+        );
         ts += 1_000_000;
-        push(&mut buf, &tcp_frame(ftp_client, ftp_server, 40000, 21, &pass), ts);
+        push(
+            &mut buf,
+            &tcp_frame(ftp_client, ftp_server, 40000, 21, &pass),
+            ts,
+        );
 
         let mut tf = tempfile::NamedTempFile::new().unwrap();
         tf.write_all(&buf).unwrap();
