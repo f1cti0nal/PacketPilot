@@ -6,6 +6,7 @@ import { SEVERITY_ORDER } from "../lib/severity";
 import type { IpThreat, Severity } from "../types";
 import { sevColor } from "./viz";
 import { ScoreBar, IocDot } from "./primitives";
+import { ReputationChip } from "./ReputationChip";
 
 const worstFirst = (a: IpThreat, b: IpThreat) =>
   SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) || b.score - a.score;
@@ -90,6 +91,7 @@ function RailRow({ threat, color }: { threat: IpThreat; color: string }) {
         <span className="t-tag uppercase">{threat.ip_class}</span>
         <span className="font-mono-num t-tag">{humanNumber(threat.flows)} fl</span>
         <span className="font-mono-num t-tag">{humanBytes(threat.bytes)}</span>
+        {threat.reputation && threat.reputation.length > 0 && <ReputationChip reputation={threat.reputation} />}
       </div>
     </div>
   );

@@ -4,10 +4,10 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, FlowRow, WasmFlow, WireFlowPackets } from "../types";
+import type { AnalysisOutput, FlowRow, ReputationVerdict, WasmFlow, WireFlowPackets } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
-import initWasm, { analyze as wasmAnalyze, extract_packets as wasmExtractPackets } from "../wasm/ppcap_wasm.js";
+import initWasm, { analyze as wasmAnalyze, extract_packets as wasmExtractPackets, apply_reputation as wasmApplyReputation } from "../wasm/ppcap_wasm.js";
 
 export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): Promise<WireFlowPackets> {
   await ensureWasm();
@@ -59,4 +59,17 @@ export async function analyzeViaWasm(
   }
   const rows = (result.flows ?? []).map(flowRowFromWasm);
   return { summary, rows };
+}
+
+/**
+ * Apply reputation verdicts to an existing analysis output via WASM.
+ * Single-sourced scoring: the same engine logic runs in-browser as on the desktop.
+ */
+export async function applyReputationWasm(
+  outputJson: string,
+  verdicts: Record<string, ReputationVerdict[]>,
+): Promise<AnalysisOutput> {
+  await ensureWasm();
+  const updated = wasmApplyReputation(outputJson, JSON.stringify(verdicts)) as string;
+  return JSON.parse(updated) as AnalysisOutput;
 }

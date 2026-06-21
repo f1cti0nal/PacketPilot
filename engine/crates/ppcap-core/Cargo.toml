@@ -21,6 +21,12 @@ serde        = { workspace = true }
 serde_json   = { workspace = true }
 thiserror    = { workspace = true }
 time         = { workspace = true }
+ureq         = { workspace = true, optional = true }
+
+[features]
+default = []
+# Native-only online reputation lookups (AbuseIPDB / GreyNoise / VirusTotal). Pulls ureq.
+online = ["dep:ureq"]
 
 [dev-dependencies]
 criterion  = { workspace = true }

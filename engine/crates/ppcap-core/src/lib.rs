@@ -56,8 +56,8 @@ pub use detect::{
     DnsTunnelParams, ExfilParams, LateralMovementParams, PiiExposureParams, SweepParams,
 };
 pub use enrich::{
-    attack_for, classify_ip, AttackTechnique, Enricher, FeedMatch, FlowEnrichment, IpClass,
-    ThreatFeed,
+    apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher, FeedMatch,
+    FlowEnrichment, IpClass, RepStatus, ReputationVerdict, ThreatFeed,
 };
 pub use error::{PpError, Result};
 pub use model::category::Category;
@@ -74,3 +74,6 @@ pub use model::summary::{
 pub use packets::{extract_flow_packets, FlowPackets, PacketCaps, PacketQuery, PacketRecord};
 pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};
+
+#[cfg(feature = "online")]
+pub use crate::enrich::online::{lookup_reputation_native, ReputationKeys};

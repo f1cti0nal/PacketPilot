@@ -12,3 +12,8 @@ src-tauri/Cargo.lock
 src/wasm/
 # Throwaway capture used only for local wasm verification
 public/test/
+
+# Vitest coverage report (regenerable via npm run test:coverage)
+coverage
+# Editor launch/scratch config
+.claude

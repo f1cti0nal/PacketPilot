@@ -129,9 +129,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.
 - One-click **HTML / JSON report** export (print-to-PDF); in-app Export button.
 - Native **Tauri desktop app** + browser build from one codebase.
+- **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
+  AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
+  bare public IP strings leave the device, never packets or internal IPs). See [docs/reputation.md](docs/reputation.md).
 
 ## Roadmap (optional)
-- Online reputation connectors (AbuseIPDB / GreyNoise / VirusTotal — keyed + cached).
 - gzip-capture ingest; `packet_index` Parquet for packet-level drill-down.
 - Self-hosted team server (shared cases, RBAC) — the "hybrid" other half.
 - Integrations: export findings to RuleForge AI (detection rules) and Sentinel (SOC incidents).

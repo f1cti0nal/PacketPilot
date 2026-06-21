@@ -10,10 +10,11 @@ name = "ppcap"
 path = "src/main.rs"
 
 [dependencies]
-ppcap-core = { path = "../ppcap-core" }
+ppcap-core = { path = "../ppcap-core", features = ["online"] }
 clap       = { workspace = true }
 anyhow     = { workspace = true }
 serde_json = { workspace = true }
+dirs       = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

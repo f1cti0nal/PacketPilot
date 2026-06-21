@@ -41,10 +41,15 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
-      - name: C-compiler-free gate (shipped graph pulls no cc crate)
+      - name: Test reputation online feature
+        run: cargo test -p ppcap-core --features online
+      - name: C-compiler-free gate (offline core pulls no cc crate)
         run: |
-          if cargo tree -e no-dev | grep -Ei "zstd-sys|lz4-sys|cc |cmake|bzip2-sys|openssl-sys|zlib-sys"; then
-            echo "::error::shipped dependency graph pulls a C-compiled crate"; exit 1
+          # The offline streaming engine (ppcap-core, default features) must stay pure-Rust.
+          # The opt-in `online` reputation feature (cli/desktop only) intentionally pulls
+          # ureq→rustls→ring→cc for TLS, so scope the gate to ppcap-core's default graph.
+          if cargo tree -p ppcap-core -e no-dev | grep -Ei "zstd-sys|lz4-sys|cc |cmake|bzip2-sys|openssl-sys|zlib-sys"; then
+            echo "::error::offline ppcap-core graph pulls a C-compiled crate"; exit 1
           fi
 
   ui:

@@ -158,6 +158,20 @@ struct AnalyzeResult {
     flows: Vec<FlowDto>,
 }
 
+/// Apply reputation verdicts to a completed analysis. `output_json` is the `AnalysisOutput` from
+/// `analyze`; `verdicts_json` is `{ "<ip>": [ReputationVerdict, ...], ... }` (snake_case). Returns
+/// the updated `AnalysisOutput` as JSON. Pure + network-free — identical scoring to native callers.
+#[wasm_bindgen]
+pub fn apply_reputation(output_json: &str, verdicts_json: &str) -> Result<String, JsValue> {
+    use std::collections::BTreeMap;
+    let mut out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let verdicts: BTreeMap<String, Vec<ppcap_core::ReputationVerdict>> =
+        serde_json::from_str(verdicts_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    ppcap_core::apply_reputation(&mut out.summary, &verdicts);
+    serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// Analyze a raw capture (`.pcap`/`.pcapng`) held entirely in memory.
 ///
 /// `bytes` is the capture file; `name` becomes the reported `source_path`. Returns a JSON

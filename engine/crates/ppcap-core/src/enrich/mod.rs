@@ -406,17 +406,14 @@ pub fn attack_for(cat: Category) -> Option<AttackTechnique> {
 }
 
 // ---------------------------------------------------------------------------------------
-// Reputation provider trait (Phase-3 online seam; NOT wired into the pipeline).
+// Reputation types (always-compiled; extended struct lives in `reputation` module).
 // ---------------------------------------------------------------------------------------
 
-/// The verdict an online reputation source would return.
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ReputationVerdict {
-    pub source: &'static str,
-    pub malicious: bool,
-    pub score: Option<u8>,
-    pub tags: Vec<String>,
-}
+pub mod reputation;
+pub use reputation::{apply_reputation, RepStatus, ReputationVerdict};
+
+#[cfg(feature = "online")]
+pub mod online;
 
 /// Online IP/domain reputation. NOT wired into the Phase-2 pipeline. Real providers
 /// (AbuseIPDB/GreyNoise/VirusTotal) need a key + network and would return nothing on

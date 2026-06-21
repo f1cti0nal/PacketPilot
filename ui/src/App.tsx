@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ActiveSource,
   AnalysisOutput,
@@ -34,8 +34,19 @@ import {
   analyzeViaTauri,
   exportReport,
 } from "./lib/platform";
-import { analyzeViaWasm } from "./lib/wasmEngine";
+import { analyzeViaWasm, applyReputationWasm } from "./lib/wasmEngine";
 import { EmptyState } from "./components/state/EmptyState";
+import {
+  repEnabled,
+  getProxyUrl,
+  browserKeys,
+  consentGiven,
+  giveConsent,
+} from "./lib/reputation/settings";
+import { lookupReputation } from "./lib/reputation/orchestrator";
+import { proxyHttp } from "./lib/reputation/http";
+import { ReputationConsent } from "./cockpit/ReputationConsent";
+import { SettingsDialog } from "./cockpit/SettingsDialog";
 
 export interface FlowsInitialFilter {
   severity?: Severity;
@@ -91,6 +102,13 @@ export function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [activeIp, setActiveIp] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Consent prompt state: set when a newly-loaded capture has public IPs but consent hasn't
+  // been given yet; cleared when the user proceeds or cancels.
+  const [consentPrompt, setConsentPrompt] = useState<{ output: AnalysisOutput; ipCount: number; providers: string[] } | null>(null);
+  // Tracks the source identity of the last capture we ran (or offered to run) the reputation
+  // pass on, preventing double-triggers when summary state re-renders.
+  const lastRepSourceRef = useRef<string | null>(null);
 
   // Eagerly load the bundled sample capture on mount.
   useEffect(() => {
@@ -180,23 +198,76 @@ export function App() {
     [],
   );
 
+  // Perform the reputation lookup and apply enriched results to the current summary IN PLACE.
+  // Does NOT call applyCapture again — that would re-record to Recent and reset activeSource.
+  const runReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
+    if (!repEnabled()) return;
+    const ips = (output.summary.ip_threats ?? [])
+      .filter((t) => t.ip_class === "public")
+      .map((t) => t.ip);
+    if (ips.length === 0) return;
+
+    let verdicts: Record<string, import("./types").ReputationVerdict[]> = {};
+    const now = Math.floor(Date.now() / 1000);
+    if (IS_TAURI) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      verdicts = JSON.parse(await invoke<string>("reputation_lookup", { ips })) as typeof verdicts;
+    } else {
+      const proxy = getProxyUrl();
+      const keys = browserKeys();
+      if (!proxy || Object.keys(keys).length === 0) return;
+      verdicts = await lookupReputation(proxyHttp(proxy), ips, keys, now);
+    }
+
+    if (Object.keys(verdicts).length === 0) return;
+    const enriched = await applyReputationWasm(JSON.stringify(output), verdicts);
+    setSummary({ status: "ready", data: enriched });
+  }, []);
+
+  // Open the consent gate or fire the reputation pass immediately, depending on whether
+  // consent has already been given. Should be called once per new capture (after applyCapture).
+  const triggerReputationGate = useCallback((output: AnalysisOutput) => {
+    if (!repEnabled()) return;
+    const publicIps = (output.summary.ip_threats ?? []).filter((t) => t.ip_class === "public");
+    if (publicIps.length === 0) return;
+    if (consentGiven()) {
+      void runReputation(output);
+    } else {
+      // Fetch the actual configured provider list so the consent dialog names only
+      // providers the user has set up (desktop: keychain; browser: localStorage keys).
+      const fetchProviders = IS_TAURI
+        ? import("@tauri-apps/api/core").then(({ invoke }) => invoke<string[]>("reputation_key_status"))
+        : Promise.resolve(Object.keys(browserKeys()));
+      void fetchProviders.then((providers) => {
+        setConsentPrompt({ output, ipCount: publicIps.length, providers });
+      });
+    }
+  }, [runReputation]);
+
   // Replace the active capture with a user-imported summary.json + flows.parquet (either may
   // be supplied). A summary turns it into a Recent entry; flows-only just updates the table.
   const handleReplaceData = useCallback(
     (next: { summary?: AnalysisOutput; flows?: FlowRow[] }) => {
       if (next.summary) {
+        const out = next.summary;
         void applyCapture({
-          summary: next.summary,
+          summary: out,
           flows: next.flows,
           origin: "upload",
           source: null, // an imported summary/parquet has no original pcap to re-read
+        }).then(() => {
+          const key = out.source_sha256 ?? out.source_path;
+          if (lastRepSourceRef.current !== key) {
+            lastRepSourceRef.current = key;
+            triggerReputationGate(out);
+          }
         });
       } else if (next.flows) {
         setFlows({ status: "ready", rows: next.flows });
         setActiveSource(null); // swapped flows out of band — old source no longer matches
       }
     },
-    [applyCapture],
+    [applyCapture, triggerReputationGate],
   );
 
   const handleNativeLoad = useCallback(async () => {
@@ -215,12 +286,17 @@ export function App() {
         origin: "native",
         source: { kind: "path", path },
       });
+      const key = nextSummary.source_sha256 ?? nextSummary.source_path;
+      if (lastRepSourceRef.current !== key) {
+        lastRepSourceRef.current = key;
+        triggerReputationGate(nextSummary);
+      }
     } catch (err: unknown) {
       const message = String((err as Error)?.message ?? err);
       setSummary({ status: "error", error: message });
       setFlows({ status: "error", rows: [], error: message });
     }
-  }, [applyCapture]);
+  }, [applyCapture, triggerReputationGate]);
 
   // Analyze a raw .pcap/.pcapng entirely in the browser via the WebAssembly engine. Errors
   // propagate to the load dialog (which keeps the current capture on screen on failure).
@@ -239,8 +315,13 @@ export function App() {
         source: bytes.byteLength <= MAX_RETAIN_BYTES ? { kind: "bytes", bytes } : null,
       });
       setTab("dashboard");
+      const key = nextSummary.source_sha256 ?? nextSummary.source_path;
+      if (lastRepSourceRef.current !== key) {
+        lastRepSourceRef.current = key;
+        triggerReputationGate(nextSummary);
+      }
     },
-    [applyCapture],
+    [applyCapture, triggerReputationGate],
   );
 
   // The "Load capture" affordance: native dialog on desktop, in-app drop dialog in browser.
@@ -284,6 +365,11 @@ export function App() {
             origin: "native",
             source: { kind: "path", path: entry.path },
           });
+          const key = nextSummary.source_sha256 ?? nextSummary.source_path;
+          if (lastRepSourceRef.current !== key) {
+            lastRepSourceRef.current = key;
+            triggerReputationGate(nextSummary);
+          }
         } catch (err: unknown) {
           const message = String((err as Error)?.message ?? err);
           setSummary({ status: "error", error: message });
@@ -295,7 +381,7 @@ export function App() {
         setLoadDialogOpen(true);
       }
     },
-    [applyCapture],
+    [applyCapture, triggerReputationGate],
   );
 
   const handleRemoveRecent = useCallback(
@@ -332,6 +418,7 @@ export function App() {
   }, [summary, jumpToFlows]);
 
   return (
+    <>
     <AppShell
       activeTab={tab}
       onTabChange={setTab}
@@ -351,6 +438,7 @@ export function App() {
       onOpenPalette={() => setPaletteOpen(true)}
       paletteOpen={paletteOpen}
       onPaletteOpenChange={setPaletteOpen}
+      onOpenSettings={() => setSettingsOpen(true)}
     >
       {tab === "flows" ? (
         <FlowsView state={flows} initialFilter={flowsFilter} activeSource={activeSource} />
@@ -384,6 +472,23 @@ export function App() {
         />
       )}
     </AppShell>
+    {consentPrompt && (
+      <ReputationConsent
+        ipCount={consentPrompt.ipCount}
+        providers={consentPrompt.providers}
+        onProceed={() => {
+          giveConsent();
+          const out = consentPrompt.output;
+          setConsentPrompt(null);
+          void runReputation(out);
+        }}
+        onCancel={() => setConsentPrompt(null)}
+      />
+    )}
+    {settingsOpen && (
+      <SettingsDialog onClose={() => setSettingsOpen(false)} />
+    )}
+    </>
   );
 }
 
