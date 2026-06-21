@@ -86,6 +86,57 @@ fn extract_flow_packets(
         .map_err(|e| e.to_string())
 }
 
+const KEYRING_SERVICE: &str = "packetpilot-reputation";
+
+fn key_for(provider: &str) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, provider).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(k) if !k.is_empty() => Ok(Some(k)),
+        _ => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn set_reputation_key(provider: String, key: String) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, &provider).map_err(|e| e.to_string())?;
+    entry.set_password(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reputation_key_status() -> Result<Vec<String>, String> {
+    let mut active = Vec::new();
+    for p in ["abuseipdb", "greynoise", "virustotal"] {
+        if key_for(p)?.is_some() {
+            active.push(p.to_string());
+        }
+    }
+    Ok(active)
+}
+
+#[tauri::command]
+fn reputation_lookup(ips: Vec<String>) -> Result<String, String> {
+    let keys = ppcap_core::ReputationKeys {
+        abuseipdb: key_for("abuseipdb")?,
+        greynoise: key_for("greynoise")?,
+        virustotal: key_for("virustotal")?,
+    };
+    if keys.is_empty() {
+        return Ok("{}".to_string());
+    }
+    let parsed: Vec<std::net::IpAddr> = ips
+        .iter()
+        .filter_map(|s| s.parse().ok())
+        .filter(|ip| ppcap_core::enrich::classify_ip(*ip).is_external())
+        .collect();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("packetpilot");
+    let verdicts = ppcap_core::lookup_reputation_native(&parsed, &keys, &cache_dir, now);
+    serde_json::to_string(&verdicts).map_err(|e| e.to_string())
+}
+
 /// Render the self-contained HTML triage report for `summary` and write it to `path`.
 /// The "generated at" time is the current wall clock (UTC Unix seconds).
 #[tauri::command]
@@ -104,7 +155,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             analyze_capture,
             save_report,
-            extract_flow_packets
+            extract_flow_packets,
+            set_reputation_key,
+            reputation_key_status,
+            reputation_lookup
         ])
         .run(tauri::generate_context!())
         .expect("error while running PacketPilot");
