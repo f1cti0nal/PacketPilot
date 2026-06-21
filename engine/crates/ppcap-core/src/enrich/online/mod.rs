@@ -69,11 +69,9 @@ impl FakeHttp {
 }
 
 /// Helper: is this address worth a lookup (public/routable)?
-/// Documentation-range IPs (RFC 5737: 192.0.2/24, 198.51.100/24, 203.0.113/24) are included
-/// because they are used as representative public IPs in tests and documentation examples.
+/// Only `IpClass::Public` addresses are looked up — matches the filter in `apply_reputation`.
 pub(crate) fn is_lookupable(ip: IpAddr) -> bool {
-    use crate::enrich::IpClass;
-    matches!(crate::enrich::classify_ip(ip), IpClass::Public | IpClass::Documentation)
+    crate::enrich::classify_ip(ip).is_external()
 }
 
 // ─── Orchestrator ────────────────────────────────────────────────────────────
@@ -243,6 +241,8 @@ mod tests {
         assert!(is_lookupable("8.8.8.8".parse().unwrap()));
         assert!(!is_lookupable("10.0.0.1".parse().unwrap()));
         assert!(!is_lookupable("192.168.1.1".parse().unwrap()));
+        // Documentation-range IPs (RFC 5737) must NOT be looked up — apply_reputation skips them.
+        assert!(!is_lookupable("203.0.113.7".parse().unwrap()));
     }
 }
 
@@ -258,9 +258,9 @@ mod orchestrator_tests {
         let keys = ReputationKeys { abuseipdb: Some("k".into()), greynoise: None, virustotal: None };
         let mut cache = ReputationCache::load(std::env::temp_dir().as_path());
         let mut budget = Budget::with_defaults();
-        let ips = vec!["203.0.113.7".parse().unwrap()];
+        let ips = vec!["8.8.8.8".parse().unwrap()];
         let out = lookup_reputation(&http, &ips, &keys, &mut cache, &mut budget, &Ttls::default(), 1000);
-        let vs = out.get("203.0.113.7").unwrap();
+        let vs = out.get("8.8.8.8").unwrap();
         assert_eq!(vs.len(), 1); // only abuseipdb active
         assert_eq!(vs[0].source, "abuseipdb");
         assert_eq!(vs[0].status, RepStatus::Malicious);
@@ -285,8 +285,8 @@ mod orchestrator_tests {
         let mut budget = Budget::with_defaults();
         // Drain abuseipdb.
         while budget.try_spend("abuseipdb") {}
-        let ips = vec!["203.0.113.7".parse().unwrap()];
+        let ips = vec!["8.8.8.8".parse().unwrap()];
         let out = lookup_reputation(&http, &ips, &keys, &mut cache, &mut budget, &Ttls::default(), 0);
-        assert_eq!(out.get("203.0.113.7").unwrap()[0].status, RepStatus::Unavailable);
+        assert_eq!(out.get("8.8.8.8").unwrap()[0].status, RepStatus::Unavailable);
     }
 }
