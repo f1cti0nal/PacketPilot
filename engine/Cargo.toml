@@ -26,6 +26,7 @@ time         = { version = "=0.3.41", default-features = false, features = ["for
 # NOTE: pin to 2.x — its response API is `.call()?.into_string()?`. ureq 3.x changed this
 # (`.body_mut().read_to_string()`); if cargo resolves 3.x, either pin "=2.x" or update UreqClient.
 ureq         = { version = "2", default-features = false, features = ["tls"] }
+dirs         = "5"
 # dev
 criterion    = { version = "=0.8.2", default-features = false, features = ["plotters", "cargo_bench_support"] }
 peak_alloc   = "=0.3.0"

@@ -60,6 +60,10 @@ pub enum Command {
         /// Export a STIX 2.1 bundle (indicators + ATT&CK) to this path.
         #[arg(long)]
         stix: Option<PathBuf>,
+        /// Enrich public IPs with online reputation (AbuseIPDB / GreyNoise / VirusTotal).
+        /// Requires at least one of ABUSEIPDB_API_KEY / GREYNOISE_API_KEY / VIRUSTOTAL_API_KEY.
+        #[arg(long)]
+        reputation: bool,
     },
     /// Generate a synthetic capture for testing.
     Gen {
@@ -126,6 +130,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             threat_feed,
             csv,
             stix,
+            reputation,
         } => {
             // IMPL:
             //  - Build ppcap_core::PipelineConfig::default(), then set:
@@ -177,10 +182,36 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 let _ = err.flush();
             };
 
-            let out = ppcap_core::run(&input, &cfg, progress)?;
+            let mut out = ppcap_core::run(&input, &cfg, progress)?;
             if !quiet {
                 // Terminate the in-place progress line.
                 let _ = writeln!(std::io::stderr());
+            }
+
+            if reputation {
+                let keys = ppcap_core::ReputationKeys {
+                    abuseipdb: std::env::var("ABUSEIPDB_API_KEY").ok().filter(|s| !s.is_empty()),
+                    greynoise: std::env::var("GREYNOISE_API_KEY").ok().filter(|s| !s.is_empty()),
+                    virustotal: std::env::var("VIRUSTOTAL_API_KEY").ok().filter(|s| !s.is_empty()),
+                };
+                if keys.is_empty() {
+                    if !quiet {
+                        let _ = writeln!(std::io::stderr(),
+                            "reputation: no provider key set (ABUSEIPDB_API_KEY / GREYNOISE_API_KEY / VIRUSTOTAL_API_KEY); skipping");
+                    }
+                } else {
+                    let ips: Vec<std::net::IpAddr> = out.summary.ip_threats.iter()
+                        .filter_map(|t| t.ip.parse().ok())
+                        .filter(|ip| ppcap_core::enrich::classify_ip(*ip).is_external())
+                        .collect();
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("packetpilot");
+                    let verdicts = ppcap_core::lookup_reputation_native(&ips, &keys, &cache_dir, now);
+                    ppcap_core::apply_reputation(&mut out.summary, &verdicts);
+                }
             }
 
             let s = out.to_json_pretty()?;
@@ -303,4 +334,28 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
         h = h.wrapping_mul(0x0000_0100_0000_01B3);
     }
     h
+}
+
+#[cfg(test)]
+mod reputation_cli_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn reputation_flag_parses() {
+        let cli = Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--reputation"]).unwrap();
+        match cli.command {
+            Command::Analyze { reputation, .. } => assert!(reputation),
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn reputation_defaults_off() {
+        let cli = Cli::try_parse_from(["ppcap", "analyze", "x.pcap"]).unwrap();
+        match cli.command {
+            Command::Analyze { reputation, .. } => assert!(!reputation),
+            _ => panic!("expected Analyze"),
+        }
+    }
 }
