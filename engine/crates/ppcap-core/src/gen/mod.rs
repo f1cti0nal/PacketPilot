@@ -738,9 +738,23 @@ impl SynthGen {
         // record_flow normalizes endpoints, so both directions map to the one session flow.
         self.record_flow(client, target, sport, 3389, IP_PROTO_TCP);
         let (src, dst, sp, dp, smac, dmac) = if outbound {
-            (client, target, sport, 3389, BEACON_CLIENT_MAC, BEACON_LATERAL_MAC)
+            (
+                client,
+                target,
+                sport,
+                3389,
+                BEACON_CLIENT_MAC,
+                BEACON_LATERAL_MAC,
+            )
         } else {
-            (target, client, 3389, sport, BEACON_LATERAL_MAC, BEACON_CLIENT_MAC)
+            (
+                target,
+                client,
+                3389,
+                sport,
+                BEACON_LATERAL_MAC,
+                BEACON_CLIENT_MAC,
+            )
         };
         let tcp = frames::build_tcp(src, dst, sp, dp, TCP_PSH | TCP_ACK, &payload);
         let ip = frames::build_ipv4(src, dst, IP_PROTO_TCP, 64, tcp.len());
@@ -794,8 +808,14 @@ impl SynthGen {
             };
             self.record_flow(victim, server, BEACON_FTP_SPORT, 21, IP_PROTO_TCP);
             let payload = frames::ftp_command_payload(line);
-            let tcp =
-                frames::build_tcp(victim, server, BEACON_FTP_SPORT, 21, TCP_PSH | TCP_ACK, &payload);
+            let tcp = frames::build_tcp(
+                victim,
+                server,
+                BEACON_FTP_SPORT,
+                21,
+                TCP_PSH | TCP_ACK,
+                &payload,
+            );
             let ip = frames::build_ipv4(victim, server, IP_PROTO_TCP, 64, tcp.len());
             let mut frame =
                 frames::build_ethernet(BEACON_CREDS_MAC, BEACON_CREDS_SRV_MAC, ETHERTYPE_IPV4);
@@ -809,11 +829,8 @@ impl SynthGen {
             let server = beacon_creds_server();
             let sport = 55000 + (k % 2000) as u16;
             self.record_flow(victim, server, sport, 80, IP_PROTO_TCP);
-            let payload = frames::http_post_payload(
-                "shop.corp.example",
-                "/checkout",
-                BEACON_PII_BODY,
-            );
+            let payload =
+                frames::http_post_payload("shop.corp.example", "/checkout", BEACON_PII_BODY);
             let tcp = frames::build_tcp(victim, server, sport, 80, TCP_PSH | TCP_ACK, &payload);
             let ip = frames::build_ipv4(victim, server, IP_PROTO_TCP, 64, tcp.len());
             let mut frame =
@@ -1251,7 +1268,10 @@ mod tests {
             let mut b = Vec::new();
             SynthGen::new(beacon_cfg(packets)).write_to(&mut a).unwrap();
             SynthGen::new(beacon_cfg(packets)).write_to(&mut b).unwrap();
-            assert_eq!(a, b, "beacon output byte-identical for same config (packets={packets})");
+            assert_eq!(
+                a, b,
+                "beacon output byte-identical for same config (packets={packets})"
+            );
         }
     }
 }

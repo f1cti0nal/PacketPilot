@@ -137,9 +137,7 @@ impl AppProto {
 /// A cleartext credential-exposure scheme sniffed from an L4 payload peek. Only the *derived*
 /// scheme is retained — never the credential itself — so detection stays within the engine's
 /// no-payload-retention / privacy contract.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CredScheme {
     /// HTTP `Authorization: Basic` over cleartext (base64 user:pass, trivially reversible).

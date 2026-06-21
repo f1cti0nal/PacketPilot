@@ -777,7 +777,9 @@ fn choose_bucket_width(first_sec: i64, last_sec: i64, max_buckets: usize) -> i64
             return w;
         }
     }
-    let largest = *NICE_BUCKET_WIDTHS_SECS.last().expect("widths list is non-empty");
+    let largest = *NICE_BUCKET_WIDTHS_SECS
+        .last()
+        .expect("widths list is non-empty");
     let mut w = largest;
     while aligned_bucket_count(first_sec, last_sec, w) > cap {
         // Saturating so a pathological (i64-spanning) window can't overflow into a panic.

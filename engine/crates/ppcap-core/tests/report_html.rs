@@ -162,16 +162,31 @@ fn renders_active_incidents_with_kill_chain() {
     assert!(html.contains("Active incidents"));
     assert!(html.contains("10.0.0.5"), "incident host missing");
     assert!(html.contains("89/100"), "incident score missing");
-    assert!(html.contains("Command &amp; Control"), "kill-chain stage missing/escaped wrong");
+    assert!(
+        html.contains("Command &amp; Control"),
+        "kill-chain stage missing/escaped wrong"
+    );
     assert!(html.contains("C2 Beacon"), "finding kind label missing");
     assert!(html.contains("16 contacts"), "finding metric missing");
     assert!(html.contains("T1046"), "ATT&CK technique missing");
 
     // The executive-summary callout leads with the correlated-incident count + worst severity.
-    assert!(html.contains("correlated incident"), "exec summary omits incident count");
-    assert!(html.contains("worst critical"), "exec summary omits worst severity");
+    assert!(
+        html.contains("correlated incident"),
+        "exec summary omits incident count"
+    );
+    assert!(
+        html.contains("worst critical"),
+        "exec summary omits worst severity"
+    );
 
     // Narrative is escaped: the raw '<b>' must be neutralized.
-    assert!(html.contains("a C2 &lt;b&gt;"), "incident narrative not escaped");
-    assert!(!html.contains("a C2 <b>"), "raw '<b>' leaked from narrative");
+    assert!(
+        html.contains("a C2 &lt;b&gt;"),
+        "incident narrative not escaped"
+    );
+    assert!(
+        !html.contains("a C2 <b>"),
+        "raw '<b>' leaked from narrative"
+    );
 }
