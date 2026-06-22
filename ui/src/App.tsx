@@ -60,6 +60,8 @@ import { SettingsDialog } from "./cockpit/SettingsDialog";
 import { AiChatPanel } from "./cockpit/AiChatPanel";
 import { getAiSummary, captureKey } from "./lib/ai/cache";
 
+const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
+
 export interface FlowsInitialFilter {
   severity?: Severity;
   category?: string;
@@ -131,6 +133,10 @@ export function App() {
   // Tracks the source identity of the last capture we ran (or offered to run) the reputation
   // pass on, preventing double-triggers when summary state re-renders.
   const lastRepSourceRef = useRef<string | null>(null);
+  // The freshest "ready" summary, so each reputation pass enriches the latest data (not a stale
+  // snapshot); a chain serializes the IP and domain commits so they compose, never clobber.
+  const summaryDataRef = useRef<AnalysisOutput | null>(null);
+  const repChainRef = useRef<Promise<void>>(Promise.resolve());
 
   // Eagerly load the bundled sample capture on mount.
   useEffect(() => {
@@ -169,6 +175,11 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  // Keep summaryDataRef in sync so enrichAndCommit always enriches the freshest data.
+  useEffect(() => {
+    summaryDataRef.current = summary.status === "ready" ? (summary.data ?? null) : null;
+  }, [summary]);
 
   // Auto-collapse the threat rail on narrow viewports.
   useEffect(() => {
@@ -220,6 +231,27 @@ export function App() {
     [],
   );
 
+  // Apply a reputation fold to the freshest summary for THIS capture and commit it, serialized
+  // through repChainRef so the IP and domain passes compose instead of overwriting each other.
+  const enrichAndCommit = useCallback(
+    (
+      base: AnalysisOutput,
+      verdicts: Record<string, import("./types").ReputationVerdict[]>,
+      apply: (json: string, v: Record<string, import("./types").ReputationVerdict[]>) => Promise<AnalysisOutput>,
+    ): Promise<void> => {
+      const run = repChainRef.current.then(async () => {
+        const latest = summaryDataRef.current;
+        const useBase = latest && repCaptureKey(latest) === repCaptureKey(base) ? latest : base;
+        const enriched = await apply(JSON.stringify(useBase), verdicts);
+        summaryDataRef.current = enriched;
+        setSummary({ status: "ready", data: enriched });
+      });
+      repChainRef.current = run.catch(() => {});
+      return run;
+    },
+    [],
+  );
+
   // Perform the reputation lookup and apply enriched results to the current summary IN PLACE.
   // Does NOT call applyCapture again — that would re-record to Recent and reset activeSource.
   const runReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
@@ -242,9 +274,8 @@ export function App() {
     }
 
     if (Object.keys(verdicts).length === 0) return;
-    const enriched = await applyReputationWasm(JSON.stringify(output), verdicts);
-    setSummary({ status: "ready", data: enriched });
-  }, []);
+    await enrichAndCommit(output, verdicts, applyReputationWasm);
+  }, [enrichAndCommit]);
 
   // Open the consent gate or fire the reputation pass immediately, depending on whether
   // consent has already been given. Should be called once per new capture (after applyCapture).
@@ -283,9 +314,8 @@ export function App() {
       verdicts = await lookupDomainReputation(proxyHttp(proxy), hosts, vtKey, now);
     }
     if (Object.keys(verdicts).length === 0) return;
-    const enriched = await applyDomainReputationWasm(JSON.stringify(output), verdicts);
-    setSummary({ status: "ready", data: enriched });
-  }, []);
+    await enrichAndCommit(output, verdicts, applyDomainReputationWasm);
+  }, [enrichAndCommit]);
 
   // Open the domain consent gate or fire the domain reputation pass immediately.
   const triggerDomainReputationGate = useCallback((output: AnalysisOutput) => {

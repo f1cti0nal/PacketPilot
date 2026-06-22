@@ -19,6 +19,6 @@ describe("DomainThreatsPanel", () => {
     expect(screen.getByText("evil.example")).toBeInTheDocument();
     expect(screen.getByText("plain.example")).toBeInTheDocument();
     // exactly one "malicious" flag (the unavailable/quota domain is NOT flagged)
-    expect(screen.getAllByText("malicious").length).toBe(1);
+    expect(screen.getAllByLabelText("malicious").length).toBe(1);
   });
 });
