@@ -97,4 +97,11 @@ describe("platform structured export", () => {
     const r = await copyCsv(summary);
     expect(r.ok).toBe(false);
   });
+
+  it("exportCsv in the browser returns ok:false when WASM generation throws", async () => {
+    isTauri.mockReturnValue(false);
+    exportCsvWasm.mockRejectedValue(new Error("wasm boom"));
+    const r = await exportCsv(summary);
+    expect(r.ok).toBe(false);
+  });
 });

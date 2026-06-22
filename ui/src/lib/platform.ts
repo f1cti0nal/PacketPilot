@@ -124,9 +124,13 @@ export async function exportCsv(summary: AnalysisOutput): Promise<ExportResult> 
       return { ok: false, message: `Save failed: ${e}` };
     }
   }
-  const csv = await exportCsvWasm(JSON.stringify(summary));
-  downloadText(csv, name, "text/csv");
-  return { ok: true, message: "Downloaded" };
+  try {
+    const csv = await exportCsvWasm(JSON.stringify(summary));
+    downloadText(csv, name, "text/csv");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
 }
 
 export async function exportStix(summary: AnalysisOutput): Promise<ExportResult> {
@@ -141,9 +145,13 @@ export async function exportStix(summary: AnalysisOutput): Promise<ExportResult>
       return { ok: false, message: `Save failed: ${e}` };
     }
   }
-  const stix = await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
-  downloadText(stix, name, "application/json");
-  return { ok: true, message: "Downloaded" };
+  try {
+    const stix = await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
+    downloadText(stix, name, "application/json");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
 }
 
 async function copyText(text: string): Promise<ExportResult> {

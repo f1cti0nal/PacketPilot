@@ -83,7 +83,7 @@ export async function applyReputationWasm(
 /** Export findings as CSV via WASM (browser path). */
 export async function exportCsvWasm(outputJson: string): Promise<string> {
   await ensureWasm();
-  return wasmExportCsv(outputJson) as string;
+  return wasmExportCsv(outputJson);
 }
 
 /**
@@ -93,5 +93,5 @@ export async function exportCsvWasm(outputJson: string): Promise<string> {
  */
 export async function exportStixWasm(outputJson: string, generatedUnixSecs: number): Promise<string> {
   await ensureWasm();
-  return wasmExportStix(outputJson, BigInt(generatedUnixSecs)) as string;
+  return wasmExportStix(outputJson, BigInt(generatedUnixSecs));
 }

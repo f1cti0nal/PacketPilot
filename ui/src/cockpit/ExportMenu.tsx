@@ -36,6 +36,7 @@ export function ExportMenu({
         onClick={() => setOpen((o) => !o)}
         disabled={disabled || busy}
         aria-expanded={open}
+        aria-haspopup="menu"
         className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
       >
         {busy ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
