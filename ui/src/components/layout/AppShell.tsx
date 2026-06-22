@@ -39,6 +39,10 @@ export interface AppShellProps {
   /** Export the active analysis (HTML report on desktop, JSON in the browser).
    *  Resolves to a result the shell can surface, or undefined if nothing to export. */
   onExport: () => Promise<ExportResult | undefined>;
+  onExportCsv?: () => Promise<ExportResult | undefined>;
+  onExportStix?: () => Promise<ExportResult | undefined>;
+  onCopyCsv?: () => Promise<ExportResult | undefined>;
+  onCopyStix?: () => Promise<ExportResult | undefined>;
   /** Threat rail data from the active capture. */
   threats: IpThreat[];
   /** Currently active/focused IP in the threat rail. */
@@ -75,6 +79,10 @@ export function AppShell({
   loadDialogOpen,
   onLoadDialogOpenChange,
   onExport,
+  onExportCsv,
+  onExportStix,
+  onCopyCsv,
+  onCopyStix,
   threats,
   activeIp,
   onSelectThreat,
@@ -112,18 +120,32 @@ export function AppShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [paletteOpen, loadDialogOpen, onPaletteOpenChange]);
 
-  const handleExportClick = useCallback(async () => {
-    if (!canExport || exporting) return;
-    setExporting(true);
-    try {
-      const res = await onExport();
-      if (res?.ok) setExportHint(res.message);
-    } catch (err: unknown) {
-      setExportHint(`Export failed: ${String((err as Error)?.message ?? err)}`);
-    } finally {
-      setExporting(false);
-    }
-  }, [canExport, exporting, onExport]);
+  const runExport = useCallback(
+    async (fn?: () => Promise<ExportResult | undefined>) => {
+      if (!fn || !canExport || exporting) return;
+      setExporting(true);
+      try {
+        const res = await fn();
+        if (res?.ok) setExportHint(res.message);
+      } catch (err: unknown) {
+        setExportHint(`Export failed: ${String((err as Error)?.message ?? err)}`);
+      } finally {
+        setExporting(false);
+      }
+    },
+    [canExport, exporting],
+  );
+
+  const exportActions = useMemo(
+    () => [
+      { id: "report", label: "HTML report", run: () => void runExport(onExport) },
+      { id: "csv", label: "CSV — download", run: () => void runExport(onExportCsv) },
+      { id: "csv-copy", label: "CSV — copy", run: () => void runExport(onCopyCsv) },
+      { id: "stix", label: "STIX bundle — download", run: () => void runExport(onExportStix) },
+      { id: "stix-copy", label: "STIX bundle — copy", run: () => void runExport(onCopyStix) },
+    ],
+    [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix],
+  );
 
   // Capture filename: derived from the App-owned summary state.
   const captureName = useMemo(() => {
@@ -150,8 +172,14 @@ export function AppShell({
     { id: "go-compare", label: "Compare captures", hint: "view", run: () => onTabChange("recent") },
     { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
     { id: "toggle-rail", label: collapsed ? "Expand sidebar" : "Collapse sidebar", hint: "action", run: onToggleCollapse },
-    ...(canExport ? [{ id: "export", label: "Export report", hint: "action", run: () => void handleExportClick() }] : []),
-  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, canExport, handleExportClick]);
+    ...(canExport ? [
+      { id: "export", label: "Export report", hint: "action", run: () => void runExport(onExport) },
+      { id: "export-csv", label: "Export CSV", hint: "action", run: () => void runExport(onExportCsv) },
+      { id: "export-csv-copy", label: "Copy CSV", hint: "action", run: () => void runExport(onCopyCsv) },
+      { id: "export-stix", label: "Export STIX bundle", hint: "action", run: () => void runExport(onExportStix) },
+      { id: "export-stix-copy", label: "Copy STIX bundle", hint: "action", run: () => void runExport(onCopyStix) },
+    ] : []),
+  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
@@ -164,7 +192,7 @@ export function AppShell({
         captureStatus={captureStatus}
         captureError={summary.status === "error" ? summary.error : undefined}
         onRequestLoad={onRequestLoad}
-        onExport={canExport ? () => void handleExportClick() : undefined}
+        exportActions={canExport ? exportActions : []}
         exporting={exporting}
         exportHint={exportHint ?? undefined}
         onOpenPalette={onOpenPalette}

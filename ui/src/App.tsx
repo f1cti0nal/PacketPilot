@@ -34,6 +34,10 @@ import {
   openCaptureDialog,
   analyzeViaTauri,
   exportReport,
+  exportCsv,
+  exportStix,
+  copyCsv,
+  copyStix,
 } from "./lib/platform";
 import { analyzeViaWasm, applyReputationWasm } from "./lib/wasmEngine";
 import { EmptyState } from "./components/state/EmptyState";
@@ -414,6 +418,23 @@ export function App() {
     return exportReport(summary.data, ai?.text);
   }, [summary]);
 
+  const handleExportCsv = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return exportCsv(summary.data);
+  }, [summary]);
+  const handleExportStix = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return exportStix(summary.data);
+  }, [summary]);
+  const handleCopyCsv = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return copyCsv(summary.data);
+  }, [summary]);
+  const handleCopyStix = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return copyStix(summary.data);
+  }, [summary]);
+
   const jumpToFlows = useCallback(
     (filter: { severity?: Severity; category?: string; ip?: string }) => {
       setFlowsFilter({ severity: filter.severity, category: filter.category, ip: filter.ip });
@@ -443,6 +464,10 @@ export function App() {
       loadDialogOpen={loadDialogOpen}
       onLoadDialogOpenChange={setLoadDialogOpen}
       onExport={handleExport}
+      onExportCsv={handleExportCsv}
+      onExportStix={handleExportStix}
+      onCopyCsv={handleCopyCsv}
+      onCopyStix={handleCopyStix}
       threats={summary.status === "ready" ? summary.data?.summary.ip_threats ?? [] : []}
       activeIp={activeIp}
       onSelectThreat={openThreat}
