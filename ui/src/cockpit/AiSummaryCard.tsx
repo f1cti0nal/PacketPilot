@@ -11,7 +11,9 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
 
   useEffect(() => {
     let on = true;
-    getAiSummary(captureId).then((c) => { if (on && c) setSt({ status: "ready", text: c.text }); });
+    getAiSummary(captureId)
+      .then((c) => { if (on && c) setSt({ status: "ready", text: c.text }); })
+      .catch(() => { /* best-effort cache load — ignore */ });
     return () => { on = false; };
   }, [captureId]);
 
