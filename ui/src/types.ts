@@ -338,7 +338,7 @@ export interface FlowRow {
 }
 
 // ---------- load state ----------
-export type TabId = "dashboard" | "flows" | "recent";
+export type TabId = "dashboard" | "flows" | "recent" | "compare";
 
 /** How a capture entered the app — drives whether it can be re-analyzed in place. */
 export type RecentOrigin = "native" | "wasm" | "upload" | "sample";

@@ -59,6 +59,8 @@ export interface AppShellProps {
   onOpenSettings?: () => void;
   /** Open the AI chat panel. Only provided when a capture is ready. */
   onOpenAiChat?: () => void;
+  /** Whether a capture comparison is active (shows the Compare tab). */
+  compareActive?: boolean;
   children: ReactNode;
 }
 
@@ -83,6 +85,7 @@ export function AppShell({
   onPaletteOpenChange,
   onOpenSettings,
   onOpenAiChat,
+  compareActive = false,
   children,
 }: AppShellProps) {
   const [exportHint, setExportHint] = useState<string | null>(null);
@@ -133,6 +136,7 @@ export function AppShell({
     { id: "dashboard" as const, label: "Dashboard" },
     { id: "flows" as const, label: "Flows" },
     { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
+    ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
   ];
   const captureStatus =
     summary.status === "ready" ? "ready" :
@@ -143,6 +147,7 @@ export function AppShell({
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
+    { id: "go-compare", label: "Compare captures", hint: "view", run: () => onTabChange("recent") },
     { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
     { id: "toggle-rail", label: collapsed ? "Expand sidebar" : "Collapse sidebar", hint: "action", run: onToggleCollapse },
     ...(canExport ? [{ id: "export", label: "Export report", hint: "action", run: () => void handleExportClick() }] : []),

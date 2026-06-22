@@ -28,6 +28,7 @@ import { ErrorState } from "./components/state/ErrorState";
 import { Dashboard } from "./components/Dashboard";
 import { FlowsView } from "./views/FlowsView";
 import { RecentView } from "./components/recent/RecentView";
+import { CompareView } from "./views/CompareView";
 import {
   isTauri,
   openCaptureDialog,
@@ -85,6 +86,13 @@ export function App() {
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
   );
+  const [compareIds, setCompareIds] = useState<[string, string] | null>(null);
+  const [compareSwapped, setCompareSwapped] = useState(false);
+  const startCompare = useCallback((beforeId: string, afterId: string) => {
+    setCompareIds([beforeId, afterId]);
+    setCompareSwapped(false);
+    setTab("compare");
+  }, []);
 
   // App owns both datasets so the AppShell upload affordance can replace them.
   const [summary, setSummary] = useState<SummaryState>({ status: "idle" });
@@ -426,6 +434,7 @@ export function App() {
     <AppShell
       activeTab={tab}
       onTabChange={setTab}
+      compareActive={compareIds !== null}
       summary={summary}
       recentCount={recent.length}
       onReplaceData={handleReplaceData}
@@ -445,7 +454,16 @@ export function App() {
       onOpenSettings={() => setSettingsOpen(true)}
       onOpenAiChat={summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
     >
-      {tab === "flows" ? (
+      {tab === "compare" ? (
+        (() => {
+          const [olderId, newerId] = compareIds ?? ["", ""];
+          const older = recent.find((e) => e.id === olderId);
+          const newer = recent.find((e) => e.id === newerId);
+          const before = compareSwapped ? newer : older;
+          const after = compareSwapped ? older : newer;
+          return <CompareView before={before} after={after} onSwap={() => setCompareSwapped((s) => !s)} />;
+        })()
+      ) : tab === "flows" ? (
         <FlowsView state={flows} initialFilter={flowsFilter} activeSource={activeSource} />
       ) : tab === "recent" ? (
         <RecentView
@@ -457,6 +475,7 @@ export function App() {
           onRemove={handleRemoveRecent}
           onClear={handleClearRecent}
           onLoadNew={handleRequestLoad}
+          onCompare={startCompare}
         />
       ) : summary.status === "idle" ? (
         IS_TAURI ? (

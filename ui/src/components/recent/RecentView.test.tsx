@@ -4,6 +4,8 @@ import { RecentView } from "./RecentView";
 import type { RecentEntry } from "../../types";
 import { makeOutput } from "../../test/fixtures";
 
+const noop = () => {};
+
 function makeEntry(overrides: Partial<RecentEntry> = {}): RecentEntry {
   return {
     id: "test-entry-1",
@@ -120,5 +122,39 @@ describe("RecentView", () => {
       />,
     );
     expect(screen.getByText("Active")).toBeInTheDocument();
+  });
+});
+
+describe("RecentView compare selection", () => {
+  it("enables Compare only at exactly 2 selections and calls onCompare older-first", async () => {
+    const user = userEvent.setup();
+    const onCompare = vi.fn();
+    const entryNew: RecentEntry = {
+      id: "new", name: "new", sizeBytes: 1, analyzedAt: 200,
+      engineVersion: "x", origin: "upload",
+      flowCount: 1, flowsCached: false, summary: makeOutput(),
+    };
+    const entryOld: RecentEntry = {
+      id: "old", name: "old", sizeBytes: 1, analyzedAt: 100,
+      engineVersion: "x", origin: "upload",
+      flowCount: 1, flowsCached: false, summary: makeOutput(),
+    };
+    render(
+      <RecentView
+        entries={[entryNew, entryOld]}
+        onOpen={noop} onReanalyze={noop} onRemove={noop} onClear={noop} onLoadNew={noop}
+        onCompare={onCompare}
+      />,
+    );
+    const compareBtn = screen.getByRole("button", { name: /compare/i });
+    expect(compareBtn).toBeDisabled();
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[0]);
+    expect(screen.getByRole("button", { name: /compare/i })).toBeDisabled(); // 1 selected
+    await user.click(checkboxes[1]);
+    const enabled = screen.getByRole("button", { name: /compare/i });
+    expect(enabled).toBeEnabled(); // 2 selected
+    await user.click(enabled);
+    expect(onCompare).toHaveBeenCalledWith("old", "new"); // older (100) first
   });
 });
