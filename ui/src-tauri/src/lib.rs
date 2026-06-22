@@ -138,6 +138,25 @@ fn reputation_lookup(ips: Vec<String>) -> Result<String, String> {
     serde_json::to_string(&verdicts).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn domain_reputation_lookup(hosts: Vec<String>) -> Result<String, String> {
+    let keys = ppcap_core::ReputationKeys {
+        abuseipdb: None,
+        greynoise: None,
+        virustotal: key_for("virustotal")?,
+    };
+    if keys.virustotal.is_none() {
+        return Ok("{}".to_string());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("packetpilot");
+    let verdicts = ppcap_core::lookup_domain_reputation_native(&hosts, &keys, &cache_dir, now);
+    serde_json::to_string(&verdicts).map_err(|e| e.to_string())
+}
+
 fn ai_key_for(name: &str) -> Result<Option<String>, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE_AI, name).map_err(|e| e.to_string())?;
     match entry.get_password() {
@@ -266,6 +285,7 @@ pub fn run() {
             set_reputation_key,
             reputation_key_status,
             reputation_lookup,
+            domain_reputation_lookup,
             set_ai_key,
             ai_key_status,
             ai_chat_stream

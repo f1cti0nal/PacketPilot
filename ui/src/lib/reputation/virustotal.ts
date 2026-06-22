@@ -24,3 +24,8 @@ export async function virustotalVerdictIp(http: HttpGet, key: string, ip: string
   const res = await http(`https://www.virustotal.com/api/v3/ip_addresses/${ip}`, { "x-apikey": key });
   return parse(res.body, res.status, `https://www.virustotal.com/gui/ip-address/${ip}`, now);
 }
+
+export async function virustotalVerdictDomain(http: HttpGet, key: string, domain: string, now: number): Promise<ReputationVerdict> {
+  const res = await http(`https://www.virustotal.com/api/v3/domains/${domain}`, { "x-apikey": key });
+  return parse(res.body, res.status, `https://www.virustotal.com/gui/domain/${domain}`, now);
+}

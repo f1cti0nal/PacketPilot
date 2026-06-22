@@ -39,7 +39,7 @@ import {
   copyCsv,
   copyStix,
 } from "./lib/platform";
-import { analyzeViaWasm, applyReputationWasm } from "./lib/wasmEngine";
+import { analyzeViaWasm, applyReputationWasm, applyDomainReputationWasm } from "./lib/wasmEngine";
 import { EmptyState } from "./components/state/EmptyState";
 import {
   repEnabled,
@@ -47,13 +47,20 @@ import {
   browserKeys,
   consentGiven,
   giveConsent,
+  domainEnabled,
+  domainConsentGiven,
+  giveDomainConsent,
+  getKey,
 } from "./lib/reputation/settings";
-import { lookupReputation } from "./lib/reputation/orchestrator";
+import { lookupReputation, lookupDomainReputation } from "./lib/reputation/orchestrator";
 import { proxyHttp } from "./lib/reputation/http";
 import { ReputationConsent } from "./cockpit/ReputationConsent";
+import { DomainConsent } from "./cockpit/DomainConsent";
 import { SettingsDialog } from "./cockpit/SettingsDialog";
 import { AiChatPanel } from "./cockpit/AiChatPanel";
 import { getAiSummary, captureKey } from "./lib/ai/cache";
+
+const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
 export interface FlowsInitialFilter {
   severity?: Severity;
@@ -121,9 +128,15 @@ export function App() {
   // Consent prompt state: set when a newly-loaded capture has public IPs but consent hasn't
   // been given yet; cleared when the user proceeds or cancels.
   const [consentPrompt, setConsentPrompt] = useState<{ output: AnalysisOutput; ipCount: number; providers: string[] } | null>(null);
+  // Domain consent prompt: set when a capture has domain threats but domain consent hasn't been given.
+  const [domainConsentPrompt, setDomainConsentPrompt] = useState<{ output: AnalysisOutput; domainCount: number } | null>(null);
   // Tracks the source identity of the last capture we ran (or offered to run) the reputation
   // pass on, preventing double-triggers when summary state re-renders.
   const lastRepSourceRef = useRef<string | null>(null);
+  // The freshest "ready" summary, so each reputation pass enriches the latest data (not a stale
+  // snapshot); a chain serializes the IP and domain commits so they compose, never clobber.
+  const summaryDataRef = useRef<AnalysisOutput | null>(null);
+  const repChainRef = useRef<Promise<void>>(Promise.resolve());
 
   // Eagerly load the bundled sample capture on mount.
   useEffect(() => {
@@ -162,6 +175,11 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  // Keep summaryDataRef in sync so enrichAndCommit always enriches the freshest data.
+  useEffect(() => {
+    summaryDataRef.current = summary.status === "ready" ? (summary.data ?? null) : null;
+  }, [summary]);
 
   // Auto-collapse the threat rail on narrow viewports.
   useEffect(() => {
@@ -213,6 +231,27 @@ export function App() {
     [],
   );
 
+  // Apply a reputation fold to the freshest summary for THIS capture and commit it, serialized
+  // through repChainRef so the IP and domain passes compose instead of overwriting each other.
+  const enrichAndCommit = useCallback(
+    (
+      base: AnalysisOutput,
+      verdicts: Record<string, import("./types").ReputationVerdict[]>,
+      apply: (json: string, v: Record<string, import("./types").ReputationVerdict[]>) => Promise<AnalysisOutput>,
+    ): Promise<void> => {
+      const run = repChainRef.current.then(async () => {
+        const latest = summaryDataRef.current;
+        const useBase = latest && repCaptureKey(latest) === repCaptureKey(base) ? latest : base;
+        const enriched = await apply(JSON.stringify(useBase), verdicts);
+        summaryDataRef.current = enriched;
+        setSummary({ status: "ready", data: enriched });
+      });
+      repChainRef.current = run.catch(() => {});
+      return run;
+    },
+    [],
+  );
+
   // Perform the reputation lookup and apply enriched results to the current summary IN PLACE.
   // Does NOT call applyCapture again — that would re-record to Recent and reset activeSource.
   const runReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
@@ -235,9 +274,8 @@ export function App() {
     }
 
     if (Object.keys(verdicts).length === 0) return;
-    const enriched = await applyReputationWasm(JSON.stringify(output), verdicts);
-    setSummary({ status: "ready", data: enriched });
-  }, []);
+    await enrichAndCommit(output, verdicts, applyReputationWasm);
+  }, [enrichAndCommit]);
 
   // Open the consent gate or fire the reputation pass immediately, depending on whether
   // consent has already been given. Should be called once per new capture (after applyCapture).
@@ -259,6 +297,38 @@ export function App() {
     }
   }, [runReputation]);
 
+  // Perform domain reputation lookup and apply enriched results to the current summary IN PLACE.
+  const runDomainReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
+    if (!domainEnabled()) return;
+    const hosts = (output.summary.domain_threats ?? []).slice(0, 15).map((d) => d.host);
+    if (hosts.length === 0) return;
+    let verdicts: Record<string, import("./types").ReputationVerdict[]> = {};
+    if (IS_TAURI) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      verdicts = JSON.parse(await invoke<string>("domain_reputation_lookup", { hosts })) as typeof verdicts;
+    } else {
+      const proxy = getProxyUrl();
+      const vtKey = getKey("virustotal");
+      if (!proxy || !vtKey) return;
+      const now = Math.floor(Date.now() / 1000);
+      verdicts = await lookupDomainReputation(proxyHttp(proxy), hosts, vtKey, now);
+    }
+    if (Object.keys(verdicts).length === 0) return;
+    await enrichAndCommit(output, verdicts, applyDomainReputationWasm);
+  }, [enrichAndCommit]);
+
+  // Open the domain consent gate or fire the domain reputation pass immediately.
+  const triggerDomainReputationGate = useCallback((output: AnalysisOutput) => {
+    if (!domainEnabled()) return;
+    const domains = output.summary.domain_threats ?? [];
+    if (domains.length === 0) return;
+    if (domainConsentGiven()) {
+      void runDomainReputation(output);
+    } else {
+      setDomainConsentPrompt({ output, domainCount: Math.min(15, domains.length) });
+    }
+  }, [runDomainReputation]);
+
   // Replace the active capture with a user-imported summary.json + flows.parquet (either may
   // be supplied). A summary turns it into a Recent entry; flows-only just updates the table.
   const handleReplaceData = useCallback(
@@ -275,6 +345,7 @@ export function App() {
           if (lastRepSourceRef.current !== key) {
             lastRepSourceRef.current = key;
             triggerReputationGate(out);
+            triggerDomainReputationGate(out);
           }
         });
       } else if (next.flows) {
@@ -282,7 +353,7 @@ export function App() {
         setActiveSource(null); // swapped flows out of band — old source no longer matches
       }
     },
-    [applyCapture, triggerReputationGate],
+    [applyCapture, triggerReputationGate, triggerDomainReputationGate],
   );
 
   const handleNativeLoad = useCallback(async () => {
@@ -305,13 +376,14 @@ export function App() {
       if (lastRepSourceRef.current !== key) {
         lastRepSourceRef.current = key;
         triggerReputationGate(nextSummary);
+        triggerDomainReputationGate(nextSummary);
       }
     } catch (err: unknown) {
       const message = String((err as Error)?.message ?? err);
       setSummary({ status: "error", error: message });
       setFlows({ status: "error", rows: [], error: message });
     }
-  }, [applyCapture, triggerReputationGate]);
+  }, [applyCapture, triggerReputationGate, triggerDomainReputationGate]);
 
   // Analyze a raw .pcap/.pcapng entirely in the browser via the WebAssembly engine. Errors
   // propagate to the load dialog (which keeps the current capture on screen on failure).
@@ -334,9 +406,10 @@ export function App() {
       if (lastRepSourceRef.current !== key) {
         lastRepSourceRef.current = key;
         triggerReputationGate(nextSummary);
+        triggerDomainReputationGate(nextSummary);
       }
     },
-    [applyCapture, triggerReputationGate],
+    [applyCapture, triggerReputationGate, triggerDomainReputationGate],
   );
 
   // The "Load capture" affordance: native dialog on desktop, in-app drop dialog in browser.
@@ -384,6 +457,7 @@ export function App() {
           if (lastRepSourceRef.current !== key) {
             lastRepSourceRef.current = key;
             triggerReputationGate(nextSummary);
+            triggerDomainReputationGate(nextSummary);
           }
         } catch (err: unknown) {
           const message = String((err as Error)?.message ?? err);
@@ -396,7 +470,7 @@ export function App() {
         setLoadDialogOpen(true);
       }
     },
-    [applyCapture, triggerReputationGate],
+    [applyCapture, triggerReputationGate, triggerDomainReputationGate],
   );
 
   const handleRemoveRecent = useCallback(
@@ -532,6 +606,18 @@ export function App() {
           void runReputation(out);
         }}
         onCancel={() => setConsentPrompt(null)}
+      />
+    )}
+    {domainConsentPrompt && (
+      <DomainConsent
+        domainCount={domainConsentPrompt.domainCount}
+        onProceed={() => {
+          giveDomainConsent();
+          const out = domainConsentPrompt.output;
+          setDomainConsentPrompt(null);
+          void runDomainReputation(out);
+        }}
+        onCancel={() => setDomainConsentPrompt(null)}
       />
     )}
     {settingsOpen && (

@@ -17,6 +17,8 @@ vi.mock("../lib/reputation/settings", () => ({
   isTauri: () => true,
   repEnabled: () => false,
   setRepEnabled: vi.fn(),
+  domainEnabled: () => false,
+  setDomainEnabled: vi.fn(),
   getProxyUrl: () => "",
   setProxyUrl: vi.fn(),
   getKey: () => "",
