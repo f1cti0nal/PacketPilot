@@ -73,4 +73,12 @@ describe("CompareView", () => {
     render(<CompareView before={before} after={after} onSwap={() => {}} />);
     expect(screen.getByText("victim.local")).toBeInTheDocument();
   });
+
+  it("does not crash when a capture disappears while mounted (hooks order)", () => {
+    const before = ent("a", { ip_threats: [threat({ ip: "1.1.1.1" })] });
+    const after = ent("b", { ip_threats: [threat({ ip: "9.9.9.9" })] });
+    const { rerender } = render(<CompareView before={before} after={after} onSwap={() => {}} />);
+    expect(() => rerender(<CompareView before={before} after={undefined} onSwap={() => {}} />)).not.toThrow();
+    expect(screen.getByText(/no longer cached/i)).toBeInTheDocument();
+  });
 });

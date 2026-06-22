@@ -24,11 +24,11 @@ function DeltaRow({ deltas }: { deltas: FieldDelta[] }) {
   );
 }
 
-function EntityRow({ ipOrHost, severity, kind }: { ipOrHost: string; severity: string; kind: "+" | "−" | "~" }) {
+function EntityRow({ ipOrHost, severity, kind }: { ipOrHost: string; severity: Severity; kind: "+" | "−" | "~" }) {
   return (
     <div className="flex items-center gap-2 text-xs">
       <span aria-hidden className="w-3 select-none text-center font-mono-num text-[var(--color-text-faint)]">{kind}</span>
-      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: severityColor(severity as Severity) }} aria-hidden />
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: severityColor(severity) }} aria-hidden />
       <span className="font-mono-num truncate text-[var(--color-text)]">{ipOrHost}</span>
     </div>
   );
@@ -70,6 +70,7 @@ function DiffSection<T extends IpThreat | Incident>({
 }
 
 export function CompareView({ before, after, onSwap }: { before?: RecentEntry; after?: RecentEntry; onSwap: () => void }) {
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   if (!before || !after) {
     return (
       <div data-component="CompareView" className="flex h-full items-center justify-center p-10 text-center">
@@ -79,7 +80,6 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
       </div>
     );
   }
-  const [bannerDismissed, setBannerDismissed] = useState(false);
   const diff = diffSummaries(before.summary.summary, after.summary.summary);
   const threatTotal = diff.threats.added.length + diff.threats.removed.length + diff.threats.changed.length;
   const incidentTotal = diff.incidents.added.length + diff.incidents.removed.length + diff.incidents.changed.length;
