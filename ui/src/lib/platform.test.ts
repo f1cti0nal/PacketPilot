@@ -90,4 +90,11 @@ describe("platform structured export", () => {
     const r = await exportCsv(summary);
     expect(r.ok).toBe(false);
   });
+
+  it("copyCsv returns ok:false when string-generation throws on desktop", async () => {
+    isTauri.mockReturnValue(true);
+    invoke.mockRejectedValue(new Error("boom"));
+    const r = await copyCsv(summary);
+    expect(r.ok).toBe(false);
+  });
 });

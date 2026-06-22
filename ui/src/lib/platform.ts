@@ -156,15 +156,23 @@ async function copyText(text: string): Promise<ExportResult> {
 }
 
 export async function copyCsv(summary: AnalysisOutput): Promise<ExportResult> {
-  const csv = isTauri()
-    ? await invoke<string>("export_csv", { summary })
-    : await exportCsvWasm(JSON.stringify(summary));
-  return copyText(csv);
+  try {
+    const csv = isTauri()
+      ? await invoke<string>("export_csv", { summary })
+      : await exportCsvWasm(JSON.stringify(summary));
+    return copyText(csv);
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
 }
 
 export async function copyStix(summary: AnalysisOutput): Promise<ExportResult> {
-  const stix = isTauri()
-    ? await invoke<string>("export_stix", { summary })
-    : await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
-  return copyText(stix);
+  try {
+    const stix = isTauri()
+      ? await invoke<string>("export_stix", { summary })
+      : await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
+    return copyText(stix);
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
 }
