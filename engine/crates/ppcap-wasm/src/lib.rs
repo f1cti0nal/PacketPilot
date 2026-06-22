@@ -172,6 +172,20 @@ pub fn apply_reputation(output_json: &str, verdicts_json: &str) -> Result<String
     serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Apply VirusTotal domain reputation verdicts to a completed analysis. `output_json` is the
+/// `AnalysisOutput`; `verdicts_json` is `{ "<host>": [ReputationVerdict, ...], ... }`. Pure +
+/// network-free — identical to native callers.
+#[wasm_bindgen]
+pub fn apply_domain_reputation(output_json: &str, verdicts_json: &str) -> Result<String, JsValue> {
+    use std::collections::BTreeMap;
+    let mut out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let verdicts: BTreeMap<String, Vec<ppcap_core::ReputationVerdict>> =
+        serde_json::from_str(verdicts_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    ppcap_core::apply_domain_reputation(&mut out.summary, &verdicts);
+    serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// Export the analysis findings as RFC 4180 CSV. `output_json` is the `AnalysisOutput` from `analyze`.
 #[wasm_bindgen]
 pub fn export_csv(output_json: &str) -> Result<String, JsValue> {
