@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ReputationChip } from "./ReputationChip";
 import type { ReputationVerdict } from "../types";
 
@@ -16,5 +17,24 @@ describe("ReputationChip", () => {
   it("renders nothing when no verdicts", () => {
     const { container } = render(<ReputationChip reputation={[]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("summarizes the worst verdict and expands to every provider on click", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReputationChip
+        reputation={[
+          v("greynoise", "benign", 0),
+          v("abuseipdb", "malicious", 90),
+        ]}
+      />,
+    );
+    // Collapsed: worst (malicious) summarized in the trigger.
+    const trigger = screen.getByRole("button");
+    expect(trigger).toHaveTextContent("abuseipdb");
+    // Expand.
+    await user.click(trigger);
+    expect(screen.getByText("greynoise")).toBeInTheDocument();
+    expect(screen.getByText("90%")).toBeInTheDocument();
   });
 });
