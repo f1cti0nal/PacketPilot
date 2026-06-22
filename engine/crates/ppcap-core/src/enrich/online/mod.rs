@@ -278,6 +278,7 @@ pub fn lookup_reputation_native(
 
 /// Look up VirusTotal domain reputation for `hosts`, reusing the existing cache + budget
 /// (keyed `virustotal|<host>`). VT-only — the other providers don't do domains.
+#[allow(clippy::too_many_arguments)]
 pub fn lookup_domain_reputation(
     http: &dyn HttpGet,
     hosts: &[String],
@@ -453,7 +454,9 @@ mod orchestrator_tests {
             greynoise: None,
             virustotal: Some("k".into()),
         };
-        let mut cache = ReputationCache::load(std::env::temp_dir().as_path());
+        let cache_dir = std::env::temp_dir().join("ppcap_sni_domain_lookup_test");
+        let _ = std::fs::remove_dir_all(&cache_dir);
+        let mut cache = ReputationCache::load(&cache_dir);
         let mut budget = Budget::with_defaults();
         let hosts = vec!["evil.example".to_string()];
         let out = lookup_domain_reputation(
