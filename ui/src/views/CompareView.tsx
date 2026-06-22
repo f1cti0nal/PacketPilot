@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import type { RecentEntry, IpThreat, Incident, Severity } from "../types";
 import { diffSummaries } from "../lib/diff";
@@ -78,6 +79,7 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
       </div>
     );
   }
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const diff = diffSummaries(before.summary.summary, after.summary.summary);
   const threatTotal = diff.threats.added.length + diff.threats.removed.length + diff.threats.changed.length;
   const incidentTotal = diff.incidents.added.length + diff.incidents.removed.length + diff.incidents.changed.length;
@@ -106,9 +108,17 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
         </button>
       </div>
 
-      {unrelated && (
-        <div className="rounded-md border border-[var(--color-sev-medium)] bg-[color-mix(in_srgb,var(--color-sev-medium)_12%,transparent)] px-3 py-2 text-xs text-[var(--color-text-dim)]">
-          These captures share no threat IPs or hosts; they may be unrelated.
+      {unrelated && !bannerDismissed && (
+        <div className="flex items-start gap-2 rounded-md border border-[var(--color-sev-medium)] bg-[color-mix(in_srgb,var(--color-sev-medium)_12%,transparent)] px-3 py-2 text-xs text-[var(--color-text-dim)]">
+          <span className="min-w-0 flex-1">These captures share no threat IPs or hosts; they may be unrelated.</span>
+          <button
+            type="button"
+            onClick={() => setBannerDismissed(true)}
+            aria-label="Dismiss"
+            className="shrink-0 text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+          >
+            ✕
+          </button>
         </div>
       )}
 

@@ -38,6 +38,16 @@ describe("CompareView", () => {
     expect(screen.getByText(/may be unrelated/i)).toBeInTheDocument();
   });
 
+  it("dismisses the unrelated-captures banner when the dismiss button is clicked", async () => {
+    const user = userEvent.setup();
+    const before = ent("a", { ip_threats: [threat({ ip: "1.1.1.1" })] });
+    const after = ent("b", { ip_threats: [threat({ ip: "9.9.9.9" })] });
+    render(<CompareView before={before} after={after} onSwap={() => {}} />);
+    expect(screen.getByText(/may be unrelated/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /dismiss/i }));
+    expect(screen.queryByText(/may be unrelated/i)).not.toBeInTheDocument();
+  });
+
   it("shows No differences for identical captures and supports swap", async () => {
     const user = userEvent.setup();
     const onSwap = vi.fn();
