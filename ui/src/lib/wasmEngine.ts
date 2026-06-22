@@ -11,6 +11,7 @@ import initWasm, {
   analyze as wasmAnalyze,
   extract_packets as wasmExtractPackets,
   apply_reputation as wasmApplyReputation,
+  apply_domain_reputation as wasmApplyDomainReputation,
   export_csv as wasmExportCsv,
   export_stix as wasmExportStix,
 } from "../wasm/ppcap_wasm.js";
@@ -77,6 +78,19 @@ export async function applyReputationWasm(
 ): Promise<AnalysisOutput> {
   await ensureWasm();
   const updated = wasmApplyReputation(outputJson, JSON.stringify(verdicts)) as string;
+  return JSON.parse(updated) as AnalysisOutput;
+}
+
+/**
+ * Apply domain reputation verdicts to an existing analysis output via WASM.
+ * Single-sourced scoring: the same engine logic runs in-browser as on the desktop.
+ */
+export async function applyDomainReputationWasm(
+  outputJson: string,
+  verdicts: Record<string, ReputationVerdict[]>,
+): Promise<AnalysisOutput> {
+  await ensureWasm();
+  const updated = wasmApplyDomainReputation(outputJson, JSON.stringify(verdicts)) as string;
   return JSON.parse(updated) as AnalysisOutput;
 }
 
