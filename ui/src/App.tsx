@@ -47,6 +47,8 @@ import { lookupReputation } from "./lib/reputation/orchestrator";
 import { proxyHttp } from "./lib/reputation/http";
 import { ReputationConsent } from "./cockpit/ReputationConsent";
 import { SettingsDialog } from "./cockpit/SettingsDialog";
+import { AiChatPanel } from "./cockpit/AiChatPanel";
+import { getAiSummary, captureKey } from "./lib/ai/cache";
 
 export interface FlowsInitialFilter {
   severity?: Severity;
@@ -103,6 +105,7 @@ export function App() {
   const [activeIp, setActiveIp] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiChatOpen, setAiChatOpen] = useState(false);
   // Consent prompt state: set when a newly-loaded capture has public IPs but consent hasn't
   // been given yet; cleared when the user proceeds or cancels.
   const [consentPrompt, setConsentPrompt] = useState<{ output: AnalysisOutput; ipCount: number; providers: string[] } | null>(null);
@@ -399,7 +402,8 @@ export function App() {
 
   const handleExport = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
-    return exportReport(summary.data);
+    const ai = await getAiSummary(captureKey(summary.data));
+    return exportReport(summary.data, ai?.text);
   }, [summary]);
 
   const jumpToFlows = useCallback(
@@ -439,6 +443,7 @@ export function App() {
       paletteOpen={paletteOpen}
       onPaletteOpenChange={setPaletteOpen}
       onOpenSettings={() => setSettingsOpen(true)}
+      onOpenAiChat={summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
     >
       {tab === "flows" ? (
         <FlowsView state={flows} initialFilter={flowsFilter} activeSource={activeSource} />
@@ -487,6 +492,9 @@ export function App() {
     )}
     {settingsOpen && (
       <SettingsDialog onClose={() => setSettingsOpen(false)} />
+    )}
+    {summary.status === "ready" && summary.data && (
+      <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} />
     )}
     </>
   );

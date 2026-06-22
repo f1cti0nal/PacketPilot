@@ -14,6 +14,8 @@ import { CategoryMatrix } from "../cockpit/CategoryMatrix";
 import { ProtocolMix } from "../cockpit/ProtocolMix";
 import { TopTalkersCard } from "../cockpit/TopTalkersCard";
 import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
+import { AiSummaryCard } from "../cockpit/AiSummaryCard";
+import { captureKey } from "../lib/ai/cache";
 
 /**
  * Navigation request raised from the dashboard when the analyst drills into a
@@ -68,6 +70,7 @@ export function Dashboard({ output, onJumpToFlows, selectedIncident, onSelectInc
       <div className="mx-auto flex max-w-[1600px] flex-col gap-3 p-4 sm:p-5">
         {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
         <KpiCluster output={output} />
+        <AiSummaryCard output={output} captureId={captureKey(output)} />
 
         {/* Zone 2 — kill-chain incident hero (only the top critical breathes) */}
         {hero && (

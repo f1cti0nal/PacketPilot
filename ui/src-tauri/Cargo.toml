@@ -24,3 +24,5 @@ base64 = "0.22"
 ppcap-core = { path = "../../engine/crates/ppcap-core", features = ["online"] }
 keyring = "2"
 dirs = "5"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+tokio = { version = "1", features = ["rt"] } # rt suffices for spawn_blocking (uses the blocking pool, not multi-thread workers)

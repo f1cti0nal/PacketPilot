@@ -54,9 +54,12 @@ export interface ExportResult {
  * Export the analysis. On desktop (Tauri) renders the engine's HTML report via the
  * `save_report` command after prompting for a path. In the browser, downloads the
  * summary as pretty JSON. Returns a small result so the UI can show a transient hint.
+ *
+ * `aiSummary` is optional — when provided it is embedded in the HTML report (desktop only).
  */
 export async function exportReport(
   summary: AnalysisOutput,
+  aiSummary?: string,
 ): Promise<ExportResult> {
   if (isTauri()) {
     const path = await save({
@@ -64,7 +67,7 @@ export async function exportReport(
       filters: [{ name: "HTML report", extensions: ["html"] }],
     });
     if (!path) return { ok: false, message: "" }; // cancelled
-    await invoke("save_report", { summary, path });
+    await invoke("save_report", { summary, path, aiSummary: aiSummary ?? null });
     return { ok: true, message: "Report saved" };
   }
 

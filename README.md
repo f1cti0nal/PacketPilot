@@ -10,7 +10,8 @@ streaming, bounded-memory Rust engine, delivered as a **web UI and a native desk
 captures never leaving the device.
 
 > Status: **core build complete & verified.** Engine, UI, desktop app, threat-intel + severity,
-> and reporting/export are all built and tested. Working name (alternates: PacketLens, NetSift).
+> reporting/export, online reputation enrichment, and AI analyst assist are all built and tested.
+> Working name (alternates: PacketLens, NetSift).
 
 ---
 
@@ -132,13 +133,21 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
   AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
   bare public IP strings leave the device, never packets or internal IPs). See [docs/reputation.md](docs/reputation.md).
+- **AI Analyst Assist** — opt-in NL executive brief + interactive chat over the *derived* summary
+  (not raw packets). BYO endpoint — Anthropic/OpenAI/OpenRouter/Ollama/Custom. Privacy-preserving:
+  only the engine's computed summary ever leaves; localhost endpoints stay fully on-device. Desktop
+  stores the API key in the OS keychain; browser routes through a user-supplied streaming relay.
+  See [docs/ai-assist.md](docs/ai-assist.md).
 
 ## Roadmap (optional)
 - gzip-capture ingest; `packet_index` Parquet for packet-level drill-down.
+- AI: SNI-domain context in chat; multi-session conversation memory.
 - Self-hosted team server (shared cases, RBAC) — the "hybrid" other half.
 - Integrations: export findings to RuleForge AI (detection rules) and Sentinel (SOC incidents).
 
 ## Docs
 - [docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md) — full specification & gap analysis.
+- [docs/reputation.md](docs/reputation.md) — online reputation enrichment operator guide.
+- [docs/ai-assist.md](docs/ai-assist.md) — AI analyst assist operator guide.
 - [engine/README.md](engine/README.md) — engine internals, build, schema.
 - [engine/BENCHMARK.md](engine/BENCHMARK.md) — performance methodology & results.

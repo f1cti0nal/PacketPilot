@@ -10,6 +10,7 @@ import {
   Loader2,
   CheckCircle2,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { shortHash } from "../lib/format";
@@ -36,6 +37,7 @@ export function CommandBar({
   exportHint,
   onOpenPalette,
   onOpenSettings,
+  onOpenAiChat,
 }: {
   captureName: string;
   sha256?: string;
@@ -52,6 +54,7 @@ export function CommandBar({
   exportHint?: string;
   onOpenPalette?: () => void;
   onOpenSettings?: () => void;
+  onOpenAiChat?: () => void;
 }) {
   return (
     <header className="glass-band relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-3">
@@ -173,6 +176,16 @@ export function CommandBar({
             className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
           >
             <Settings size={14} />
+          </button>
+        )}
+        {onOpenAiChat && (
+          <button
+            type="button"
+            aria-label="Ask AI"
+            onClick={onOpenAiChat}
+            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
+          >
+            <Sparkles size={14} />
           </button>
         )}
       </div>
