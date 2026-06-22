@@ -91,6 +91,7 @@ export interface Summary {
   category_breakdown: CategoryBreakdownEntry[];
   severity_counts?: SeverityCounts;
   ip_threats?: IpThreat[];
+  domain_threats?: DomainThreat[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -129,6 +130,13 @@ export interface IpThreat {
   tags: string[];
   attack: string[];
   evidence: string[];
+  reputation?: ReputationVerdict[];
+}
+
+export interface DomainThreat {
+  host: string;
+  flows: number;
+  bytes: number;
   reputation?: ReputationVerdict[];
 }
 

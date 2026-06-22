@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { repEnabled, setRepEnabled, getProxyUrl, setProxyUrl, consentGiven, giveConsent, getKey, setKey, browserKeys } from "./settings";
+import { repEnabled, setRepEnabled, getProxyUrl, setProxyUrl, consentGiven, giveConsent, getKey, setKey, browserKeys, domainEnabled, setDomainEnabled, domainConsentGiven, giveDomainConsent } from "./settings";
 
 describe("reputation settings (browser/localStorage)", () => {
   beforeEach(() => localStorage.clear());
@@ -58,5 +58,24 @@ describe("reputation settings (browser/localStorage)", () => {
       setKey("virustotal", "v");
       expect(browserKeys()).toEqual({ abuseipdb: "a", greynoise: "g", virustotal: "v" });
     });
+  });
+});
+
+describe("domain reputation settings", () => {
+  beforeEach(() => localStorage.clear());
+  it("defaults off and round-trips", () => {
+    expect(domainEnabled()).toBe(false);
+    expect(domainConsentGiven()).toBe(false);
+    setDomainEnabled(true);
+    expect(domainEnabled()).toBe(true);
+    expect(localStorage.getItem("pp.rep.domain-enabled")).toBe("1");
+    giveDomainConsent();
+    expect(domainConsentGiven()).toBe(true);
+  });
+  it("is independent of the IP enable/consent keys", () => {
+    localStorage.setItem("pp.rep.enabled", "1");
+    localStorage.setItem("pp.rep.consent", "1");
+    expect(domainEnabled()).toBe(false); // enabling IP rep does NOT enable domains
+    expect(domainConsentGiven()).toBe(false);
   });
 });

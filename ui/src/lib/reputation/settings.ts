@@ -20,3 +20,9 @@ export function browserKeys(): Record<string, string> {
   for (const p of PROVIDERS) { const k = getKey(p); if (k) out[p] = k; }
   return out;
 }
+
+// Domain reputation settings (independent of IP keys)
+export function domainEnabled(): boolean { return localStorage.getItem("pp.rep.domain-enabled") === "1"; }
+export function setDomainEnabled(b: boolean): void { localStorage.setItem("pp.rep.domain-enabled", b ? "1" : "0"); }
+export function domainConsentGiven(): boolean { return localStorage.getItem("pp.rep.domain-consent") === "1"; }
+export function giveDomainConsent(): void { localStorage.setItem("pp.rep.domain-consent", "1"); }
