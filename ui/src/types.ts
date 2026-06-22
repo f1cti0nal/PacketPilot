@@ -419,3 +419,5 @@ export interface FlowsState {
   rows: FlowRow[];
   error?: string;
 }
+
+export interface AiConfig { enabled: boolean; baseUrl: string; model: string; apiKey: string; }
