@@ -204,13 +204,18 @@ async fn ai_chat_stream(
 
 /// Render the self-contained HTML triage report for `summary` and write it to `path`.
 /// The "generated at" time is the current wall clock (UTC Unix seconds).
+/// When `ai_summary` is `Some`, the AI analyst summary is embedded in the report.
 #[tauri::command]
-fn save_report(summary: AnalysisOutput, path: String) -> Result<(), String> {
+fn save_report(
+    summary: AnalysisOutput,
+    path: String,
+    ai_summary: Option<String>,
+) -> Result<(), String> {
     let now_unix_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let html = ppcap_core::render_html(&summary, now_unix_secs, None);
+    let html = ppcap_core::render_html(&summary, now_unix_secs, ai_summary.as_deref());
     std::fs::write(&path, html).map_err(|e| format!("write report: {e}"))
 }
 

@@ -48,6 +48,7 @@ import { proxyHttp } from "./lib/reputation/http";
 import { ReputationConsent } from "./cockpit/ReputationConsent";
 import { SettingsDialog } from "./cockpit/SettingsDialog";
 import { AiChatPanel } from "./cockpit/AiChatPanel";
+import { getAiSummary, captureKey } from "./lib/ai/cache";
 
 export interface FlowsInitialFilter {
   severity?: Severity;
@@ -401,7 +402,8 @@ export function App() {
 
   const handleExport = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
-    return exportReport(summary.data);
+    const ai = await getAiSummary(captureKey(summary.data));
+    return exportReport(summary.data, ai?.text);
   }, [summary]);
 
   const jumpToFlows = useCallback(
