@@ -35,7 +35,15 @@ use crate::model::severity::Severity;
 /// `generated_unix_secs` is the wall-clock "generated at" time (UTC), supplied by the caller
 /// so this stays pure and unit-testable. Never fails: formatting into a `String` is
 /// infallible and the `fmt::Result` from each `write!` is ignored.
-pub fn render_html(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
+///
+/// When `ai_summary` is `Some`, an "AI Analyst Summary" card is appended after the last
+/// section and before the footer. The text is HTML-escaped via [`esc`]. When `None`, no card
+/// is emitted and the output is identical to the pre-AI version.
+pub fn render_html(
+    out: &AnalysisOutput,
+    generated_unix_secs: i64,
+    ai_summary: Option<&str>,
+) -> String {
     let mut s = String::with_capacity(64 * 1024);
     let sum = &out.summary;
 
@@ -254,7 +262,17 @@ pub fn render_html(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
     s.push_str(&timeline_svg(&sum.time_histogram, sum.time_bucket_secs));
     s.push_str("</section>\n");
 
-    // ---- Section 9: footer methodology -----------------------------------------------
+    // ---- Section 9: AI analyst summary (optional) ------------------------------------
+    if let Some(ai) = ai_summary {
+        writeln!(
+            s,
+            "<section class=\"card\"><h2>AI Analyst Summary</h2><pre class=\"ai-summary\">{}</pre></section>",
+            esc(ai)
+        )
+        .ok();
+    }
+
+    // ---- Section 10: footer methodology -----------------------------------------------
     let _ = writeln!(
         s,
         "<footer>\
@@ -783,6 +801,7 @@ th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;le
 .kv dt{color:var(--muted)} .kv dd{margin:0}
 .muted{color:var(--muted)} footer{color:var(--muted);font-size:12px;margin-top:24px}
 svg{display:block;max-width:100%;height:auto}
+.ai-summary{white-space:pre-wrap;word-break:break-word;font-family:inherit;}
 
 @media print{
   :root{ --bg:#ffffff; --surface:#ffffff; --surface-2:#f6f7f9; --text:#0b1220;
@@ -872,5 +891,21 @@ mod tests {
             points <= MAX_TIMELINE_POINTS,
             "plotted {points} points exceeds cap {MAX_TIMELINE_POINTS}"
         );
+    }
+
+    #[test]
+    fn ai_summary_section_is_present_and_escaped() {
+        let out = crate::model::output::AnalysisOutput::default();
+        let html = render_html(&out, 0, Some("Risk is HIGH <script>x</script>"));
+        assert!(html.contains("AI Analyst Summary"));
+        assert!(html.contains("Risk is HIGH &lt;script&gt;")); // escaped, not raw
+        assert!(!html.contains("<script>x</script>"));
+    }
+
+    #[test]
+    fn ai_summary_absent_when_none() {
+        let out = crate::model::output::AnalysisOutput::default();
+        let html = render_html(&out, 0, None);
+        assert!(!html.contains("AI Analyst Summary"));
     }
 }

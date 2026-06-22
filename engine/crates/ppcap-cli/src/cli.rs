@@ -242,7 +242,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs() as i64)
                     .unwrap_or(0); // pre-epoch clock -> 0; report still renders
-                let doc = ppcap_core::render_html(&out, now);
+                let doc = ppcap_core::render_html(&out, now, None);
                 std::fs::write(html_path, doc)
                     .with_context(|| format!("write HTML report to {}", html_path.display()))?;
                 if !quiet {

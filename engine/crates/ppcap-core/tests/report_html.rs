@@ -51,7 +51,7 @@ fn sample() -> AnalysisOutput {
 
 #[test]
 fn renders_well_formed_document_with_all_sections() {
-    let html = render_html(&sample(), 1_700_000_000);
+    let html = render_html(&sample(), 1_700_000_000, None);
 
     assert!(html.starts_with("<!doctype"), "must start with doctype");
     assert!(html.contains("</html>"), "must close html");
@@ -86,7 +86,7 @@ fn renders_well_formed_document_with_all_sections() {
 
 #[test]
 fn escapes_all_dynamic_strings() {
-    let html = render_html(&sample(), 1_700_000_000);
+    let html = render_html(&sample(), 1_700_000_000, None);
 
     // Capture basename is escaped; raw form must NOT appear.
     assert!(
@@ -114,7 +114,7 @@ fn escapes_all_dynamic_strings() {
 fn empty_summary_still_renders_valid_document() {
     let mut out = sample();
     out.summary = Summary::empty();
-    let html = render_html(&out, 0);
+    let html = render_html(&out, 0, None);
     assert!(html.starts_with("<!doctype"));
     assert!(html.contains("</html>"));
     assert!(html.contains("No scored IP threats."));
@@ -156,7 +156,7 @@ fn incident_sample() -> AnalysisOutput {
 
 #[test]
 fn renders_active_incidents_with_kill_chain() {
-    let html = render_html(&incident_sample(), 1_700_000_000);
+    let html = render_html(&incident_sample(), 1_700_000_000, None);
 
     // The incident card surfaces host, score, kill-chain stages, ATT&CK, the finding kind label,
     // and its metric pills.

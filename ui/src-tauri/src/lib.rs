@@ -210,7 +210,7 @@ fn save_report(summary: AnalysisOutput, path: String) -> Result<(), String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let html = ppcap_core::render_html(&summary, now_unix_secs);
+    let html = ppcap_core::render_html(&summary, now_unix_secs, None);
     std::fs::write(&path, html).map_err(|e| format!("write report: {e}"))
 }
 

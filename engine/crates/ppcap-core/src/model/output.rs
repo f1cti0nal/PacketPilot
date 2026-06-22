@@ -35,3 +35,19 @@ impl AnalysisOutput {
         Ok(serde_json::to_string(self)?)
     }
 }
+
+impl Default for AnalysisOutput {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            engine_version: String::new(),
+            source_path: String::new(),
+            source_sha256: None,
+            source_bytes: 0,
+            link_type: String::new(),
+            summary: Summary::empty(),
+            flows_parquet_path: None,
+            elapsed_ms: 0,
+        }
+    }
+}
