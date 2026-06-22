@@ -254,6 +254,7 @@ mod apply_tests {
             category_breakdown: vec![],
             severity_counts: SeverityCounts::default(),
             ip_threats: threats,
+            domain_threats: Vec::new(),
             findings,
             incidents: vec![],
         }

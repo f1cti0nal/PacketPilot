@@ -548,6 +548,7 @@ impl StatsAccumulator {
             category_breakdown,
             severity_counts: self.severity_counts,
             ip_threats,
+            domain_threats: Vec::new(),
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.
