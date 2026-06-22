@@ -8,11 +8,15 @@ const mockSetAiBaseUrl = vi.fn();
 const mockSetAiModel = vi.fn();
 const mockSetAiKey = vi.fn();
 const mockSetAiProxyUrl = vi.fn();
+const mockSetRepEnabled = vi.fn();
+const mockSetDomainEnabled = vi.fn();
 
 vi.mock("../lib/reputation/settings", () => ({
   isTauri: () => false,
   repEnabled: () => false,
-  setRepEnabled: vi.fn(),
+  setRepEnabled: (...args: any[]) => mockSetRepEnabled(...args),
+  domainEnabled: () => false,
+  setDomainEnabled: (...args: any[]) => mockSetDomainEnabled(...args),
   getProxyUrl: () => "",
   setProxyUrl: vi.fn(),
   getKey: () => "",
@@ -142,5 +146,42 @@ describe("SettingsDialog — AI section", () => {
     // The baseUrl should remain as ollama's (not blanked)
     const baseUrlInput = screen.getByLabelText(/base url/i) as HTMLInputElement;
     expect(baseUrlInput.value).toBe("http://localhost:11434/v1");
+  });
+
+  it("renders the domain reputation checkbox unchecked by default", () => {
+    render(<SettingsDialog onClose={vi.fn()} />);
+    const checkboxes = screen.getAllByRole("checkbox");
+    // Find the domain checkbox by accessible text
+    const domainLabel = screen.getByText(/enable domain reputation lookups/i);
+    expect(domainLabel).toBeInTheDocument();
+    // The checkbox is within the same label element
+    const domainCheckbox = checkboxes.find((cb) =>
+      cb.closest("label")?.textContent?.match(/domain reputation/i)
+    ) as HTMLInputElement | undefined;
+    expect(domainCheckbox).toBeDefined();
+    expect(domainCheckbox!.checked).toBe(false);
+  });
+
+  it("toggling domain checkbox persists via setDomainEnabled on Save", async () => {
+    const u = userEvent.setup();
+    const onClose = vi.fn();
+    render(<SettingsDialog onClose={onClose} />);
+    const checkboxes = screen.getAllByRole("checkbox");
+    const domainCheckbox = checkboxes.find((cb) =>
+      cb.closest("label")?.textContent?.match(/domain reputation/i)
+    ) as HTMLInputElement;
+    expect(domainCheckbox.checked).toBe(false);
+    await u.click(domainCheckbox);
+    expect(domainCheckbox.checked).toBe(true);
+    await u.click(screen.getByRole("button", { name: /save/i }));
+    expect(mockSetDomainEnabled).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("setDomainEnabled(false) is called when domain checkbox left unchecked on Save", async () => {
+    const u = userEvent.setup();
+    render(<SettingsDialog onClose={vi.fn()} />);
+    await u.click(screen.getByRole("button", { name: /save/i }));
+    expect(mockSetDomainEnabled).toHaveBeenCalledWith(false);
   });
 });

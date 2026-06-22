@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { isTauri, repEnabled, setRepEnabled, getProxyUrl, setProxyUrl, getKey, setKey, type Provider } from "../lib/reputation/settings";
+import { isTauri, repEnabled, setRepEnabled, domainEnabled, setDomainEnabled, getProxyUrl, setProxyUrl, getKey, setKey, type Provider } from "../lib/reputation/settings";
 import {
   AI_PRESETS,
   getAiEnabled, setAiEnabled,
@@ -14,6 +14,7 @@ const PROVIDERS: Provider[] = ["abuseipdb", "greynoise", "virustotal"];
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [enabled, setEnabled] = useState(repEnabled());
+  const [domainEnabledState, setDomainEnabledState] = useState(domainEnabled());
   const [proxy, setProxy] = useState(getProxyUrl());
   const [keys, setKeys] = useState<Record<string, string>>(() =>
     Object.fromEntries(PROVIDERS.map((p) => [p, isTauri() ? "" : getKey(p)])));
@@ -44,6 +45,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     setError(null);
     // Save reputation settings
     setRepEnabled(enabled);
+    setDomainEnabled(domainEnabledState);
     if (!isTauri()) setProxyUrl(proxy);
     try {
       for (const p of PROVIDERS) {
@@ -88,6 +90,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         <h2 className="text-sm font-semibold">Online reputation</h2>
         <label className="mt-3 flex items-center gap-2 text-xs">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enable reputation lookups
+        </label>
+        <label className="mt-3 flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={domainEnabledState} onChange={(e) => setDomainEnabledState(e.target.checked)} /> Enable domain reputation lookups (sends SNI hostnames to VirusTotal)
         </label>
         {!isTauri() && (
           <label className="mt-3 block text-xs">Proxy URL (required in the browser)
