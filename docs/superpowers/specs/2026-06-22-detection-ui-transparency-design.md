@@ -14,20 +14,21 @@ this 45/Low? which providers flagged it? what's the evidence?").
 
 ## Architecture
 
-Almost entirely a **UI-rendering** feature: a parallel survey verified that 16 of
-17 reasoning data points already cross the WASM/Tauri JSON boundary and are
-declared in `ui/src/types.ts` — they are simply not rendered. The single
-exception is directional packet counts, handled as a small cross-surface engine
-slice. Two workstreams:
+A **pure UI-rendering** feature: a parallel survey verified that 16 of 17
+reasoning data points already cross the WASM/Tauri JSON boundary and are declared
+in `ui/src/types.ts` — they are simply not rendered. The work is a small set of
+shared, unit-tested primitive components composed into existing surfaces (the
+reputation chip, threat card, threat rail, incident finding rows, detail flyout).
+**No engine change, no WASM rebuild, no `types.ts` change.**
 
-- **W1 — Transparency UI** (pure `.tsx`, no engine/WASM change): a small set of
-  shared, unit-tested primitive components composed into existing surfaces.
-- **W2 — Directional packets** (engine→UI slice): thread `pkts_fwd`/`pkts_rev`
-  through the flow DTOs to a directional split in `FlowDetail`, mirroring the
-  directional-bytes (`bytesC2s`/`bytesS2c`) convention that already exists.
+Directional packet counts — the one reasoning field NOT already across the
+boundary — are **deferred** (see Out of Scope): reaching the desktop/CLI/recent
+surfaces requires a new Parquet `flows` column mirrored across the columnar
+schema + writer + WASM DTO + TS row types + mappers, which is disproportionate to
+its (low) reasoning value for this feature.
 
 **Tech stack:** React 18 + TypeScript + Tailwind (cockpit conventions: CSS vars,
-`t-tag`). Rust (`ppcap-wasm`, `src-tauri`) for W2 only. No new dependencies.
+`t-tag`). No Rust changes. No new dependencies.
 
 ## Global Constraints
 
@@ -37,14 +38,11 @@ slice. Two workstreams:
   field used is already declared).
 - **The `npm run test:coverage` gate stays green** (lines/functions/statements ≥
   80, branches ≥ 70). New primitives are pure and individually tested.
-- **W2 keeps cross-surface parity**: the WASM and Tauri flow DTOs must serialize
-  the same new fields; a parity test asserts it (mirrors the reputation parity
-  test).
 - **No fragile coupling to engine string formats**: the score "explainer" renders
   the engine's `evidence[]` strings as-is (grouped for readability); it does NOT
   parse the signed point-terms (`+45`, `-10`) out of them.
-- Match existing cockpit styling and the existing directional naming convention
-  (`*C2s`/`*S2c` = client→server / server→client).
+- Match existing cockpit styling (CSS vars, `t-tag`, the existing severity
+  palette helpers).
 
 ## Design Decisions (resolved)
 
@@ -55,7 +53,11 @@ slice. Two workstreams:
 2. **Per-provider reputation placement:** both — an expandable `ReputationChip`
    popover for a quick glance AND a full breakdown section in the threat card /
    detail flyout.
-3. **Directional packets:** in scope for v1 (engine slice W2).
+3. **Directional packets:** DEFERRED. Reaching the desktop/CLI/recent surfaces
+   needs a new Parquet `flows` column (`columnar/schema.rs` carries directional
+   bytes but aggregate `pkts` only) mirrored across the columnar schema + writer +
+   WASM DTO + `RawFlowRow`/`WasmFlow`/`FlowRow` + both mappers — disproportionate
+   to its low reasoning value. Tracked as a fast-follow.
 4. **Evidence density:** show the full `evidence[]` list (no truncation).
 5. **Component architecture:** shared transparency primitives (Approach A) — the
    same data renders across several surfaces, so shared, consistent, testable
@@ -124,33 +126,12 @@ props, renders nothing on empty/absent data, and has a focused RTL test.
 | **Incident finding row** | `ui/src/components/triage/IncidentsPanel.tsx:71-100` | Add `EvidenceList` + `FindingMetrics` (restores the "why" layer the flyout already shows but the incident card drops). |
 | **Detail flyout** | `ui/src/cockpit/DetailFlyout.tsx:108-133` | Add a `FindingMetrics` row; route evidence through the shared `EvidenceList`. |
 
-## W2 — Directional packets (engine→UI slice)
-
-`FlowRecord` already tracks `pkts_fwd`/`pkts_rev` (`engine/.../model/flow.rs:120-121`)
-but the flow DTO aggregates them to a single `pkts`. Directional **bytes**
-already cross as `bytesC2s`/`bytesS2c`, so we follow that convention.
-
-1. **WASM DTO** — `engine/crates/ppcap-wasm/src/lib.rs` (flow DTO at ~`:100`/`:133`):
-   add `pkts_c2s: rec.pkts_fwd` and `pkts_s2c: rec.pkts_rev` next to the existing
-   `pkts`.
-2. **Tauri DTO** — `ui/src-tauri/src/lib.rs`: same two fields on the matching
-   flow DTO.
-3. **TS type** — `ui/src/types.ts` `FlowRow`: add `pktsC2s: number;
-   pktsS2c: number;` next to `pkts` / `bytesC2s` / `bytesS2c`, and map them where
-   `FlowRow`s are constructed from the DTO.
-4. **UI** — `ui/src/components/FlowDetail.tsx:464-518`: render an asymmetry split
-   (`↑ {pktsC2s} / ↓ {pktsS2c}`) beside the existing total/bytes.
-5. **Parity** — a test asserting the WASM and Tauri flow DTOs expose the same
-   directional fields (mirrors `tests/reputation_parity.rs` ⇄
-   `ui/src/lib/reputation/parity.test.ts`).
-
 ## Data flow & error handling
 
-W1 components are pure functions of `AnalysisOutput` data already in the browser
-— no new fetching, no async. Optional fields (`link`, `fetched_at`, individual
+Components are pure functions of `AnalysisOutput` data already in the browser —
+no new fetching, no async. Optional fields (`link`, `fetched_at`, individual
 finding metrics) are omitted gracefully when absent; empty `reputation`/`evidence`
-arrays render nothing (no "no data" placeholders, no crashes). W2 data flows
-engine → DTO → `FlowRow` → `FlowDetail` with the new fields defaulting safely.
+arrays render nothing (no "no data" placeholders, no crashes).
 
 ## Testing
 
@@ -159,14 +140,16 @@ engine → DTO → `FlowRow` → `FlowDetail` with the new fields defaulting saf
   formatting); `EvidenceList` (full list, prefix grouping, empty → null);
   `ScoreBadge` (band color); `FindingMetrics` (renders only present fields).
 - **Integration:** `ReputationChip` popover expands and lists every provider;
-  `IncidentsPanel` finding row shows evidence + score; `FlowDetail` shows the
-  directional packet split.
-- **W2 parity test:** WASM ≡ Tauri flow DTO directional fields.
+  `IncidentsPanel` finding row shows evidence + score.
 - Coverage stays ≥ 80/70; verify under the locked toolchain (`npm ci` →
   `npm run build` + `npm run test:coverage`) before completion.
 
 ## Out of scope (fast-follows)
 
+- **Directional packet counts** (`pkts_c2s`/`pkts_s2c` in `FlowDetail`) —
+  deferred; needs a new Parquet `flows` column mirrored across the columnar
+  schema + writer + WASM DTO + TS row types + mappers (low reasoning value, real
+  schema/cached-parquet blast radius).
 - Parsed score "waterfall" widget — do it later via *structured* engine
   score-term data, not by parsing `evidence[]` strings.
 - Structured export to UI (STIX/CSV), multi-capture diff, SNI-domain reputation —
@@ -174,6 +157,6 @@ engine → DTO → `FlowRow` → `FlowDetail` with the new fields defaulting saf
 
 ## File manifest
 
-**Create (W1):** `ui/src/components/transparency/{ProviderVerdictList,EvidenceList,ScoreBadge,FindingMetrics}.tsx` + co-located `.test.tsx`.
-**Modify (W1):** `ui/src/cockpit/ReputationChip.tsx`, `ui/src/cockpit/ThreatRail.tsx`, `ui/src/cockpit/DetailFlyout.tsx`, `ui/src/components/triage/ThreatsPanel.tsx`, `ui/src/components/triage/IncidentsPanel.tsx` (+ their tests).
-**Modify (W2):** `engine/crates/ppcap-wasm/src/lib.rs`, `ui/src-tauri/src/lib.rs`, `ui/src/types.ts` (`FlowRow` + DTO mapping), `ui/src/components/FlowDetail.tsx`, a new directional-packet parity test.
+**Create:** `ui/src/components/transparency/{ProviderVerdictList,EvidenceList,ScoreBadge,FindingMetrics}.tsx` + co-located `.test.tsx`.
+**Modify:** `ui/src/cockpit/ReputationChip.tsx`, `ui/src/cockpit/ThreatRail.tsx`, `ui/src/cockpit/DetailFlyout.tsx`, `ui/src/components/triage/ThreatsPanel.tsx`, `ui/src/components/triage/IncidentsPanel.tsx` (+ their tests).
+**No engine, WASM, Tauri, or `types.ts` changes.**
