@@ -30,4 +30,12 @@ describe("chatCompletion", () => {
     await chatCompletion({ ...cfg, apiKey: "" }, [], fake, () => {});
     expect(seen.headers.Authorization).toBeUndefined();
   });
+
+  it("sets Authorization header when apiKey is present", async () => {
+    let seen: any = null;
+    const fake: StreamTransport = async (req) => { seen = req; };
+    const cfgWithKey: AiConfig = { enabled: true, baseUrl: "https://api.example.com/v1", model: "gpt-4o", apiKey: "sk-testkey123" };
+    await chatCompletion(cfgWithKey, [{ role: "user", content: "hello" }], fake, () => {});
+    expect(seen.headers.Authorization).toBe("Bearer sk-testkey123");
+  });
 });

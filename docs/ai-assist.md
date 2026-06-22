@@ -58,8 +58,9 @@ If the endpoint is `localhost` or `127.0.0.1` (e.g. Ollama), **nothing leaves th
    - A one-line summary of what will be sent
 3. Click **Proceed** once per session to continue. Clicking **Cancel** aborts with no network call.
 
-Consent is stored in `localStorage` (Browser) or the OS profile (Desktop). It resets when you
-change the endpoint.
+Consent is a one-time acknowledgement stored locally (`pp.ai.consent`) in `localStorage`
+(Browser) or the OS profile (Desktop). The consent dialog always shows the **current** endpoint
+and model at the moment you click Generate, so you always see where data will go.
 
 ---
 
