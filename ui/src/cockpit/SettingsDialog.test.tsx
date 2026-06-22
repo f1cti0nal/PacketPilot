@@ -3,6 +3,12 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsDialog } from "./SettingsDialog";
 
+const mockSetAiEnabled = vi.fn();
+const mockSetAiBaseUrl = vi.fn();
+const mockSetAiModel = vi.fn();
+const mockSetAiKey = vi.fn();
+const mockSetAiProxyUrl = vi.fn();
+
 vi.mock("../lib/reputation/settings", () => ({
   isTauri: () => false,
   repEnabled: () => false,
@@ -20,15 +26,15 @@ vi.mock("../lib/ai/settings", () => ({
     { id: "custom", label: "Custom", baseUrl: "", model: "" },
   ],
   getAiEnabled: () => false,
-  setAiEnabled: vi.fn(),
+  setAiEnabled: (...args: any[]) => mockSetAiEnabled(...args),
   getAiBaseUrl: () => "https://api.anthropic.com/v1",
-  setAiBaseUrl: vi.fn(),
+  setAiBaseUrl: (...args: any[]) => mockSetAiBaseUrl(...args),
   getAiModel: () => "claude-opus-4-8",
-  setAiModel: vi.fn(),
+  setAiModel: (...args: any[]) => mockSetAiModel(...args),
   getAiKey: () => "",
-  setAiKey: vi.fn(),
+  setAiKey: (...args: any[]) => mockSetAiKey(...args),
   getProxyUrl: () => "",
-  setProxyUrl: vi.fn(),
+  setProxyUrl: (...args: any[]) => mockSetAiProxyUrl(...args),
 }));
 
 describe("SettingsDialog — AI section", () => {
@@ -73,15 +79,68 @@ describe("SettingsDialog — AI section", () => {
   });
 
   it("saves AI settings and closes on Save", async () => {
-    const { setAiEnabled, setAiBaseUrl, setAiModel, setAiKey } = await import("../lib/ai/settings");
     const u = userEvent.setup();
     const onClose = vi.fn();
     render(<SettingsDialog onClose={onClose} />);
     await u.click(screen.getByRole("button", { name: /save/i }));
-    expect(setAiEnabled).toHaveBeenCalled();
-    expect(setAiBaseUrl).toHaveBeenCalled();
-    expect(setAiModel).toHaveBeenCalled();
-    expect(setAiKey).toHaveBeenCalled();
+    expect(mockSetAiEnabled).toHaveBeenCalled();
+    expect(mockSetAiBaseUrl).toHaveBeenCalled();
+    expect(mockSetAiModel).toHaveBeenCalled();
+    expect(mockSetAiKey).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("selecting Ollama preset updates baseUrl and model", async () => {
+    const u = userEvent.setup();
+    render(<SettingsDialog onClose={vi.fn()} />);
+    const preset = screen.getByRole("combobox", { name: /preset/i });
+    await u.selectOptions(preset, "ollama");
+    // After selecting ollama, the baseUrl field should update
+    const baseUrlInput = screen.getByLabelText(/base url/i) as HTMLInputElement;
+    expect(baseUrlInput.value).toBe("http://localhost:11434/v1");
+    const modelInput = screen.getByLabelText(/model/i) as HTMLInputElement;
+    expect(modelInput.value).toBe("llama3.1");
+  });
+
+  it("typing in baseUrl field switches preset to custom", async () => {
+    const u = userEvent.setup();
+    render(<SettingsDialog onClose={vi.fn()} />);
+    const baseUrlInput = screen.getByLabelText(/base url/i);
+    await u.clear(baseUrlInput);
+    await u.type(baseUrlInput, "https://my-custom-api.com/v1");
+    const preset = screen.getByRole("combobox", { name: /preset/i }) as HTMLSelectElement;
+    expect(preset.value).toBe("custom");
+  });
+
+  it("typing in model field switches preset to custom", async () => {
+    const u = userEvent.setup();
+    render(<SettingsDialog onClose={vi.fn()} />);
+    const modelInput = screen.getByLabelText(/model/i);
+    await u.clear(modelInput);
+    await u.type(modelInput, "my-custom-model");
+    const preset = screen.getByRole("combobox", { name: /preset/i }) as HTMLSelectElement;
+    expect(preset.value).toBe("custom");
+  });
+
+  it("toggling AI enable checkbox changes the state", async () => {
+    const u = userEvent.setup();
+    render(<SettingsDialog onClose={vi.fn()} />);
+    const checkbox = screen.getByRole("checkbox", { name: /enable ai/i }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    await u.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it("selecting Custom preset does not auto-fill baseUrl/model", async () => {
+    const u = userEvent.setup();
+    render(<SettingsDialog onClose={vi.fn()} />);
+    // First switch to ollama to change values
+    const preset = screen.getByRole("combobox", { name: /preset/i });
+    await u.selectOptions(preset, "ollama");
+    // Now switch to custom — it should not overwrite
+    await u.selectOptions(preset, "custom");
+    // The baseUrl should remain as ollama's (not blanked)
+    const baseUrlInput = screen.getByLabelText(/base url/i) as HTMLInputElement;
+    expect(baseUrlInput.value).toBe("http://localhost:11434/v1");
   });
 });
