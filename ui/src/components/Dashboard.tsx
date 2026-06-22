@@ -16,6 +16,7 @@ import { TopTalkersCard } from "../cockpit/TopTalkersCard";
 import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
 import { AiSummaryCard } from "../cockpit/AiSummaryCard";
 import { captureKey } from "../lib/ai/cache";
+import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
 
 /**
  * Navigation request raised from the dashboard when the analyst drills into a
@@ -122,6 +123,7 @@ export function Dashboard({ output, onJumpToFlows, selectedIncident, onSelectInc
             <TopTalkersCard talkers={s.top_talkers} onSelect={openHost} />
           </div>
         </div>
+        <DomainThreatsPanel domains={s.domain_threats ?? []} />
       </div>
 
       <DetailFlyout incident={selectedIncident} onClose={() => onSelectIncident(null)} onJumpToFlows={toFlowsIp} />
