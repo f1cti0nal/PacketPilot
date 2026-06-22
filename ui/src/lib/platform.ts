@@ -117,8 +117,12 @@ export async function exportCsv(summary: AnalysisOutput): Promise<ExportResult> 
   if (isTauri()) {
     const path = await save({ defaultPath: name, filters: [{ name: "CSV", extensions: ["csv"] }] });
     if (!path) return { ok: false, message: "" };
-    await invoke("save_csv", { summary, path });
-    return { ok: true, message: "CSV saved" };
+    try {
+      await invoke("save_csv", { summary, path });
+      return { ok: true, message: "CSV saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
   }
   const csv = await exportCsvWasm(JSON.stringify(summary));
   downloadText(csv, name, "text/csv");
@@ -130,8 +134,12 @@ export async function exportStix(summary: AnalysisOutput): Promise<ExportResult>
   if (isTauri()) {
     const path = await save({ defaultPath: name, filters: [{ name: "STIX bundle", extensions: ["json"] }] });
     if (!path) return { ok: false, message: "" };
-    await invoke("save_stix", { summary, path });
-    return { ok: true, message: "STIX bundle saved" };
+    try {
+      await invoke("save_stix", { summary, path });
+      return { ok: true, message: "STIX bundle saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
   }
   const stix = await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
   downloadText(stix, name, "application/json");
