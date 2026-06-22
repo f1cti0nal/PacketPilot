@@ -126,6 +126,18 @@ pub struct IpThreat {
     pub reputation: Vec<crate::enrich::ReputationVerdict>,
 }
 
+/// One per-domain (TLS SNI host) rollup row, ranked by traffic. A display surface — not
+/// severity-scored. `reputation` is empty unless the (opt-in) domain reputation pass ran.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DomainThreat {
+    pub host: String,
+    pub flows: u64,
+    pub bytes: u64,
+    /// Per-provider domain reputation verdicts (VirusTotal). Empty unless the pass ran.
+    #[serde(default)]
+    pub reputation: Vec<crate::enrich::ReputationVerdict>,
+}
+
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Summary {
@@ -168,6 +180,9 @@ pub struct Summary {
     pub severity_counts: SeverityCounts,
     /// desc by score; len <= top_k_ip_threats.
     pub ip_threats: Vec<IpThreat>,
+    /// Top TLS SNI hosts by traffic. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub domain_threats: Vec<DomainThreat>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -207,6 +222,7 @@ impl Summary {
             category_breakdown: Vec::new(),
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),
+            domain_threats: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
         }
@@ -234,5 +250,27 @@ mod tests {
             "flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#;
         let row: IpThreat = serde_json::from_str(json).unwrap();
         assert!(row.reputation.is_empty());
+    }
+
+    #[test]
+    fn domain_threats_serde_roundtrip_and_default() {
+        let dt = DomainThreat {
+            host: "a.example".into(),
+            flows: 3,
+            bytes: 99,
+            reputation: vec![],
+        };
+        let j = serde_json::to_string(&dt).unwrap();
+        assert_eq!(serde_json::from_str::<DomainThreat>(&j).unwrap(), dt);
+
+        // Old summaries (no domain_threats key) still deserialize → empty.
+        let out = crate::model::output::AnalysisOutput::default();
+        let mut v = serde_json::to_value(&out).unwrap();
+        v["summary"]
+            .as_object_mut()
+            .unwrap()
+            .remove("domain_threats");
+        let back: crate::model::output::AnalysisOutput = serde_json::from_value(v).unwrap();
+        assert!(back.summary.domain_threats.is_empty());
     }
 }

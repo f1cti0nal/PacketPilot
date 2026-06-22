@@ -223,6 +223,20 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     let verdicts =
                         ppcap_core::lookup_reputation_native(&ips, &keys, &cache_dir, now);
                     ppcap_core::apply_reputation(&mut out.summary, &verdicts);
+
+                    // Domain (SNI) reputation — VT-only; same keys/cache/timestamp.
+                    let hosts: Vec<String> = out
+                        .summary
+                        .domain_threats
+                        .iter()
+                        .map(|d| d.host.clone())
+                        .collect();
+                    if !hosts.is_empty() {
+                        let domain_verdicts = ppcap_core::lookup_domain_reputation_native(
+                            &hosts, &keys, &cache_dir, now,
+                        );
+                        ppcap_core::apply_domain_reputation(&mut out.summary, &domain_verdicts);
+                    }
                 }
             }
 

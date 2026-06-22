@@ -139,6 +139,22 @@ pub fn apply_reputation(
     });
 }
 
+/// Attach VirusTotal domain reputation verdicts to `summary.domain_threats`, keyed by host.
+/// Pure, network-free, deterministic — the single source of the domain-enrichment rule (mirrors
+/// [`apply_reputation`]). Display-only: it does NOT change severity or raise incidents.
+pub fn apply_domain_reputation(
+    summary: &mut Summary,
+    verdicts: &BTreeMap<String, Vec<ReputationVerdict>>,
+) {
+    for d in summary.domain_threats.iter_mut() {
+        if let Some(vs) = verdicts.get(&d.host) {
+            if !vs.is_empty() {
+                d.reputation = vs.clone();
+            }
+        }
+    }
+}
+
 fn downgrade_one_band(sev: Severity, score: u16) -> (Severity, u16) {
     match sev {
         Severity::Critical => (Severity::High, score.min(84)),
@@ -167,6 +183,58 @@ fn suppress(card: &mut crate::model::summary::IpThreat, vs: &[ReputationVerdict]
     let (sev, score) = downgrade_one_band(card.severity, card.score);
     card.severity = sev;
     card.score = score;
+}
+
+#[cfg(test)]
+mod domain_tests {
+    use super::*;
+
+    #[test]
+    fn apply_domain_reputation_attaches_by_host() {
+        use crate::model::summary::DomainThreat;
+        let mut summary = crate::model::output::AnalysisOutput::default().summary;
+        summary.domain_threats = vec![
+            DomainThreat {
+                host: "evil.example".into(),
+                flows: 1,
+                bytes: 1,
+                reputation: vec![],
+            },
+            DomainThreat {
+                host: "good.example".into(),
+                flows: 1,
+                bytes: 1,
+                reputation: vec![],
+            },
+        ];
+        let mut verdicts: BTreeMap<String, Vec<ReputationVerdict>> = BTreeMap::new();
+        verdicts.insert(
+            "evil.example".into(),
+            vec![ReputationVerdict {
+                source: "virustotal".into(),
+                status: RepStatus::Malicious,
+                malicious: true,
+                score: Some(90),
+                tags: vec![],
+                link: None,
+                fetched_at: 0,
+            }],
+        );
+        apply_domain_reputation(&mut summary, &verdicts);
+        let evil = summary
+            .domain_threats
+            .iter()
+            .find(|d| d.host == "evil.example")
+            .unwrap();
+        assert_eq!(evil.reputation.len(), 1);
+        assert_eq!(evil.reputation[0].status, RepStatus::Malicious);
+        let good = summary
+            .domain_threats
+            .iter()
+            .find(|d| d.host == "good.example")
+            .unwrap();
+        assert!(good.reputation.is_empty()); // host not in verdicts → unchanged
+    }
 }
 
 #[cfg(test)]
@@ -254,6 +322,7 @@ mod apply_tests {
             category_breakdown: vec![],
             severity_counts: SeverityCounts::default(),
             ip_threats: threats,
+            domain_threats: Vec::new(),
             findings,
             incidents: vec![],
         }

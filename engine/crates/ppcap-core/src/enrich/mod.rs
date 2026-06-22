@@ -410,7 +410,7 @@ pub fn attack_for(cat: Category) -> Option<AttackTechnique> {
 // ---------------------------------------------------------------------------------------
 
 pub mod reputation;
-pub use reputation::{apply_reputation, RepStatus, ReputationVerdict};
+pub use reputation::{apply_domain_reputation, apply_reputation, RepStatus, ReputationVerdict};
 
 #[cfg(feature = "online")]
 pub mod online;

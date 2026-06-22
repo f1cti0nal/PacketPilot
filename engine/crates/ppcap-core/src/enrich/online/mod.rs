@@ -51,12 +51,14 @@ pub(crate) struct FakeHttp {
     /// (status, body) returned for every call; the URL is captured for assertions.
     pub response: (u16, String),
     pub last_url: std::cell::RefCell<String>,
+    call_count: std::cell::Cell<usize>,
 }
 
 #[cfg(test)]
 impl HttpGet for FakeHttp {
     fn get(&self, url: &str, _headers: &[(&str, &str)]) -> Result<HttpResponse, RepError> {
         *self.last_url.borrow_mut() = url.to_string();
+        self.call_count.set(self.call_count.get() + 1);
         Ok(HttpResponse {
             status: self.response.0,
             body: self.response.1.clone(),
@@ -70,7 +72,19 @@ impl FakeHttp {
         FakeHttp {
             response: (status, body.to_string()),
             last_url: std::cell::RefCell::new(String::new()),
+            call_count: std::cell::Cell::new(0),
         }
+    }
+
+    /// Return total number of HTTP calls made so far.
+    pub fn calls(&self) -> usize {
+        self.call_count.get()
+    }
+
+    /// Construct a fake that returns a VT domain response flagged as malicious.
+    pub fn vt_domain_malicious() -> Self {
+        let body = r#"{"data":{"attributes":{"last_analysis_stats":{"malicious":5,"suspicious":1,"harmless":60,"undetected":4,"timeout":0}}}}"#;
+        FakeHttp::new(200, body)
     }
 }
 
@@ -260,6 +274,64 @@ pub fn lookup_reputation_native(
     out
 }
 
+// ─── Domain reputation ────────────────────────────────────────────────────────
+
+/// Look up VirusTotal domain reputation for `hosts`, reusing the existing cache + budget
+/// (keyed `virustotal|<host>`). VT-only — the other providers don't do domains.
+#[allow(clippy::too_many_arguments)]
+pub fn lookup_domain_reputation(
+    http: &dyn HttpGet,
+    hosts: &[String],
+    keys: &ReputationKeys,
+    cache: &mut ReputationCache,
+    budget: &mut Budget,
+    ttls: &Ttls,
+    now: i64,
+) -> BTreeMap<String, Vec<ReputationVerdict>> {
+    let mut out: BTreeMap<String, Vec<ReputationVerdict>> = BTreeMap::new();
+    let Some(k) = &keys.virustotal else {
+        return out;
+    };
+    for host in hosts {
+        let source = "virustotal";
+        let v = if let Some(hit) = cache.get(source, host, now, ttls.virustotal) {
+            hit.clone()
+        } else if budget.try_spend(source) {
+            let v = virustotal::verdict_domain(http, k, host, now);
+            cache.put(source, host, v.clone());
+            v
+        } else {
+            quota_unavailable(source, now)
+        };
+        out.insert(host.clone(), vec![v]);
+    }
+    out
+}
+
+/// Native convenience wrapper (CLI/Tauri): loads/saves the on-disk cache.
+#[cfg(feature = "online")]
+pub fn lookup_domain_reputation_native(
+    hosts: &[String],
+    keys: &ReputationKeys,
+    cache_dir: &Path,
+    now: i64,
+) -> BTreeMap<String, Vec<ReputationVerdict>> {
+    let http = UreqClient::default();
+    let mut cache = ReputationCache::load(cache_dir);
+    let mut budget = Budget::with_defaults();
+    let out = lookup_domain_reputation(
+        &http,
+        hosts,
+        keys,
+        &mut cache,
+        &mut budget,
+        &Ttls::default(),
+        now,
+    );
+    let _ = cache.save();
+    out
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -379,6 +451,50 @@ mod orchestrator_tests {
         assert_eq!(
             out.get("8.8.8.8").unwrap()[0].status,
             RepStatus::Unavailable
+        );
+    }
+
+    #[test]
+    fn domain_lookup_uses_vt_caches_and_budgets() {
+        let http = FakeHttp::vt_domain_malicious();
+        let keys = ReputationKeys {
+            abuseipdb: None,
+            greynoise: None,
+            virustotal: Some("k".into()),
+        };
+        let cache_dir = std::env::temp_dir().join("ppcap_sni_domain_lookup_test");
+        let _ = std::fs::remove_dir_all(&cache_dir);
+        let mut cache = ReputationCache::load(&cache_dir);
+        let mut budget = Budget::with_defaults();
+        let hosts = vec!["evil.example".to_string()];
+        let out = lookup_domain_reputation(
+            &http,
+            &hosts,
+            &keys,
+            &mut cache,
+            &mut budget,
+            &Ttls::default(),
+            0,
+        );
+        assert_eq!(
+            out.get("evil.example").unwrap()[0].status,
+            RepStatus::Malicious
+        );
+        // Second call hits the cache (no new http call):
+        let before = http.calls();
+        let _ = lookup_domain_reputation(
+            &http,
+            &hosts,
+            &keys,
+            &mut cache,
+            &mut budget,
+            &Ttls::default(),
+            0,
+        );
+        assert_eq!(
+            http.calls(),
+            before,
+            "second lookup should be served from cache"
         );
     }
 }

@@ -96,6 +96,18 @@ struct CatStat {
     bytes: u64,
 }
 
+/// A TLS SNI host worth aggregating: non-empty, has a dot, and is not an IP literal.
+fn valid_domain(host: &str) -> bool {
+    !host.is_empty() && host.contains('.') && host.parse::<std::net::IpAddr>().is_err()
+}
+
+/// Per-SNI-domain rollup for traffic-ranked aggregation.
+#[derive(Debug, Clone, Default)]
+struct DomainStat {
+    flows: u64,
+    bytes: u64,
+}
+
 /// Per-IP threat rollup state (worst verdict + bounded evidence union).
 #[derive(Debug, Clone, Default)]
 struct IpThreatStat {
@@ -142,6 +154,8 @@ pub struct StatsAccumulator {
     severity_counts: SeverityCounts,
     /// Per-IP threat rollups (Phase 2); bounded by `max_tracked_keys`.
     per_ip_threat: HashMap<IpAddr, IpThreatStat>,
+    /// Per-SNI-domain traffic rollups; bounded by `max_tracked_keys`.
+    per_domain: HashMap<String, DomainStat>,
 }
 
 /// Upper bound on distinct destination ports retained per source for scan detection.
@@ -171,6 +185,7 @@ impl StatsAccumulator {
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
             per_ip_threat: HashMap::new(),
+            per_domain: HashMap::new(),
         }
     }
 
@@ -332,6 +347,19 @@ impl StatsAccumulator {
                 if e.evidence.len() < self.cfg.max_evidence_per_ip && !e.evidence.contains(ev) {
                     e.evidence.push(ev.clone());
                 }
+            }
+        }
+
+        // SNI domain rollup (traffic-ranked; bounded by max_tracked_keys, like per_ip_threat).
+        if let Some(raw) = f.sni.as_deref() {
+            let host = raw.trim().to_ascii_lowercase();
+            if valid_domain(&host)
+                && (self.per_domain.contains_key(&host)
+                    || self.per_domain.len() < self.cfg.max_tracked_keys)
+            {
+                let e = self.per_domain.entry(host).or_default();
+                e.flows += 1;
+                e.bytes += f.total_bytes();
             }
         }
     }
@@ -528,6 +556,26 @@ impl StatsAccumulator {
         });
         ip_threats.truncate(self.cfg.top_k_ip_threats);
 
+        // Domain (SNI) rollups: desc by bytes, tie-break desc flows, then asc host. Top-N.
+        const TOP_K_DOMAINS: usize = 50;
+        let mut domain_threats: Vec<crate::model::summary::DomainThreat> = self
+            .per_domain
+            .iter()
+            .map(|(host, s)| crate::model::summary::DomainThreat {
+                host: host.clone(),
+                flows: s.flows,
+                bytes: s.bytes,
+                reputation: Vec::new(),
+            })
+            .collect();
+        domain_threats.sort_by(|a, b| {
+            b.bytes
+                .cmp(&a.bytes)
+                .then(b.flows.cmp(&a.flows))
+                .then(a.host.cmp(&b.host))
+        });
+        domain_threats.truncate(TOP_K_DOMAINS);
+
         Summary {
             total_packets: self.total_packets,
             total_bytes: self.total_bytes,
@@ -548,6 +596,7 @@ impl StatsAccumulator {
             category_breakdown,
             severity_counts: self.severity_counts,
             ip_threats,
+            domain_threats,
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.
@@ -1536,6 +1585,66 @@ mod tests {
         let card = s.ip_threats.iter().find(|t| t.ip == "8.8.8.8").unwrap();
         assert_eq!(card.severity, Severity::Critical);
         assert!(card.score >= 95);
+    }
+
+    #[test]
+    fn sni_domains_aggregate_ranked_and_filtered() {
+        use crate::score::ScoredFlow;
+
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+
+        // Helper: build a FlowRecord with total_bytes() == bytes_total (1 pkt).
+        let make_flow = |lo: IpAddr, hi: IpAddr, bytes: u64, sni: Option<&str>| {
+            let mut f = flow(Transport::Tcp, lo, hi, Category::Web, 1, bytes);
+            f.sni = sni.map(|s| s.to_string());
+            f
+        };
+
+        let sc = || ScoredFlow {
+            severity: crate::model::severity::Severity::Info,
+            score: 0,
+            evidence: vec![],
+            attack: vec![],
+        };
+
+        // "a.example" — 200 bytes, 1 flow.
+        let f1 = make_flow(ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), 200, Some("a.example"));
+        acc.observe_scored_flow(&f1, &sc());
+
+        // "B.Example" — 100 bytes, 1 flow (should merge with "b.example" → 150 bytes, 2 flows).
+        let f2 = make_flow(ip4(10, 0, 0, 3), ip4(10, 0, 0, 4), 100, Some("B.Example"));
+        acc.observe_scored_flow(&f2, &sc());
+
+        // "b.example" — 50 bytes, 1 flow (case-insensitive merge with "B.Example").
+        let f3 = make_flow(ip4(10, 0, 0, 5), ip4(10, 0, 0, 6), 50, Some("b.example"));
+        acc.observe_scored_flow(&f3, &sc());
+
+        // "1.2.3.4" — IP literal, must be skipped.
+        let f4 = make_flow(ip4(10, 0, 0, 7), ip4(10, 0, 0, 8), 99, Some("1.2.3.4"));
+        acc.observe_scored_flow(&f4, &sc());
+
+        // "" — empty, must be skipped.
+        let f5 = make_flow(ip4(10, 0, 0, 9), ip4(10, 0, 0, 10), 99, Some(""));
+        acc.observe_scored_flow(&f5, &sc());
+
+        let summary = acc.finish();
+        let hosts: Vec<&str> = summary
+            .domain_threats
+            .iter()
+            .map(|d| d.host.as_str())
+            .collect();
+        assert_eq!(hosts, vec!["a.example", "b.example"]); // desc by bytes (200 > 150)
+        let b = summary
+            .domain_threats
+            .iter()
+            .find(|d| d.host == "b.example")
+            .unwrap();
+        assert_eq!(b.bytes, 150);
+        assert_eq!(b.flows, 2);
+        assert!(summary
+            .domain_threats
+            .iter()
+            .all(|d| d.reputation.is_empty()));
     }
 
     #[test]
