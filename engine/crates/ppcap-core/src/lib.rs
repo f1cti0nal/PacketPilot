@@ -76,4 +76,6 @@ pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};
 
 #[cfg(feature = "online")]
-pub use crate::enrich::online::{lookup_reputation_native, ReputationKeys};
+pub use crate::enrich::online::{
+    lookup_domain_reputation_native, lookup_reputation_native, ReputationKeys,
+};
