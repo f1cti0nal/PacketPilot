@@ -2,6 +2,7 @@ import {
   Clock,
   Database,
   FileStack,
+  GitCompare,
   HardDrive,
   Loader2,
   Monitor,
@@ -10,6 +11,7 @@ import {
   Upload,
   Zap,
 } from "lucide-react";
+import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { RecentEntry, RecentOrigin, Severity } from "../../types";
 import { SEVERITY_META, SEVERITY_ORDER } from "../../lib/severity";
@@ -28,6 +30,8 @@ export interface RecentViewProps {
   onClear: () => void;
   /** Open the load affordance (native dialog on desktop, drop dialog in the browser). */
   onLoadNew: () => void;
+  /** Compare two selected captures (ids ordered older-first by analyzedAt). */
+  onCompare?: (beforeId: string, afterId: string) => void;
 }
 
 const ORIGIN_META: Record<
@@ -111,6 +115,9 @@ function RecentCard({
   entry,
   active,
   busy,
+  selectable,
+  selected,
+  onToggleSelect,
   onOpen,
   onReanalyze,
   onRemove,
@@ -118,6 +125,9 @@ function RecentCard({
   entry: RecentEntry;
   active: boolean;
   busy: boolean;
+  selectable: boolean;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
   onOpen: (e: RecentEntry) => void;
   onReanalyze: (e: RecentEntry) => void;
   onRemove: (e: RecentEntry) => void;
@@ -136,6 +146,15 @@ function RecentCard({
       )}
     >
       <div className="flex items-start justify-between gap-2">
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(entry.id)}
+            aria-label={`Select ${entry.name} to compare`}
+            className="mt-1 h-3.5 w-3.5 shrink-0 accent-[var(--color-accent)]"
+          />
+        )}
         <button
           type="button"
           onClick={() => onOpen(entry)}
@@ -232,7 +251,23 @@ export function RecentView({
   onRemove,
   onClear,
   onLoadNew,
+  onCompare,
 }: RecentViewProps) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const selectable = !!onCompare && entries.length >= 2;
+  const startCompare = () => {
+    if (!onCompare || selectedIds.size !== 2) return;
+    const [a, b] = entries.filter((e) => selectedIds.has(e.id)).sort((x, y) => x.analyzedAt - y.analyzedAt);
+    onCompare(a.id, b.id);
+    setSelectedIds(new Set());
+  };
   return (
     <div data-component="RecentView" className="flex h-full min-h-0 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -246,6 +281,17 @@ export function RecentView({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {selectable && (
+            <button
+              type="button"
+              onClick={startCompare}
+              disabled={selectedIds.size !== 2}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
+            >
+              <GitCompare className="h-3.5 w-3.5" aria-hidden />
+              Compare ({selectedIds.size}/2)
+            </button>
+          )}
           <button
             type="button"
             onClick={onLoadNew}
@@ -293,6 +339,9 @@ export function RecentView({
               entry={entry}
               active={entry.id === activeId}
               busy={entry.id === busyId}
+              selectable={selectable}
+              selected={selectedIds.has(entry.id)}
+              onToggleSelect={toggleSelect}
               onOpen={onOpen}
               onReanalyze={onReanalyze}
               onRemove={onRemove}
