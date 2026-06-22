@@ -3,6 +3,8 @@ import type { IpThreat } from "../../types";
 import { SEVERITY_META } from "../../lib/severity";
 import { severityColor } from "../../lib/palette";
 import { humanBytes, humanNumber } from "../../lib/format";
+import { ProviderVerdictList } from "../transparency/ProviderVerdictList";
+import { EvidenceList } from "../transparency/EvidenceList";
 
 export interface ThreatsPanelProps {
   threats: IpThreat[];
@@ -116,22 +118,22 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
         </div>
       )}
 
-      {/* Evidence */}
-      {threat.evidence.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {threat.evidence.map((e, i) => (
-            <li
-              key={i}
-              className="flex gap-1.5 text-xs leading-snug text-[var(--color-text-faint)]"
-            >
-              <span aria-hidden className="select-none">
-                ·
-              </span>
-              <span className="min-w-0 break-words">{e}</span>
-            </li>
+      {/* Tags */}
+      {threat.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {threat.tags.map((t) => (
+            <span key={t} className="t-tag text-[var(--color-text-dim)]">{t}</span>
           ))}
-        </ul>
+        </div>
       )}
+
+      {/* Per-provider reputation breakdown */}
+      {threat.reputation && threat.reputation.length > 0 && (
+        <ProviderVerdictList verdicts={threat.reputation} />
+      )}
+
+      {/* Evidence */}
+      <EvidenceList evidence={threat.evidence} />
     </li>
   );
 }

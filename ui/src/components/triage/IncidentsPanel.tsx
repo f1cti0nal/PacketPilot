@@ -17,7 +17,9 @@ import {
 import type { Finding, FindingKind, Incident } from "../../types";
 import { SEVERITY_META, SEVERITY_ORDER } from "../../lib/severity";
 import { severityColor } from "../../lib/palette";
-import { durationHumanNs, humanNumber } from "../../lib/format";
+import { humanNumber } from "../../lib/format";
+import { EvidenceList } from "../transparency/EvidenceList";
+import { FindingMetrics } from "../transparency/FindingMetrics";
 
 export interface IncidentsPanelProps {
   incidents: Incident[];
@@ -58,21 +60,11 @@ function SeverityChip({ severity }: { severity: Incident["severity"] }) {
   );
 }
 
-/** Beacon timing pills, when present. */
-function findingMetrics(f: Finding): string[] {
-  const out: string[] = [];
-  if (f.interval_ns != null) out.push(`every ${durationHumanNs(f.interval_ns)}`);
-  if (f.jitter_cv != null) out.push(`CV ${f.jitter_cv.toFixed(3)}`);
-  if (f.contacts != null) out.push(`${humanNumber(f.contacts)} contacts`);
-  return out;
-}
-
 /** One contributing finding, rendered compactly inside an incident card. */
 function FindingRow({ finding }: { finding: Finding }) {
   const color = severityColor(finding.severity);
   const meta = KIND_META[finding.kind] ?? { label: finding.kind, Icon: Activity };
   const Icon = meta.Icon;
-  const metrics = findingMetrics(finding);
 
   return (
     <li className="flex flex-col gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
@@ -90,12 +82,9 @@ function FindingRow({ finding }: { finding: Finding }) {
         <span className="font-mono-num min-w-0 flex-1 truncate text-xs text-[var(--color-text-dim)]">
           {finding.title}
         </span>
-        {metrics.length > 0 && (
-          <span className="font-mono-num shrink-0 text-[0.7rem] text-[var(--color-text-faint)]">
-            {metrics.join(" · ")}
-          </span>
-        )}
       </div>
+      <FindingMetrics finding={finding} />
+      <EvidenceList evidence={finding.evidence} />
     </li>
   );
 }

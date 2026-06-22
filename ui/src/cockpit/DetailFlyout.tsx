@@ -2,18 +2,11 @@
 // evidence[] rendered as a mono log, and a deep-link back to the flows table.
 import { useEffect, useRef } from "react";
 import { ArrowRight, X } from "lucide-react";
-import { durationHumanNs, humanNumber } from "../lib/format";
-import type { Finding, Incident } from "../types";
+import type { Incident } from "../types";
 import { sevColor } from "./viz";
 import { SeverityChip, SeverityDot, MitreTag, SectionLabel } from "./primitives";
-
-function findingMetric(f: Finding): string {
-  const parts: string[] = [];
-  if (f.interval_ns != null) parts.push(`every ${durationHumanNs(f.interval_ns)}`);
-  if (f.jitter_cv != null) parts.push(`jitter CV ${f.jitter_cv.toFixed(3)}`);
-  if (f.contacts != null) parts.push(`${humanNumber(f.contacts)} contacts`);
-  return parts.join("  ·  ");
-}
+import { EvidenceList } from "../components/transparency/EvidenceList";
+import { FindingMetrics } from "../components/transparency/FindingMetrics";
 
 const humanizeKind = (k: string) =>
   k.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
@@ -107,29 +100,23 @@ export function DetailFlyout({
 
           <SectionLabel className="mb-2 mt-5">Findings · {incident.findings.length}</SectionLabel>
           <ul className="flex flex-col gap-2.5">
-            {incident.findings.map((f, i) => {
-              const m = findingMetric(f);
-              return (
-                <li key={`${f.kind}-${i}`} className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3">
-                  <div className="flex items-center gap-2">
-                    <SeverityDot severity={f.severity} />
-                    <span className="text-[13px] font-medium text-[var(--color-text)]">{humanizeKind(f.kind)}</span>
-                    {m && <span className="font-mono-num ml-auto t-tag text-[var(--color-text-faint)]">{m}</span>}
+            {incident.findings.map((f, i) => (
+              <li key={`${f.kind}-${i}`} className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3">
+                <div className="flex items-center gap-2">
+                  <SeverityDot severity={f.severity} />
+                  <span className="text-[13px] font-medium text-[var(--color-text)]">{humanizeKind(f.kind)}</span>
+                </div>
+                <div className="font-mono-num mt-1 text-xs text-[var(--color-text-dim)]">{f.title}</div>
+                <div className="mt-2">
+                  <FindingMetrics finding={f} />
+                </div>
+                {f.evidence.length > 0 && (
+                  <div className="mt-2 border-l border-[var(--color-border)] pl-2.5">
+                    <EvidenceList evidence={f.evidence} />
                   </div>
-                  <div className="font-mono-num mt-1 text-xs text-[var(--color-text-dim)]">{f.title}</div>
-                  {f.evidence.length > 0 && (
-                    <ul className="mt-2 flex flex-col gap-1 border-l border-[var(--color-border)] pl-2.5">
-                      {f.evidence.map((e, j) => (
-                        <li key={j} className="font-mono-num flex gap-1.5 text-[11px] leading-snug text-[var(--color-text-faint)]">
-                          <span aria-hidden className="select-none text-[var(--color-accent)]">›</span>
-                          <span className="min-w-0 break-words">{e}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
+                )}
+              </li>
+            ))}
           </ul>
         </div>
 
