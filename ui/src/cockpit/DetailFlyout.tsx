@@ -110,9 +110,11 @@ export function DetailFlyout({
                 <div className="mt-2">
                   <FindingMetrics finding={f} />
                 </div>
-                <div className="mt-2 border-l border-[var(--color-border)] pl-2.5">
-                  <EvidenceList evidence={f.evidence} />
-                </div>
+                {f.evidence.length > 0 && (
+                  <div className="mt-2 border-l border-[var(--color-border)] pl-2.5">
+                    <EvidenceList evidence={f.evidence} />
+                  </div>
+                )}
               </li>
             ))}
           </ul>

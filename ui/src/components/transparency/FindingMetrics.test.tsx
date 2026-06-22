@@ -21,4 +21,11 @@ describe("FindingMetrics", () => {
     expect(screen.getByText("jitter")).toBeInTheDocument();
     expect(screen.queryByText("contacts")).not.toBeInTheDocument();
   });
+
+  it("humanizes sub-second and multi-hour intervals", () => {
+    const { rerender } = render(<FindingMetrics finding={f({ interval_ns: 250_000_000 })} />); // 250ms
+    expect(screen.getByText("250ms")).toBeInTheDocument();
+    rerender(<FindingMetrics finding={f({ interval_ns: 2 * 3600 * 1_000_000_000 })} />); // 2h
+    expect(screen.getByText("2.0h")).toBeInTheDocument();
+  });
 });
