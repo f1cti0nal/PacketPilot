@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import type { AnalysisOutput } from "../../types";
 import fixture from "../../test/reputation-parity.fixture.json";
-import { initSync, apply_reputation } from "../../wasm/ppcap_wasm.js";
+import { initSync, apply_reputation, apply_domain_reputation } from "../../wasm/ppcap_wasm.js";
 
 // Load + instantiate the WASM module synchronously from the build artefact on disk.
 // This bypasses the `fetch()` that the async default export would otherwise use.
@@ -34,5 +34,17 @@ describe("cross-surface parity", () => {
     const got = (enriched.summary.ip_threats ?? []).map((t) => ({ ip: t.ip, severity: t.severity, score: t.score }));
     const want = (fixture as any).expected.ip_threats.map((t: any) => ({ ip: t.ip, severity: t.severity, score: t.score }));
     expect(got).toEqual(want);
+  });
+
+  it("WASM apply_domain matches the shared expected (== native)", () => {
+    const outputJson = JSON.stringify((fixture as any).output);
+    const verdictsJson = JSON.stringify((fixture as any).domain_verdicts);
+    const enriched = JSON.parse(apply_domain_reputation(outputJson, verdictsJson)) as AnalysisOutput;
+    const got = (enriched.summary as any).domain_threats.map((d: any) => ({ host: d.host, n: d.reputation.length }));
+    const want = (fixture as any).expected_domains.map((e: any) => ({ host: e.host, n: e.reputation_len }));
+    // compare by host
+    for (const w of want) {
+      expect(got.find((g: any) => g.host === w.host)?.n).toBe(w.n);
+    }
   });
 });

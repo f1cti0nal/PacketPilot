@@ -109,9 +109,26 @@
           "reputation": []
         }
       ],
+      "domain_threats": [
+        { "host": "evil.example", "flows": 3, "bytes": 1500, "reputation": [] },
+        { "host": "good.example", "flows": 1, "bytes":  200, "reputation": [] }
+      ],
       "findings": [],
       "incidents": []
     }
+  },
+  "domain_verdicts": {
+    "evil.example": [
+      {
+        "source": "virustotal",
+        "status": "malicious",
+        "malicious": true,
+        "score": 90,
+        "tags": [],
+        "link": null,
+        "fetched_at": 0
+      }
+    ]
   },
   "verdicts": {
     "8.8.8.8": [
@@ -163,5 +180,9 @@
       { "ip": "1.1.1.1",  "severity": "low",      "score": 34 },
       { "ip": "10.0.0.5", "severity": "low",       "score": 25 }
     ]
-  }
+  },
+  "expected_domains": [
+    { "host": "evil.example", "reputation_len": 1 },
+    { "host": "good.example", "reputation_len": 0 }
+  ]
 }

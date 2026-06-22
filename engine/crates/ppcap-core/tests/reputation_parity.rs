@@ -35,3 +35,20 @@ fn native_apply_matches_fixture() {
         );
     }
 }
+
+#[test]
+fn native_apply_domain_matches_fixture() {
+    let raw = include_str!("../../../../ui/src/test/reputation-parity.fixture.json");
+    let fx: serde_json::Value = serde_json::from_str(raw).unwrap();
+    let mut out: ppcap_core::AnalysisOutput = serde_json::from_value(fx["output"].clone()).unwrap();
+    let verdicts: std::collections::BTreeMap<String, Vec<ppcap_core::ReputationVerdict>> =
+        serde_json::from_value(fx["domain_verdicts"].clone()).unwrap();
+    ppcap_core::apply_domain_reputation(&mut out.summary, &verdicts);
+
+    let expected = fx["expected_domains"].as_array().unwrap();
+    for exp in expected {
+        let host = exp["host"].as_str().unwrap();
+        let row = out.summary.domain_threats.iter().find(|d| d.host == host).unwrap();
+        assert_eq!(row.reputation.len() as u64, exp["reputation_len"].as_u64().unwrap(), "{host}");
+    }
+}
