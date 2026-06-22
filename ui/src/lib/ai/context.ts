@@ -1,4 +1,4 @@
-import type { AnalysisOutput, Incident, IpThreat } from "../../types";
+import type { AnalysisOutput, DomainThreat, Incident, IpThreat } from "../../types";
 
 const TOP_INCIDENTS = 10, TOP_THREATS = 20, TOP_N = 10;
 
@@ -13,6 +13,18 @@ function incidentLine(i: Incident): string {
   const atk = i.attack.length ? ` [${i.attack.join(",")}]` : "";
   const stages = i.stages.length ? ` (stages: ${i.stages.join(" → ")})` : "";
   return `- **${i.host}** — ${i.severity} ${i.score}/100 — ${i.title}${stages}${atk}\n  ${i.narrative}`;
+}
+
+function domainLine(d: DomainThreat): string {
+  const verdicts = d.reputation ?? [];
+  const malSources = verdicts.filter((r) => r.status === "malicious").map((r) => r.source);
+  if (malSources.length) {
+    return `- ${d.host} — ${fmtBytes(d.bytes)}, ${d.flows} flows — MALICIOUS (${malSources.join(", ")})`;
+  }
+  const rep = verdicts.length
+    ? ` — reputation: ${verdicts.map((r) => `${r.source}:${r.status}`).join(", ")}`
+    : "";
+  return `- ${d.host} — ${fmtBytes(d.bytes)}, ${d.flows} flows${rep}`;
 }
 
 function threatLine(t: IpThreat): string {
@@ -57,6 +69,17 @@ export function buildContext(output: AnalysisOutput): string {
   if (threats.length) {
     lines.push("## Top threat IPs");
     for (const t of threats.slice(0, TOP_THREATS)) lines.push(threatLine(t));
+    lines.push("");
+  }
+
+  const domains = s.domain_threats ?? [];
+  if (domains.length) {
+    const isMal = (d: DomainThreat) => (d.reputation ?? []).some((r) => r.status === "malicious");
+    const malicious = domains.filter(isMal);
+    const rest = domains.filter((d) => !isMal(d)).slice(0, TOP_N);
+    const shown = [...malicious, ...rest];
+    lines.push("## Notable domains (SNI)");
+    for (const d of shown) lines.push(domainLine(d));
     lines.push("");
   }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildContext } from "./context";
 import { makeOutput } from "../../test/fixtures";
+import type { DomainThreat, RepStatus } from "../../types";
 import { humanBytes, humanNumber, compactNumber, shortHash, basename, durationHumanMs } from "../../lib/format";
 import { rollupSeverity } from "../../lib/severity";
 import { getProxyUrl, setProxyUrl } from "./settings";
@@ -206,5 +207,42 @@ describe("ai/settings proxy URL — branch coverage", () => {
   it("getProxyUrl returns stored value after setProxyUrl", () => {
     setProxyUrl("http://localhost:8788");
     expect(getProxyUrl()).toBe("http://localhost:8788");
+  });
+});
+
+const vt = (status: RepStatus) => ({
+  source: "virustotal", status, malicious: status === "malicious",
+  score: status === "malicious" ? 90 : null, tags: [], link: null, fetched_at: 0,
+});
+const dom = (host: string, bytes: number, rep?: ReturnType<typeof vt>[]): DomainThreat => ({
+  host, flows: 1, bytes, reputation: rep,
+});
+
+describe("buildContext — domains", () => {
+  it("renders a Notable domains section, labels malicious, and lists malicious-first", () => {
+    const out = makeOutput();
+    out.summary.domain_threats = [
+      dom("cdn.example.com", 5_000_000),                 // high traffic, no verdict
+      dom("c2.evil.test", 1_000, [vt("malicious")]),     // low traffic, malicious
+      dom("quota.example", 2_000, [vt("unavailable")]),  // quota placeholder — NOT malicious
+    ];
+    const ctx = buildContext(out);
+    expect(ctx).toContain("## Notable domains (SNI)");
+    expect(ctx).toContain("c2.evil.test");
+    expect(ctx).toContain("MALICIOUS (virustotal)");
+    // quota-unavailable shows its status but is never labeled MALICIOUS
+    expect(ctx).toContain("quota.example");
+    expect(ctx).toContain("virustotal:unavailable");
+    // malicious-first: the low-traffic malicious domain precedes the high-traffic clean one
+    expect(ctx.indexOf("c2.evil.test")).toBeLessThan(ctx.indexOf("cdn.example.com"));
+    // privacy + bounds still hold
+    expect(ctx).not.toContain("payload");
+    expect(ctx.length).toBeLessThan(20000);
+  });
+
+  it("omits the section when there are no domains", () => {
+    const out = makeOutput();
+    out.summary.domain_threats = [];
+    expect(buildContext(out)).not.toContain("## Notable domains (SNI)");
   });
 });

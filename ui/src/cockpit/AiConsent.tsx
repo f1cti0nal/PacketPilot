@@ -6,7 +6,7 @@ export function AiConsent({ baseUrl, model, onProceed, onCancel }:
       <div className="max-w-md rounded-lg bg-[var(--color-surface)] p-5 text-[var(--color-text)]">
         <h2 className="text-sm font-semibold">Send the analysis summary to the model?</h2>
         <p className="mt-2 text-xs text-[var(--color-text-faint)]">
-          Your analysis <b>summary</b> — severity counts, top incidents and threat IPs with their evidence
+          Your analysis <b>summary</b> — severity counts, top incidents, threat IPs (with evidence), and the domains contacted
           (never raw packets, payloads, or the capture file) — will be sent to <b>{baseUrl}</b> using
           model <b>{model}</b>. {local ? "This endpoint is local — it stays on this device." : ""}
         </p>
