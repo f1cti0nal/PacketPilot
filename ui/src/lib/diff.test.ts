@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { diffByKey, diffSummaries } from "./diff";
-import type { IpThreat, Incident, Summary, SeverityCounts } from "../types";
+import type { IpThreat, Incident, Summary, SeverityCounts, ReputationVerdict } from "../types";
 
 const sev = (o: Partial<SeverityCounts> = {}): SeverityCounts => ({ critical: 0, high: 0, medium: 0, low: 0, info: 0, ...o });
 const summary = (over: Partial<Summary>): Summary =>
@@ -11,6 +11,9 @@ const threat = (o: Partial<IpThreat>): IpThreat =>
 const incident = (o: Partial<Incident>): Incident =>
   ({ host: "10.0.0.1", severity: "low", score: 10, title: "t", narrative: "n",
      stages: [], attack: [], findings: [], ...o } as Incident);
+const verdict = (status: ReputationVerdict["status"]): ReputationVerdict =>
+  ({ source: "abuseipdb", status, malicious: status === "malicious", score: 0,
+     tags: [], link: null, fetched_at: 0 } as ReputationVerdict);
 
 describe("diffByKey", () => {
   it("splits into added / removed / changed and sorts changed by key", () => {
@@ -62,5 +65,55 @@ describe("diffSummaries", () => {
     expect(d.threats.removed).toHaveLength(0);
     expect(d.threats.changed).toHaveLength(0);
     expect(d.severity.every((b) => b.delta === 0)).toBe(true);
+  });
+
+  it("detects reputation status change (worstRep: with reputation vs empty)", () => {
+    const before = summary({
+      ip_threats: [threat({ ip: "1.1.1.1", reputation: [] })],
+    });
+    const after = summary({
+      ip_threats: [threat({ ip: "1.1.1.1", reputation: [verdict("malicious"), verdict("clean")] })],
+    });
+    const d = diffSummaries(before, after);
+    expect(d.threats.changed[0].deltas).toEqual(
+      expect.arrayContaining([{ field: "reputation", before: "(none)", after: "malicious" }]),
+    );
+  });
+
+  it("detects tag removal as a setDelta with (none) on the after side", () => {
+    const before = summary({
+      ip_threats: [threat({ ip: "1.1.1.1", tags: ["scanner"] })],
+    });
+    const after = summary({
+      ip_threats: [threat({ ip: "1.1.1.1", tags: [] })],
+    });
+    const d = diffSummaries(before, after);
+    expect(d.threats.changed[0].deltas).toEqual(
+      expect.arrayContaining([{ field: "tags", before: "scanner", after: "(none)" }]),
+    );
+  });
+
+  it("shared counts only entities present in both captures", () => {
+    const before = summary({
+      ip_threats: [threat({ ip: "1.1.1.1" }), threat({ ip: "2.2.2.2" })],
+      incidents: [incident({ host: "h1" })],
+    });
+    const after = summary({
+      ip_threats: [threat({ ip: "1.1.1.1" }), threat({ ip: "3.3.3.3" })],
+      incidents: [incident({ host: "h2" })],
+    });
+    const d = diffSummaries(before, after);
+    expect(d.shared).toBe(1); // only ip 1.1.1.1 is shared; h1/h2 are different; 2.2.2.2 removed
+  });
+
+  it("handles summaries with missing optional fields (nullish fallbacks)", () => {
+    // Exercise the ?? [] and ?? 0 branches in diffSummaries
+    const bare = { ip_threats: undefined, incidents: undefined, severity_counts: undefined } as unknown as Summary;
+    const d = diffSummaries(bare, bare);
+    expect(d.threats.added).toHaveLength(0);
+    expect(d.threats.removed).toHaveLength(0);
+    expect(d.incidents.added).toHaveLength(0);
+    expect(d.severity.every((b) => b.before === 0 && b.after === 0 && b.delta === 0)).toBe(true);
+    expect(d.shared).toBe(0);
   });
 });

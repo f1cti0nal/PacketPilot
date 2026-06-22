@@ -58,4 +58,19 @@ describe("CompareView", () => {
     await user.click(screen.getByRole("button", { name: /swap/i }));
     expect(onSwap).toHaveBeenCalled();
   });
+
+  it("does NOT show the unrelated-captures banner when shared > 0", () => {
+    const sharedIp = "1.1.1.1";
+    const before = ent("a", { ip_threats: [threat({ ip: sharedIp })] });
+    const after = ent("b", { ip_threats: [threat({ ip: sharedIp }), threat({ ip: "9.9.9.9" })] });
+    render(<CompareView before={before} after={after} onSwap={() => {}} />);
+    expect(screen.queryByText(/may be unrelated/i)).not.toBeInTheDocument();
+  });
+
+  it("renders removed incidents", () => {
+    const before = ent("a", { incidents: [incident({ host: "victim.local" })] });
+    const after = ent("b", { incidents: [] });
+    render(<CompareView before={before} after={after} onSwap={() => {}} />);
+    expect(screen.getByText("victim.local")).toBeInTheDocument();
+  });
 });
