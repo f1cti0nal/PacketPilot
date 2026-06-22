@@ -24,12 +24,12 @@ describe("proxyTransport", () => {
   });
 
   it("sends the relay contract: POST with {url,headers,method,body,stream}", async () => {
-    const fetchSpy = vi.fn(async () => streamResponse(""));
+    const fetchSpy = vi.fn<[string, RequestInit?], Promise<Response>>(async () => streamResponse(""));
     vi.stubGlobal("fetch", fetchSpy);
     await proxyTransport("https://relay.test")({ url: "https://upstream", headers: { authorization: "Bearer k" }, body: '{"x":1}' }, () => {});
-    const [calledUrl, calledOpts] = fetchSpy.mock.calls[0];
+    const [calledUrl, calledOpts] = fetchSpy.mock.calls[0]!;
     expect(calledUrl).toBe("https://relay.test");
-    const sent = JSON.parse(calledOpts.body as string);
+    const sent = JSON.parse((calledOpts!.body) as string);
     expect(sent.url).toBe("https://upstream");
     expect(sent.stream).toBe(true);
     expect(sent.method).toBe("POST");

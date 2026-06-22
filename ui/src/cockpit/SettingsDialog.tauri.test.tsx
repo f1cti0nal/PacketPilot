@@ -41,9 +41,9 @@ vi.mock("../lib/ai/settings", () => ({
 }));
 
 // Mock @tauri-apps/api/core for keychain save
-const mockTauriInvoke = vi.fn(async () => {});
+const mockTauriInvoke = vi.fn<[string, any?], Promise<void>>(async () => {});
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: any[]) => mockTauriInvoke(...args),
+  invoke: (...args: any[]) => mockTauriInvoke(...(args as [string, any?])),
 }));
 
 describe("SettingsDialog — Tauri (desktop) surface", () => {

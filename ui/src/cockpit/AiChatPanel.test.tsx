@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { AiChatPanel } from "./AiChatPanel";
 import { makeOutput } from "../test/fixtures";
 
-const mockAskChat = vi.fn(async (_o: any, _h: any, q: string, _c: any, onToken: (t: string) => void) => {
+const mockAskChat = vi.fn<[any, any, string, any, (t: string) => void], Promise<string>>(async (_o, _h, q, _c, onToken) => {
   onToken(`re: ${q}`);
   return `re: ${q}`;
 });
@@ -13,7 +13,7 @@ vi.mock("../lib/ai/settings", () => ({
   getAiConfig: () => ({ enabled: true, baseUrl: "u", model: "m", apiKey: "k" }),
 }));
 vi.mock("../lib/ai/run", () => ({
-  askChat: (...args: any[]) => mockAskChat(...args),
+  askChat: (...args: any[]) => mockAskChat(...(args as [any, any, string, any, (t: string) => void])),
 }));
 
 describe("AiChatPanel", () => {

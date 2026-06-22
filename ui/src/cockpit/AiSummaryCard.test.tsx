@@ -3,14 +3,15 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiSummaryCard } from "./AiSummaryCard";
 import { makeOutput } from "../test/fixtures";
+import type { AiSummaryEntry } from "../types";
 
 // Default: consent given, AI enabled
 const mockAiConsentGiven = vi.fn(() => true);
 const mockGetAiEnabled = vi.fn(() => true);
 const mockGiveAiConsent = vi.fn();
-const mockGetAiSummary = vi.fn(async () => null);
-const mockPutAiSummary = vi.fn(async () => true);
-const mockGenerateSummary = vi.fn(async (_o: any, _c: any, onToken: (t: string) => void) => {
+const mockGetAiSummary = vi.fn<[string], Promise<AiSummaryEntry | null>>(async () => null);
+const mockPutAiSummary = vi.fn<[string, string, string, number], Promise<boolean>>(async () => true);
+const mockGenerateSummary = vi.fn<[any, any, (t: string) => void], Promise<string>>(async (_o, _c, onToken) => {
   onToken("Generated brief.");
   return "Generated brief.";
 });
@@ -22,11 +23,11 @@ vi.mock("../lib/ai/settings", () => ({
   getAiConfig: () => ({ enabled: true, baseUrl: "https://api.anthropic.com/v1", model: "claude-opus-4-8", apiKey: "k" }),
 }));
 vi.mock("../lib/ai/cache", () => ({
-  getAiSummary: (...args: any[]) => mockGetAiSummary(...args),
-  putAiSummary: (...args: any[]) => mockPutAiSummary(...args),
+  getAiSummary: (...args: any[]) => mockGetAiSummary(...(args as [string])),
+  putAiSummary: (...args: any[]) => mockPutAiSummary(...(args as [string, string, string, number])),
 }));
 vi.mock("../lib/ai/run", () => ({
-  generateSummary: (...args: any[]) => mockGenerateSummary(...args),
+  generateSummary: (...args: any[]) => mockGenerateSummary(...(args as [any, any, (t: string) => void])),
 }));
 
 describe("AiSummaryCard", () => {
@@ -35,7 +36,7 @@ describe("AiSummaryCard", () => {
     mockAiConsentGiven.mockReturnValue(true);
     mockGetAiEnabled.mockReturnValue(true);
     mockGetAiSummary.mockResolvedValue(null);
-    mockGenerateSummary.mockImplementation(async (_o: any, _c: any, onToken: (t: string) => void) => {
+    mockGenerateSummary.mockImplementation(async (_o, _c, onToken) => {
       onToken("Generated brief.");
       return "Generated brief.";
     });

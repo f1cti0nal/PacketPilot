@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildContext } from "./context";
 import { makeOutput } from "../../test/fixtures";
-import type { AnalysisOutput } from "../../types";
 import { humanBytes, humanNumber, compactNumber, shortHash, basename, durationHumanMs } from "../../lib/format";
 import { rollupSeverity } from "../../lib/severity";
 import { getProxyUrl, setProxyUrl } from "./settings";
@@ -40,7 +39,7 @@ describe("buildContext", () => {
     const out = makeOutput();
     const threats = out.summary.ip_threats ?? [];
     if (threats.length > 0) {
-      threats[0].reputation = [{ source: "abuseipdb", status: "malicious", score: 95 }];
+      threats[0].reputation = [{ source: "abuseipdb", status: "malicious", score: 95, malicious: true, tags: [], link: null, fetched_at: 0 }];
     }
     const ctx = buildContext(out);
     expect(ctx).toContain("reputation:");

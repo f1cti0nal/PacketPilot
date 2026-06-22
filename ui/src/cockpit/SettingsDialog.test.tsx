@@ -38,7 +38,7 @@ vi.mock("../lib/ai/settings", () => ({
 }));
 
 describe("SettingsDialog — AI section", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it("renders the AI section with enable checkbox", () => {
     render(<SettingsDialog onClose={vi.fn()} />);

@@ -8,14 +8,14 @@ vi.mock("../tauri-detect", () => ({ isTauri: vi.fn(() => false) }));
 vi.mock("./settings", () => ({ getProxyUrl: vi.fn(() => "") }));
 
 // Mock @tauri-apps/api/core for tauriTransport tests
-const mockInvoke = vi.fn(async () => {});
+const mockInvoke = vi.fn<[string, any?], Promise<void>>(async () => {});
 class MockChannel<T> {
   onmessage: ((msg: T) => void) | null = null;
   // Helper to simulate a message being delivered
   _deliver(msg: T) { this.onmessage?.(msg); }
 }
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: any[]) => mockInvoke(...args),
+  invoke: (...args: any[]) => mockInvoke(...(args as [string, any?])),
   Channel: MockChannel,
 }));
 
@@ -38,10 +38,10 @@ describe("run orchestrators", () => {
 });
 
 describe("tauriTransport", () => {
-  beforeEach(() => mockInvoke.mockReset());
+  beforeEach(() => { mockInvoke.mockReset(); });
 
   it("invokes ai_chat_stream with url and body", async () => {
-    mockInvoke.mockImplementation(async (_cmd: string, _args: any) => {
+    mockInvoke.mockImplementation(async (_cmd, _args) => {
       // Simulate that the channel receives a chunk synchronously
     });
     const transport = tauriTransport();
@@ -56,12 +56,10 @@ describe("tauriTransport", () => {
   it("forwards channel messages to onChunk", async () => {
     // The channel's onmessage is set by tauriTransport before invoke is called.
     // We capture the channel from the invoke args (it's the 2nd positional arg object's onChunk).
-    let capturedOnMessage: ((msg: string) => void) | null = null;
     mockInvoke.mockImplementation(async (...allArgs: any[]) => {
       // allArgs[0] = "ai_chat_stream", allArgs[1] = { url, body, onChunk: channel }
       const callArgs = allArgs[1] as Record<string, unknown>;
       const ch = callArgs?.["onChunk"] as MockChannel<string>;
-      capturedOnMessage = ch?.onmessage ?? null;
       // Deliver the message synchronously via the already-set handler
       ch?.onmessage?.("data: hello\n\n");
     });
