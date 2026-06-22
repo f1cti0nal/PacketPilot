@@ -5,9 +5,8 @@ import {
   PanelLeftClose,
   PanelLeft,
   Upload,
-  FileDown,
-  Command as CommandIcon,
   Loader2,
+  Command as CommandIcon,
   CheckCircle2,
   Settings,
   Sparkles,
@@ -15,6 +14,8 @@ import {
 import { cn } from "../lib/cn";
 import { shortHash } from "../lib/format";
 import type { TabId } from "../types";
+import { ExportMenu } from "./ExportMenu";
+import type { ExportAction } from "./ExportMenu";
 
 const DEFAULT_TABS: ReadonlyArray<{ id: TabId; label: string; badge?: number }> = [
   { id: "dashboard", label: "Dashboard" },
@@ -32,7 +33,7 @@ export function CommandBar({
   captureStatus = "ready",
   captureError,
   onRequestLoad,
-  onExport,
+  exportActions,
   exporting = false,
   exportHint,
   onOpenPalette,
@@ -49,7 +50,7 @@ export function CommandBar({
   captureStatus?: "idle" | "loading" | "ready" | "error";
   captureError?: string;
   onRequestLoad?: () => void;
-  onExport?: () => void;
+  exportActions?: ExportAction[];
   exporting?: boolean;
   exportHint?: string;
   onOpenPalette?: () => void;
@@ -146,12 +147,7 @@ export function CommandBar({
           onClick={onRequestLoad}
           disabled={!onRequestLoad}
         />
-        <ActionButton
-          icon={exporting ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
-          label="Export"
-          onClick={onExport}
-          disabled={!onExport || exporting}
-        />
+        <ExportMenu actions={exportActions ?? []} disabled={(exportActions?.length ?? 0) === 0} busy={exporting} />
         {exportHint && (
           <span className="hidden items-center gap-1 text-xs text-[var(--color-text-dim)] lg:inline-flex">
             <CheckCircle2 size={12} className="text-[var(--color-accent)]" />

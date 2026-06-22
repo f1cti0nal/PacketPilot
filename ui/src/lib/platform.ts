@@ -4,6 +4,7 @@ import type { AnalysisOutput, FlowRow, WireFlowPackets } from "../types";
 import { loadFlows } from "./data";
 import { isTauri } from "./tauri-detect";
 export { isTauri } from "./tauri-detect";
+import { exportCsvWasm, exportStixWasm } from "./wasmEngine";
 
 interface AnalyzeDto {
   summary: AnalysisOutput;
@@ -86,4 +87,100 @@ export async function exportReport(
     URL.revokeObjectURL(url);
   }
   return { ok: true, message: "Downloaded" };
+}
+
+// ── Structured export: CSV / STIX ────────────────────────────────────────────
+
+/** Basename of the capture source (no extension), used for export filenames. */
+function captureBase(summary: AnalysisOutput): string {
+  const p = summary.source_path || "";
+  return p.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || "packetpilot";
+}
+
+function downloadText(content: string, filename: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export async function exportCsv(summary: AnalysisOutput): Promise<ExportResult> {
+  const name = `${captureBase(summary)}-findings.csv`;
+  if (isTauri()) {
+    const path = await save({ defaultPath: name, filters: [{ name: "CSV", extensions: ["csv"] }] });
+    if (!path) return { ok: false, message: "" };
+    try {
+      await invoke("save_csv", { summary, path });
+      return { ok: true, message: "CSV saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
+  }
+  try {
+    const csv = await exportCsvWasm(JSON.stringify(summary));
+    downloadText(csv, name, "text/csv");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
+}
+
+export async function exportStix(summary: AnalysisOutput): Promise<ExportResult> {
+  const name = `${captureBase(summary)}-stix.json`;
+  if (isTauri()) {
+    const path = await save({ defaultPath: name, filters: [{ name: "STIX bundle", extensions: ["json"] }] });
+    if (!path) return { ok: false, message: "" };
+    try {
+      await invoke("save_stix", { summary, path });
+      return { ok: true, message: "STIX bundle saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
+  }
+  try {
+    const stix = await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
+    downloadText(stix, name, "application/json");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
+}
+
+async function copyText(text: string): Promise<ExportResult> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return { ok: true, message: "Copied to clipboard" };
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
+}
+
+export async function copyCsv(summary: AnalysisOutput): Promise<ExportResult> {
+  try {
+    const csv = isTauri()
+      ? await invoke<string>("export_csv", { summary })
+      : await exportCsvWasm(JSON.stringify(summary));
+    return copyText(csv);
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
+}
+
+export async function copyStix(summary: AnalysisOutput): Promise<ExportResult> {
+  try {
+    const stix = isTauri()
+      ? await invoke<string>("export_stix", { summary })
+      : await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
+    return copyText(stix);
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
 }

@@ -219,12 +219,49 @@ fn save_report(
     std::fs::write(&path, html).map_err(|e| format!("write report: {e}"))
 }
 
+fn now_unix_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Write the findings CSV for `summary` to `path`.
+#[tauri::command]
+fn save_csv(summary: AnalysisOutput, path: String) -> Result<(), String> {
+    let csv = ppcap_core::export::findings_csv(&summary);
+    std::fs::write(&path, csv).map_err(|e| format!("write csv: {e}"))
+}
+
+/// Write the STIX 2.1 bundle for `summary` to `path`.
+#[tauri::command]
+fn save_stix(summary: AnalysisOutput, path: String) -> Result<(), String> {
+    let stix = ppcap_core::export::stix_bundle(&summary, now_unix_secs());
+    std::fs::write(&path, stix).map_err(|e| format!("write stix: {e}"))
+}
+
+/// Return the findings CSV string for `summary` (used for copy-to-clipboard).
+#[tauri::command]
+fn export_csv(summary: AnalysisOutput) -> Result<String, String> {
+    Ok(ppcap_core::export::findings_csv(&summary))
+}
+
+/// Return the STIX 2.1 bundle string for `summary` (used for copy-to-clipboard).
+#[tauri::command]
+fn export_stix(summary: AnalysisOutput) -> Result<String, String> {
+    Ok(ppcap_core::export::stix_bundle(&summary, now_unix_secs()))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             analyze_capture,
             save_report,
+            save_csv,
+            save_stix,
+            export_csv,
+            export_stix,
             extract_flow_packets,
             set_reputation_key,
             reputation_key_status,

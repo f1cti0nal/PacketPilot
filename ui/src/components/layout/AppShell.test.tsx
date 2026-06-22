@@ -64,15 +64,16 @@ describe("AppShell", () => {
     expect(onPaletteOpenChange).not.toHaveBeenCalledWith(true);
   });
 
-  it("clicking Export calls onExport and shows a hint message on success", async () => {
+  it("clicking Export opens the dropdown and invoking HTML report calls onExport", async () => {
     const u = userEvent.setup();
     const onExport = vi.fn(async () => ({ ok: true as const, message: "Report saved" }));
     render(
       <AppShell {...minimalProps({ onExport })} />,
     );
-    // The Export button is rendered in the CommandBar
+    // The Export button opens a dropdown; click it then pick the first item
     const exportBtn = screen.getByRole("button", { name: /export/i });
     await u.click(exportBtn);
+    await u.click(screen.getByText("HTML report"));
     expect(onExport).toHaveBeenCalled();
     // After a successful export, a hint message appears
     await screen.findByText(/Report saved/i);

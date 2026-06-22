@@ -7,7 +7,13 @@
 import type { AnalysisOutput, FlowRow, ReputationVerdict, WasmFlow, WireFlowPackets } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
-import initWasm, { analyze as wasmAnalyze, extract_packets as wasmExtractPackets, apply_reputation as wasmApplyReputation } from "../wasm/ppcap_wasm.js";
+import initWasm, {
+  analyze as wasmAnalyze,
+  extract_packets as wasmExtractPackets,
+  apply_reputation as wasmApplyReputation,
+  export_csv as wasmExportCsv,
+  export_stix as wasmExportStix,
+} from "../wasm/ppcap_wasm.js";
 
 export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): Promise<WireFlowPackets> {
   await ensureWasm();
@@ -72,4 +78,20 @@ export async function applyReputationWasm(
   await ensureWasm();
   const updated = wasmApplyReputation(outputJson, JSON.stringify(verdicts)) as string;
   return JSON.parse(updated) as AnalysisOutput;
+}
+
+/** Export findings as CSV via WASM (browser path). */
+export async function exportCsvWasm(outputJson: string): Promise<string> {
+  await ensureWasm();
+  return wasmExportCsv(outputJson);
+}
+
+/**
+ * Export findings as a STIX bundle via WASM (browser path).
+ * `generatedUnixSecs` is the bundle creation timestamp.
+ * wasm-bindgen maps Rust `i64` → JS `bigint`, so we wrap with BigInt().
+ */
+export async function exportStixWasm(outputJson: string, generatedUnixSecs: number): Promise<string> {
+  await ensureWasm();
+  return wasmExportStix(outputJson, BigInt(generatedUnixSecs));
 }
