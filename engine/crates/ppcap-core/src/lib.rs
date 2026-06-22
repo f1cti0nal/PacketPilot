@@ -56,8 +56,8 @@ pub use detect::{
     DnsTunnelParams, ExfilParams, LateralMovementParams, PiiExposureParams, SweepParams,
 };
 pub use enrich::{
-    apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher, FeedMatch,
-    FlowEnrichment, IpClass, RepStatus, ReputationVerdict, ThreatFeed,
+    apply_domain_reputation, apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher,
+    FeedMatch, FlowEnrichment, IpClass, RepStatus, ReputationVerdict, ThreatFeed,
 };
 pub use error::{PpError, Result};
 pub use model::category::Category;
