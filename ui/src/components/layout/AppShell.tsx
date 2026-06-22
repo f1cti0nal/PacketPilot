@@ -57,6 +57,8 @@ export interface AppShellProps {
   onPaletteOpenChange: (open: boolean) => void;
   /** Open the reputation settings dialog. */
   onOpenSettings?: () => void;
+  /** Open the AI chat panel. Only provided when a capture is ready. */
+  onOpenAiChat?: () => void;
   children: ReactNode;
 }
 
@@ -80,6 +82,7 @@ export function AppShell({
   paletteOpen,
   onPaletteOpenChange,
   onOpenSettings,
+  onOpenAiChat,
   children,
 }: AppShellProps) {
   const [exportHint, setExportHint] = useState<string | null>(null);
@@ -163,6 +166,7 @@ export function AppShell({
         collapsed={collapsed}
         onToggleCollapse={onToggleCollapse}
         onOpenSettings={onOpenSettings}
+        onOpenAiChat={onOpenAiChat}
       />
       <div className="flex min-h-0 flex-1">
         <ThreatRail
