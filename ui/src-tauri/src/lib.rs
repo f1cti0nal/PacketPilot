@@ -87,6 +87,7 @@ fn extract_flow_packets(
 }
 
 const KEYRING_SERVICE: &str = "packetpilot-reputation";
+const KEYRING_SERVICE_AI: &str = "packetpilot-ai";
 
 fn key_for(provider: &str) -> Result<Option<String>, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, provider).map_err(|e| e.to_string())?;
@@ -137,6 +138,70 @@ fn reputation_lookup(ips: Vec<String>) -> Result<String, String> {
     serde_json::to_string(&verdicts).map_err(|e| e.to_string())
 }
 
+fn ai_key_for(name: &str) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE_AI, name).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(k) if !k.is_empty() => Ok(Some(k)),
+        _ => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn set_ai_key(provider: String, key: String) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE_AI, &provider).map_err(|e| e.to_string())?;
+    entry.set_password(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn ai_key_status() -> Result<Vec<String>, String> {
+    Ok(if ai_key_for("default")?.is_some() { vec!["default".to_string()] } else { vec![] })
+}
+
+/// Stream an OpenAI-compatible chat completion to the frontend. `body` is the full request JSON
+/// (model + messages + stream:true) built in TS; the API key is read from the OS keychain here so it
+/// never crosses into the renderer. Raw response bytes are forwarded via the Channel; the TS side
+/// parses the SSE. Runs the blocking ureq read on a worker so the Tauri event loop is never blocked.
+#[tauri::command]
+async fn ai_chat_stream(
+    url: String,
+    body: String,
+    on_chunk: tauri::ipc::Channel<String>,
+) -> Result<(), String> {
+    let key = ai_key_for("default")?;
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(180))
+            .build();
+        let mut req = agent.post(&url).set("content-type", "application/json");
+        if let Some(k) = &key {
+            req = req.set("Authorization", &format!("Bearer {k}"));
+        }
+        let resp = match req.send_string(&body) {
+            Ok(r) => r,
+            // 4xx/5xx: surface the upstream error body as the failure reason.
+            Err(ureq::Error::Status(code, r)) => {
+                return Err(format!("AI endpoint {code}: {}", r.into_string().unwrap_or_default()));
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+        use std::io::Read;
+        let mut reader = std::io::BufReader::new(resp.into_reader());
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            on_chunk
+                .send(String::from_utf8_lossy(&buf[..n]).to_string())
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Render the self-contained HTML triage report for `summary` and write it to `path`.
 /// The "generated at" time is the current wall clock (UTC Unix seconds).
 #[tauri::command]
@@ -158,7 +223,10 @@ pub fn run() {
             extract_flow_packets,
             set_reputation_key,
             reputation_key_status,
-            reputation_lookup
+            reputation_lookup,
+            set_ai_key,
+            ai_key_status,
+            ai_chat_stream
         ])
         .run(tauri::generate_context!())
         .expect("error while running PacketPilot");
