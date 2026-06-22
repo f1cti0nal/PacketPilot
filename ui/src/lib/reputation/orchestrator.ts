@@ -3,7 +3,7 @@ import { isPublicIp } from "../data"; // see note below
 import type { HttpGet } from "./http";
 import { abuseipdbVerdict } from "./abuseipdb";
 import { greynoiseVerdict } from "./greynoise";
-import { virustotalVerdictIp } from "./virustotal";
+import { virustotalVerdictIp, virustotalVerdictDomain } from "./virustotal";
 import { getReputation, putReputation } from "../recent";
 import { makeBudget, trySpend } from "./budget";
 
@@ -12,6 +12,32 @@ const TTL = { abuseipdb: 18 * 3600, greynoise: 24 * 3600, virustotal: 12 * 3600 
 
 function quotaUnavailable(source: string, now: number): ReputationVerdict {
   return { source, status: "unavailable", malicious: false, score: null, tags: ["quota"], link: null, fetched_at: now };
+}
+
+/** Domain reputation — VirusTotal only. `hosts` should already be capped/ordered by the caller. */
+export async function lookupDomainReputation(
+  http: HttpGet,
+  hosts: string[],
+  vtKey: string,
+  now: number,
+): Promise<Record<string, ReputationVerdict[]>> {
+  const out: Record<string, ReputationVerdict[]> = {};
+  if (!vtKey) return out;
+  const budget = makeBudget();
+  for (const host of hosts) {
+    const cached = await getReputation("virustotal", host, now, TTL.virustotal);
+    let v: ReputationVerdict;
+    if (cached) {
+      v = cached;
+    } else if (trySpend(budget, "virustotal")) {
+      v = await virustotalVerdictDomain(http, vtKey, host, now);
+      await putReputation("virustotal", host, v);
+    } else {
+      v = quotaUnavailable("virustotal", now);
+    }
+    out[host] = [v];
+  }
+  return out;
 }
 
 /** `ips` should be priority-ordered (most-suspicious first). Cache-first, budget-bounded. */

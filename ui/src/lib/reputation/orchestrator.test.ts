@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import "fake-indexeddb/auto";
 import type { HttpGet } from "./http";
-import { lookupReputation } from "./orchestrator";
+import { lookupReputation, lookupDomainReputation } from "./orchestrator";
 import * as budgetModule from "./budget";
 
 const fakeAbuse: HttpGet = async () => ({ status: 200, body: JSON.stringify({ data: { abuseConfidenceScore: 96, totalReports: 3 } }) });
@@ -38,5 +38,28 @@ describe("lookupReputation", () => {
     const out = await lookupReputation(fakeAbuse, ["8.8.8.8"], {}, 2000);
     // No keys means no providers — public IP gets an empty verdicts array, so not included in output.
     expect(out["8.8.8.8"]).toBeUndefined();
+  });
+});
+
+describe("lookupDomainReputation", () => {
+  it("returns empty without a VT key", async () => {
+    const http = async () => ({ status: 200, body: "{}" });
+    expect(await lookupDomainReputation(http, ["a.example"], "", 0)).toEqual({});
+  });
+
+  it("looks up each host via VT (cache miss → fetch)", async () => {
+    const vtDomainBody = JSON.stringify({
+      data: {
+        attributes: {
+          last_analysis_stats: { malicious: 1, suspicious: 0, harmless: 9, undetected: 0 },
+          tags: [],
+        },
+      },
+    });
+    const http = vi.fn(async () => ({ status: 200, body: vtDomainBody })) satisfies HttpGet;
+    // Use a unique now timestamp to avoid cache hits from other tests.
+    const out = await lookupDomainReputation(http, ["evil.example"], "k", 99000);
+    expect(out["evil.example"][0].status).toBe("malicious");
+    expect(http).toHaveBeenCalledTimes(1);
   });
 });
