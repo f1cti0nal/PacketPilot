@@ -194,19 +194,45 @@ mod domain_tests {
         use crate::model::summary::DomainThreat;
         let mut summary = crate::model::output::AnalysisOutput::default().summary;
         summary.domain_threats = vec![
-            DomainThreat { host: "evil.example".into(), flows: 1, bytes: 1, reputation: vec![] },
-            DomainThreat { host: "good.example".into(), flows: 1, bytes: 1, reputation: vec![] },
+            DomainThreat {
+                host: "evil.example".into(),
+                flows: 1,
+                bytes: 1,
+                reputation: vec![],
+            },
+            DomainThreat {
+                host: "good.example".into(),
+                flows: 1,
+                bytes: 1,
+                reputation: vec![],
+            },
         ];
         let mut verdicts: BTreeMap<String, Vec<ReputationVerdict>> = BTreeMap::new();
-        verdicts.insert("evil.example".into(), vec![ReputationVerdict {
-            source: "virustotal".into(), status: RepStatus::Malicious, malicious: true,
-            score: Some(90), tags: vec![], link: None, fetched_at: 0,
-        }]);
+        verdicts.insert(
+            "evil.example".into(),
+            vec![ReputationVerdict {
+                source: "virustotal".into(),
+                status: RepStatus::Malicious,
+                malicious: true,
+                score: Some(90),
+                tags: vec![],
+                link: None,
+                fetched_at: 0,
+            }],
+        );
         apply_domain_reputation(&mut summary, &verdicts);
-        let evil = summary.domain_threats.iter().find(|d| d.host == "evil.example").unwrap();
+        let evil = summary
+            .domain_threats
+            .iter()
+            .find(|d| d.host == "evil.example")
+            .unwrap();
         assert_eq!(evil.reputation.len(), 1);
         assert_eq!(evil.reputation[0].status, RepStatus::Malicious);
-        let good = summary.domain_threats.iter().find(|d| d.host == "good.example").unwrap();
+        let good = summary
+            .domain_threats
+            .iter()
+            .find(|d| d.host == "good.example")
+            .unwrap();
         assert!(good.reputation.is_empty()); // host not in verdicts → unchanged
     }
 }

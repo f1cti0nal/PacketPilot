@@ -1628,12 +1628,23 @@ mod tests {
         acc.observe_scored_flow(&f5, &sc());
 
         let summary = acc.finish();
-        let hosts: Vec<&str> = summary.domain_threats.iter().map(|d| d.host.as_str()).collect();
+        let hosts: Vec<&str> = summary
+            .domain_threats
+            .iter()
+            .map(|d| d.host.as_str())
+            .collect();
         assert_eq!(hosts, vec!["a.example", "b.example"]); // desc by bytes (200 > 150)
-        let b = summary.domain_threats.iter().find(|d| d.host == "b.example").unwrap();
+        let b = summary
+            .domain_threats
+            .iter()
+            .find(|d| d.host == "b.example")
+            .unwrap();
         assert_eq!(b.bytes, 150);
         assert_eq!(b.flows, 2);
-        assert!(summary.domain_threats.iter().all(|d| d.reputation.is_empty()));
+        assert!(summary
+            .domain_threats
+            .iter()
+            .all(|d| d.reputation.is_empty()));
     }
 
     #[test]

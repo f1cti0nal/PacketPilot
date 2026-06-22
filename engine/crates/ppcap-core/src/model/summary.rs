@@ -254,14 +254,22 @@ mod tests {
 
     #[test]
     fn domain_threats_serde_roundtrip_and_default() {
-        let dt = DomainThreat { host: "a.example".into(), flows: 3, bytes: 99, reputation: vec![] };
+        let dt = DomainThreat {
+            host: "a.example".into(),
+            flows: 3,
+            bytes: 99,
+            reputation: vec![],
+        };
         let j = serde_json::to_string(&dt).unwrap();
         assert_eq!(serde_json::from_str::<DomainThreat>(&j).unwrap(), dt);
 
         // Old summaries (no domain_threats key) still deserialize → empty.
         let out = crate::model::output::AnalysisOutput::default();
         let mut v = serde_json::to_value(&out).unwrap();
-        v["summary"].as_object_mut().unwrap().remove("domain_threats");
+        v["summary"]
+            .as_object_mut()
+            .unwrap()
+            .remove("domain_threats");
         let back: crate::model::output::AnalysisOutput = serde_json::from_value(v).unwrap();
         assert!(back.summary.domain_threats.is_empty());
     }

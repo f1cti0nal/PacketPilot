@@ -319,7 +319,15 @@ pub fn lookup_domain_reputation_native(
     let http = UreqClient::default();
     let mut cache = ReputationCache::load(cache_dir);
     let mut budget = Budget::with_defaults();
-    let out = lookup_domain_reputation(&http, hosts, keys, &mut cache, &mut budget, &Ttls::default(), now);
+    let out = lookup_domain_reputation(
+        &http,
+        hosts,
+        keys,
+        &mut cache,
+        &mut budget,
+        &Ttls::default(),
+        now,
+    );
     let _ = cache.save();
     out
 }
@@ -468,7 +476,10 @@ mod orchestrator_tests {
             &Ttls::default(),
             0,
         );
-        assert_eq!(out.get("evil.example").unwrap()[0].status, RepStatus::Malicious);
+        assert_eq!(
+            out.get("evil.example").unwrap()[0].status,
+            RepStatus::Malicious
+        );
         // Second call hits the cache (no new http call):
         let before = http.calls();
         let _ = lookup_domain_reputation(
@@ -480,6 +491,10 @@ mod orchestrator_tests {
             &Ttls::default(),
             0,
         );
-        assert_eq!(http.calls(), before, "second lookup should be served from cache");
+        assert_eq!(
+            http.calls(),
+            before,
+            "second lookup should be served from cache"
+        );
     }
 }

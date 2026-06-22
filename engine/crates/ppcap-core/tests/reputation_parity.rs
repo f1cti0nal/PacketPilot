@@ -48,7 +48,16 @@ fn native_apply_domain_matches_fixture() {
     let expected = fx["expected_domains"].as_array().unwrap();
     for exp in expected {
         let host = exp["host"].as_str().unwrap();
-        let row = out.summary.domain_threats.iter().find(|d| d.host == host).unwrap();
-        assert_eq!(row.reputation.len() as u64, exp["reputation_len"].as_u64().unwrap(), "{host}");
+        let row = out
+            .summary
+            .domain_threats
+            .iter()
+            .find(|d| d.host == host)
+            .unwrap();
+        assert_eq!(
+            row.reputation.len() as u64,
+            exp["reputation_len"].as_u64().unwrap(),
+            "{host}"
+        );
     }
 }

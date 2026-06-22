@@ -232,8 +232,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         .map(|d| d.host.clone())
                         .collect();
                     if !hosts.is_empty() {
-                        let domain_verdicts =
-                            ppcap_core::lookup_domain_reputation_native(&hosts, &keys, &cache_dir, now);
+                        let domain_verdicts = ppcap_core::lookup_domain_reputation_native(
+                            &hosts, &keys, &cache_dir, now,
+                        );
                         ppcap_core::apply_domain_reputation(&mut out.summary, &domain_verdicts);
                     }
                 }
