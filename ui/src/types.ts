@@ -421,3 +421,5 @@ export interface FlowsState {
 }
 
 export interface AiConfig { enabled: boolean; baseUrl: string; model: string; apiKey: string; }
+
+export interface AiSummaryEntry { text: string; model: string; cached_at: number; }

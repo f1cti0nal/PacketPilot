@@ -18,7 +18,7 @@ const RECENT_KEY = "packetpilot.recent.v1";
 const MAX_RECENT = 12;
 
 const DB_NAME = "packetpilot";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const FLOWS_STORE = "flows";
 const REPUTATION_STORE = "reputation";
 
@@ -155,7 +155,7 @@ export function displayName(pathOrName: string): string {
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
-function openDb(): Promise<IDBDatabase | null> {
+export function openDb(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve) => {
     try {
@@ -168,6 +168,9 @@ function openDb(): Promise<IDBDatabase | null> {
         }
         if (!db.objectStoreNames.contains(REPUTATION_STORE)) {
           db.createObjectStore(REPUTATION_STORE);
+        }
+        if (!db.objectStoreNames.contains("ai_summaries")) {
+          db.createObjectStore("ai_summaries");
         }
       };
       req.onsuccess = () => resolve(req.result);
