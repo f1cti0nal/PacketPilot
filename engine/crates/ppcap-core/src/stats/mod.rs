@@ -1521,6 +1521,7 @@ mod tests {
             score: 5,
             evidence: vec!["category web (+3)".to_string()],
             attack: vec![],
+            terms: vec![],
         };
         acc.observe_scored_flow(&f, &sc);
 
@@ -1578,6 +1579,7 @@ mod tests {
             score: 95,
             evidence: vec!["ioc: endpoint ip on threat feed (+35)".to_string()],
             attack: vec!["T1071".to_string()],
+            terms: vec![],
         };
         acc.observe_scored_flow(&f, &sc);
 
@@ -1622,6 +1624,7 @@ mod tests {
             score: 0,
             evidence: vec![],
             attack: vec![],
+            terms: vec![],
         };
 
         // "a.example" — 200 bytes, 1 flow.
@@ -1688,6 +1691,7 @@ mod tests {
                     "all-internal peers (-10)".to_string(),
                 ],
                 attack: vec![],
+                terms: vec![],
             };
             acc.observe_scored_flow(&f, &sc);
         }
@@ -1705,6 +1709,7 @@ mod tests {
                 "floor: ioc + c2/anomalous forces Critical (>= 90)".to_string(),
             ],
             attack: vec!["T1071".to_string()],
+            terms: vec![],
         };
         acc.observe_scored_flow(&worst, &worst_sc);
 
@@ -1750,6 +1755,7 @@ mod tests {
             score: 80,
             evidence: vec![],
             attack: vec![],
+            terms: vec![],
         };
         acc.observe_flow(&f);
         acc.observe_scored_flow(&f, &sc);
@@ -1793,6 +1799,7 @@ mod tests {
             score: 3,
             evidence: vec![],
             attack: vec![],
+            terms: vec![],
         };
         acc.observe_flow(&f);
         acc.observe_scored_flow(&f, &sc);

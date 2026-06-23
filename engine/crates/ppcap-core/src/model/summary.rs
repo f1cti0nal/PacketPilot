@@ -113,6 +113,13 @@ pub struct FingerprintHit {
     pub label: String,
 }
 
+/// One additive scoring contribution (label + signed points). Mirrors the `(±N)` evidence string.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ScoreTerm {
+    pub label: String,
+    pub points: i32,
+}
+
 /// One per-IP threat rollup row (the worst verdict seen across that IP's flows).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IpThreat {
