@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "../../test/render";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "../../test/render";
 import { SignatureMatchesPanel } from "./SignatureMatchesPanel";
 import type { Finding } from "../../types";
 
@@ -41,5 +41,25 @@ describe("SignatureMatchesPanel", () => {
   it("renders a rule_match without a sid (evidence lacks one) and does not throw", () => {
     render(<SignatureMatchesPanel findings={[ruleMatch({ evidence: ["matched content (3 bytes)"] })]} />);
     expect(screen.getByText("C2 beacon pattern")).toBeInTheDocument();
+  });
+
+  it("a row click pivots to the matched destination via onJump", () => {
+    const onJump = vi.fn();
+    render(<SignatureMatchesPanel findings={[ruleMatch()]} onJump={onJump} />);
+    fireEvent.click(screen.getByRole("button", { name: /View flows for 203\.0\.113\.9/i }));
+    expect(onJump).toHaveBeenCalledWith("203.0.113.9"); // dst_ip
+  });
+
+  it("falls back to src_ip when dst_ip is null", () => {
+    const onJump = vi.fn();
+    render(<SignatureMatchesPanel findings={[ruleMatch({ dst_ip: null, dst_port: null })]} onJump={onJump} />);
+    fireEvent.click(screen.getByRole("button", { name: /View flows for 10\.0\.0\.5/i }));
+    expect(onJump).toHaveBeenCalledWith("10.0.0.5"); // src_ip
+  });
+
+  it("renders static (non-button) rows when onJump is absent", () => {
+    render(<SignatureMatchesPanel findings={[ruleMatch()]} />);
+    expect(screen.getByText("C2 beacon pattern")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /View flows for/i })).toBeNull();
   });
 });

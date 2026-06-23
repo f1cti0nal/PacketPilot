@@ -163,7 +163,7 @@ export function Dashboard({
             <TopTalkersCard talkers={s.top_talkers} onSelect={openHost} />
           </div>
         </div>
-        <SignatureMatchesPanel findings={s.findings ?? []} />
+        <SignatureMatchesPanel findings={s.findings ?? []} onJump={toFlowsIp} />
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
       </div>
 

@@ -12,11 +12,13 @@ function sidOf(f: Finding): string | null {
   return null;
 }
 
-function MatchCard({ f }: { f: Finding }) {
+function MatchCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) {
   const sid = sidOf(f);
   const dst = f.dst_ip ? `${f.dst_ip}${f.dst_port != null ? `:${f.dst_port}` : ""}` : "—";
-  return (
-    <li className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+  const pivot = f.dst_ip ?? f.src_ip;
+
+  const content = (
+    <>
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text)]" title={f.title}>
           {f.title}
@@ -36,12 +38,33 @@ function MatchCard({ f }: { f: Finding }) {
           ))}
         </div>
       )}
+    </>
+  );
+
+  if (onJump) {
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={() => onJump(pivot)}
+          aria-label={`View flows for ${pivot}`}
+          className="flex w-full flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-left transition-colors hover:border-[var(--color-border-strong)]"
+        >
+          {content}
+        </button>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+      {content}
     </li>
   );
 }
 
 /** Consolidated read-only list of imported-rule (`rule_match`) findings. Hidden when none. */
-export function SignatureMatchesPanel({ findings }: { findings: Finding[] }) {
+export function SignatureMatchesPanel({ findings, onJump }: { findings: Finding[]; onJump?: (ip: string) => void }) {
   const matches = (findings ?? []).filter((f) => f.kind === "rule_match");
   if (matches.length === 0) return null;
   return (
@@ -58,7 +81,7 @@ export function SignatureMatchesPanel({ findings }: { findings: Finding[] }) {
       </div>
       <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
         {matches.slice(0, 50).map((f, i) => (
-          <MatchCard key={`${sidOf(f) ?? "nosid"}-${f.src_ip}-${f.dst_ip}-${i}`} f={f} />
+          <MatchCard key={`${sidOf(f) ?? "nosid"}-${f.src_ip}-${f.dst_ip}-${i}`} f={f} onJump={onJump} />
         ))}
       </ul>
     </section>
