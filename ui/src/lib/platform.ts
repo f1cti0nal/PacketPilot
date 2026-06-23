@@ -114,7 +114,7 @@ export function downloadBinary(bytes: Uint8Array, filename: string, mime: string
   }
 }
 
-function downloadText(content: string, filename: string, mime: string): void {
+export function downloadText(content: string, filename: string, mime: string): void {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   try {

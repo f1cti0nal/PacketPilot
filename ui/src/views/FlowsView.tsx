@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FilterProfiles } from "../components/flows/FilterProfiles";
+import type { FlowFilter } from "../lib/filterProfiles";
 import type { SortingState } from "@tanstack/react-table";
 import { Search, X } from "lucide-react";
 import type {
@@ -49,6 +51,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
   const [severity, setSeverity] = useState<Severity | undefined>(undefined);
   const [proto, setProto] = useState<number | undefined>(undefined);
   const [selected, setSelected] = useState<FlowRow | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Packet inspector: which flow is being inspected, its extracted packets, and the
   // async load status. `inspecting` non-null mounts the PacketInspector overlay.
@@ -194,6 +197,13 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
     setProto(undefined);
   };
 
+  const applyProfile = useCallback((f: FlowFilter) => {
+    setQuery(f.query);
+    setCategory(f.category);
+    setSeverity(f.severity);
+    setProto(f.proto);
+  }, []);
+
   if (state.status === "idle" || state.status === "loading") {
     return <LoadingState label="Loading flows…" />;
   }
@@ -282,8 +292,19 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
               Clear filters
             </button>
           )}
+          <FilterProfiles
+            current={{ query, category, severity, proto }}
+            hasActiveFilters={hasActiveFilters}
+            onApply={applyProfile}
+            onNotice={setNotice}
+          />
         </div>
       </div>
+      {notice && (
+        <p className="text-xs text-[var(--color-text-dim)]" role="status">
+          {notice}
+        </p>
+      )}
 
       {/* Table + detail */}
       <div className="flex min-h-0 flex-1 gap-3">
