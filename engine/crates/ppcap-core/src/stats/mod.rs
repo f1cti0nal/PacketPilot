@@ -15,7 +15,8 @@ use crate::model::flow::FlowRecord;
 use crate::model::packet::{PacketMeta, Transport};
 use crate::model::severity::Severity;
 use crate::model::summary::{
-    CategoryCount, IpThreat, PortCount, ProtoCount, SeverityCounts, Summary, TimeBucket, TopTalker,
+    CategoryCount, FingerprintHit, IpThreat, PortCount, ProtoCount, SeverityCounts, Summary,
+    TimeBucket, TopTalker,
 };
 use crate::score::ScoredFlow;
 
@@ -116,8 +117,9 @@ struct IpThreatStat {
     flows: u64,
     bytes: u64,
     ioc: bool,
-    attack: BTreeSet<String>, // deterministic sorted union
-    evidence: Vec<String>,    // bounded, deduped
+    attack: BTreeSet<String>,          // deterministic sorted union
+    evidence: Vec<String>,             // bounded, deduped
+    fingerprints: Vec<FingerprintHit>, // bounded (MAX_FP_PER_IP), deduped by full equality
 }
 
 /// The streaming summary accumulator.
@@ -348,6 +350,18 @@ impl StatsAccumulator {
                     e.evidence.push(ev.clone());
                 }
             }
+            // Fingerprint rollup: only when the flow carried a matched label.
+            if let Some(label) = &f.fingerprint_label {
+                let hit = FingerprintHit {
+                    ja3: f.ja3.clone(),
+                    ja4: f.ja4.clone(),
+                    label: label.clone(),
+                };
+                const MAX_FP_PER_IP: usize = 6;
+                if e.fingerprints.len() < MAX_FP_PER_IP && !e.fingerprints.contains(&hit) {
+                    e.fingerprints.push(hit);
+                }
+            }
         }
 
         // SNI domain rollup (traffic-ranked; bounded by max_tracked_keys, like per_ip_threat).
@@ -544,6 +558,7 @@ impl StatsAccumulator {
                     attack: s.attack.iter().cloned().collect(), // BTreeSet => sorted
                     evidence: s.evidence.clone(),
                     reputation: Vec::new(),
+                    fingerprints: s.fingerprints.clone(),
                 }
             })
             .collect();
@@ -1713,6 +1728,84 @@ mod tests {
             row.evidence.iter().any(|e| e.contains("forces Critical")),
             "evidence missing Critical-floor string: {:?}",
             row.evidence
+        );
+    }
+
+    #[test]
+    fn ip_threat_rolls_up_matched_fingerprint() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        // Build a TLS flow lo (10.0.0.1) -> hi (10.0.0.2) with a matched fingerprint.
+        let mut f = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 1),
+            ip4(10, 0, 0, 2),
+            Category::Web,
+            2,
+            100,
+        );
+        f.ja3 = Some("aaa".into());
+        f.fingerprint_label = Some("CobaltStrike".into());
+        let sc = ScoredFlow {
+            severity: Severity::High,
+            score: 80,
+            evidence: vec![],
+            attack: vec![],
+        };
+        acc.observe_flow(&f);
+        acc.observe_scored_flow(&f, &sc);
+        // Observing the same flow again must NOT duplicate the fingerprint hit.
+        acc.observe_flow(&f);
+        acc.observe_scored_flow(&f, &sc);
+
+        let summary = acc.finish();
+        // lo_ip is the canonical lower address; look it up by string.
+        let t = summary
+            .ip_threats
+            .iter()
+            .find(|t| t.ip == "10.0.0.1")
+            .expect("lo_ip threat card present");
+        assert_eq!(
+            t.fingerprints.len(),
+            1,
+            "dedup must collapse identical hits"
+        );
+        assert_eq!(t.fingerprints[0].label, "CobaltStrike");
+        assert_eq!(t.fingerprints[0].ja3.as_deref(), Some("aaa"));
+        assert!(t.fingerprints[0].ja4.is_none());
+    }
+
+    #[test]
+    fn ip_threat_has_no_fingerprints_when_unmatched() {
+        // A flow with ja3 set but fingerprint_label None must produce zero fingerprint hits.
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let mut f = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 3),
+            ip4(10, 0, 0, 4),
+            Category::Web,
+            2,
+            100,
+        );
+        f.ja3 = Some("bbb".into());
+        // fingerprint_label left as None (the default).
+        let sc = ScoredFlow {
+            severity: Severity::Info,
+            score: 3,
+            evidence: vec![],
+            attack: vec![],
+        };
+        acc.observe_flow(&f);
+        acc.observe_scored_flow(&f, &sc);
+
+        let summary = acc.finish();
+        let t = summary
+            .ip_threats
+            .iter()
+            .find(|t| t.ip == "10.0.0.3")
+            .expect("threat card present");
+        assert!(
+            t.fingerprints.is_empty(),
+            "unmatched ja3 must not produce fingerprint hits"
         );
     }
 }

@@ -33,7 +33,10 @@ function threatLine(t: IpThreat): string {
   const rep = t.reputation?.length
     ? ` — reputation: ${t.reputation.map((r) => `${r.source}:${r.status}`).join(", ")}`
     : "";
-  return `- ${t.ip} (${t.ip_class}) — ${t.severity} ${t.score}/100${t.ioc ? " IOC" : ""}${tags}${ev}${rep}`;
+  const fp = t.fingerprints?.length
+    ? ` — fingerprint: ${t.fingerprints.map((f) => f.label).join(", ")}`
+    : "";
+  return `- ${t.ip} (${t.ip_class}) — ${t.severity} ${t.score}/100${t.ioc ? " IOC" : ""}${tags}${ev}${rep}${fp}`;
 }
 
 /** Curate the derived analysis summary into a compact, labeled context for the LLM.

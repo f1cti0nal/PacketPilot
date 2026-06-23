@@ -406,6 +406,12 @@ export function FlowDetail({
         <Field label="TLS SNI" mono title={flow.sni ?? undefined}>
           {flow.sni ?? <span className="text-[var(--color-text-faint)]">—</span>}
         </Field>
+        <Field label="TLS JA3" mono title={flow.ja3 ?? undefined}>
+          {flow.ja3 ?? <span className="text-[var(--color-text-faint)]">—</span>}
+        </Field>
+        <Field label="TLS JA4" mono title={flow.ja4 ?? undefined}>
+          {flow.ja4 ?? <span className="text-[var(--color-text-faint)]">—</span>}
+        </Field>
       </Section>
 
       {/* Traffic */}

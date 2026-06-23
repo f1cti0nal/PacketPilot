@@ -407,6 +407,7 @@ fn process_flow(
     record.severity = scored.severity;
     record.threat_score = scored.score;
     record.ioc = fm.any();
+    record.fingerprint_label = enr.fingerprint_label.clone();
 
     stats.observe_flow(record);
     stats.observe_scored_flow(record, &scored);

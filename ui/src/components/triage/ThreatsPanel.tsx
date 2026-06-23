@@ -127,6 +127,26 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
         </div>
       )}
 
+      {/* TLS fingerprint chips (matched-malware subset) */}
+      {threat.fingerprints && threat.fingerprints.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {threat.fingerprints.map((fp, i) => (
+            <span
+              key={i}
+              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold"
+              style={{
+                color: "var(--color-sev-critical)",
+                backgroundColor: "color-mix(in srgb, var(--color-sev-critical) 16%, transparent)",
+              }}
+              title={[fp.ja3 && `JA3: ${fp.ja3}`, fp.ja4 && `JA4: ${fp.ja4}`].filter(Boolean).join("\n")}
+            >
+              <ShieldAlert size={12} />
+              {fp.ja4 ? "JA4" : "JA3"} · {fp.label}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Per-provider reputation breakdown */}
       {threat.reputation && threat.reputation.length > 0 && (
         <ProviderVerdictList verdicts={threat.reputation} />

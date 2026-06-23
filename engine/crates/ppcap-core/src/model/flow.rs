@@ -151,6 +151,10 @@ pub struct FlowRecord {
     pub threat_score: u16,
     /// True when any endpoint IP/CIDR or the SNI matched the threat feed.
     pub ioc: bool,
+    /// Transient: the fingerprint feed label that matched this flow's JA3/JA4 (`None` if no
+    /// match). Set during the enrich pass; NOT written to Parquet / FlowDto.
+    #[serde(default)]
+    pub fingerprint_label: Option<String>,
 }
 
 impl FlowRecord {
@@ -177,6 +181,7 @@ impl FlowRecord {
             severity: crate::model::severity::Severity::Info,
             threat_score: 0,
             ioc: false,
+            fingerprint_label: None,
         }
     }
 

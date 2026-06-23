@@ -145,6 +145,16 @@ describe("buildContext", () => {
     const ctx = buildContext(out);
     expect(ctx).toContain("~0s");
   });
+
+  it("names matched fingerprint families in the threat line", () => {
+    const out = makeOutput();
+    out.summary.ip_threats = [{
+      ip: "1.2.3.4", ip_class: "public", severity: "high", score: 75,
+      flows: 10, bytes: 5000, ioc: false, tags: [], attack: [], evidence: [],
+      fingerprints: [{ ja3: "abc", ja4: null, label: "CobaltStrike" }],
+    }];
+    expect(buildContext(out)).toContain("fingerprint: CobaltStrike");
+  });
 });
 
 // Additional branch-coverage tests for pure utility functions used by context.ts

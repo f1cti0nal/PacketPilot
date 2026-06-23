@@ -34,6 +34,7 @@ fn sample() -> AnalysisOutput {
         attack: vec!["T1071".into()],
         evidence: vec!["beacon <script>alert(1)</script> & co".into()],
         reputation: Vec::new(),
+        fingerprints: vec![],
     }];
 
     AnalysisOutput {

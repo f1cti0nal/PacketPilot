@@ -71,7 +71,7 @@ export function makeFlows(n = 5): FlowRow[] {
     flowId: i, flowIdBig: BigInt(i), captureId: 0,
     srcIp: "10.0.0.1", dstIp: i === 0 ? "185.220.101.5" : "10.0.0.2",
     srcPort: 40000 + i, dstPort: 443, proto: 6, protoLabel: "TCP",
-    appProto: "TLS", appProtoSrc: "payload", sni: null,
+    appProto: "TLS", appProtoSrc: "payload", sni: null, ja3: null, ja4: null,
     bytesC2s: i === 0 ? 1_200_000 : 1000, bytesS2c: 500,
     bytesTotal: (i === 0 ? 1_200_000 : 1000) + 500,
     pkts: 10, startMs: 1_700_000_000_000 + i * 1000, endMs: 1_700_000_001_000 + i * 1000, durationMs: 1000,

@@ -219,6 +219,14 @@ export function FlowsTable({
                   {f.sni}
                 </span>
               )}
+              {(f.ja3 || f.ja4) && (
+                <span
+                  className="font-mono-num truncate text-xs text-[var(--color-text-faint)]"
+                  title={[f.ja3 && `JA3: ${f.ja3}`, f.ja4 && `JA4: ${f.ja4}`].filter(Boolean).join("\n")}
+                >
+                  {f.ja4 ? `JA4 ${f.ja4.slice(0, 12)}…` : `JA3 ${f.ja3!.slice(0, 12)}…`}
+                </span>
+              )}
             </span>
           );
         },

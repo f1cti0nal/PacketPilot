@@ -128,6 +128,46 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         }
     }
 
+    // JA3/JA4 fingerprint indicators (deduped across IPs; deterministic order).
+    let mut fps: BTreeMap<String, &crate::model::summary::FingerprintHit> = BTreeMap::new();
+    for t in &out.summary.ip_threats {
+        for fp in &t.fingerprints {
+            let key = format!(
+                "{}|{}|{}",
+                fp.ja3.as_deref().unwrap_or(""),
+                fp.ja4.as_deref().unwrap_or(""),
+                fp.label
+            );
+            fps.entry(key).or_insert(fp);
+        }
+    }
+    for (key, fp) in &fps {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(j) = &fp.ja3 {
+            parts.push(format!("x-tls-fingerprint:ja3 = '{j}'"));
+        }
+        if let Some(j) = &fp.ja4 {
+            parts.push(format!("x-tls-fingerprint:ja4 = '{j}'"));
+        }
+        if parts.is_empty() {
+            continue;
+        }
+        let ind_id = format!("indicator--{}", det_uuid(&format!("indicator:fp:{key}")));
+        objects.push(serde_json::json!({
+            "type": "indicator",
+            "spec_version": "2.1",
+            "id": ind_id,
+            "created": ts,
+            "modified": ts,
+            "name": format!("Malicious TLS fingerprint ({})", fp.label),
+            "description": format!("TLS client fingerprint attributed to {}", fp.label),
+            "indicator_types": ["malicious-activity"],
+            "pattern": format!("[{}]", parts.join(" OR ")),
+            "pattern_type": "stix",
+            "valid_from": ts
+        }));
+    }
+
     let bundle = serde_json::json!({
         "type": "bundle",
         "id": format!(
@@ -189,9 +229,10 @@ fn det_uuid(seed: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::enrich::IpClass;
     use crate::model::finding::{Finding, FindingKind};
     use crate::model::severity::Severity;
-    use crate::model::summary::Summary;
+    use crate::model::summary::{FingerprintHit, IpThreat, Summary};
 
     fn finding(kind: FindingKind, sev: Severity, dst: Option<&str>, attack: &[&str]) -> Finding {
         Finding {
@@ -291,5 +332,46 @@ mod tests {
         assert_ne!(a, det_uuid("indicator:1.1.1.1"));
         assert_eq!(a.len(), 36);
         assert_eq!(a.as_bytes()[14], b'5'); // version nibble
+    }
+
+    fn out_with_ip_threat() -> AnalysisOutput {
+        let mut base = out_with(vec![]);
+        base.summary.ip_threats = vec![IpThreat {
+            ip: "198.51.100.1".to_string(),
+            ip_class: IpClass::Public,
+            severity: Severity::High,
+            score: 80,
+            flows: 1,
+            bytes: 512,
+            ioc: true,
+            tags: vec!["public".to_string(), "ioc".to_string()],
+            attack: vec!["T1071".to_string()],
+            evidence: vec!["test evidence".to_string()],
+            reputation: vec![],
+            fingerprints: vec![],
+        }];
+        base
+    }
+
+    #[test]
+    fn stix_emits_ja3_fingerprint_indicator() {
+        let mut out = out_with_ip_threat();
+        out.summary.ip_threats[0].fingerprints = vec![FingerprintHit {
+            ja3: Some("e7d705a3286e19ea42f587b344ee6865".into()),
+            ja4: None,
+            label: "CobaltStrike".into(),
+        }];
+        let bundle = stix_bundle(&out, 1_700_000_000);
+        assert!(bundle.contains("CobaltStrike"), "missing label: {bundle}");
+        assert!(
+            bundle.contains("e7d705a3286e19ea42f587b344ee6865"),
+            "missing ja3 hash: {bundle}"
+        );
+        assert!(
+            bundle.contains("x-tls-fingerprint:ja3"),
+            "missing pattern field name: {bundle}"
+        );
+        // deterministic: same input => same bundle
+        assert_eq!(bundle, stix_bundle(&out, 1_700_000_000));
     }
 }
