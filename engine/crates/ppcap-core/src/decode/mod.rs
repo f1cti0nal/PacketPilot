@@ -438,6 +438,41 @@ pub fn l7_hint(
             return Some(L7Hint::Http { method });
         }
     }
+    // QUIC Initial (UDP long header): form-bit precheck before any crypto.
+    // A QUIC long header has both 0x80 (long) and 0x40 (fixed bit) set.
+    if transport == Transport::Udp && payload.first().is_some_and(|b| b & 0xC0 == 0xC0) {
+        if let Some(ch) = crate::quic::extract_initial_client_hello(payload) {
+            // `extract_initial_client_hello` returns raw handshake bytes (first byte 0x01).
+            // Both `fingerprint_tls_client_hello` and `sniff_tls_client_hello` expect a
+            // TLS record (first byte 0x16), so wrap the handshake in a minimal record header.
+            let mut record = Vec::with_capacity(5 + ch.len());
+            record.push(22u8); // content_type = handshake
+            record.extend_from_slice(&[0x03, 0x03]); // record version TLS 1.2
+            record.extend_from_slice(&(ch.len() as u16).to_be_bytes());
+            record.extend_from_slice(&ch);
+            if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(&record) {
+                return Some(L7Hint::Tls {
+                    sni: fp.sni,
+                    ja3: Some(fp.ja3),
+                    ja4: Some(fp.ja4),
+                });
+            }
+            // Fallback: plain SNI extraction (no fingerprints).
+            if let Some(sni) = sniff_tls_client_hello(&record) {
+                return Some(L7Hint::Tls {
+                    sni,
+                    ja3: None,
+                    ja4: None,
+                });
+            }
+            // At minimum we know this was a QUIC Initial -> TLS.
+            return Some(L7Hint::Tls {
+                sni: None,
+                ja3: None,
+                ja4: None,
+            });
+        }
+    }
     // DNS is matched on port for both UDP and TCP.
     if (transport == Transport::Udp || transport == Transport::Tcp)
         && is_dns_port(src_port, dst_port)
@@ -1576,6 +1611,152 @@ mod tests {
         let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
         assert_eq!(m.app_proto, AppProto::Http);
         assert_eq!(m.sni, None);
+    }
+
+    // ── QUIC Initial → SNI integration ──────────────────────────────────────────
+
+    /// Helper: the RFC 9001 §A.2 protected Initial packet (1200 bytes).
+    /// Shared with decode tests so the decode path can be exercised end-to-end
+    /// without duplicating the byte literal here.
+    fn rfc9001_a2_udp_payload() -> Vec<u8> {
+        fn hex(s: &str) -> Vec<u8> {
+            let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+            (0..s.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+                .collect()
+        }
+        let pkt = hex("c000000001088394c8f03e5157080000\
+             449e7b9aec34d1b1c98dd7689fb8ec11\
+             d242b123dc9bd8bab936b47d92ec356c\
+             0bab7df5976d27cd449f63300099f399\
+             1c260ec4c60d17b31f8429157bb35a12\
+             82a643a8d2262cad67500cadb8e7378c\
+             8eb7539ec4d4905fed1bee1fc8aafba1\
+             7c750e2c7ace01e6005f80fcb7df6212\
+             30c83711b39343fa028cea7f7fb5ff89\
+             eac2308249a02252155e2347b63d58c5\
+             457afd84d05dfffdb20392844ae81215\
+             4682e9cf012f9021a6f0be17ddd0c208\
+             4dce25ff9b06cde535d0f920a2db1bf3\
+             62c23e596d11a4f5a6cf3948838a3aec\
+             4e15daf8500a6ef69ec4e3feb6b1d98e\
+             610ac8b7ec3faf6ad760b7bad1db4ba3\
+             485e8a94dc250ae3fdb41ed15fb6a8e5\
+             eba0fc3dd60bc8e30c5c4287e53805db\
+             059ae0648db2f64264ed5e39be2e20d8\
+             2df566da8dd5998ccabdae053060ae6c\
+             7b4378e846d29f37ed7b4ea9ec5d82e7\
+             961b7f25a9323851f681d582363aa5f8\
+             9937f5a67258bf63ad6f1a0b1d96dbd4\
+             faddfcefc5266ba6611722395c906556\
+             be52afe3f565636ad1b17d508b73d874\
+             3eeb524be22b3dcbc2c7468d54119c74\
+             68449a13d8e3b95811a198f3491de3e7\
+             fe942b330407abf82a4ed7c1b311663a\
+             c69890f4157015853d91e923037c227a\
+             33cdd5ec281ca3f79c44546b9d90ca00\
+             f064c99e3dd97911d39fe9c5d0b23a22\
+             9a234cb36186c4819e8b9c5927726632\
+             291d6a418211cc2962e20fe47feb3edf\
+             330f2c603a9d48c0fcb5699dbfe58964\
+             25c5bac4aee82e57a85aaf4e2513e4f0\
+             5796b07ba2ee47d80506f8d2c25e50fd\
+             14de71e6c418559302f939b0e1abd576\
+             f279c4b2e0feb85c1f28ff18f58891ff\
+             ef132eef2fa09346aee33c28eb130ff2\
+             8f5b766953334113211996d20011a198\
+             e3fc433f9f2541010ae17c1bf202580f\
+             6047472fb36857fe843b19f5984009dd\
+             c324044e847a4f4a0ab34f719595de37\
+             252d6235365e9b84392b061085349d73\
+             203a4a13e96f5432ec0fd4a1ee65accd\
+             d5e3904df54c1da510b0ff20dcc0c77f\
+             cb2c0e0eb605cb0504db87632cf3d8b4\
+             dae6e705769d1de354270123cb11450e\
+             fc60ac47683d7b8d0f811365565fd98c\
+             4c8eb936bcab8d069fc33bd801b03ade\
+             a2e1fbc5aa463d08ca19896d2bf59a07\
+             1b851e6c239052172f296bfb5e724047\
+             90a2181014f3b94a4e97d117b4381303\
+             68cc39dbb2d198065ae3986547926cd2\
+             162f40a29f0c3c8745c0f50fba3852e5\
+             66d44575c29d39a03f0cda721984b6f4\
+             40591f355e12d439ff150aab7613499d\
+             bd49adabc8676eef023b15b65bfc5ca0\
+             6948109f23f350db82123535eb8a7433\
+             bdabcb909271a6ecbcb58b936a88cd4e\
+             8f2e6ff5800175f113253d8fa9ca8885\
+             c2f552e657dc603f252e1a8e308f76f0\
+             be79e2fb8f5d5fbbe2e30ecadd220723\
+             c8c0aea8078cdfcb3868263ff8f09400\
+             54da48781893a7e49ad5aff4af300cd8\
+             04a6b6279ab3ff3afb64491c85194aab\
+             760d58a606654f9f4400e8b38591356f\
+             bf6425aca26dc85244259ff2b19c41b9\
+             f96f3ca9ec1dde434da7d2d392b905dd\
+             f3d1f9af93d1af5950bd493f5aa731b4\
+             056df31bd267b6b90a079831aaf579be\
+             0a39013137aac6d404f518cfd4684064\
+             7e78bfe706ca4cf5e9c5453e9f7cfd2b\
+             8b4c8d169a44e55c88d4a9a7f9474241\
+             e221af44860018ab0856972e194cd934");
+        assert_eq!(pkt.len(), 1200, "A.2 packet must be 1200 bytes");
+        pkt
+    }
+
+    /// Build a minimal IPv4/UDP frame carrying `udp_payload`.
+    fn ipv4_udp_frame(src_port: u16, dst_port: u16, udp_payload: &[u8]) -> Vec<u8> {
+        let udp_len = (8 + udp_payload.len()) as u16;
+        let total_len = 20u16 + udp_len;
+        let mut ip = ipv4_header(17, total_len, 0, 64);
+        let mut udp = vec![0u8; 8];
+        udp[0..2].copy_from_slice(&src_port.to_be_bytes());
+        udp[2..4].copy_from_slice(&dst_port.to_be_bytes());
+        udp[4..6].copy_from_slice(&udp_len.to_be_bytes());
+        ip.extend_from_slice(&udp);
+        ip.extend_from_slice(udp_payload);
+        ip
+    }
+
+    /// QUIC Initial on UDP :443 → decode extracts SNI "example.com" (RFC 9001 §A.2 golden vector).
+    #[test]
+    fn decode_quic_initial_udp_sets_sni() {
+        let quic_payload = rfc9001_a2_udp_payload();
+        let pkt = ipv4_udp_frame(12345, 443, &quic_payload);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Tls);
+        assert_eq!(
+            m.sni.as_deref(),
+            Some("example.com"),
+            "QUIC Initial must yield SNI example.com"
+        );
+        // JA3 and JA4 must also be populated (the fingerprint parser succeeds on this ClientHello).
+        assert!(
+            m.ja3.is_some(),
+            "JA3 must be set for QUIC Initial ClientHello"
+        );
+        assert!(
+            m.ja4.is_some(),
+            "JA4 must be set for QUIC Initial ClientHello"
+        );
+    }
+
+    /// Non-QUIC UDP payload (a DNS query) on :443 → sni unchanged (None), no panic.
+    /// The form-bit precheck (0xC0) must reject ordinary UDP before any crypto.
+    #[test]
+    fn decode_non_quic_udp_no_sni_no_panic() {
+        // A minimal DNS query payload (does not start with 0xC0).
+        let dns = crate::gen::frames::dns_query_payload("example.com", 1);
+        // Use port 443 to confirm the QUIC branch doesn't misfire on non-QUIC bytes.
+        let pkt = ipv4_udp_frame(54321, 443, &dns);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        // Not a QUIC packet → sni/ja3/ja4 all None; app_proto is not Tls.
+        assert_eq!(m.sni, None, "non-QUIC UDP must not set SNI");
+        assert_eq!(m.ja3, None);
+        assert_eq!(m.ja4, None);
+        // DNS query on port 443 won't be detected as DNS (not port 53) so Unknown.
+        assert_eq!(m.app_proto, AppProto::Unknown);
     }
 
     #[test]

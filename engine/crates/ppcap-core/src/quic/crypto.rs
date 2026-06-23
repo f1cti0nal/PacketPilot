@@ -219,17 +219,17 @@ fn gf_mul(x: &[u8; 16], y: &[u8; 16]) -> [u8; 16] {
     for i in 0..128 {
         let bit = (y[i / 8] >> (7 - (i % 8))) & 1;
         if bit == 1 {
-            for j in 0..16 {
-                z[j] ^= v[j];
+            for (zb, vb) in z.iter_mut().zip(v.iter()) {
+                *zb ^= *vb;
             }
         }
         // v >>= 1 across the whole 128-bit register (MSB-first), with
         // reduction if the bit shifted out of the LSB was set.
         let lsb = v[15] & 1;
         let mut carry = 0u8;
-        for j in 0..16 {
-            let new_carry = v[j] & 1;
-            v[j] = (v[j] >> 1) | (carry << 7);
+        for vb in v.iter_mut() {
+            let new_carry = *vb & 1;
+            *vb = (*vb >> 1) | (carry << 7);
             carry = new_carry;
         }
         if lsb == 1 {
