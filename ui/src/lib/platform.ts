@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { AnalysisOutput, FlowRow, WireFlowPackets } from "../types";
+import type { ActiveSource, AnalysisOutput, FlowRow, WireFlowPackets } from "../types";
 import { loadFlows } from "./data";
 import { isTauri } from "./tauri-detect";
 export { isTauri } from "./tauri-detect";
-import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm } from "./wasmEngine";
+import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm } from "./wasmEngine";
+export type { RuleApplyResult } from "./wasmEngine";
 
 interface AnalyzeDto {
   summary: AnalysisOutput;
@@ -262,4 +263,30 @@ export async function copyCef(summary: AnalysisOutput): Promise<ExportResult> {
   } catch (e) {
     return { ok: false, message: `Copy failed: ${e}` };
   }
+}
+
+// ── Rule application ─────────────────────────────────────────────────────────
+
+import type { RuleApplyResult } from "./wasmEngine";
+
+/**
+ * Apply detection rules to a capture.
+ * - Browser (bytes source): runs via WASM in-page, no upload.
+ * - Desktop (path source): invokes the native `apply_rules_to` Tauri command.
+ * - null source: throws — rules require raw pcap bytes.
+ */
+export async function applyRules(
+  rulesText: string,
+  output: AnalysisOutput,
+  source: ActiveSource,
+): Promise<RuleApplyResult> {
+  if (!source) throw new Error("Packets are only available for captures analyzed from a pcap");
+  if (source.kind === "bytes") return applyRulesWasm(source.bytes, rulesText, output);
+  const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
+  const json = await tauriInvoke<string>("apply_rules_to", {
+    path: source.path,
+    rulesText,
+    outputJson: JSON.stringify(output),
+  });
+  return JSON.parse(json) as RuleApplyResult;
 }

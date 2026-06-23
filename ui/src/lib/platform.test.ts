@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm } = vi.hoisted(() => ({
+const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm } = vi.hoisted(() => ({
   invoke: vi.fn(),
   save: vi.fn(),
   isTauri: vi.fn(),
@@ -8,16 +8,17 @@ const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, ex
   exportStixWasm: vi.fn(),
   exportMispWasm: vi.fn(),
   exportCefWasm: vi.fn(),
+  applyRulesWasm: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save, open: vi.fn() }));
 vi.mock("./tauri-detect", () => ({ isTauri }));
-vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm }));
+vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm }));
 vi.mock("./data", () => ({ loadFlows: vi.fn() }));
 
-import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef } from "./platform";
-import type { AnalysisOutput } from "../types";
+import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef, applyRules } from "./platform";
+import type { AnalysisOutput, ActiveSource } from "../types";
 
 const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknown as AnalysisOutput;
 
@@ -186,5 +187,46 @@ describe("platform structured export", () => {
     exportCefWasm.mockRejectedValue(new Error("cef boom"));
     const r = await exportCef(summary);
     expect(r.ok).toBe(false);
+  });
+});
+
+// ── applyRules platform seam ──────────────────────────────────────────────────
+
+const rulesText = 'alert tcp any any -> any any (msg:"test"; sid:1;)';
+const fakeResult = { output: summary, loaded: 1, skipped: 0, matches: 1 };
+
+describe("applyRules", () => {
+  beforeEach(() => {
+    applyRulesWasm.mockReset();
+    invoke.mockReset();
+    isTauri.mockReset();
+  });
+
+  it("bytes source routes to applyRulesWasm and returns RuleApplyResult", async () => {
+    const bytes = new ArrayBuffer(8);
+    const source: ActiveSource = { kind: "bytes", bytes };
+    applyRulesWasm.mockResolvedValue(fakeResult);
+    const result = await applyRules(rulesText, summary, source);
+    expect(applyRulesWasm).toHaveBeenCalledWith(bytes, rulesText, summary);
+    expect(result).toEqual(fakeResult);
+  });
+
+  it("path source with IS_TAURI invokes apply_rules_to with camelCase args and parses JSON", async () => {
+    isTauri.mockReturnValue(true);
+    const source: ActiveSource = { kind: "path", path: "/caps/test.pcap" };
+    invoke.mockResolvedValue(JSON.stringify(fakeResult));
+    const result = await applyRules(rulesText, summary, source);
+    expect(invoke).toHaveBeenCalledWith("apply_rules_to", {
+      path: "/caps/test.pcap",
+      rulesText,
+      outputJson: JSON.stringify(summary),
+    });
+    expect(result).toEqual(fakeResult);
+  });
+
+  it("null source rejects with source-unavailable message", async () => {
+    await expect(applyRules(rulesText, summary, null)).rejects.toThrow(
+      "Packets are only available for captures analyzed from a pcap",
+    );
   });
 });

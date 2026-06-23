@@ -12,6 +12,7 @@ import initWasm, {
   extract_packets as wasmExtractPackets,
   apply_reputation as wasmApplyReputation,
   apply_domain_reputation as wasmApplyDomainReputation,
+  apply_rules as wasmApplyRules,
   export_csv as wasmExportCsv,
   export_stix as wasmExportStix,
   export_misp as wasmExportMisp,
@@ -95,6 +96,28 @@ export async function applyDomainReputationWasm(
   await ensureWasm();
   const updated = wasmApplyDomainReputation(outputJson, JSON.stringify(verdicts)) as string;
   return JSON.parse(updated) as AnalysisOutput;
+}
+
+/** Result of applying detection rules to a capture. `output` is the full updated AnalysisOutput. */
+export interface RuleApplyResult {
+  output: AnalysisOutput;
+  loaded: number;
+  skipped: number;
+  matches: number;
+}
+
+/**
+ * Apply Suricata/custom detection rules to an existing analysis output via WASM.
+ * Single-sourced rule evaluation: same engine logic in-browser as on the desktop.
+ */
+export async function applyRulesWasm(
+  bytes: ArrayBuffer,
+  rulesText: string,
+  output: AnalysisOutput,
+): Promise<RuleApplyResult> {
+  await ensureWasm();
+  const json = wasmApplyRules(new Uint8Array(bytes), rulesText, JSON.stringify(output)) as string;
+  return JSON.parse(json) as RuleApplyResult;
 }
 
 /** Carve a sub-pcap in the browser. Returns the raw pcap bytes for the matching frames. */
