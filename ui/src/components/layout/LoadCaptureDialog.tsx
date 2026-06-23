@@ -58,7 +58,7 @@ export function LoadCaptureDialog({
         setStatus({
           phase: "error",
           message:
-            "Drop a .pcap/.pcapng capture, or a summary.json and/or flows.parquet.",
+            "Drop a .pcap/.pcapng capture (.gz ok), or a summary.json and/or flows.parquet.",
         });
         return;
       }
@@ -156,7 +156,8 @@ export function LoadCaptureDialog({
             </div>
             <div className="text-xs text-[var(--color-text-dim)]">
               <span className="font-mono-num">.pcap</span> /{" "}
-              <span className="font-mono-num">.pcapng</span> — analyzed in your browser
+              <span className="font-mono-num">.pcapng</span>{" "}
+              (<span className="font-mono-num">.gz</span> ok) — analyzed in your browser
             </div>
             <div className="text-[11px] text-[var(--color-text-faint)]">
               or a <span className="font-mono-num">summary.json</span> +{" "}
@@ -166,7 +167,7 @@ export function LoadCaptureDialog({
               ref={inputRef}
               type="file"
               multiple
-              accept=".pcap,.pcapng,.cap,.json,.parquet,application/json"
+              accept=".pcap,.pcapng,.cap,.gz,.json,.parquet,application/json"
               className="hidden"
               onChange={(e) => void handleFiles(e.target.files)}
             />
