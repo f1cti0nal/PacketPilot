@@ -40,7 +40,7 @@ export async function openCaptureDialog(): Promise<string | null> {
   const selected = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "Captures", extensions: ["pcap", "pcapng", "cap"] }],
+    filters: [{ name: "Captures", extensions: ["pcap", "pcapng", "cap", "gz"] }],
   });
   return typeof selected === "string" ? selected : null;
 }

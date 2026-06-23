@@ -27,6 +27,7 @@ time         = { version = "=0.3.41", default-features = false, features = ["for
 # (`.body_mut().read_to_string()`); if cargo resolves 3.x, either pin "=2.x" or update UreqClient.
 ureq         = { version = "2", default-features = false, features = ["tls"] }
 dirs         = "5"
+flate2       = { version = "1", default-features = false, features = ["rust_backend"] }
 # dev
 criterion    = { version = "=0.8.2", default-features = false, features = ["plotters", "cargo_bench_support"] }
 peak_alloc   = "=0.3.0"

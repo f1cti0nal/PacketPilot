@@ -154,6 +154,18 @@ describe("LoadCaptureDialog", () => {
     await screen.findByText(/Drop a .pcap\/.pcapng capture/i);
   });
 
+  it("accepts .gz compressed captures in the file input", () => {
+    const { container } = render(
+      <LoadCaptureDialog
+        onReplaceData={noop}
+        onAnalyzePcap={async () => {}}
+        onClose={noop}
+      />,
+    );
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input.getAttribute("accept")).toContain(".gz");
+  });
+
   it("covers keydown handler: Enter key on drop zone triggers click", async () => {
     const u = userEvent.setup();
     render(

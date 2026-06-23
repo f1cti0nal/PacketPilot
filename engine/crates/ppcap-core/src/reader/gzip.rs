@@ -1,94 +1,81 @@
-//! Gzip un-wrapping scaffold for `.gz`-compressed captures.
+//! Gzip un-wrapping for `.gz`-compressed captures.
 //!
-//! STATUS: gzip support is NOT currently functional. No pure-Rust inflate backend is wired
-//! in (see the NOTE TO INTEGRATOR below), so [`crate::reader::open_reader`] rejects gzip
-//! inputs up front with a clear `UnknownFormat` error rather than dispatching to this reader.
-//! The types below are kept as the documented drop-in integration point: once an inflate
-//! dependency is added, restore the `Magic::Gzip` dispatch in `open_reader` and replace the
-//! `GunzipReader` body per the snippet below to make `.gz` captures work transparently.
+//! Inflates via [`flate2::read::MultiGzDecoder`] (pure-Rust miniz_oxide backend — no C
+//! compiler required). The decoder handles single-member and multi-member `.gz` files
+//! transparently; inflate errors surface from [`std::io::Read::read`] as typed
+//! `io::Error`s, never panics.
 //!
-//! IMPORTANT (R3/R4 build constraint): the engine is C-compiler-free. This wrapper must
-//! use a **pure-Rust** inflate implementation — do NOT pull `flate2`'s zlib-ng/zlib-sys
-//! C backend. Acceptable options: `flate2` with the `rust_backend` (miniz_oxide) feature,
-//! or a direct `miniz_oxide` streaming inflate. Whichever is chosen must be added to the
-//! workspace deps as pure-Rust and pass the §0 `cargo tree` purity gate.
+//! ## C-free constraint (R3/R4)
 //!
-//! NOTE TO INTEGRATOR: no inflate crate is currently declared in
-//! `crates/ppcap-core/Cargo.toml` (neither `flate2` nor `miniz_oxide`), and this task is
-//! scoped to NOT edit any `Cargo.toml`. The streaming-inflate machinery therefore cannot be
-//! wired up here without first adding one of those dependencies. To keep the engine's
-//! no-panic contract, `GunzipReader` is implemented as a structurally-complete pass-through
-//! shell: construction always succeeds and `Read::read` returns a typed
-//! `io::ErrorKind::Unsupported` error rather than panicking or silently corrupting data.
-//!
-//! To finish the feature, add (in the workspace + crate `Cargo.toml`):
-//!
-//! ```toml
-//! flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-//! ```
-//!
-//! then replace the body of [`GunzipReader::new`] / [`GunzipReader::read`] with a
-//! `flate2::read::MultiGzDecoder<R>` (handles the multi-member case automatically), keeping
-//! the existing public types and the `reader::open_reader` gzip dispatch untouched:
-//!
-//! ```ignore
-//! pub struct GunzipReader<R: std::io::Read> { inner: flate2::read::MultiGzDecoder<R> }
-//! impl<R: std::io::Read> GunzipReader<R> {
-//!     pub fn new(inner: R) -> Self { Self { inner: flate2::read::MultiGzDecoder::new(inner) } }
-//! }
-//! impl<R: std::io::Read> std::io::Read for GunzipReader<R> {
-//!     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.inner.read(buf) }
-//! }
-//! ```
+//! `flate2` is declared with `default-features = false, features = ["rust_backend"]` in
+//! the workspace `Cargo.toml`. This pulls `miniz_oxide` + `crc32fast`, both pure Rust, and
+//! avoids `zlib-sys` / any `-sys` C build-script crate. The §0 `cargo tree` purity gate
+//! (`grep -Ei "zlib-sys|lz4-sys|cc |cmake|bzip2-sys|openssl-sys"`) must print nothing.
 
-/// A streaming gzip-inflating reader. Wraps an underlying `Read` and (once an inflate
-/// backend is wired in — see the module-level NOTE TO INTEGRATOR) yields the decompressed
-/// byte stream incrementally with no full-file buffering.
-///
-/// Retained as the integration shell while gzip is rejected at sniff time, so it is only
-/// exercised by this module's own tests today.
-#[allow(dead_code)]
+/// A streaming gzip-inflating reader: wraps an underlying `Read` and yields the decompressed
+/// byte stream incrementally (no full-file buffering). Handles multi-member gzip.
 pub struct GunzipReader<R: std::io::Read> {
-    /// The compressed source is retained so the real implementation can be dropped in
-    /// without changing the public surface or the `open_reader` call site.
-    inner: R,
+    inner: flate2::read::MultiGzDecoder<R>,
 }
 
-#[allow(dead_code)] // integration shell: `new` is reached only from this module's tests until a real inflate backend is wired in
 impl<R: std::io::Read> GunzipReader<R> {
-    /// Wrap `inner`. The gzip magic was already validated by the sniffer in
-    /// [`crate::reader::open_reader`]; full validation happens once a real inflate backend is
-    /// present. Construction is infallible and never panics.
+    /// Wrap `inner` (a gzip member stream). The gzip magic was already validated by the
+    /// sniffer in [`crate::reader::open_reader`]; inflate errors surface from
+    /// [`std::io::Read::read`].
     pub fn new(inner: R) -> Self {
-        GunzipReader { inner }
+        GunzipReader {
+            inner: flate2::read::MultiGzDecoder::new(inner),
+        }
     }
 }
 
 impl<R: std::io::Read> std::io::Read for GunzipReader<R> {
-    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-        // Touch `inner` so the field is not flagged as dead before the real backend lands.
-        let _ = &mut self.inner;
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "gzip-compressed captures require a pure-Rust inflate dependency (flate2 \
-             rust_backend / miniz_oxide) that is not yet declared in Cargo.toml; see the \
-             NOTE TO INTEGRATOR in reader/gzip.rs",
-        ))
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::io::{Read, Write};
 
     #[test]
-    fn construction_does_not_panic_and_read_is_typed_error() {
-        // A minimal gzip header prefix; construction must succeed regardless.
-        let compressed: &[u8] = &[0x1f, 0x8b, 0x08, 0x00];
-        let mut g = GunzipReader::new(compressed);
-        let mut out = [0u8; 16];
-        let err = g.read(&mut out).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
+    fn gunzip_reader_inflates() {
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(b"hello pcap world").unwrap();
+        let gz = enc.finish().unwrap();
+        let mut g = GunzipReader::new(std::io::Cursor::new(gz));
+        let mut out = String::new();
+        g.read_to_string(&mut out).unwrap();
+        assert_eq!(out, "hello pcap world");
+    }
+
+    #[test]
+    fn gunzip_reader_multi_member() {
+        // Two concatenated gzip members must both be decompressed.
+        let mut m1 = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        m1.write_all(b"part1").unwrap();
+        let mut bytes = m1.finish().unwrap();
+        let mut m2 = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        m2.write_all(b"part2").unwrap();
+        bytes.extend(m2.finish().unwrap());
+
+        let mut g = GunzipReader::new(std::io::Cursor::new(bytes));
+        let mut out = String::new();
+        g.read_to_string(&mut out).unwrap();
+        assert_eq!(out, "part1part2");
+    }
+
+    #[test]
+    fn gunzip_reader_corrupt_returns_error_not_panic() {
+        // Valid gzip header then garbage — inflate must error, not panic.
+        let bad = vec![
+            0x1f, 0x8b, 0x08, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x01, 0x02, 0x03,
+        ];
+        let mut g = GunzipReader::new(std::io::Cursor::new(bad));
+        let mut out = Vec::new();
+        let res = g.read_to_end(&mut out);
+        assert!(res.is_err());
     }
 }
