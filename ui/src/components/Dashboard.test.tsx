@@ -1,7 +1,16 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, userEvent } from "../test/render";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, userEvent, fireEvent, act } from "../test/render";
 import { Dashboard } from "./Dashboard";
 import { makeOutput } from "../test/fixtures";
+import { carveSubPcap } from "../lib/packets";
+
+vi.mock("../lib/packets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/packets")>();
+  return {
+    ...actual,
+    carveSubPcap: vi.fn(async () => ({ ok: true, message: "Carved 3 packets" })),
+  };
+});
 
 describe("Dashboard", () => {
   it("smoke: renders hero host, threat watchlist, activity heatmap, and category matrix", () => {
@@ -86,5 +95,64 @@ describe("Dashboard", () => {
     expect(onJumpToFlows).toHaveBeenCalledWith(
       expect.objectContaining({ category: expect.stringContaining("web") }),
     );
+  });
+});
+
+describe("Dashboard host carve", () => {
+  beforeEach(() => {
+    vi.mocked(carveSubPcap).mockClear();
+  });
+
+  it("carve button is disabled when no source is retained", () => {
+    render(
+      <Dashboard
+        output={makeOutput()}
+        activeSource={null}
+        selectedIncident={null}
+        onSelectIncident={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /Carve 10\.13\.37\.7 host/i }),
+    ).toBeDisabled();
+  });
+
+  it("clicking the carve button calls carveSubPcap with the host ip + whole-capture window", async () => {
+    render(
+      <Dashboard
+        output={makeOutput()}
+        activeSource={{ kind: "bytes", bytes: new ArrayBuffer(8) }}
+        selectedIncident={null}
+        onSelectIncident={vi.fn()}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /Carve 10\.13\.37\.7 host/i }),
+      );
+    });
+    expect(carveSubPcap).toHaveBeenCalledWith(
+      expect.objectContaining({ host: "10.13.37.7", start_ns: 0 }),
+      expect.objectContaining({ kind: "bytes" }),
+      expect.stringContaining("10.13.37.7"),
+    );
+  });
+
+  it("the carve click does not trigger the card's onSelect pivot", async () => {
+    const onSelectIncident = vi.fn();
+    render(
+      <Dashboard
+        output={makeOutput()}
+        activeSource={{ kind: "bytes", bytes: new ArrayBuffer(8) }}
+        selectedIncident={null}
+        onSelectIncident={onSelectIncident}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /Carve 10\.13\.37\.7 host/i }),
+      );
+    });
+    expect(onSelectIncident).not.toHaveBeenCalled();
   });
 });

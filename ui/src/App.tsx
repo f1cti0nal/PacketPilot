@@ -616,6 +616,7 @@ export function App() {
           onJumpToFlows={jumpToFlows}
           selectedIncident={selectedIncident}
           onSelectIncident={setSelectedIncident}
+          activeSource={activeSource}
         />
       )}
     </AppShell>
