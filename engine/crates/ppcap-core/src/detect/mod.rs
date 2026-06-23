@@ -1656,6 +1656,16 @@ fn human_bytes(n: u64) -> String {
     }
 }
 
+/// Fold post-hoc rule-match findings into a built [`Summary`]: uplift the implicated IP threat
+/// cards, append the findings, and re-correlate incidents so the matches join their host's
+/// incident. Re-running [`correlate_incidents`] over `summary.findings` reproduces the original
+/// incidents plus the rule matches (`analyze` sets `summary.findings` to the same input).
+pub fn fold_rule_findings(summary: &mut crate::model::summary::Summary, rule_findings: &[Finding]) {
+    summary.apply_findings(rule_findings);
+    summary.findings.extend_from_slice(rule_findings);
+    summary.incidents = correlate_incidents(&summary.findings);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2795,5 +2805,93 @@ mod tests {
             few.observe_dns_query(ip(10, 0, 0, 5), ip(10, 0, 0, 1), &q);
         }
         assert!(detect_dns_tunnel(&few, &DnsTunnelParams::default()).is_empty());
+    }
+
+    // ── fold_rule_findings ────────────────────────────────────────────────────
+
+    fn rule_match_on(src: &str, dst: &str) -> Finding {
+        Finding {
+            kind: FindingKind::RuleMatch,
+            severity: Severity::High,
+            score: 70,
+            title: "sig hit".into(),
+            src_ip: src.into(),
+            dst_ip: Some(dst.into()),
+            dst_port: Some(443),
+            attack: vec!["T1071".into()],
+            evidence: vec!["rule sid:1001".into()],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        }
+    }
+
+    #[test]
+    fn fold_rule_findings_joins_same_host_incident() {
+        // Seed a Beacon finding on 10.0.0.5 and correlate it into one incident.
+        let beacon = mk_finding(
+            FindingKind::Beacon,
+            "10.0.0.5",
+            Severity::High,
+            70,
+            &["T1071"],
+        );
+        let mut sum = crate::model::output::AnalysisOutput::default().summary;
+        sum.findings = vec![beacon.clone()];
+        sum.incidents = correlate_incidents(&sum.findings);
+
+        // Seed an IpThreat card for 10.0.0.5 so apply_findings has a target to uplift.
+        let low_card: crate::model::summary::IpThreat = serde_json::from_str(
+            r#"{"ip":"10.0.0.5","ip_class":"private","severity":"low","score":20,
+                "flows":2,"bytes":500,"ioc":false,"tags":["private"],"attack":[],"evidence":[]}"#,
+        )
+        .unwrap();
+        sum.ip_threats = vec![low_card];
+
+        fold_rule_findings(&mut sum, &[rule_match_on("10.0.0.5", "203.0.113.9")]);
+
+        // The rule match must be joined into the host's existing incident.
+        let inc = sum
+            .incidents
+            .iter()
+            .find(|i| i.host == "10.0.0.5")
+            .expect("incident for host 10.0.0.5");
+        assert!(
+            inc.findings
+                .iter()
+                .any(|f| f.kind == FindingKind::RuleMatch),
+            "RuleMatch not found in incident findings: {:?}",
+            inc.findings.iter().map(|f| f.kind).collect::<Vec<_>>()
+        );
+
+        // Card must have been uplifted from Low to High by apply_findings.
+        let card = sum
+            .ip_threats
+            .iter()
+            .find(|c| c.ip == "10.0.0.5")
+            .expect("ip_threat card for 10.0.0.5");
+        assert_eq!(card.severity, Severity::High);
+    }
+
+    #[test]
+    fn fold_rule_findings_creates_incident_for_new_host() {
+        // Empty summary — no prior findings or incidents.
+        let mut sum = crate::model::output::AnalysisOutput::default().summary;
+
+        fold_rule_findings(&mut sum, &[rule_match_on("10.9.9.9", "8.8.8.8")]);
+
+        // A new incident must have been created for the rule-only host.
+        assert!(
+            sum.incidents.iter().any(|i| i.host == "10.9.9.9"),
+            "no incident for 10.9.9.9; incidents: {:?}",
+            sum.incidents.iter().map(|i| &i.host).collect::<Vec<_>>()
+        );
+        // The finding must have been appended to summary.findings.
+        assert!(
+            sum.findings
+                .iter()
+                .any(|f| f.kind == FindingKind::RuleMatch),
+            "RuleMatch not in summary.findings"
+        );
     }
 }
