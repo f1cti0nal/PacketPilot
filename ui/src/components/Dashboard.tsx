@@ -70,6 +70,7 @@ export function Dashboard({
   const incidents = useMemo(() => [...(s.incidents ?? [])].sort(worstFirst), [s.incidents]);
   const [hero, ...secondary] = incidents;
   const incidentByHost = useMemo(() => new Map(incidents.map((i) => [i.host, i])), [incidents]);
+  const threatByHost = useMemo(() => new Map((s.ip_threats ?? []).map((t) => [t.ip, t])), [s.ip_threats]);
 
   // Selecting a host opens its incident in the flyout when one exists.
   const openHost = (host: string) => {
@@ -164,7 +165,13 @@ export function Dashboard({
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
       </div>
 
-      <DetailFlyout incident={selectedIncident} onClose={() => onSelectIncident(null)} onJumpToFlows={toFlowsIp} />
+      <DetailFlyout
+        incident={selectedIncident}
+        onClose={() => onSelectIncident(null)}
+        onJumpToFlows={toFlowsIp}
+        scoreEvidence={selectedIncident ? threatByHost.get(selectedIncident.host)?.evidence : undefined}
+        hostScore={selectedIncident ? threatByHost.get(selectedIncident.host)?.score : undefined}
+      />
     </div>
   );
 }

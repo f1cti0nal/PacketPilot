@@ -7,6 +7,7 @@ import { sevColor } from "./viz";
 import { SeverityChip, SeverityDot, MitreTag, SectionLabel } from "./primitives";
 import { EvidenceList } from "../components/transparency/EvidenceList";
 import { FindingMetrics } from "../components/transparency/FindingMetrics";
+import { ScoreWaterfall } from "../components/transparency/ScoreWaterfall";
 
 const humanizeKind = (k: string) =>
   k.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
@@ -15,10 +16,14 @@ export function DetailFlyout({
   incident,
   onClose,
   onJumpToFlows,
+  scoreEvidence,
+  hostScore,
 }: {
   incident: Incident | null;
   onClose: () => void;
   onJumpToFlows?: (host: string) => void;
+  scoreEvidence?: string[];
+  hostScore?: number;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -97,6 +102,14 @@ export function DetailFlyout({
               <MitreTag key={t} id={t} />
             ))}
           </div>
+
+          {scoreEvidence && scoreEvidence.length > 0 && (
+            <ScoreWaterfall
+              evidence={scoreEvidence}
+              score={hostScore ?? incident.score}
+              severity={incident.severity}
+            />
+          )}
 
           <SectionLabel className="mb-2 mt-5">Findings · {incident.findings.length}</SectionLabel>
           <ul className="flex flex-col gap-2.5">
