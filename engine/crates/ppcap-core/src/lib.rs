@@ -40,6 +40,7 @@ pub mod detect;
 pub mod enrich;
 pub mod error;
 pub mod export;
+pub(crate) mod fingerprint;
 pub mod flow;
 pub mod gen;
 pub mod metrics;
