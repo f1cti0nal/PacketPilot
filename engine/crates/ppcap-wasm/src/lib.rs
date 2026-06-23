@@ -231,6 +231,30 @@ mod tests {
             "folded finding with title 'hit' must be present in output.summary.findings"
         );
     }
+
+    #[test]
+    fn render_report_emits_html() {
+        let pcap = crafted_tcp443_pcap_with_abc();
+
+        // Get an AnalysisOutput JSON: analyze the pcap → AnalyzeResult, extract ["summary"].
+        let analyze_json = crate::analyze(&pcap, "t.pcap".into()).unwrap();
+        let analyze_val: serde_json::Value = serde_json::from_str(&analyze_json).unwrap();
+        let out_json = analyze_val["summary"].to_string();
+
+        // Without AI summary: must contain doctype and "Executive summary".
+        let html = crate::render_report(&out_json, 1_700_000_000, None).unwrap();
+        assert!(html.contains("<!doctype html>"));
+        assert!(html.contains("Executive summary"));
+
+        // With an AI summary, the card text appears in the output.
+        let html2 = crate::render_report(
+            &out_json,
+            1_700_000_000,
+            Some("AI says: suspicious beacon".to_string()),
+        )
+        .unwrap();
+        assert!(html2.contains("AI says: suspicious beacon"));
+    }
 }
 
 /// JS-sent extraction caps (both optional; defaults to the engine's hard limits).
@@ -464,6 +488,22 @@ pub fn export_cef(output_json: &str) -> Result<String, JsValue> {
     let out: ppcap_core::AnalysisOutput =
         serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(ppcap_core::export::cef_records(&out))
+}
+
+/// Render the full HTML triage report for `output_json` (browser parity with the desktop `save_report`).
+#[wasm_bindgen]
+pub fn render_report(
+    output_json: &str,
+    generated_unix_secs: i64,
+    ai_summary: Option<String>,
+) -> Result<String, JsValue> {
+    let out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(ppcap_core::render_html(
+        &out,
+        generated_unix_secs,
+        ai_summary.as_deref(),
+    ))
 }
 
 /// Analyze a raw capture (`.pcap`/`.pcapng`) held entirely in memory.
