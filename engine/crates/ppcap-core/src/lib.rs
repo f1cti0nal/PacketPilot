@@ -61,6 +61,7 @@ pub use enrich::{
     FeedMatch, FlowEnrichment, IpClass, RepStatus, ReputationVerdict, ThreatFeed,
 };
 pub use error::{PpError, Result};
+pub use fingerprint::{fingerprint_tls_client_hello, TlsFingerprints};
 pub use model::category::Category;
 pub use model::finding::{Finding, FindingKind};
 pub use model::flow::{Direction, FlowKey, FlowRecord};
