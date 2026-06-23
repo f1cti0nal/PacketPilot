@@ -14,6 +14,8 @@ import initWasm, {
   apply_domain_reputation as wasmApplyDomainReputation,
   export_csv as wasmExportCsv,
   export_stix as wasmExportStix,
+  export_misp as wasmExportMisp,
+  export_cef as wasmExportCef,
   carve_pcap as wasmCarvePcap,
 } from "../wasm/ppcap_wasm.js";
 
@@ -115,4 +117,20 @@ export async function exportCsvWasm(outputJson: string): Promise<string> {
 export async function exportStixWasm(outputJson: string, generatedUnixSecs: number): Promise<string> {
   await ensureWasm();
   return wasmExportStix(outputJson, BigInt(generatedUnixSecs));
+}
+
+/**
+ * Export findings as a MISP event via WASM (browser path).
+ * `generatedUnixSecs` is the event creation timestamp.
+ * wasm-bindgen maps Rust `i64` → JS `bigint`, so we wrap with BigInt().
+ */
+export async function exportMispWasm(outputJson: string, generatedUnixSecs: number): Promise<string> {
+  await ensureWasm();
+  return wasmExportMisp(outputJson, BigInt(generatedUnixSecs));
+}
+
+/** Export findings as CEF (Common Event Format) via WASM (browser path). */
+export async function exportCefWasm(outputJson: string): Promise<string> {
+  await ensureWasm();
+  return wasmExportCef(outputJson);
 }

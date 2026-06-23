@@ -1,20 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { invoke, save, isTauri, exportCsvWasm, exportStixWasm } = vi.hoisted(() => ({
+const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm } = vi.hoisted(() => ({
   invoke: vi.fn(),
   save: vi.fn(),
   isTauri: vi.fn(),
   exportCsvWasm: vi.fn(),
   exportStixWasm: vi.fn(),
+  exportMispWasm: vi.fn(),
+  exportCefWasm: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save, open: vi.fn() }));
 vi.mock("./tauri-detect", () => ({ isTauri }));
-vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm }));
+vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm }));
 vi.mock("./data", () => ({ loadFlows: vi.fn() }));
 
-import { exportCsv, exportStix, copyCsv, copyStix } from "./platform";
+import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef } from "./platform";
 import type { AnalysisOutput } from "../types";
 
 const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknown as AnalysisOutput;
@@ -22,6 +24,7 @@ const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknow
 beforeEach(() => {
   invoke.mockReset(); save.mockReset(); isTauri.mockReset();
   exportCsvWasm.mockReset(); exportStixWasm.mockReset();
+  exportMispWasm.mockReset(); exportCefWasm.mockReset();
 });
 
 describe("platform structured export", () => {
@@ -102,6 +105,86 @@ describe("platform structured export", () => {
     isTauri.mockReturnValue(false);
     exportCsvWasm.mockRejectedValue(new Error("wasm boom"));
     const r = await exportCsv(summary);
+    expect(r.ok).toBe(false);
+  });
+
+  // ── MISP ────────────────────────────────────────────────────────────────────
+
+  it("exportMisp on desktop opens a save dialog and invokes save_misp", async () => {
+    isTauri.mockReturnValue(true);
+    save.mockResolvedValue("/tmp/out-misp.json");
+    const r = await exportMisp(summary);
+    expect(save).toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith("save_misp", { summary, path: "/tmp/out-misp.json" });
+    expect(r.ok).toBe(true);
+  });
+
+  it("exportMisp in the browser generates via WASM and downloads", async () => {
+    isTauri.mockReturnValue(false);
+    exportMispWasm.mockResolvedValue('{"Event":{}}');
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fake"), revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const r = await exportMisp(summary);
+    expect(exportMispWasm).toHaveBeenCalledWith(JSON.stringify(summary), expect.any(Number));
+    expect(click).toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    click.mockRestore();
+  });
+
+  it("copyMisp writes the MISP event to the clipboard", async () => {
+    isTauri.mockReturnValue(false);
+    exportMispWasm.mockResolvedValue('{"Event":{}}');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const r = await copyMisp(summary);
+    expect(writeText).toHaveBeenCalledWith('{"Event":{}}');
+    expect(r.ok).toBe(true);
+  });
+
+  it("exportMisp in the browser returns ok:false when WASM throws", async () => {
+    isTauri.mockReturnValue(false);
+    exportMispWasm.mockRejectedValue(new Error("misp boom"));
+    const r = await exportMisp(summary);
+    expect(r.ok).toBe(false);
+  });
+
+  // ── CEF ─────────────────────────────────────────────────────────────────────
+
+  it("exportCef on desktop opens a save dialog and invokes save_cef", async () => {
+    isTauri.mockReturnValue(true);
+    save.mockResolvedValue("/tmp/out.cef.txt");
+    const r = await exportCef(summary);
+    expect(save).toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith("save_cef", { summary, path: "/tmp/out.cef.txt" });
+    expect(r.ok).toBe(true);
+  });
+
+  it("exportCef in the browser generates via WASM and downloads", async () => {
+    isTauri.mockReturnValue(false);
+    exportCefWasm.mockResolvedValue("CEF:0|PacketPilot|...");
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fake"), revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const r = await exportCef(summary);
+    expect(exportCefWasm).toHaveBeenCalledWith(JSON.stringify(summary));
+    expect(click).toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    click.mockRestore();
+  });
+
+  it("copyCef writes the CEF string to the clipboard", async () => {
+    isTauri.mockReturnValue(false);
+    exportCefWasm.mockResolvedValue("CEF:0|PacketPilot|...");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const r = await copyCef(summary);
+    expect(writeText).toHaveBeenCalledWith("CEF:0|PacketPilot|...");
+    expect(r.ok).toBe(true);
+  });
+
+  it("exportCef in the browser returns ok:false when WASM throws", async () => {
+    isTauri.mockReturnValue(false);
+    exportCefWasm.mockRejectedValue(new Error("cef boom"));
+    const r = await exportCef(summary);
     expect(r.ok).toBe(false);
   });
 });
