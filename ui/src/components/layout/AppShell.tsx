@@ -43,6 +43,10 @@ export interface AppShellProps {
   onExportStix?: () => Promise<ExportResult | undefined>;
   onCopyCsv?: () => Promise<ExportResult | undefined>;
   onCopyStix?: () => Promise<ExportResult | undefined>;
+  onExportMisp?: () => Promise<ExportResult | undefined>;
+  onCopyMisp?: () => Promise<ExportResult | undefined>;
+  onExportCef?: () => Promise<ExportResult | undefined>;
+  onCopyCef?: () => Promise<ExportResult | undefined>;
   /** Threat rail data from the active capture. */
   threats: IpThreat[];
   /** Currently active/focused IP in the threat rail. */
@@ -83,6 +87,10 @@ export function AppShell({
   onExportStix,
   onCopyCsv,
   onCopyStix,
+  onExportMisp,
+  onCopyMisp,
+  onExportCef,
+  onCopyCef,
   threats,
   activeIp,
   onSelectThreat,
@@ -143,8 +151,12 @@ export function AppShell({
       { id: "csv-copy", label: "CSV — copy", run: () => void runExport(onCopyCsv) },
       { id: "stix", label: "STIX bundle — download", run: () => void runExport(onExportStix) },
       { id: "stix-copy", label: "STIX bundle — copy", run: () => void runExport(onCopyStix) },
+      { id: "misp", label: "MISP event — download", run: () => void runExport(onExportMisp) },
+      { id: "misp-copy", label: "MISP event — copy", run: () => void runExport(onCopyMisp) },
+      { id: "cef", label: "CEF — download", run: () => void runExport(onExportCef) },
+      { id: "cef-copy", label: "CEF — copy", run: () => void runExport(onCopyCef) },
     ],
-    [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix],
+    [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef],
   );
 
   // Capture filename: derived from the App-owned summary state.
@@ -178,8 +190,12 @@ export function AppShell({
       { id: "export-csv-copy", label: "Copy CSV", hint: "action", run: () => void runExport(onCopyCsv) },
       { id: "export-stix", label: "Export STIX bundle", hint: "action", run: () => void runExport(onExportStix) },
       { id: "export-stix-copy", label: "Copy STIX bundle", hint: "action", run: () => void runExport(onCopyStix) },
+      { id: "export-misp", label: "Export MISP event", hint: "action", run: () => void runExport(onExportMisp) },
+      { id: "export-misp-copy", label: "Copy MISP event", hint: "action", run: () => void runExport(onCopyMisp) },
+      { id: "export-cef", label: "Export CEF", hint: "action", run: () => void runExport(onExportCef) },
+      { id: "export-cef-copy", label: "Copy CEF", hint: "action", run: () => void runExport(onCopyCef) },
     ] : []),
-  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix]);
+  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
