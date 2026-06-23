@@ -181,11 +181,11 @@ pub fn fingerprint_tls_client_hello(payload: &[u8]) -> Option<TlsFingerprints> {
             0x000b => ec_point_formats = parse_u8_list(data),
             0x0010 => alpn_first = parse_first_alpn(data),
             0x000d => sig_algs = parse_u16_list(data),
-            // supported_versions (0x002b) ClientHello body: 2-byte list-length then u16 versions.
-            // Note: TLS 1.3 spec uses a 1-byte prefix here, but real captures typically have the
-            // 2-byte outer extension length already consumed; parse_u16_list handles the 2-byte
-            // prefix that actual ClientHello extensions carry at this point.
-            0x002b => supported_versions = parse_u16_list(data),
+            // supported_versions (0x002b): RFC 8446 §4.2.1 — the ClientHello body uses a
+            // 1-byte length prefix (versions<2..254>) followed by u16 version pairs.
+            // This differs from 0x000a/0x000d which use a 2-byte prefix; use the dedicated
+            // 1-byte-prefix parser so real TLS 1.3 ClientHellos parse correctly.
+            0x002b => supported_versions = parse_u8_prefixed_u16_list(data),
             _ => {}
         }
         i = de;
@@ -313,8 +313,11 @@ fn compute_ja4(
     //   - sorted_exts = extensions sorted ascending, excluding SNI (0x0000) and ALPN (0x0010),
     //     4-hex lowercase, comma-joined.
     //   - sig_algs_in_order = signature_algorithms in original wire order, 4-hex, comma-joined.
-    //   - Empty extension list → empty string before the underscore.
-    //   - Empty sig_algs → "000000000000" (whole ja4_c constant).
+    //   - Empty extension list AND empty sig_algs → "000000000000" (whole ja4_c constant).
+    //   - Extensions present but no sig_algs → SHA-256[:12](ex_hex) (no underscore, no sig part).
+    //   - Both present → SHA-256[:12]("<ex_hex>_<sig_hex>").
+    // Note: `ne` (extension count in ja4_a) counts SNI + ALPN too (per FoxIO spec — the count
+    // includes all non-GREASE extensions), even though ja4_c excludes them from the hash input.
     let mut ex: Vec<u16> = exts
         .iter()
         .copied()
@@ -326,8 +329,11 @@ fn compute_ja4(
         .map(|e| format!("{e:04x}"))
         .collect::<Vec<_>>()
         .join(",");
-    let ja4_c = if sig_algs.is_empty() {
+    let ja4_c = if ex.is_empty() {
         "000000000000".to_string()
+    } else if sig_algs.is_empty() {
+        // Extensions present but no signature_algorithms: hash only the ext list (no trailing underscore).
+        crate::analyze::sha256_hex(ex_hex.as_bytes())[..12].to_string()
     } else {
         let sig_hex = sig_algs
             .iter()
@@ -370,8 +376,9 @@ fn parse_sni(data: &[u8]) -> Option<String> {
     None
 }
 
-/// Parse a length-prefixed (2-byte) list of u16 values (e.g. supported_groups,
-/// signature_algorithms). Returns empty `Vec` on malformed input.
+/// Parse a length-prefixed (2-byte) list of u16 values.
+/// Used for extensions with a 2-byte list-length prefix: supported_groups (0x000a)
+/// and signature_algorithms (0x000d). Returns empty `Vec` on malformed input.
 fn parse_u16_list(data: &[u8]) -> Vec<u16> {
     if data.len() < 2 {
         return Vec::new();
@@ -379,6 +386,22 @@ fn parse_u16_list(data: &[u8]) -> Vec<u16> {
     let list_len = u16::from_be_bytes([data[0], data[1]]) as usize;
     let end = 2usize.saturating_add(list_len).min(data.len());
     data.get(2..end)
+        .unwrap_or(&[])
+        .chunks_exact(2)
+        .map(|c| u16::from_be_bytes([c[0], c[1]]))
+        .collect()
+}
+
+/// Parse a length-prefixed (1-byte) list of u16 values.
+/// Used for supported_versions (0x002b): RFC 8446 §4.2.1 uses a 1-byte length prefix
+/// followed by big-endian u16 version pairs. Returns empty `Vec` on malformed input.
+fn parse_u8_prefixed_u16_list(data: &[u8]) -> Vec<u16> {
+    if data.is_empty() {
+        return Vec::new();
+    }
+    let list_len = data[0] as usize;
+    let end = 1usize.saturating_add(list_len).min(data.len());
+    data.get(1..end)
         .unwrap_or(&[])
         .chunks_exact(2)
         .map(|c| u16::from_be_bytes([c[0], c[1]]))
@@ -493,11 +516,23 @@ mod ch_tests {
         body.extend_from_slice(&list);
         (0x0010, body)
     }
+    /// Build an extension with a **2-byte** list-length prefix.
+    /// Correct for supported_groups (0x000a) and signature_algorithms (0x000d).
+    /// Do NOT use for supported_versions (0x002b) — use `supported_versions_ext` instead.
     fn u16list_ext(t: u16, vals: &[u16]) -> (u16, Vec<u8>) {
         let inner: Vec<u8> = vals.iter().flat_map(|v| v.to_be_bytes()).collect();
         let mut body = (inner.len() as u16).to_be_bytes().to_vec();
         body.extend_from_slice(&inner);
         (t, body)
+    }
+
+    /// Build a supported_versions (0x002b) extension with the correct **1-byte** list-length
+    /// prefix as mandated by RFC 8446 §4.2.1 (`versions<2..254>`).
+    fn supported_versions_ext(vals: &[u16]) -> (u16, Vec<u8>) {
+        let inner: Vec<u8> = vals.iter().flat_map(|v| v.to_be_bytes()).collect();
+        let mut body = vec![inner.len() as u8]; // 1-byte prefix
+        body.extend_from_slice(&inner);
+        (0x002b, body)
     }
 
     #[test]
@@ -531,10 +566,10 @@ mod ch_tests {
             0x0303,
             &[0xc030, 0xc02b], // 2 ciphers, no GREASE
             &[
-                u16list_ext(0x002b, &[0x0304]), // supported_versions -> TLS 1.3
+                supported_versions_ext(&[0x0304]), // supported_versions -> TLS 1.3 (1-byte prefix)
                 sni_ext("a.test"),
                 alpn_ext("h2"),
-                u16list_ext(0x000d, &[0x0403, 0x0804]), // signature_algorithms
+                u16list_ext(0x000d, &[0x0403, 0x0804]), // signature_algorithms (2-byte prefix)
             ],
         );
         let fp = fingerprint_tls_client_hello(&ch).unwrap();
@@ -552,6 +587,46 @@ mod ch_tests {
         let combined = "000d,002b_0403,0804";
         let want_c = &crate::analyze::sha256_hex(combined.as_bytes())[..12];
         assert_eq!(parts[2], want_c);
+    }
+
+    /// Verify the ja4_c fallback when extensions ARE present but signature_algorithms (0x000d)
+    /// is absent. Per the FoxIO JA4 spec, ja4_c must be SHA-256[:12](ex_hex) with no trailing
+    /// underscore and no sig_algs part — NOT the constant "000000000000".
+    #[test]
+    fn ja4_c_no_sig_algs_but_has_extensions() {
+        // Build a ClientHello with: supported_versions (0x002b) + SNI (0x0000) + supported_groups
+        // (0x000a) — but NO signature_algorithms (0x000d).
+        let ch = client_hello(
+            0x0303,
+            &[0xc02b],
+            &[
+                supported_versions_ext(&[0x0304]),      // 0x002b — 1-byte prefix
+                sni_ext("test.example"),                // 0x0000 — excluded from ja4_c hash
+                u16list_ext(0x000a, &[0x001d, 0x0017]), // 0x000a — included in ja4_c
+            ],
+        );
+        let fp = fingerprint_tls_client_hello(&ch).expect("valid client hello");
+        let parts: Vec<&str> = fp.ja4.split('_').collect();
+        assert_eq!(
+            parts.len(),
+            3,
+            "ja4 must have exactly 3 underscore-separated parts"
+        );
+
+        // Recompute ja4_c manually:
+        // exts in wire order (GREASE removed): [0x002b, 0x0000, 0x000a]
+        // exclude SNI (0x0000) and ALPN (0x0010) → [0x002b, 0x000a]
+        // sorted ascending → [0x000a, 0x002b]
+        // ex_hex = "000a,002b"
+        // no sig_algs → ja4_c = sha256_hex("000a,002b")[..12]
+        let ex_hex = "000a,002b";
+        let want_c = &crate::analyze::sha256_hex(ex_hex.as_bytes())[..12];
+        assert_eq!(
+            parts[2], want_c,
+            "ja4_c must be sha256[:12](ex_hex) when sig_algs absent but extensions present"
+        );
+        // Also sanity-check it is NOT the zero constant.
+        assert_ne!(parts[2], "000000000000");
     }
 
     #[test]
