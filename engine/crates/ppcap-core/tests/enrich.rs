@@ -55,6 +55,7 @@ fn demo_feed() -> ThreatFeed {
         bad_domains: vec!["auth.bank.example".into()],
         bad_suffixes: vec![".evil.example".into()],
         bad_ja3: vec![],
+        bad_ja4: vec![],
     })
     .expect("feed builds")
 }
@@ -82,8 +83,10 @@ fn domain_ioc_matching_exact_and_suffix() {
 
 #[test]
 fn empty_feed_matches_nothing() {
+    // empty() now seeds the embedded builtin fingerprint set (ja3/ja4), so is_empty() returns
+    // false. IP/domain matching is still absent because builtins contain only fingerprints.
     let f = ThreatFeed::empty();
-    assert!(f.is_empty());
+    assert!(!f.is_empty()); // builtins are present
     assert!(!f.matches_ip(ip("10.0.5.10")));
     assert!(!f.matches_domain("auth.bank.example"));
 }
