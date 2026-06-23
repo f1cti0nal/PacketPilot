@@ -81,6 +81,11 @@ const UNSUPPORTED: &[&str] = &[
     "offset",
     "distance",
     "within",
+    // Matching-affecting keywords: direction/state, TCP flags, L7 protocol scope.
+    // Silently ignoring these would cause mis-matches; skip the rule instead.
+    "flow",
+    "flags",
+    "app-layer-protocol",
     // HTTP sticky-buffer / normalization keywords.
     "http_uri",
     "http_header",
@@ -216,7 +221,8 @@ fn parse_one(line: &str, rules: &mut Vec<Rule>) -> Result<(), String> {
                 }
             }
             // Recognised but not processed keywords we do not need to model.
-            "flow" | "flags" | "threshold" | "tag" | "rev" | "gid" | "app-layer-protocol" => {}
+            // (flow / flags / app-layer-protocol are now in UNSUPPORTED — they affect matching.)
+            "threshold" | "tag" | "rev" | "gid" => {}
             _ => {
                 // Unknown keyword: if it looks like it could be a modifier or sticky buffer, skip.
                 // We allow unknown keywords that don't look dangerous to be forward-compatible,
@@ -371,11 +377,11 @@ fn decode_content(raw: &str) -> Option<Vec<u8>> {
                         '\\' => out.push(b'\\'),
                         ':' => out.push(b':'),
                         '|' => out.push(b'|'),
-                        other => {
-                            // Unknown escape: treat both chars literally.
-                            out.push(b'\\');
-                            let s = other.to_string();
-                            out.extend_from_slice(s.as_bytes());
+                        _ => {
+                            // Unknown escape: not a valid Suricata escape sequence.
+                            // Per the spec only \", \\, \:, \| are valid — return
+                            // None so the rule is skipped rather than mis-matched.
+                            return None;
                         }
                     }
                 }
@@ -571,5 +577,72 @@ mod tests {
         assert!(!r.matches(Transport::Tcp, 443, b"no match")); // content absent
         let any = &parse_rules(r#"alert ip any any -> any any (content:"z"; sid:2;)"#).rules[0];
         assert!(any.matches(Transport::Udp, 12345, b"zzz")); // ip+any-port
+    }
+
+    // ── Regression: I-1 ─────────────────────────────────────────────────────
+    // flow, flags, app-layer-protocol affect matching → must be skipped, not silently ignored.
+    #[test]
+    fn skips_flow_option() {
+        let p = parse_rules(
+            r#"alert tcp any any -> any 80 (msg:"test"; content:"GET"; flow:to_server,established; sid:100;)"#,
+        );
+        assert!(p.rules.is_empty(), "rule with flow: must not be admitted");
+        assert_eq!(p.skipped.len(), 1);
+        assert!(
+            p.skipped[0].reason.contains("flow"),
+            "skip reason should mention 'flow'"
+        );
+        assert_eq!(p.skipped[0].sid, Some(100));
+    }
+
+    #[test]
+    fn skips_flags_option() {
+        let p = parse_rules(r#"alert tcp any any -> any any (content:"abc"; flags:S; sid:101;)"#);
+        assert!(p.rules.is_empty(), "rule with flags: must not be admitted");
+        assert_eq!(p.skipped.len(), 1);
+        assert!(p.skipped[0].reason.contains("flags"));
+    }
+
+    #[test]
+    fn skips_app_layer_protocol_option() {
+        let p = parse_rules(
+            r#"alert tcp any any -> any any (content:"abc"; app-layer-protocol:http; sid:102;)"#,
+        );
+        assert!(
+            p.rules.is_empty(),
+            "rule with app-layer-protocol: must not be admitted"
+        );
+        assert_eq!(p.skipped.len(), 1);
+        assert!(p.skipped[0].reason.contains("app-layer-protocol"));
+    }
+
+    // ── Regression: M-1 ─────────────────────────────────────────────────────
+    // Unknown content escape sequence → rule must be skipped, not silently approximated.
+    #[test]
+    fn skips_unknown_content_escape() {
+        // \n is not a valid Suricata escape (only \", \\, \:, \| are).
+        let p = parse_rules(r#"alert tcp any any -> any 80 (content:"a\nb"; sid:200;)"#);
+        assert!(
+            p.rules.is_empty(),
+            "rule with unknown escape in content must not be admitted"
+        );
+        assert_eq!(p.skipped.len(), 1);
+        assert!(
+            p.skipped[0].reason.contains("content"),
+            "skip reason should mention 'content'"
+        );
+        assert_eq!(p.skipped[0].sid, Some(200));
+    }
+
+    // ── Regression: metadata-only options still parse ────────────────────────
+    // rev, gid, threshold, tag are genuine metadata that don't affect matching → keep ignored.
+    #[test]
+    fn metadata_options_still_parse() {
+        let p = parse_rules(
+            r#"alert tcp any any -> any 443 (msg:"ok"; content:"hello"; rev:3; gid:1; classtype:trojan-activity; sid:300;)"#,
+        );
+        assert_eq!(p.skipped.len(), 0, "metadata options must not cause a skip");
+        assert_eq!(p.rules.len(), 1);
+        assert_eq!(p.rules[0].sid, 300);
     }
 }
