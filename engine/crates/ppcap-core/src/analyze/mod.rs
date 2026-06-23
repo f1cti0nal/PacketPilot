@@ -514,11 +514,22 @@ fn hash_file_sha256(path: &Path) -> Result<String> {
     Ok(hasher.finalize_hex())
 }
 
-/// One-shot SHA-256 hex of a byte slice (reuses the vendored streaming `Sha256`).
-pub(crate) fn sha256_hex(data: &[u8]) -> String {
+/// Raw 32-byte SHA-256 digest (vendored; see sha256_hex). Reused by the QUIC HKDF.
+pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(data);
-    h.finalize_hex()
+    h.finalize_bytes()
+}
+
+/// One-shot SHA-256 hex of a byte slice (reuses the vendored streaming `Sha256`).
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
+    let bytes = sha256(data);
+    let mut hex = String::with_capacity(64);
+    for byte in bytes.iter() {
+        hex.push(char::from_digit((byte >> 4) as u32, 16).unwrap());
+        hex.push(char::from_digit((byte & 0x0f) as u32, 16).unwrap());
+    }
+    hex
 }
 
 /// Minimal streaming SHA-256 (FIPS 180-4). No external dependencies; constant memory.
@@ -589,7 +600,7 @@ impl Sha256 {
         }
     }
 
-    fn finalize_hex(mut self) -> String {
+    fn finalize_bytes(mut self) -> [u8; 32] {
         let bit_len = self.total_len.wrapping_mul(8);
 
         // Append 0x80 then zero-pad to a 56-byte boundary, then the 64-bit length.
@@ -604,12 +615,19 @@ impl Sha256 {
         self.update_raw(&bit_len.to_be_bytes());
         debug_assert_eq!(self.block_len, 0);
 
+        let mut out = [0u8; 32];
+        for (i, word) in self.state.iter().enumerate() {
+            out[i * 4..(i + 1) * 4].copy_from_slice(&word.to_be_bytes());
+        }
+        out
+    }
+
+    fn finalize_hex(self) -> String {
+        let bytes = self.finalize_bytes();
         let mut hex = String::with_capacity(64);
-        for word in self.state.iter() {
-            for byte in word.to_be_bytes() {
-                hex.push(char::from_digit((byte >> 4) as u32, 16).unwrap());
-                hex.push(char::from_digit((byte & 0x0f) as u32, 16).unwrap());
-            }
+        for byte in bytes.iter() {
+            hex.push(char::from_digit((byte >> 4) as u32, 16).unwrap());
+            hex.push(char::from_digit((byte & 0x0f) as u32, 16).unwrap());
         }
         hex
     }
