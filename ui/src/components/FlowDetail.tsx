@@ -13,6 +13,7 @@ import {
   Globe,
   ShieldAlert,
   Binary,
+  Scissors,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -52,6 +53,8 @@ export interface FlowDetailProps {
   activeSource: ActiveSource;
   /** Invoked when the user requests the packet inspector for the selected flow. */
   onInspectPackets: () => void;
+  /** Invoked when the user requests a carved sub-pcap for the selected flow. */
+  onCarvePcap: () => void;
 }
 
 /** Human label for a TCP flags bitmask (bits per RFC 793 + ECN/NS). */
@@ -295,6 +298,7 @@ export function FlowDetail({
   onClose,
   activeSource,
   onInspectPackets,
+  onCarvePcap,
 }: FlowDetailProps) {
   if (!flow) return <EmptyDetail />;
 
@@ -333,8 +337,8 @@ export function FlowDetail({
         </button>
       </div>
 
-      {/* Inspect packets */}
-      <div className="border-b border-[var(--color-border)] px-4 py-2">
+      {/* Inspect packets + Carve sub-pcap */}
+      <div className="border-b border-[var(--color-border)] px-4 py-2 flex gap-2">
         <button
           type="button"
           onClick={onInspectPackets}
@@ -345,13 +349,31 @@ export function FlowDetail({
               : "Packets are only available for captures analyzed from a pcap"
           }
           className={cn(
-            "flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
+            "flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
             canInspect
               ? "border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
               : "cursor-not-allowed border-[var(--color-border)] text-[var(--color-text-faint)]",
           )}
         >
           <Binary size={14} /> Inspect packets
+        </button>
+        <button
+          type="button"
+          onClick={onCarvePcap}
+          disabled={!canInspect}
+          title={
+            canInspect
+              ? "Export this flow as a .pcap"
+              : "Packets are only available for captures analyzed from a pcap"
+          }
+          className={cn(
+            "flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
+            canInspect
+              ? "border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+              : "cursor-not-allowed border-[var(--color-border)] text-[var(--color-text-faint)]",
+          )}
+        >
+          <Scissors size={14} /> Carve sub-pcap
         </button>
       </div>
 

@@ -31,6 +31,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText(/No flow selected/i)).toBeInTheDocument();
@@ -43,6 +44,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(
@@ -57,6 +59,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("10.0.0.1")).toBeInTheDocument();
@@ -70,6 +73,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     // Protocol label appears in both the chip badge and the field
@@ -86,6 +90,7 @@ describe("FlowDetail", () => {
         onClose={onClose}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     await u.click(screen.getByRole("button", { name: /Close flow detail/i }));
@@ -99,6 +104,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("Endpoints")).toBeInTheDocument();
@@ -111,6 +117,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("Traffic breakdown")).toBeInTheDocument();
@@ -123,6 +130,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("Timing")).toBeInTheDocument();
@@ -135,6 +143,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("Classification")).toBeInTheDocument();
@@ -147,6 +156,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("No")).toBeInTheDocument();
@@ -159,6 +169,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("Yes")).toBeInTheDocument();
@@ -171,6 +182,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     // "TLS" appears in the app-protocol field
@@ -184,6 +196,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     expect(screen.getByText("Identity")).toBeInTheDocument();
@@ -199,6 +212,7 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={noSource}
         onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
       />,
     );
     const btn = screen.getByRole("button", { name: /Inspect packets/i });
@@ -218,11 +232,61 @@ describe("FlowDetail", () => {
         onClose={vi.fn()}
         activeSource={bytesSource}
         onInspectPackets={onInspectPackets}
+        onCarvePcap={vi.fn()}
       />,
     );
     const btn = screen.getByRole("button", { name: /Inspect packets/i });
     expect(btn).toBeEnabled();
     await u.click(btn);
     expect(onInspectPackets).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the Carve sub-pcap button", () => {
+    render(
+      <FlowDetail
+        flow={flow}
+        onClose={vi.fn()}
+        activeSource={noSource}
+        onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Carve sub-pcap/i })).toBeInTheDocument();
+  });
+
+  it("disables Carve sub-pcap when there is no active source", () => {
+    render(
+      <FlowDetail
+        flow={flow}
+        onClose={vi.fn()}
+        activeSource={noSource}
+        onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Carve sub-pcap/i });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute(
+      "title",
+      "Packets are only available for captures analyzed from a pcap",
+    );
+  });
+
+  it("enables Carve sub-pcap and calls onCarvePcap when a source is present", async () => {
+    const u = userEvent.setup();
+    const onCarvePcap = vi.fn();
+    render(
+      <FlowDetail
+        flow={flow}
+        onClose={vi.fn()}
+        activeSource={bytesSource}
+        onInspectPackets={vi.fn()}
+        onCarvePcap={onCarvePcap}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /Carve sub-pcap/i });
+    expect(btn).toBeEnabled();
+    await u.click(btn);
+    expect(onCarvePcap).toHaveBeenCalledTimes(1);
   });
 });
