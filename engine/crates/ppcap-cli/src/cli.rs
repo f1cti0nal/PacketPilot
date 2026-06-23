@@ -255,8 +255,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     }
                     Err(_) => Vec::new(),
                 };
-                out.summary.apply_findings(&rf);
-                out.summary.findings.extend(rf.iter().cloned());
+                ppcap_core::fold_rule_findings(&mut out.summary, &rf);
                 eprintln!(
                     "rules: {} loaded, {} skipped, {} matches",
                     parsed.rules.len(),
