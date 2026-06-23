@@ -271,6 +271,8 @@ export interface RawFlowRow {
   category: string;
   app_proto_src: string | null;
   sni: string | null;
+  ja3: string | null;
+  ja4: string | null;
   severity: string | null;
   threat_score: number;
   ioc: boolean;
@@ -302,6 +304,8 @@ export interface WasmFlow {
   category: string;
   app_proto_src: string | null;
   sni: string | null;
+  ja3: string | null;
+  ja4: string | null;
   severity: string;
   threat_score: number;
   ioc: boolean;
@@ -329,6 +333,8 @@ export interface FlowRow {
   appProto: string | null;
   appProtoSrc: string | null; // "payload" | "port" | null — how appProto was derived
   sni: string | null; // TLS SNI host from the ClientHello, if captured
+  ja3: string | null; // TLS JA3 fingerprint, if captured
+  ja4: string | null; // TLS JA4 fingerprint, if captured
   bytesC2s: number;
   bytesS2c: number;
   bytesTotal: number; // derived

@@ -26,6 +26,8 @@ const rawRow: RawFlowRow = {
   category: "web",
   app_proto_src: "payload",
   sni: null,
+  ja3: null,
+  ja4: null,
   severity: null,
   threat_score: 0,
   ioc: false,
@@ -114,6 +116,8 @@ describe("flowRowFromWasm", () => {
     category: "dns",
     app_proto_src: "payload",
     sni: null,
+    ja3: null,
+    ja4: null,
     severity: "info",
     threat_score: 0,
     ioc: false,
@@ -148,5 +152,69 @@ describe("flowRowFromWasm", () => {
     const r2 = flowRowFromWasm({ ...wasmRow, app_proto_src: null, sni: null });
     expect(r2.appProtoSrc).toBeNull();
     expect(r2.sni).toBeNull();
+  });
+});
+
+describe("ja3/ja4 passthrough", () => {
+  it("threads ja3/ja4 from WASM + parquet rows into FlowRow", () => {
+    const w: WasmFlow = {
+      flow_id: 1,
+      capture_id: 1,
+      src_ip: "10.0.0.1",
+      dst_ip: "1.2.3.4",
+      src_port: 443,
+      dst_port: 50000,
+      proto: 6,
+      app_proto: "TLS",
+      bytes_c2s: 100,
+      bytes_s2c: 200,
+      pkts: 4,
+      start_ts_ns: 1_700_000_000_000_000_000,
+      end_ts_ns: 1_700_000_001_000_000_000,
+      tcp_flags_c2s: 0,
+      tcp_flags_s2c: 0,
+      ttl_min_c2s: 64,
+      category: "web",
+      app_proto_src: "payload",
+      sni: null,
+      ja3: "769,47,0,29,0",
+      ja4: "t13d0204h2_aaa_bbb",
+      severity: "info",
+      threat_score: 0,
+      ioc: false,
+    };
+    const r = flowRowFromWasm(w);
+    expect(r.ja3).toBe("769,47,0,29,0");
+    expect(r.ja4).toBe("t13d0204h2_aaa_bbb");
+
+    const raw: RawFlowRow = {
+      flow_id: BigInt(2),
+      capture_id: BigInt(1),
+      src_ip: "10.0.0.2",
+      dst_ip: "1.2.3.4",
+      src_port: 443,
+      dst_port: 50001,
+      proto: 6,
+      app_proto: "TLS",
+      bytes_c2s: BigInt(100),
+      bytes_s2c: BigInt(200),
+      pkts: BigInt(4),
+      start_ts: new Date(1_700_000_000_000),
+      end_ts: new Date(1_700_000_001_000),
+      tcp_flags_c2s: 0,
+      tcp_flags_s2c: 0,
+      ttl_min_c2s: 64,
+      category: "web",
+      app_proto_src: "payload",
+      sni: null,
+      ja3: "x",
+      ja4: null,
+      severity: null,
+      threat_score: 0,
+      ioc: false,
+    };
+    const n = normalizeFlow(raw);
+    expect(n.ja3).toBe("x");
+    expect(n.ja4).toBeNull();
   });
 });
