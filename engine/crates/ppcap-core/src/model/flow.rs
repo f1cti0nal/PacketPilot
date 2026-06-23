@@ -138,6 +138,10 @@ pub struct FlowRecord {
     pub observed_app_proto: AppProto,
     /// First non-empty TLS SNI host observed on this flow; `None` if none seen.
     pub sni: Option<String>,
+    /// First non-empty JA3 fingerprint observed on this flow; `None` if none seen.
+    pub ja3: Option<String>,
+    /// First non-empty JA4 fingerprint observed on this flow; `None` if none seen.
+    pub ja4: Option<String>,
     /// Derivation of `app_proto`: `Some("payload")`, `Some("port")`, or `None` (unknown /
     /// shape-only). Set by the classify stage; written to the `app_proto_src` column.
     pub app_proto_src: Option<&'static str>,
@@ -167,6 +171,8 @@ impl FlowRecord {
             ttl_min_fwd: 0,
             observed_app_proto: AppProto::Unknown,
             sni: None,
+            ja3: None,
+            ja4: None,
             app_proto_src: None,
             severity: crate::model::severity::Severity::Info,
             threat_score: 0,
@@ -195,6 +201,20 @@ impl FlowRecord {
             if let Some(host) = &p.sni {
                 if !host.is_empty() {
                     self.sni = Some(host.clone());
+                }
+            }
+        }
+        if self.ja3.is_none() {
+            if let Some(v) = &p.ja3 {
+                if !v.is_empty() {
+                    self.ja3 = Some(v.clone());
+                }
+            }
+        }
+        if self.ja4.is_none() {
+            if let Some(v) = &p.ja4 {
+                if !v.is_empty() {
+                    self.ja4 = Some(v.clone());
                 }
             }
         }
@@ -274,6 +294,8 @@ mod tests {
             vlan: None,
             app_proto: AppProto::Unknown,
             sni: None,
+            ja3: None,
+            ja4: None,
             dns_qname: None,
             cleartext_cred: None,
             pii: None,
@@ -294,5 +316,54 @@ mod tests {
         tls2.sni = Some("second.example".to_string());
         r.observe(&tls2, dir);
         assert_eq!(r.sni.as_deref(), Some("first.example"));
+    }
+
+    #[test]
+    fn observe_captures_first_ja3_ja4_sticky() {
+        let (key, dir) = FlowKey::normalized(
+            "10.0.0.1".parse().unwrap(),
+            50000,
+            "10.0.0.2".parse().unwrap(),
+            443,
+            Transport::Tcp,
+        );
+        let mut r = FlowRecord::new(key, 0);
+        let base = PacketMeta {
+            index: 0,
+            ts_ns: 100,
+            iface_id: 0,
+            wire_len: 64,
+            cap_len: 64,
+            l3: crate::model::packet::Protocol::Ipv4,
+            transport: Transport::Tcp,
+            src_ip: Some("10.0.0.1".parse().unwrap()),
+            dst_ip: Some("10.0.0.2".parse().unwrap()),
+            src_port: 50000,
+            dst_port: 443,
+            tcp_flags: 0x02,
+            ttl: 64,
+            payload_len: 0,
+            vlan: None,
+            app_proto: AppProto::Unknown,
+            sni: None,
+            ja3: None,
+            ja4: None,
+            dns_qname: None,
+            cleartext_cred: None,
+            pii: None,
+        };
+
+        let mut p1 = base.clone();
+        p1.ja3 = Some("aaa".into());
+        p1.ja4 = Some("t13d0000".into());
+        r.observe(&p1, dir);
+
+        // Second packet has different ja3 — first-seen value must win.
+        let mut p2 = base.clone();
+        p2.ja3 = Some("bbb".into());
+        r.observe(&p2, dir);
+
+        assert_eq!(r.ja3.as_deref(), Some("aaa")); // first wins, sticky
+        assert_eq!(r.ja4.as_deref(), Some("t13d0000"));
     }
 }
