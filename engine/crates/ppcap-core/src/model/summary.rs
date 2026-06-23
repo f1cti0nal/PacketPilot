@@ -102,6 +102,17 @@ impl SeverityCounts {
     }
 }
 
+/// A malware TLS fingerprint matched on this IP's flows (the IOC-matched subset;
+/// display-only). Deduped and capped per-IP.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FingerprintHit {
+    #[serde(default)]
+    pub ja3: Option<String>,
+    #[serde(default)]
+    pub ja4: Option<String>,
+    pub label: String,
+}
+
 /// One per-IP threat rollup row (the worst verdict seen across that IP's flows).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IpThreat {
@@ -124,6 +135,10 @@ pub struct IpThreat {
     /// `#[serde(default)]` keeps older summaries (written before this field) readable.
     #[serde(default)]
     pub reputation: Vec<crate::enrich::ReputationVerdict>,
+    /// Matched malware TLS fingerprints (IOC-matched subset only; deduped + capped).
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub fingerprints: Vec<FingerprintHit>,
 }
 
 /// One per-domain (TLS SNI host) rollup row, ranked by traffic. A display surface — not
