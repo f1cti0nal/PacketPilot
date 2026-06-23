@@ -132,7 +132,7 @@ describe("Dashboard host carve", () => {
       );
     });
     expect(carveSubPcap).toHaveBeenCalledWith(
-      expect.objectContaining({ host: "10.13.37.7", start_ns: 0 }),
+      expect.objectContaining({ host: "10.13.37.7", start_ns: 0, end_ns: 9e18 }),
       expect.objectContaining({ kind: "bytes" }),
       expect.stringContaining("10.13.37.7"),
     );
