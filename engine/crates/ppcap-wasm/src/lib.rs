@@ -106,6 +106,8 @@ struct FlowDto {
     category: String,
     app_proto_src: Option<String>,
     sni: Option<String>,
+    ja3: Option<String>,
+    ja4: Option<String>,
     severity: String,
     threat_score: u16,
     ioc: bool,
@@ -143,6 +145,8 @@ impl FlowDto {
                 .as_ref()
                 .filter(|h| !h.is_empty())
                 .map(|h| h.to_string()),
+            ja3: rec.ja3.as_ref().filter(|v| !v.is_empty()).map(|v| v.to_string()),
+            ja4: rec.ja4.as_ref().filter(|v| !v.is_empty()).map(|v| v.to_string()),
             severity: rec.severity.as_str().to_string(),
             threat_score: rec.threat_score,
             ioc: rec.ioc,
