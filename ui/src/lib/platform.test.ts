@@ -26,7 +26,7 @@ const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknow
 beforeEach(() => {
   invoke.mockReset(); save.mockReset(); isTauri.mockReset();
   exportCsvWasm.mockReset(); exportStixWasm.mockReset();
-  exportMispWasm.mockReset(); exportCefWasm.mockReset();
+  exportMispWasm.mockReset(); exportCefWasm.mockReset(); renderReportWasm.mockReset();
 });
 
 describe("platform structured export", () => {

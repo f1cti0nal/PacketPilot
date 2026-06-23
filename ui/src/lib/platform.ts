@@ -53,11 +53,12 @@ export interface ExportResult {
 }
 
 /**
- * Export the analysis. On desktop (Tauri) renders the engine's HTML report via the
- * `save_report` command after prompting for a path. In the browser, downloads the
- * summary as pretty JSON. Returns a small result so the UI can show a transient hint.
+ * Export the analysis as the engine's HTML triage report. On desktop (Tauri) the
+ * `save_report` command renders it after prompting for a path; in the browser it is
+ * rendered via WASM (`render_report`) and downloaded. Returns a small result so the
+ * UI can show a transient hint.
  *
- * `aiSummary` is optional — when provided it is embedded in the HTML report (desktop only).
+ * `aiSummary` is optional — when provided it is embedded in the report on both surfaces.
  */
 export async function exportReport(
   summary: AnalysisOutput,
