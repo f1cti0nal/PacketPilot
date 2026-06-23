@@ -63,7 +63,7 @@ pub use enrich::{
 };
 pub use error::{PpError, Result};
 pub use export::{cef_records, findings_csv, misp_event, stix_bundle};
-pub use fingerprint::{fingerprint_tls_client_hello, TlsFingerprints};
+pub use fingerprint::{fingerprint_tls_client_hello, Ja4Transport, TlsFingerprints};
 pub use model::category::Category;
 pub use model::finding::{Finding, FindingKind};
 pub use model::flow::{Direction, FlowKey, FlowRecord};

@@ -15,10 +15,10 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use ppcap_core::decode::decode_frame;
-use ppcap_core::fingerprint_tls_client_hello;
 use ppcap_core::model::flow::{FlowKey, FlowRecord};
 use ppcap_core::model::packet::Transport;
 use ppcap_core::reader::{LinkType, RawFrame};
+use ppcap_core::{fingerprint_tls_client_hello, Ja4Transport};
 
 // ── ClientHello builder (mirrors ch_tests in fingerprint/mod.rs) ─────────────────────────
 
@@ -167,7 +167,7 @@ fn eth_ipv4_tcp(src: Ipv4Addr, sport: u16, dst: Ipv4Addr, dport: u16, payload: &
 /// The `ch_payload` bytes ARE the TLS record (what sits in the TCP payload after headers).
 fn assert_pipeline_parity(ch_payload: &[u8], label: &str) {
     // 1. Ground-truth from the direct fingerprinting function.
-    let expected = fingerprint_tls_client_hello(ch_payload)
+    let expected = fingerprint_tls_client_hello(ch_payload, Ja4Transport::Tcp)
         .unwrap_or_else(|| panic!("{label}: fingerprint_tls_client_hello returned None"));
 
     // 2. Wrap in Ethernet+IPv4+TCP and decode through the full frame decoder.
@@ -287,7 +287,8 @@ fn flow_ja3_ja4_sticky_on_subsequent_packets() {
     // After the first ClientHello populates ja3/ja4, a second packet (no ClientHello) must
     // NOT overwrite the already-stored fingerprints (first-wins / sticky contract).
     let ch = make_client_hello(0x0303, &[0xc02b], &[sni_ext("sticky.example")]);
-    let expected = fingerprint_tls_client_hello(&ch).expect("valid client hello");
+    let expected =
+        fingerprint_tls_client_hello(&ch, Ja4Transport::Tcp).expect("valid client hello");
 
     let src = Ipv4Addr::new(10, 1, 0, 1);
     let dst = Ipv4Addr::new(10, 1, 0, 2);
