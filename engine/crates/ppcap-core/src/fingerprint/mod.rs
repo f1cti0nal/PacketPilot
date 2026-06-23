@@ -70,12 +70,29 @@ pub(crate) fn md5_hex(data: &[u8]) -> String {
 
 // ── TLS fingerprint types ─────────────────────────────────────────────────────
 
+/// Transport the ClientHello was carried over — sets the JA4 protocol letter (FoxIO spec).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ja4Transport {
+    Tcp,
+    Quic,
+}
+
+impl Ja4Transport {
+    fn marker(self) -> char {
+        match self {
+            Ja4Transport::Tcp => 't',
+            Ja4Transport::Quic => 'q',
+        }
+    }
+}
+
 /// JA3 + JA4 fingerprints extracted from a TLS ClientHello.
 pub struct TlsFingerprints {
     /// JA3 fingerprint: MD5 hex of `"ver,ciphers,exts,curves,ecpf"`.
     pub ja3: String,
-    /// JA4 fingerprint: `ja4_a_ja4_b_ja4_c` (FoxIO spec, TCP `t` prefix).
-    /// Shape: `t<ver><sni><nc><ne><alpn>_<12-hex>_<12-hex>`  (2 underscores).
+    /// JA4 fingerprint: `ja4_a_ja4_b_ja4_c` (FoxIO spec).
+    /// Shape: `<t|q><ver><sni><nc><ne><alpn>_<12-hex>_<12-hex>`  (2 underscores).
+    /// The first character is `t` for TCP and `q` for QUIC (FoxIO spec protocol letter).
     /// Reference: <https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md>
     pub ja4: String,
     /// Server Name Indication extracted from the ClientHello (if present).
@@ -96,12 +113,18 @@ fn is_grease(v: u16) -> bool {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-/// Parse a TLS ClientHello record and compute its JA3 + JA4 fingerprints (TLS-over-TCP).
+/// Parse a TLS ClientHello record and compute its JA3 + JA4 fingerprints.
+///
+/// `transport` sets the JA4 protocol letter: `t` for TCP, `q` for QUIC (FoxIO spec).
+/// JA3 is transport-agnostic and is identical for both transports.
 ///
 /// Returns `None` if `payload` is not a parseable ClientHello (wrong content type, truncated,
 /// or structurally malformed). Bounded + panic-free: every offset is bounds-checked via
 /// `.get()` / `checked_add` (same style as `decode::sniff_tls_client_hello`).
-pub fn fingerprint_tls_client_hello(payload: &[u8]) -> Option<TlsFingerprints> {
+pub fn fingerprint_tls_client_hello(
+    payload: &[u8],
+    transport: Ja4Transport,
+) -> Option<TlsFingerprints> {
     // TLS record: content_type(1) version(2) length(2).
     if *payload.first()? != 22 {
         return None;
@@ -193,6 +216,7 @@ pub fn fingerprint_tls_client_hello(payload: &[u8]) -> Option<TlsFingerprints> {
 
     let ja3 = compute_ja3(legacy_ver, &ciphers, &ext_types, &curves, &ec_point_formats);
     let ja4 = compute_ja4(
+        transport,
         legacy_ver,
         &supported_versions,
         &ciphers,
@@ -236,12 +260,13 @@ fn compute_ja3(ver: u16, ciphers: &[u16], exts: &[u16], curves: &[u16], ecpf: &[
 
 // ── JA4 builder ───────────────────────────────────────────────────────────────
 
-/// Build the JA4 fingerprint per the FoxIO spec (TCP `t` prefix only).
+/// Build the JA4 fingerprint per the FoxIO spec.
 ///
 /// # Canonical shape
-/// `t<ver><sni><nc><ne><alpn>_<sha256_12(sorted ciphers)>_<sha256_12(sorted_exts_sigalgs)>`
+/// `<t|q><ver><sni><nc><ne><alpn>_<sha256_12(sorted ciphers)>_<sha256_12(sorted_exts_sigalgs)>`
 ///
 /// That is **two underscores** and **three components** (`ja4_a`, `ja4_b`, `ja4_c`).
+/// The first character of `ja4_a` is `t` for TCP and `q` for QUIC (FoxIO spec).
 ///
 /// `ja4_c` is the first 12 characters of SHA-256 over
 /// `"<sorted-ext-hex>,…_<sig-alg-hex>,…"` (extensions sorted ascending excluding
@@ -249,7 +274,9 @@ fn compute_ja3(ver: u16, ciphers: &[u16], exts: &[u16], curves: &[u16], ecpf: &[
 ///
 /// Reference: <https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md>
 /// Canonical cross-check example: `t13d1516h2_8daaf6152771_e5627efa2ab1`
+#[allow(clippy::too_many_arguments)]
 fn compute_ja4(
+    transport: Ja4Transport,
     legacy_ver: u16,
     supported_versions: &[u16],
     ciphers: &[u16],
@@ -290,7 +317,10 @@ fn compute_ja4(
         }
         _ => "00".to_string(),
     };
-    let ja4_a = format!("t{ver_code}{sni_flag}{nc:02}{ne:02}{alpn}");
+    let ja4_a = format!(
+        "{}{ver_code}{sni_flag}{nc:02}{ne:02}{alpn}",
+        transport.marker()
+    );
 
     // ── ja4_b ─────────────────────────────────────────────────────────────────
     // SHA-256[:12] of sorted cipher suite values, 4-hex lowercase, comma-joined.
@@ -548,7 +578,7 @@ mod ch_tests {
                 (0x000b, vec![1, 0]),                           // ec_point_formats: len1, [0]
             ],
         );
-        let fp = fingerprint_tls_client_hello(&ch).expect("client hello");
+        let fp = fingerprint_tls_client_hello(&ch, Ja4Transport::Tcp).expect("client hello");
         // Recompute the expected JA3 string by hand (GREASE removed):
         //   version=771, ciphers=49195-49199, exts=0-10-11, curves=29-23, ec_point_formats=0
         let expected = "771,49195-49199,0-10-11,29-23,0";
@@ -572,7 +602,7 @@ mod ch_tests {
                 u16list_ext(0x000d, &[0x0403, 0x0804]), // signature_algorithms (2-byte prefix)
             ],
         );
-        let fp = fingerprint_tls_client_hello(&ch).unwrap();
+        let fp = fingerprint_tls_client_hello(&ch, Ja4Transport::Tcp).unwrap();
         let parts: Vec<&str> = fp.ja4.split('_').collect();
         assert_eq!(parts.len(), 3);
         // ja4_a: t (TCP) + 13 (supported_versions 0x0304) + d (SNI present) + 02 ciphers + 04 exts + h2 alpn
@@ -605,7 +635,7 @@ mod ch_tests {
                 u16list_ext(0x000a, &[0x001d, 0x0017]), // 0x000a — included in ja4_c
             ],
         );
-        let fp = fingerprint_tls_client_hello(&ch).expect("valid client hello");
+        let fp = fingerprint_tls_client_hello(&ch, Ja4Transport::Tcp).expect("valid client hello");
         let parts: Vec<&str> = fp.ja4.split('_').collect();
         assert_eq!(
             parts.len(),
@@ -631,6 +661,30 @@ mod ch_tests {
 
     #[test]
     fn truncated_client_hello_is_none() {
-        assert!(fingerprint_tls_client_hello(&[22, 3, 1, 0, 5, 1, 0, 0]).is_none());
+        assert!(
+            fingerprint_tls_client_hello(&[22, 3, 1, 0, 5, 1, 0, 0], Ja4Transport::Tcp).is_none()
+        );
+    }
+
+    #[test]
+    fn ja4_quic_marker_differs_only_in_protocol_letter() {
+        // Reuse the same fixture as ja4_parts_are_self_consistent.
+        let ch = client_hello(
+            0x0303,
+            &[0xc030, 0xc02b],
+            &[
+                supported_versions_ext(&[0x0304]),
+                sni_ext("a.test"),
+                alpn_ext("h2"),
+                u16list_ext(0x000d, &[0x0403, 0x0804]),
+            ],
+        );
+        let t = fingerprint_tls_client_hello(&ch, Ja4Transport::Tcp).expect("tcp");
+        let q = fingerprint_tls_client_hello(&ch, Ja4Transport::Quic).expect("quic");
+        assert!(t.ja4.starts_with('t') && q.ja4.starts_with('q'));
+        // identical apart from the leading letter:
+        assert_eq!(&t.ja4[1..], &q.ja4[1..]);
+        // JA3 is transport-agnostic:
+        assert_eq!(t.ja3, q.ja3);
     }
 }

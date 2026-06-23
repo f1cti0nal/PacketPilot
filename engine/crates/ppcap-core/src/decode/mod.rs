@@ -413,7 +413,10 @@ pub fn l7_hint(
 ) -> Option<L7Hint> {
     // TLS ClientHello (typically TCP/443 but detected structurally, so port-agnostic).
     if transport == Transport::Tcp {
-        if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(payload) {
+        if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(
+            payload,
+            crate::fingerprint::Ja4Transport::Tcp,
+        ) {
             return Some(L7Hint::Tls {
                 sni: fp.sni,
                 ja3: Some(fp.ja3),
@@ -450,7 +453,10 @@ pub fn l7_hint(
             record.extend_from_slice(&[0x03, 0x03]); // record version TLS 1.2
             record.extend_from_slice(&(ch.len() as u16).to_be_bytes());
             record.extend_from_slice(&ch);
-            if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(&record) {
+            if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(
+                &record,
+                crate::fingerprint::Ja4Transport::Quic,
+            ) {
                 return Some(L7Hint::Tls {
                     sni: fp.sni,
                     ja3: Some(fp.ja3),
@@ -1559,6 +1565,13 @@ mod tests {
         let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
         assert_eq!(m.app_proto, AppProto::Tls);
         assert_eq!(m.sni.as_deref(), Some("decode.example"));
+        // TCP TLS JA4 must start with 't'.
+        if let Some(ref ja4) = m.ja4 {
+            assert!(
+                ja4.starts_with('t'),
+                "TCP TLS JA4 must start with 't', got: {ja4}"
+            );
+        }
     }
 
     #[test]
@@ -1739,6 +1752,12 @@ mod tests {
         assert!(
             m.ja4.is_some(),
             "JA4 must be set for QUIC Initial ClientHello"
+        );
+        // JA4 must start with 'q' for QUIC (FoxIO spec protocol letter).
+        assert!(
+            m.ja4.as_deref().unwrap().starts_with('q'),
+            "QUIC JA4 must start with 'q', got: {:?}",
+            m.ja4
         );
     }
 
