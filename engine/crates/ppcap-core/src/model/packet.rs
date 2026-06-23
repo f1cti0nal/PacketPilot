@@ -238,6 +238,10 @@ pub struct PacketMeta {
     /// TLS SNI host, allocated ONLY for a recognized ClientHello carrying server_name;
     /// `None` otherwise. The sole per-packet heap allocation, rare by construction.
     pub sni: Option<String>,
+    /// TLS JA3 fingerprint of a ClientHello on this packet; `None` otherwise. Derived flag.
+    pub ja3: Option<String>,
+    /// TLS JA4 fingerprint of a ClientHello on this packet; `None` otherwise. Derived flag.
+    pub ja4: Option<String>,
     /// First DNS question name, allocated only for a DNS packet with a parseable QNAME; `None`
     /// otherwise. Transient (folded into per-resolver stats, then dropped) — used for DNS
     /// tunneling / DGA detection.

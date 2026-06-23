@@ -60,6 +60,8 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         vlan: None,
         app_proto: AppProto::Unknown,
         sni: None,
+        ja3: None,
+        ja4: None,
         dns_qname: None,
         cleartext_cred: None,
         pii: None,
@@ -170,9 +172,11 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                     meta.dns_qname = qname;
                 }
                 L7Hint::Http { .. } => meta.app_proto = AppProto::Http, // method token dropped
-                L7Hint::Tls { sni } => {
+                L7Hint::Tls { sni, ja3, ja4 } => {
                     meta.app_proto = AppProto::Tls;
                     meta.sni = sni; // Some only when ClientHello carried server_name
+                    meta.ja3 = ja3;
+                    meta.ja4 = ja4;
                 }
             }
         }
@@ -340,7 +344,11 @@ pub enum L7Hint {
     /// An HTTP request with the sniffed method (e.g. `GET`, `POST`).
     Http { method: String },
     /// A TLS ClientHello; `sni` is the Server Name Indication host if present.
-    Tls { sni: Option<String> },
+    Tls {
+        sni: Option<String>,
+        ja3: Option<String>,
+        ja4: Option<String>,
+    },
 }
 
 /// True if either endpoint is the well-known DNS port (53).
@@ -405,11 +413,26 @@ pub fn l7_hint(
 ) -> Option<L7Hint> {
     // TLS ClientHello (typically TCP/443 but detected structurally, so port-agnostic).
     if transport == Transport::Tcp {
+        if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(payload) {
+            return Some(L7Hint::Tls {
+                sni: fp.sni,
+                ja3: Some(fp.ja3),
+                ja4: Some(fp.ja4),
+            });
+        }
         if let Some(sni) = sniff_tls_client_hello(payload) {
-            return Some(L7Hint::Tls { sni });
+            return Some(L7Hint::Tls {
+                sni,
+                ja3: None,
+                ja4: None,
+            });
         }
         if looks_like_tls_client_hello(payload) {
-            return Some(L7Hint::Tls { sni: None });
+            return Some(L7Hint::Tls {
+                sni: None,
+                ja3: None,
+                ja4: None,
+            });
         }
         if let Some(method) = sniff_http_method(payload) {
             return Some(L7Hint::Http { method });
@@ -836,6 +859,8 @@ mod tests {
             vlan: None,
             app_proto: AppProto::Unknown,
             sni: None,
+            ja3: None,
+            ja4: None,
             dns_qname: None,
             cleartext_cred: None,
             pii: None,
@@ -1460,7 +1485,7 @@ mod tests {
         let payload = build_client_hello(Some("example.com"));
         assert_eq!(sniff_tls_sni(&payload), Some("example.com".to_string()));
         match l7_hint(Transport::Tcp, 50000, 443, &payload) {
-            Some(L7Hint::Tls { sni }) => assert_eq!(sni, Some("example.com".to_string())),
+            Some(L7Hint::Tls { sni, .. }) => assert_eq!(sni, Some("example.com".to_string())),
             other => panic!("expected TLS hint, got {other:?}"),
         }
     }

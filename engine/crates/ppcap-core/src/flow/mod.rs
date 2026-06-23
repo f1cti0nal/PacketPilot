@@ -437,6 +437,8 @@ mod tests {
             vlan: None,
             app_proto: crate::model::packet::AppProto::Unknown,
             sni: None,
+            ja3: None,
+            ja4: None,
             dns_qname: None,
             cleartext_cred: None,
             pii: None,

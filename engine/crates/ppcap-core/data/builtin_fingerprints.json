@@ -1,0 +1,30 @@
+{
+  "_source": "Curated from public JA3/JA4 malware fingerprint lists. JA3 entries sourced from abuse.ch SSLBL (https://sslbl.abuse.ch/blacklist/ja3_fingerprints.csv, accessed 2025-Q4). JA4 entries from FoxIO JA4+ Database (https://github.com/FoxIO-LLC/ja4, Apache-2.0). Sentinel entry (all-zeros) is for deterministic testing only.",
+  "entries": [
+    {
+      "ja3":   "00000000000000000000000000000000",
+      "label": "test-sig",
+      "_note": "Sentinel: deterministic test entry; never appears in real traffic."
+    },
+    {
+      "ja3":   "e7d705a3286e19ea42f587b344ee6865",
+      "label": "Trickbot",
+      "_note": "Trickbot C2 TLS fingerprint. Source: abuse.ch SSLBL."
+    },
+    {
+      "ja3":   "6734f37431670b3ab4292b8f60f29984",
+      "label": "Cobalt-Strike",
+      "_note": "Cobalt Strike beacon default TLS fingerprint. Source: abuse.ch SSLBL."
+    },
+    {
+      "ja3":   "eb1d94daa7e0344597e756a1fb6e7054",
+      "label": "AsyncRAT",
+      "_note": "AsyncRAT default client TLS fingerprint. Source: abuse.ch SSLBL."
+    },
+    {
+      "ja4":   "t13d1516h2_8daaf6152771_e5627efa2ab1",
+      "label": "Sliver-C2",
+      "_note": "Sliver C2 framework default TLS fingerprint. Source: FoxIO JA4+ database."
+    }
+  ]
+}

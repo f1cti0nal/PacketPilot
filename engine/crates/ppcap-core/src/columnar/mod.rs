@@ -101,6 +101,8 @@ struct Builders {
     category: StringBuilder,
     app_proto_src: StringBuilder,
     sni: StringBuilder,
+    ja3: StringBuilder,
+    ja4: StringBuilder,
     severity: StringBuilder,
     threat_score: UInt16Builder,
     ioc: BooleanBuilder,
@@ -128,6 +130,8 @@ impl Builders {
             category: StringBuilder::new(),
             app_proto_src: StringBuilder::new(),
             sni: StringBuilder::new(),
+            ja3: StringBuilder::new(),
+            ja4: StringBuilder::new(),
             severity: StringBuilder::new(),
             threat_score: UInt16Builder::new(),
             ioc: BooleanBuilder::new(),
@@ -160,6 +164,8 @@ impl Builders {
             Arc::new(self.category.finish()),
             Arc::new(self.app_proto_src.finish()),
             Arc::new(self.sni.finish()),
+            Arc::new(self.ja3.finish()),
+            Arc::new(self.ja4.finish()),
             Arc::new(self.severity.finish()),
             Arc::new(self.threat_score.finish()),
             Arc::new(self.ioc.finish()),
@@ -289,6 +295,15 @@ impl FlowParquetWriter {
         match &rec.sni {
             Some(h) if !h.is_empty() => b.sni.append_value(h),
             _ => b.sni.append_null(),
+        }
+        // ja3/ja4: present only for observed TLS fingerprints; NULL otherwise.
+        match &rec.ja3 {
+            Some(v) if !v.is_empty() => b.ja3.append_value(v),
+            _ => b.ja3.append_null(),
+        }
+        match &rec.ja4 {
+            Some(v) if !v.is_empty() => b.ja4.append_value(v),
+            _ => b.ja4.append_null(),
         }
         // Phase-2 verdict columns (never NULL).
         b.severity.append_value(rec.severity.as_str());
@@ -446,6 +461,8 @@ mod tests {
             b.category.append_value("web");
             b.app_proto_src.append_null();
             b.sni.append_null();
+            b.ja3.append_null();
+            b.ja4.append_null();
             b.severity.append_value("info");
             b.threat_score.append_value(0);
             b.ioc.append_value(false);
@@ -453,7 +470,7 @@ mod tests {
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 22);
+        assert_eq!(batch.num_columns(), 24);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }

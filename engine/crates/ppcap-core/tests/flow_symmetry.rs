@@ -100,6 +100,8 @@ fn observe_folds_fwd_and_rev() {
         vlan: None,
         app_proto: ppcap_core::model::packet::AppProto::Unknown,
         sni: None,
+        ja3: None,
+        ja4: None,
         dns_qname: None,
         cleartext_cred: None,
         pii: None,

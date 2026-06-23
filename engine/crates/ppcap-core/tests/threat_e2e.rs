@@ -76,7 +76,7 @@ fn threat_enrichment_end_to_end_with_sample_feed() {
         "a known synthetic IOC IP is flagged"
     );
 
-    // ---- Parquet read-back: verdict columns at 19/20/21 -------------------------------
+    // ---- Parquet read-back: verdict columns at 21/22/23 (sni=18, ja3=19, ja4=20) ---------
     let file = std::fs::File::open(&parquet_path).unwrap();
     let reader = ParquetRecordBatchReaderBuilder::try_new(file)
         .unwrap()
@@ -93,17 +93,17 @@ fn threat_enrichment_end_to_end_with_sample_feed() {
             .downcast_ref::<StringArray>()
             .unwrap();
         let severity = batch
-            .column(19)
+            .column(21)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
         let score = batch
-            .column(20)
+            .column(22)
             .as_any()
             .downcast_ref::<UInt16Array>()
             .unwrap();
         let ioc = batch
-            .column(21)
+            .column(23)
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap();

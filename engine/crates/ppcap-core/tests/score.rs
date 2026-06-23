@@ -47,7 +47,7 @@ fn ioc_forces_high() {
         &rec(Category::Web),
         &FeedMatch {
             domain: true,
-            ip: false,
+            ..Default::default()
         },
     );
     assert_eq!(s.severity, Severity::High);
@@ -73,7 +73,7 @@ fn ioc_plus_c2_forces_critical() {
         &r,
         &FeedMatch {
             ip: true,
-            domain: false,
+            ..Default::default()
         },
     );
     assert_eq!(s.severity, Severity::Critical);
@@ -122,6 +122,7 @@ fn score_never_exceeds_100() {
         &FeedMatch {
             ip: true,
             domain: true,
+            ..Default::default()
         },
     );
     assert!(s.score <= 100);

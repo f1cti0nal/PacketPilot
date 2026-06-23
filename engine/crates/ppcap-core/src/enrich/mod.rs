@@ -8,7 +8,7 @@
 //! pipeline — real providers need a key + network and would return nothing on the synthetic
 //! RFC1918/RFC5737 corpus, so they are intentionally omitted.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 
@@ -150,6 +150,52 @@ pub struct ThreatFeedFile {
     pub bad_suffixes: Vec<String>,
     #[serde(default)]
     pub bad_ja3: Vec<String>,
+    #[serde(default)]
+    pub bad_ja4: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------------------
+// Embedded builtin fingerprint set (JA3/JA4 → family label).
+// Merged into every ThreatFeed so WASM/Tauri/CLI match with no user feed.
+// ---------------------------------------------------------------------------------------
+
+const BUILTIN: &str = include_str!("../../data/builtin_fingerprints.json");
+
+#[derive(serde::Deserialize)]
+struct BuiltinFile {
+    entries: Vec<BuiltinEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct BuiltinEntry {
+    #[serde(default)]
+    ja3: Option<String>,
+    #[serde(default)]
+    ja4: Option<String>,
+    label: String,
+}
+
+/// Seed a `(ja3, ja4, labels)` triple from the embedded builtin fingerprint set.
+/// Panics at compile-time if the embedded JSON is malformed (programmer error).
+fn builtin_seed() -> (HashSet<String>, HashSet<String>, HashMap<String, String>) {
+    let file: BuiltinFile =
+        serde_json::from_str(BUILTIN).expect("builtin_fingerprints.json must be valid JSON");
+    let mut ja3 = HashSet::new();
+    let mut ja4 = HashSet::new();
+    let mut labels: HashMap<String, String> = HashMap::new();
+    for e in file.entries {
+        if let Some(h) = e.ja3 {
+            let h = h.to_ascii_lowercase();
+            labels.entry(h.clone()).or_insert_with(|| e.label.clone());
+            ja3.insert(h);
+        }
+        if let Some(h) = e.ja4 {
+            let h = h.to_ascii_lowercase();
+            labels.entry(h.clone()).or_insert_with(|| e.label.clone());
+            ja4.insert(h);
+        }
+    }
+    (ja3, ja4, labels)
 }
 
 /// A parsed CIDR network (family + prefix length).
@@ -210,21 +256,27 @@ pub struct ThreatFeed {
     label: String,
     ips: HashSet<IpAddr>,
     cidrs: Vec<Cidr>,
-    domains: HashSet<String>, // lowercased, trailing-dot stripped
-    suffixes: Vec<String>,    // lowercased, leading '.'
-    ja3: HashSet<String>,     // lowercased
+    domains: HashSet<String>,        // lowercased, trailing-dot stripped
+    suffixes: Vec<String>,           // lowercased, leading '.'
+    ja3: HashSet<String>,            // lowercased
+    ja4: HashSet<String>,            // lowercased
+    labels: HashMap<String, String>, // fingerprint (lowercased) → family label
 }
 
 impl ThreatFeed {
-    /// An empty feed (matches nothing). Used when no `--threat-feed` is supplied.
+    /// An empty feed seeded with the embedded builtin fingerprint set.
+    /// Used when no `--threat-feed` is supplied; builtins still match.
     pub fn empty() -> ThreatFeed {
+        let (ja3, ja4, labels) = builtin_seed();
         ThreatFeed {
             label: String::new(),
             ips: HashSet::new(),
             cidrs: Vec::new(),
             domains: HashSet::new(),
             suffixes: Vec::new(),
-            ja3: HashSet::new(),
+            ja3,
+            ja4,
+            labels,
         }
     }
 
@@ -253,6 +305,7 @@ impl ThreatFeed {
     }
 
     /// Build a feed from an already-parsed [`ThreatFeedFile`], validating every indicator.
+    /// The embedded builtin fingerprint set is merged in first; user entries are additive.
     pub fn from_file(f: ThreatFeedFile) -> Result<ThreatFeed> {
         let mut ips = HashSet::new();
         for s in &f.bad_ips {
@@ -286,11 +339,15 @@ impl ThreatFeed {
             suffixes.push(s);
         }
 
-        let ja3 = f
-            .bad_ja3
-            .iter()
-            .map(|j| j.trim().to_ascii_lowercase())
-            .collect();
+        // Seed from builtins first, then add user entries.
+        let (mut ja3, mut ja4, labels) = builtin_seed();
+
+        for j in &f.bad_ja3 {
+            ja3.insert(j.trim().to_ascii_lowercase());
+        }
+        for j in &f.bad_ja4 {
+            ja4.insert(j.trim().to_ascii_lowercase());
+        }
 
         Ok(ThreatFeed {
             label: f.label,
@@ -299,16 +356,19 @@ impl ThreatFeed {
             domains,
             suffixes,
             ja3,
+            ja4,
+            labels,
         })
     }
 
-    /// True when the feed contains no indicators at all.
+    /// True when the feed contains no indicators at all (including builtins).
     pub fn is_empty(&self) -> bool {
         self.ips.is_empty()
             && self.cidrs.is_empty()
             && self.domains.is_empty()
             && self.suffixes.is_empty()
             && self.ja3.is_empty()
+            && self.ja4.is_empty()
     }
 
     /// The feed's free-text label (provenance).
@@ -336,6 +396,27 @@ impl ThreatFeed {
     /// Exact JA3 (case-insensitive) match.
     pub fn matches_ja3(&self, ja3: &str) -> bool {
         self.ja3.contains(&ja3.to_ascii_lowercase())
+    }
+
+    /// Exact JA4 (case-insensitive) match.
+    pub fn matches_ja4(&self, ja4: &str) -> bool {
+        self.ja4.contains(&ja4.to_ascii_lowercase())
+    }
+
+    /// Return the family label for a matched JA3 or JA4 fingerprint, if any.
+    /// JA3 is checked first; falls back to JA4.
+    pub fn fingerprint_label(&self, ja3: Option<&str>, ja4: Option<&str>) -> Option<String> {
+        if let Some(j) = ja3 {
+            if let Some(l) = self.labels.get(&j.to_ascii_lowercase()) {
+                return Some(l.clone());
+            }
+        }
+        if let Some(j) = ja4 {
+            if let Some(l) = self.labels.get(&j.to_ascii_lowercase()) {
+                return Some(l.clone());
+            }
+        }
+        None
     }
 }
 
@@ -447,8 +528,12 @@ pub struct FlowEnrichment {
     pub hi_class: IpClass,
     pub ip_ioc: bool,
     pub domain_ioc: bool,
-    /// Reserved; always false in Phase 2 (no JA3 on `FlowRecord` yet).
+    /// True when the flow's JA3 fingerprint is on the threat feed.
     pub ja3_ioc: bool,
+    /// True when the flow's JA4 fingerprint is on the threat feed.
+    pub ja4_ioc: bool,
+    /// Family label of the matched fingerprint (e.g. `"Cobalt-Strike"`), if any.
+    pub fingerprint_label: Option<String>,
     /// Human-readable matched indicators, e.g. `["ip 10.0.5.10", "sni auth.bank.example"]`.
     pub ioc_labels: Vec<String>,
 }
@@ -456,7 +541,7 @@ pub struct FlowEnrichment {
 impl FlowEnrichment {
     /// Whether any IOC matched this flow.
     pub fn any_ioc(&self) -> bool {
-        self.ip_ioc || self.domain_ioc || self.ja3_ioc
+        self.ip_ioc || self.domain_ioc || self.ja3_ioc || self.ja4_ioc
     }
 }
 
@@ -465,12 +550,14 @@ impl FlowEnrichment {
 pub struct FeedMatch {
     pub ip: bool,
     pub domain: bool,
+    /// True when the flow's JA3 or JA4 fingerprint is on the threat feed.
+    pub fingerprint: bool,
 }
 
 impl FeedMatch {
-    /// Whether either an IP or a domain indicator matched.
+    /// Whether any IOC dimension (IP, domain, or TLS fingerprint) matched.
     pub fn any(self) -> bool {
-        self.ip || self.domain
+        self.ip || self.domain || self.fingerprint
     }
 }
 
@@ -522,6 +609,24 @@ impl Enricher {
                 e.ioc_labels.push(format!("sni {h}"));
             }
         }
+        if let Some(j) = &rec.ja3 {
+            if self.feed.matches_ja3(j) {
+                e.ja3_ioc = true;
+            }
+        }
+        if let Some(j) = &rec.ja4 {
+            if self.feed.matches_ja4(j) {
+                e.ja4_ioc = true;
+            }
+        }
+        if e.ja3_ioc || e.ja4_ioc {
+            let label = self
+                .feed
+                .fingerprint_label(rec.ja3.as_deref(), rec.ja4.as_deref())
+                .unwrap_or_else(|| "tls fingerprint".to_string());
+            e.fingerprint_label = Some(label.clone());
+            e.ioc_labels.push(format!("tls fingerprint {label}"));
+        }
         e
     }
 
@@ -530,6 +635,7 @@ impl Enricher {
         FeedMatch {
             ip: e.ip_ioc,
             domain: e.domain_ioc,
+            fingerprint: e.ja3_ioc || e.ja4_ioc,
         }
     }
 }
@@ -584,6 +690,7 @@ mod tests {
             bad_domains: vec!["auth.bank.example".into()],
             bad_suffixes: vec![".evil.example".into()],
             bad_ja3: vec![],
+            bad_ja4: vec![],
         })
         .unwrap()
     }
@@ -616,6 +723,7 @@ mod tests {
             bad_domains: vec![],
             bad_suffixes: vec![],
             bad_ja3: vec![],
+            bad_ja4: vec![],
         })
         .unwrap();
         assert!(g.matches_ip(ip("1.2.3.4")));
@@ -644,5 +752,28 @@ mod tests {
         assert!(attack_for(Category::Web).is_none());
         assert!(attack_for(Category::Dns).is_none());
         assert!(attack_for(Category::Unknown).is_none());
+    }
+
+    #[test]
+    fn builtin_fingerprints_match_without_user_feed() {
+        let feed = ThreatFeed::empty(); // now includes the embedded set
+                                        // The embedded set ships at least one entry; assert the mechanism via a known builtin.
+                                        // (Use a value you add to builtin_fingerprints.json with label "test-sig".)
+        assert!(feed.matches_ja3("00000000000000000000000000000000")); // sentinel builtin
+        assert_eq!(
+            feed.fingerprint_label(Some("00000000000000000000000000000000"), None)
+                .as_deref(),
+            Some("test-sig")
+        );
+    }
+
+    #[test]
+    fn user_feed_augments_ja4() {
+        let f = ThreatFeed::from_file(ThreatFeedFile {
+            bad_ja4: vec!["t13d1516h2_8daaf6152771_e5627efa2ab1".into()],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(f.matches_ja4("t13d1516h2_8daaf6152771_e5627efa2ab1"));
     }
 }

@@ -107,6 +107,9 @@ fn write_then_read_flow_parquet() {
     // NULL so the read-back exercises both the value and the NULL path.
     flows[0].app_proto_src = Some("payload");
     flows[0].sni = Some("api.example".to_string());
+    // Row 0 also carries JA3/JA4 fingerprints; rows 1 and 2 leave both NULL.
+    flows[0].ja3 = Some("769,49195,0,29,0".to_string());
+    flows[0].ja4 = Some("t13d0204h2_aaaaaaaaaaaa_bbbbbbbbbbbb".to_string());
     // Vary the Phase-2 verdict columns per row, including an ioc=false / Info row so both
     // boolean states and a distinct severity token round-trip.
     flows[0].severity = Severity::Critical;
@@ -176,11 +179,14 @@ fn write_then_read_flow_parquet() {
     let mut pkts: Vec<u64> = Vec::new();
     let mut app_proto_srcs: Vec<Option<String>> = Vec::new();
     let mut snis: Vec<Option<String>> = Vec::new();
+    let mut ja3s: Vec<Option<String>> = Vec::new();
+    let mut ja4s: Vec<Option<String>> = Vec::new();
     let mut severities: Vec<String> = Vec::new();
     let mut threat_scores: Vec<u16> = Vec::new();
     let mut iocs: Vec<bool> = Vec::new();
     for batch in reader {
         let batch = batch.unwrap();
+        assert_eq!(batch.schema().fields().len(), 24);
         total_rows += batch.num_rows();
 
         let src = batch
@@ -208,18 +214,31 @@ fn write_then_read_flow_parquet() {
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
+        // ja3 at column 19, ja4 at column 20 (inserted after sni).
+        let ja3 = batch
+            .column_by_name("ja3")
+            .expect("ja3 column present")
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let ja4 = batch
+            .column_by_name("ja4")
+            .expect("ja4 column present")
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         let sev = batch
-            .column(19)
+            .column(21)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
         let ts = batch
-            .column(20)
+            .column(22)
             .as_any()
             .downcast_ref::<UInt16Array>()
             .unwrap();
         let ioc = batch
-            .column(21)
+            .column(23)
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap();
@@ -240,6 +259,16 @@ fn write_then_read_flow_parquet() {
                 None
             } else {
                 Some(sni.value(i).to_string())
+            });
+            ja3s.push(if ja3.is_null(i) {
+                None
+            } else {
+                Some(ja3.value(i).to_string())
+            });
+            ja4s.push(if ja4.is_null(i) {
+                None
+            } else {
+                Some(ja4.value(i).to_string())
             });
             severities.push(sev.value(i).to_string());
             threat_scores.push(ts.value(i));
@@ -266,6 +295,16 @@ fn write_then_read_flow_parquet() {
     assert_eq!(snis[0].as_deref(), Some("api.example"));
     assert_eq!(snis[1], None);
     assert_eq!(snis[2], None);
+    // JA3/JA4 fingerprints: present on row 0, NULL on rows 1 and 2.
+    assert_eq!(ja3s[0].as_deref(), Some("769,49195,0,29,0"));
+    assert_eq!(ja3s[1], None);
+    assert_eq!(ja3s[2], None);
+    assert_eq!(
+        ja4s[0].as_deref(),
+        Some("t13d0204h2_aaaaaaaaaaaa_bbbbbbbbbbbb")
+    );
+    assert_eq!(ja4s[1], None);
+    assert_eq!(ja4s[2], None);
     // Phase-2 verdict columns round-trip: lowercase severity token, u16 score, bool ioc
     // (both boolean states exercised).
     assert_eq!(severities[0], "critical");
