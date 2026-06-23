@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm } = vi.hoisted(() => ({
+const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm, renderReportWasm } = vi.hoisted(() => ({
   invoke: vi.fn(),
   save: vi.fn(),
   isTauri: vi.fn(),
@@ -9,15 +9,16 @@ const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, ex
   exportMispWasm: vi.fn(),
   exportCefWasm: vi.fn(),
   applyRulesWasm: vi.fn(),
+  renderReportWasm: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save, open: vi.fn() }));
 vi.mock("./tauri-detect", () => ({ isTauri }));
-vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm }));
+vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm, renderReportWasm }));
 vi.mock("./data", () => ({ loadFlows: vi.fn() }));
 
-import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef, applyRules } from "./platform";
+import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef, applyRules, exportReport } from "./platform";
 import type { AnalysisOutput, ActiveSource } from "../types";
 
 const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknown as AnalysisOutput;
@@ -186,6 +187,31 @@ describe("platform structured export", () => {
     isTauri.mockReturnValue(false);
     exportCefWasm.mockRejectedValue(new Error("cef boom"));
     const r = await exportCef(summary);
+    expect(r.ok).toBe(false);
+  });
+
+  // ── exportReport (browser) ───────────────────────────────────────────────────
+
+  it("exportReport (browser) downloads the rendered HTML report", async () => {
+    isTauri.mockReturnValue(false);
+    renderReportWasm.mockResolvedValue("<!doctype html><html>…report…</html>");
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fake"), revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const r = await exportReport(summary);
+    expect(renderReportWasm).toHaveBeenCalledWith(
+      JSON.stringify(summary),
+      expect.any(Number),
+      undefined,
+    );
+    expect(click).toHaveBeenCalled();
+    expect(r).toEqual({ ok: true, message: "Downloaded" });
+    click.mockRestore();
+  });
+
+  it("exportReport (browser) returns ok:false when the render rejects", async () => {
+    isTauri.mockReturnValue(false);
+    renderReportWasm.mockRejectedValue(new Error("boom"));
+    const r = await exportReport(summary);
     expect(r.ok).toBe(false);
   });
 });

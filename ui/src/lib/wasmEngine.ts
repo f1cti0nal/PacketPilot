@@ -18,6 +18,7 @@ import initWasm, {
   export_misp as wasmExportMisp,
   export_cef as wasmExportCef,
   carve_pcap as wasmCarvePcap,
+  render_report as wasmRenderReport,
 } from "../wasm/ppcap_wasm.js";
 
 export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): Promise<WireFlowPackets> {
@@ -156,4 +157,14 @@ export async function exportMispWasm(outputJson: string, generatedUnixSecs: numb
 export async function exportCefWasm(outputJson: string): Promise<string> {
   await ensureWasm();
   return wasmExportCef(outputJson);
+}
+
+/**
+ * Render the full HTML report via WASM (browser path).
+ * `generatedUnixSecs` is the report creation timestamp.
+ * wasm-bindgen maps Rust `i64` → JS `bigint`, so we wrap with BigInt().
+ */
+export async function renderReportWasm(outputJson: string, generatedUnixSecs: number, aiSummary?: string): Promise<string> {
+  await ensureWasm();
+  return wasmRenderReport(outputJson, BigInt(generatedUnixSecs), aiSummary ?? undefined) as string;
 }

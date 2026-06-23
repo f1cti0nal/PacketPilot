@@ -4,7 +4,7 @@ import type { ActiveSource, AnalysisOutput, FlowRow, WireFlowPackets } from "../
 import { loadFlows } from "./data";
 import { isTauri } from "./tauri-detect";
 export { isTauri } from "./tauri-detect";
-import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm } from "./wasmEngine";
+import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm, renderReportWasm } from "./wasmEngine";
 export type { RuleApplyResult } from "./wasmEngine";
 
 interface AnalyzeDto {
@@ -73,21 +73,14 @@ export async function exportReport(
     return { ok: true, message: "Report saved" };
   }
 
-  // Browser fallback: download the summary as pretty JSON via a temporary anchor.
-  const json = JSON.stringify(summary, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+  // Browser: render the full HTML report via WASM (parity with the desktop save_report).
   try {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "packetpilot-summary.json";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } finally {
-    URL.revokeObjectURL(url);
+    const html = await renderReportWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000), aiSummary);
+    downloadText(html, `${captureBase(summary)}-report.html`, "text/html");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Report export failed" };
   }
-  return { ok: true, message: "Downloaded" };
 }
 
 // ── Structured export: CSV / STIX ────────────────────────────────────────────
