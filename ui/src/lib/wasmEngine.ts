@@ -14,6 +14,7 @@ import initWasm, {
   apply_domain_reputation as wasmApplyDomainReputation,
   export_csv as wasmExportCsv,
   export_stix as wasmExportStix,
+  carve_pcap as wasmCarvePcap,
 } from "../wasm/ppcap_wasm.js";
 
 export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): Promise<WireFlowPackets> {
@@ -92,6 +93,12 @@ export async function applyDomainReputationWasm(
   await ensureWasm();
   const updated = wasmApplyDomainReputation(outputJson, JSON.stringify(verdicts)) as string;
   return JSON.parse(updated) as AnalysisOutput;
+}
+
+/** Carve a sub-pcap in the browser. Returns the raw pcap bytes for the matching frames. */
+export async function carvePcapViaWasm(bytes: ArrayBuffer, query: object): Promise<Uint8Array> {
+  await ensureWasm();
+  return wasmCarvePcap(new Uint8Array(bytes), JSON.stringify(query)) as Uint8Array;
 }
 
 /** Export findings as CSV via WASM (browser path). */
