@@ -249,7 +249,9 @@ impl Summary {
     /// `StatsAccumulator::apply_findings` invariant used during the streaming pass). Only IPs
     /// already present in `ip_threats` are touched — no new rows are created.
     pub fn apply_findings(&mut self, findings: &[Finding]) {
-        const MAX_EVIDENCE: usize = 16;
+        // Matches the streaming pass's default `max_evidence_per_ip` so the rules pass cannot
+        // push a card past the cap the streaming-built cards were held to.
+        const MAX_EVIDENCE: usize = 6;
         for f in findings {
             for ip_str in std::iter::once(f.src_ip.as_str()).chain(f.dst_ip.as_deref()) {
                 let Some(card) = self.ip_threats.iter_mut().find(|c| c.ip == ip_str) else {
@@ -302,6 +304,69 @@ mod tests {
             "flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#;
         let row: IpThreat = serde_json::from_str(json).unwrap();
         assert!(row.reputation.is_empty());
+    }
+
+    #[test]
+    fn apply_findings_uplifts_endpoints_raise_only() {
+        use crate::model::finding::{Finding, FindingKind};
+        use crate::model::severity::Severity;
+
+        // Two cards: a low one (uplift target) + an already-critical one (must not be lowered).
+        let low: IpThreat = serde_json::from_str(
+            r#"{"ip":"203.0.113.7","ip_class":"public","severity":"low","score":20,
+                "flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#,
+        )
+        .unwrap();
+        let crit: IpThreat = serde_json::from_str(
+            r#"{"ip":"198.51.100.9","ip_class":"public","severity":"critical","score":95,
+                "flows":5,"bytes":2000,"ioc":true,"tags":["public"],"attack":["T1041"],"evidence":[]}"#,
+        )
+        .unwrap();
+
+        let mut s = crate::model::output::AnalysisOutput::default().summary;
+        s.ip_threats = vec![low, crit];
+
+        let f = Finding {
+            kind: FindingKind::RuleMatch,
+            severity: Severity::High,
+            score: 70,
+            title: "sig hit".into(),
+            src_ip: "203.0.113.7".into(),
+            dst_ip: Some("198.51.100.9".into()),
+            dst_port: Some(443),
+            attack: vec!["T1071".into()],
+            evidence: vec!["rule sid:5".into()],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        };
+        s.apply_findings(std::slice::from_ref(&f));
+
+        // src card (low) uplifted to High/70 with the rule's evidence + ATT&CK.
+        let src = s.ip_threats.iter().find(|c| c.ip == "203.0.113.7").unwrap();
+        assert_eq!(src.severity, Severity::High);
+        assert_eq!(src.score, 70);
+        assert!(src.attack.contains(&"T1071".to_string()));
+        assert!(src.evidence.iter().any(|e| e.contains("sid:5")));
+
+        // dst card (critical) is NOT lowered to High; it merges the ATT&CK id only.
+        let dst = s
+            .ip_threats
+            .iter()
+            .find(|c| c.ip == "198.51.100.9")
+            .unwrap();
+        assert_eq!(dst.severity, Severity::Critical);
+        assert_eq!(dst.score, 95);
+        assert!(dst.attack.contains(&"T1071".to_string()));
+
+        // No new rows created for an IP absent from ip_threats.
+        let g = Finding {
+            src_ip: "10.0.0.1".into(),
+            dst_ip: None,
+            ..f.clone()
+        };
+        s.apply_findings(std::slice::from_ref(&g));
+        assert_eq!(s.ip_threats.len(), 2);
     }
 
     #[test]
