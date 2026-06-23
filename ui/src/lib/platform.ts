@@ -4,7 +4,7 @@ import type { AnalysisOutput, FlowRow, WireFlowPackets } from "../types";
 import { loadFlows } from "./data";
 import { isTauri } from "./tauri-detect";
 export { isTauri } from "./tauri-detect";
-import { exportCsvWasm, exportStixWasm } from "./wasmEngine";
+import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm } from "./wasmEngine";
 
 interface AnalyzeDto {
   summary: AnalysisOutput;
@@ -197,6 +197,68 @@ export async function copyStix(summary: AnalysisOutput): Promise<ExportResult> {
       ? await invoke<string>("export_stix", { summary })
       : await exportStixWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
     return copyText(stix);
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
+}
+
+export async function exportMisp(summary: AnalysisOutput): Promise<ExportResult> {
+  const name = `${captureBase(summary)}-misp.json`;
+  if (isTauri()) {
+    const path = await save({ defaultPath: name, filters: [{ name: "MISP event", extensions: ["json"] }] });
+    if (!path) return { ok: false, message: "" };
+    try {
+      await invoke("save_misp", { summary, path });
+      return { ok: true, message: "MISP event saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
+  }
+  try {
+    downloadText(await exportMispWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000)), name, "application/json");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
+}
+
+export async function exportCef(summary: AnalysisOutput): Promise<ExportResult> {
+  const name = `${captureBase(summary)}-cef.txt`;
+  if (isTauri()) {
+    const path = await save({ defaultPath: name, filters: [{ name: "CEF", extensions: ["txt", "cef"] }] });
+    if (!path) return { ok: false, message: "" };
+    try {
+      await invoke("save_cef", { summary, path });
+      return { ok: true, message: "CEF saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
+  }
+  try {
+    downloadText(await exportCefWasm(JSON.stringify(summary)), name, "text/plain");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
+}
+
+export async function copyMisp(summary: AnalysisOutput): Promise<ExportResult> {
+  try {
+    const s = isTauri()
+      ? await invoke<string>("export_misp", { summary })
+      : await exportMispWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000));
+    return copyText(s);
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
+}
+
+export async function copyCef(summary: AnalysisOutput): Promise<ExportResult> {
+  try {
+    const s = isTauri()
+      ? await invoke<string>("export_cef", { summary })
+      : await exportCefWasm(JSON.stringify(summary));
+    return copyText(s);
   } catch (e) {
     return { ok: false, message: `Copy failed: ${e}` };
   }

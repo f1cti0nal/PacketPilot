@@ -36,8 +36,12 @@ import {
   exportReport,
   exportCsv,
   exportStix,
+  exportMisp,
+  exportCef,
   copyCsv,
   copyStix,
+  copyMisp,
+  copyCef,
 } from "./lib/platform";
 import { analyzeViaWasm, applyReputationWasm, applyDomainReputationWasm } from "./lib/wasmEngine";
 import { EmptyState } from "./components/state/EmptyState";
@@ -508,6 +512,22 @@ export function App() {
     if (summary.status !== "ready" || !summary.data) return undefined;
     return copyStix(summary.data);
   }, [summary]);
+  const handleExportMisp = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return exportMisp(summary.data);
+  }, [summary]);
+  const handleCopyMisp = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return copyMisp(summary.data);
+  }, [summary]);
+  const handleExportCef = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return exportCef(summary.data);
+  }, [summary]);
+  const handleCopyCef = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return copyCef(summary.data);
+  }, [summary]);
 
   const jumpToFlows = useCallback(
     (filter: { severity?: Severity; category?: string; ip?: string }) => {
@@ -542,6 +562,10 @@ export function App() {
       onExportStix={handleExportStix}
       onCopyCsv={handleCopyCsv}
       onCopyStix={handleCopyStix}
+      onExportMisp={handleExportMisp}
+      onCopyMisp={handleCopyMisp}
+      onExportCef={handleExportCef}
+      onCopyCef={handleCopyCef}
       threats={summary.status === "ready" ? summary.data?.summary.ip_threats ?? [] : []}
       activeIp={activeIp}
       onSelectThreat={openThreat}

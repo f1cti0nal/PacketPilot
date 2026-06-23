@@ -188,6 +188,160 @@ fn iso(secs: i64) -> String {
         .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string())
 }
 
+/// Escape a CEF extension value (CEF spec: backslash, pipe, equals, newline).
+fn cef_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('|', "\\|")
+        .replace('=', "\\=")
+        .replace('\n', "\\n")
+        .replace('\r', "")
+}
+
+/// CEF severity 0..=10 from the engine severity band.
+fn cef_severity(sev: crate::model::severity::Severity) -> u8 {
+    use crate::model::severity::Severity;
+    match sev {
+        Severity::Critical => 10,
+        Severity::High => 8,
+        Severity::Medium => 5,
+        Severity::Low => 3,
+        Severity::Info => 1,
+    }
+}
+
+/// MISP `threat_level_id` (1 High, 2 Medium, 3 Low, 4 Undefined) from the worst band present.
+fn misp_threat_level(sc: &crate::model::summary::SeverityCounts) -> &'static str {
+    if sc.critical > 0 || sc.high > 0 {
+        "1"
+    } else if sc.medium > 0 {
+        "2"
+    } else if sc.low > 0 {
+        "3"
+    } else {
+        "4"
+    }
+}
+
+/// Render the analysis as a MISP core-format Event JSON (flat Attributes). Deterministic;
+/// `generated_unix_secs` stamps the event date/timestamp.
+pub fn misp_event(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
+    use crate::enrich::RepStatus;
+    let date = iso(generated_unix_secs)
+        .split('T')
+        .next()
+        .unwrap_or("1970-01-01")
+        .to_string();
+    let base = out
+        .source_path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("capture");
+
+    let mut attrs: Vec<serde_json::Value> = Vec::new();
+    let mut techniques: BTreeSet<String> = BTreeSet::new();
+    let mut seen_ip: BTreeSet<String> = BTreeSet::new();
+
+    let attr = |type_: &str, value: &str, to_ids: bool, comment: &str| {
+        serde_json::json!({
+            "uuid": det_uuid(&format!("misp:attr:{type_}:{value}")),
+            "type": type_,
+            "category": "Network activity",
+            "value": value,
+            "to_ids": to_ids,
+            "comment": comment
+        })
+    };
+
+    for f in &out.summary.findings {
+        for a in &f.attack {
+            techniques.insert(a.clone());
+        }
+        if let Some(dst) = &f.dst_ip {
+            if seen_ip.insert(dst.clone()) {
+                attrs.push(attr("ip-dst", dst, true, &f.title));
+            }
+        }
+    }
+    for d in &out.summary.domain_threats {
+        let mal = d
+            .reputation
+            .iter()
+            .any(|r| r.status == RepStatus::Malicious);
+        attrs.push(attr("domain", &d.host, mal, ""));
+    }
+    let mut fps: BTreeMap<String, &crate::model::summary::FingerprintHit> = BTreeMap::new();
+    for t in &out.summary.ip_threats {
+        for fp in &t.fingerprints {
+            fps.entry(format!(
+                "{}|{}|{}",
+                fp.ja3.as_deref().unwrap_or(""),
+                fp.ja4.as_deref().unwrap_or(""),
+                fp.label
+            ))
+            .or_insert(fp);
+        }
+    }
+    for fp in fps.values() {
+        if let Some(j) = &fp.ja3 {
+            attrs.push(attr("ja3-fingerprint-md5", j, true, &fp.label));
+        }
+        if let Some(j) = &fp.ja4 {
+            attrs.push(attr("ja4", j, true, &fp.label));
+        }
+    }
+
+    let tags: Vec<serde_json::Value> = techniques
+        .iter()
+        .map(|t| serde_json::json!({ "name": format!("mitre-attack:{t}") }))
+        .collect();
+
+    let event = serde_json::json!({ "Event": {
+        "uuid": det_uuid(&format!("misp:event:{}:{generated_unix_secs}", out.source_path)),
+        "info": format!("PacketPilot analysis of {base} — {} findings", out.summary.findings.len()),
+        "date": date,
+        "threat_level_id": misp_threat_level(&out.summary.severity_counts),
+        "analysis": "2",
+        "published": false,
+        "timestamp": generated_unix_secs.to_string(),
+        "Attribute": attrs,
+        "Tag": tags
+    }});
+    serde_json::to_string_pretty(&event).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// Render the findings as CEF (one line per finding; ArcSight/syslog). Empty findings → "".
+pub fn cef_records(out: &AnalysisOutput) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for f in &out.summary.findings {
+        let mut ext = format!("src={}", cef_escape(&f.src_ip));
+        if let Some(d) = &f.dst_ip {
+            ext.push_str(&format!(" dst={}", cef_escape(d)));
+        }
+        if let Some(p) = f.dst_port {
+            ext.push_str(&format!(" dpt={p}"));
+        }
+        if !f.attack.is_empty() {
+            ext.push_str(&format!(
+                " cs1Label=ATT&CK cs1={}",
+                cef_escape(&f.attack.join(","))
+            ));
+        }
+        ext.push_str(&format!(" cn1Label=score cn1={}", f.score));
+        if !f.evidence.is_empty() {
+            ext.push_str(&format!(" msg={}", cef_escape(&f.evidence.join("; "))));
+        }
+        lines.push(format!(
+            "CEF:0|PacketPilot|PacketPilot|{}|{}|{}|{}|{}",
+            cef_escape(&out.engine_version),
+            cef_escape(f.kind.as_str()),
+            cef_escape(&f.title),
+            cef_severity(f.severity),
+            ext
+        ));
+    }
+    lines.join("\n")
+}
+
 /// Quote a CSV field iff it contains a comma, quote, CR, or LF (RFC 4180), doubling quotes.
 fn csv_field(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) {
@@ -353,6 +507,62 @@ mod tests {
         base
     }
 
+    /// A fixture with findings + an ip_threat (reused for MISP/CEF tests).
+    fn sample_output_with_findings() -> AnalysisOutput {
+        out_with(vec![
+            finding(
+                FindingKind::Beacon,
+                Severity::High,
+                Some("8.8.8.8"),
+                &["T1071"],
+            ),
+            finding(FindingKind::HostSweep, Severity::Medium, None, &["T1046"]),
+        ])
+    }
+
+    /// An empty-findings fixture (reused for MISP/CEF tests).
+    fn empty_output() -> AnalysisOutput {
+        out_with(vec![])
+    }
+
+    #[test]
+    fn misp_event_has_attributes_and_is_deterministic() {
+        let out = sample_output_with_findings();
+        let s = misp_event(&out, 1_700_000_000);
+        let v: serde_json::Value = serde_json::from_str(&s).expect("valid JSON");
+        assert_eq!(v["Event"]["analysis"], "2");
+        let attrs = v["Event"]["Attribute"].as_array().unwrap();
+        assert!(attrs.iter().any(|a| a["type"] == "ip-dst")); // an external dst IP from a finding
+                                                              // deterministic:
+        assert_eq!(s, misp_event(&out, 1_700_000_000));
+    }
+
+    #[test]
+    fn cef_records_one_escaped_line_per_finding() {
+        let out = sample_output_with_findings();
+        let s = cef_records(&out);
+        let lines: Vec<&str> = s.lines().collect();
+        assert_eq!(lines.len(), out.summary.findings.len());
+        assert!(lines
+            .iter()
+            .all(|l| l.starts_with("CEF:0|PacketPilot|PacketPilot|")));
+        // severity is a 0-10 int in the 7th pipe field
+        let f0 = &out.summary.findings[0];
+        assert!(lines[0].contains(&format!("|{}|", cef_severity(f0.severity))));
+    }
+
+    #[test]
+    fn cef_escape_escapes_specials() {
+        assert_eq!(cef_escape("a|b=c\\d"), "a\\|b\\=c\\\\d");
+    }
+
+    #[test]
+    fn empty_summary_exports_are_valid() {
+        let out = empty_output();
+        assert!(serde_json::from_str::<serde_json::Value>(&misp_event(&out, 0)).is_ok());
+        assert_eq!(cef_records(&out), "");
+    }
+
     #[test]
     fn stix_emits_ja3_fingerprint_indicator() {
         let mut out = out_with_ip_threat();
@@ -373,5 +583,43 @@ mod tests {
         );
         // deterministic: same input => same bundle
         assert_eq!(bundle, stix_bundle(&out, 1_700_000_000));
+    }
+
+    /// `misp_event` must emit a `ja3-fingerprint-md5` Attribute and a `ja4` Attribute when
+    /// `summary.ip_threats` contains a `FingerprintHit` with both hashes set.
+    #[test]
+    fn misp_event_emits_ja3_and_ja4_attributes() {
+        let mut out = out_with_ip_threat();
+        out.summary.ip_threats[0].fingerprints = vec![FingerprintHit {
+            ja3: Some("e7d705a3286e19ea42f587b344ee6865".into()),
+            ja4: Some("t13d1516h2_8daaf6152771_e5627efa2ab1".into()),
+            label: "CobaltStrike".into(),
+        }];
+        let s = misp_event(&out, 1_700_000_000);
+        let v: serde_json::Value = serde_json::from_str(&s).expect("valid JSON");
+        let attrs = v["Event"]["Attribute"].as_array().expect("Attribute array");
+
+        let ja3_attr = attrs
+            .iter()
+            .find(|a| a["type"] == "ja3-fingerprint-md5")
+            .expect("ja3-fingerprint-md5 attribute missing");
+        assert_eq!(
+            ja3_attr["value"], "e7d705a3286e19ea42f587b344ee6865",
+            "wrong JA3 value"
+        );
+        assert_eq!(ja3_attr["to_ids"], true, "JA3 attr should have to_ids=true");
+
+        let ja4_attr = attrs
+            .iter()
+            .find(|a| a["type"] == "ja4")
+            .expect("ja4 attribute missing");
+        assert_eq!(
+            ja4_attr["value"], "t13d1516h2_8daaf6152771_e5627efa2ab1",
+            "wrong JA4 value"
+        );
+        assert_eq!(ja4_attr["to_ids"], true, "JA4 attr should have to_ids=true");
+
+        // deterministic: same input => same event
+        assert_eq!(s, misp_event(&out, 1_700_000_000));
     }
 }
