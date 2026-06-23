@@ -64,6 +64,9 @@ pub enum Command {
         /// Requires at least one of ABUSEIPDB_API_KEY / GREYNOISE_API_KEY / VIRUSTOTAL_API_KEY.
         #[arg(long)]
         reputation: bool,
+        /// Apply a Suricata-style ruleset (content matches → findings).
+        #[arg(long)]
+        rules: Option<PathBuf>,
     },
     /// Generate a synthetic capture for testing.
     Gen {
@@ -131,6 +134,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             csv,
             stix,
             reputation,
+            rules,
         } => {
             // IMPL:
             //  - Build ppcap_core::PipelineConfig::default(), then set:
@@ -238,6 +242,27 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         ppcap_core::apply_domain_reputation(&mut out.summary, &domain_verdicts);
                     }
                 }
+            }
+
+            if let Some(rules_path) = rules {
+                let text = std::fs::read_to_string(&rules_path)
+                    .with_context(|| format!("reading rules file {}", rules_path.display()))?;
+                let parsed = ppcap_core::parse_rules(&text);
+                let rf = match std::fs::File::open(&input) {
+                    Ok(f) => {
+                        let len = std::fs::metadata(&input).ok().map(|m| m.len());
+                        ppcap_core::apply_rules(f, len, &parsed.rules)
+                    }
+                    Err(_) => Vec::new(),
+                };
+                out.summary.apply_findings(&rf);
+                out.summary.findings.extend(rf.iter().cloned());
+                eprintln!(
+                    "rules: {} loaded, {} skipped, {} matches",
+                    parsed.rules.len(),
+                    parsed.skipped.len(),
+                    rf.len()
+                );
             }
 
             let s = out.to_json_pretty()?;
@@ -381,6 +406,18 @@ mod reputation_cli_tests {
         let cli = Cli::try_parse_from(["ppcap", "analyze", "x.pcap"]).unwrap();
         match cli.command {
             Command::Analyze { reputation, .. } => assert!(!reputation),
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn rules_flag_parses() {
+        let cli =
+            Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--rules", "r.rules"]).unwrap();
+        match cli.command {
+            Command::Analyze { rules, .. } => {
+                assert_eq!(rules.as_deref(), Some(std::path::Path::new("r.rules")))
+            }
             _ => panic!("expected Analyze"),
         }
     }

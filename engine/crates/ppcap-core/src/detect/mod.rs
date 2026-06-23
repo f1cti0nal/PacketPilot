@@ -13,6 +13,8 @@
 //! themselves — keeps detection within the engine's bounded-memory contract regardless of how
 //! many contacts a flow makes.
 
+pub mod rules;
+
 /// Streaming mean/variance over a stream of `i64` samples using Welford's online algorithm.
 ///
 /// Memory is O(1): the individual samples are never retained, only five fixed-size running
@@ -1578,6 +1580,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::Beacon => 4,          // command-and-control
         FindingKind::DataExfil => 5,       // exfiltration
         FindingKind::DnsTunnel => 5,       // exfiltration / C2 over DNS
+        FindingKind::RuleMatch => 4,       // imported signature — treat as C2-stage by default
     }
 }
 
@@ -1592,6 +1595,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::Beacon => "Command & Control",
         FindingKind::DataExfil => "Exfiltration",
         FindingKind::DnsTunnel => "Exfiltration",
+        FindingKind::RuleMatch => "Signature Match",
     }
 }
 
@@ -1606,6 +1610,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::Beacon => "beaconed to a C2",
         FindingKind::DataExfil => "exfiltrated data",
         FindingKind::DnsTunnel => "tunneled data over DNS",
+        FindingKind::RuleMatch => "triggered a signature rule",
     }
 }
 
