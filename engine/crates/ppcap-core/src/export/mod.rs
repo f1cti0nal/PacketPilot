@@ -584,4 +584,42 @@ mod tests {
         // deterministic: same input => same bundle
         assert_eq!(bundle, stix_bundle(&out, 1_700_000_000));
     }
+
+    /// `misp_event` must emit a `ja3-fingerprint-md5` Attribute and a `ja4` Attribute when
+    /// `summary.ip_threats` contains a `FingerprintHit` with both hashes set.
+    #[test]
+    fn misp_event_emits_ja3_and_ja4_attributes() {
+        let mut out = out_with_ip_threat();
+        out.summary.ip_threats[0].fingerprints = vec![FingerprintHit {
+            ja3: Some("e7d705a3286e19ea42f587b344ee6865".into()),
+            ja4: Some("t13d1516h2_8daaf6152771_e5627efa2ab1".into()),
+            label: "CobaltStrike".into(),
+        }];
+        let s = misp_event(&out, 1_700_000_000);
+        let v: serde_json::Value = serde_json::from_str(&s).expect("valid JSON");
+        let attrs = v["Event"]["Attribute"].as_array().expect("Attribute array");
+
+        let ja3_attr = attrs
+            .iter()
+            .find(|a| a["type"] == "ja3-fingerprint-md5")
+            .expect("ja3-fingerprint-md5 attribute missing");
+        assert_eq!(
+            ja3_attr["value"], "e7d705a3286e19ea42f587b344ee6865",
+            "wrong JA3 value"
+        );
+        assert_eq!(ja3_attr["to_ids"], true, "JA3 attr should have to_ids=true");
+
+        let ja4_attr = attrs
+            .iter()
+            .find(|a| a["type"] == "ja4")
+            .expect("ja4 attribute missing");
+        assert_eq!(
+            ja4_attr["value"], "t13d1516h2_8daaf6152771_e5627efa2ab1",
+            "wrong JA4 value"
+        );
+        assert_eq!(ja4_attr["to_ids"], true, "JA4 attr should have to_ids=true");
+
+        // deterministic: same input => same event
+        assert_eq!(s, misp_event(&out, 1_700_000_000));
+    }
 }
