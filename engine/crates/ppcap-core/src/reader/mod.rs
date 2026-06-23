@@ -9,8 +9,8 @@
 //!
 //! ## Responsibilities
 //! - Sniff the first bytes to pick the container (classic pcap LE/BE, ns-magic pcapng).
-//! - Detect a `.gz`-wrapped capture and reject it with a clear error (un-gzip support is
-//!   pending a pure-Rust inflate backend — see the NOTE TO INTEGRATOR in `gzip.rs`).
+//! - Detect a `.gz`-wrapped capture and transparently inflate it via the pure-Rust
+//!   `flate2` backend (no C compiler needed), then re-sniff the decompressed stream.
 //! - Normalize per-packet timestamps to `i64` ns and expose the link type.
 //!
 //! ## Edge cases this layer must survive without panicking
@@ -217,8 +217,8 @@ fn peek4<R: std::io::Read>(mut reader: R) -> std::io::Result<([u8; 4], usize, Pr
 
 /// Open a capture file: sniff magic bytes and return the appropriate source. This is the
 /// only place that decides container type; everything downstream keeps the bounded refill
-/// buffer and never reads the whole file. Gzip-wrapped inputs are currently rejected with a
-/// clear error (see [`open_reader`]).
+/// buffer and never reads the whole file. Gzip-wrapped inputs are transparently inflated
+/// (see [`open_reader`]).
 pub fn open(path: &std::path::Path) -> Result<Box<dyn PacketSource>> {
     let file = std::fs::File::open(path)
         .map_err(|e| PpError::io(format!("open {}", path.display()), e))?;
@@ -228,13 +228,27 @@ pub fn open(path: &std::path::Path) -> Result<Box<dyn PacketSource>> {
 
 /// Open a capture from an arbitrary reader (used by tests and `open`).
 ///
-/// Sniffs the leading magic and dispatches to the classic-pcap or pcapng source; a gzip
-/// member is detected and rejected with a clear error pending an inflate backend. Constructs
+/// Sniffs the leading magic and dispatches to the appropriate container reader. Gzip-wrapped
+/// inputs are transparently inflated using the pure-Rust `flate2` backend (no C compiler
+/// needed) and then re-sniffed so a `.pcap.gz` or `.pcapng.gz` file works seamlessly.
+/// Nested gzip (gzip-inside-gzip) is rejected with a clear error. Constructs
 /// `pcap-parser`'s bounded reader directly so the 64 KiB refill buffer is the only large
 /// allocation regardless of capture size.
 pub fn open_reader<R: std::io::Read + 'static>(
     reader: R,
     size_hint: Option<u64>,
+) -> Result<Box<dyn PacketSource>> {
+    open_reader_depth(reader, size_hint, 0)
+}
+
+/// Internal implementation of [`open_reader`] that carries a recursion depth counter so
+/// nested gzip (gzip-inside-gzip) can be detected and rejected without unbounded recursion.
+/// `gzip_depth` is 0 on the first call and 1 after the first inflate step; any value ≥ 1
+/// entering the gzip arm is a nested-gzip error.
+fn open_reader_depth<R: std::io::Read + 'static>(
+    reader: R,
+    size_hint: Option<u64>,
+    gzip_depth: u8,
 ) -> Result<Box<dyn PacketSource>> {
     let (head, filled, prefixed) =
         peek4(reader).map_err(|e| PpError::io("sniff container magic", e))?;
@@ -251,16 +265,18 @@ pub fn open_reader<R: std::io::Read + 'static>(
 
     match Magic::sniff(&head) {
         Some(Magic::Gzip) => {
-            // gzip wrapper: no pure-Rust inflate backend is wired in yet (see the NOTE TO
-            // INTEGRATOR in reader/gzip.rs), so decompression would fail at the first read.
-            // Reject up front with a clear error rather than failing mid-stream once parsing
-            // has already started. `_ = prefixed;` keeps the sniffed bytes consumed.
-            let _ = prefixed;
-            Err(PpError::UnknownFormat(
-                "gzip-compressed captures are not yet supported (no pure-Rust inflate \
-                 backend is declared; see the NOTE TO INTEGRATOR in reader/gzip.rs)"
-                    .to_string(),
-            ))
+            if gzip_depth >= 1 {
+                return Err(PpError::UnknownFormat(
+                    "nested gzip is not supported".to_string(),
+                ));
+            }
+            // Inflate, then re-sniff the decompressed stream (a .pcap.gz unwraps to a
+            // pcap/pcapng). Box the inflated reader before recursing so the recursive call
+            // sees a concrete `Box<dyn Read>` rather than an ever-growing
+            // `GunzipReader<PrefixReader<GunzipReader<...>>>` monomorphization.
+            let inflated: Box<dyn std::io::Read + 'static> =
+                Box::new(gzip::GunzipReader::new(prefixed));
+            open_reader_depth(inflated, None, gzip_depth + 1)
         }
         Some(m @ (Magic::PcapLeUs | Magic::PcapBeUs | Magic::PcapLeNs | Magic::PcapBeNs)) => {
             let mut source = pcap::LegacyPcapSource::new(
@@ -294,7 +310,39 @@ pub(crate) mod pcapng;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::io::{Read, Write};
+
+    // ---------------------------------------------------------------------------
+    // Synthetic-pcap helpers shared by multiple tests
+    // ---------------------------------------------------------------------------
+
+    /// Build a minimal classic pcap with `n` frames (Ethernet, 14-byte payload each).
+    /// Returns the raw bytes of a valid, self-contained `.pcap` file.
+    fn make_pcap_bytes(n: usize) -> Vec<u8> {
+        use crate::gen::container::{write_legacy_record, write_pcap_header};
+        use crate::reader::LinkType;
+        let mut buf = Vec::new();
+        write_pcap_header(&mut buf, LinkType::Ethernet).unwrap();
+        let payload = [0u8; 14]; // minimal Ethernet frame stub
+        for i in 0..n {
+            let ts_ns = i as i64 * 1_000_000; // 1 ms apart
+            write_legacy_record(&mut buf, ts_ns, payload.len() as u32, payload.len() as u32)
+                .unwrap();
+            buf.extend_from_slice(&payload);
+        }
+        buf
+    }
+
+    /// Count the frames returned by `open_reader` on a raw byte slice.
+    fn count_frames(raw: &[u8]) -> u64 {
+        let mut src =
+            open_reader(std::io::Cursor::new(raw.to_vec()), Some(raw.len() as u64)).unwrap();
+        let mut n = 0u64;
+        while src.next_frame().unwrap().is_some() {
+            n += 1;
+        }
+        n
+    }
 
     #[test]
     fn linktype_roundtrips_known_dlts() {
@@ -441,5 +489,65 @@ mod tests {
         // No records: first frame is a clean EOF.
         let frame = src.next_frame().unwrap();
         assert!(frame.is_none());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Gzip transparency tests
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn open_reader_transparently_inflates_a_gzipped_pcap() {
+        let raw = make_pcap_bytes(3);
+        let n_raw = count_frames(&raw);
+        assert!(n_raw > 0, "synth pcap must have frames");
+
+        // Gzip the raw capture.
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(&raw).unwrap();
+        let gz = enc.finish().unwrap();
+
+        // open_reader must transparently inflate and yield the same frame count.
+        let mut src = open_reader(std::io::Cursor::new(gz.clone()), Some(gz.len() as u64)).unwrap();
+        let mut n_gz = 0u64;
+        while src.next_frame().unwrap().is_some() {
+            n_gz += 1;
+        }
+        assert_eq!(n_gz, n_raw);
+    }
+
+    #[test]
+    fn open_reader_rejects_nested_gzip() {
+        let raw = make_pcap_bytes(1);
+        let gz1 = {
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            e.write_all(&raw).unwrap();
+            e.finish().unwrap()
+        };
+        let gz2 = {
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            e.write_all(&gz1).unwrap();
+            e.finish().unwrap()
+        };
+        let err = open_reader(std::io::Cursor::new(gz2), None)
+            .err()
+            .expect("nested gzip must return an error");
+        assert!(
+            matches!(err, PpError::UnknownFormat(_)),
+            "expected UnknownFormat for nested gzip"
+        );
+    }
+
+    #[test]
+    fn open_reader_corrupt_gzip_errors_without_panic() {
+        // Valid gzip two-byte magic + garbage → inflate fails at read time → typed error, no panic.
+        let bad = vec![
+            0x1f, 0x8b, 0x08, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x01, 0x02,
+        ];
+        let res = (|| -> Result<()> {
+            let mut src = open_reader(std::io::Cursor::new(bad), None)?;
+            while src.next_frame()?.is_some() {}
+            Ok(())
+        })();
+        assert!(res.is_err(), "corrupt gzip must produce an error");
     }
 }
