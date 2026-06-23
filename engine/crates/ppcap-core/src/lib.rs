@@ -73,7 +73,10 @@ pub use model::summary::{
     CategoryCount, IpThreat, PortCount, ProtoCount, ProtoCounts, SeverityCounts, Summary,
     TimeBucket, TopTalker,
 };
-pub use packets::{extract_flow_packets, FlowPackets, PacketCaps, PacketQuery, PacketRecord};
+pub use packets::{
+    carve_pcap, extract_flow_packets, CarveQuery, CarveResult, CarveTarget, FlowPackets,
+    PacketCaps, PacketQuery, PacketRecord,
+};
 pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};
 
