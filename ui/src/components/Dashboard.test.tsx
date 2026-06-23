@@ -98,6 +98,54 @@ describe("Dashboard", () => {
   });
 });
 
+describe("Dashboard SignatureMatchesPanel", () => {
+  it("renders Signature matches header when a rule_match finding is present", () => {
+    const base = makeOutput();
+    const output = {
+      ...base,
+      summary: {
+        ...base.summary,
+        findings: [
+          ...(base.summary.findings ?? []),
+          {
+            kind: "rule_match" as const,
+            severity: "high" as const,
+            score: 80,
+            title: "ET MALWARE CobaltStrike Beacon",
+            src_ip: "10.13.37.7",
+            dst_ip: "45.77.13.37",
+            dst_port: 443,
+            attack: ["T1059"],
+            evidence: ["sid:2019401"],
+            interval_ns: null,
+            jitter_cv: null,
+            contacts: null,
+          },
+        ],
+      },
+    };
+    render(
+      <Dashboard
+        output={output}
+        selectedIncident={null}
+        onSelectIncident={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Signature matches")).toBeInTheDocument();
+  });
+
+  it("does not render Signature matches header when no rule_match findings", () => {
+    render(
+      <Dashboard
+        output={makeOutput()}
+        selectedIncident={null}
+        onSelectIncident={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Signature matches")).toBeNull();
+  });
+});
+
 describe("Dashboard host carve", () => {
   beforeEach(() => {
     vi.mocked(carveSubPcap).mockClear();

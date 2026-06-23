@@ -29,6 +29,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   lateral_movement: { label: "Lateral Movement", Icon: Network },
   data_exfil: { label: "Data Exfiltration", Icon: ArrowUpFromLine },
   dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
+  rule_match: { label: "Signature Match", Icon: Crosshair },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -40,6 +41,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   beacon: "Command & Control",
   dns_tunnel: "Command & Control",
   data_exfil: "Exfiltration",
+  rule_match: "Detection",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {

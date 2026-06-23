@@ -19,6 +19,7 @@ import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
 import { AiSummaryCard } from "../cockpit/AiSummaryCard";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
+import { SignatureMatchesPanel } from "./triage/SignatureMatchesPanel";
 
 /**
  * Navigation request raised from the dashboard when the analyst drills into a
@@ -162,6 +163,7 @@ export function Dashboard({
             <TopTalkersCard talkers={s.top_talkers} onSelect={openHost} />
           </div>
         </div>
+        <SignatureMatchesPanel findings={s.findings ?? []} />
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
       </div>
 

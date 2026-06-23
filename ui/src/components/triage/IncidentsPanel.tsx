@@ -3,6 +3,7 @@ import {
   Activity,
   ArrowUpFromLine,
   ChevronRight,
+  Crosshair,
   Globe,
   KeyRound,
   IdCard,
@@ -35,6 +36,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   lateral_movement: { label: "Lateral Movement", Icon: Network },
   data_exfil: { label: "Data Exfiltration", Icon: ArrowUpFromLine },
   dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
+  rule_match: { label: "Signature Match", Icon: Crosshair },
 };
 
 /** Worst-first ordering. */
