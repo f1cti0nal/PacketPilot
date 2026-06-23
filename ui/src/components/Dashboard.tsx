@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { Scissors } from "lucide-react";
 
-import type { AnalysisOutput, Incident, IpThreat, Severity } from "../types";
+import type { ActiveSource, AnalysisOutput, Incident, IpThreat, Severity } from "../types";
+import { carveSubPcap, packetsAvailable } from "../lib/packets";
 import { SEVERITY_ORDER } from "../lib/severity";
 import { humanBytes, humanNumber } from "../lib/format";
 
@@ -29,6 +31,9 @@ export interface DashboardDrilldown {
   ip?: string;
 }
 
+/** Carve window upper bound — above any real ns-since-epoch (~1.8e18), below i64::MAX (9.22e18). */
+const HOST_CARVE_END_NS = 9e18;
+
 export interface DashboardProps {
   /** The engine's AnalysisOutput (parsed from summary.json). */
   output: AnalysisOutput;
@@ -38,6 +43,8 @@ export interface DashboardProps {
   selectedIncident: Incident | null;
   /** Setter for the controlled flyout incident. */
   onSelectIncident: (incident: Incident | null) => void;
+  /** Active capture source — enables per-host pcap carve when retained (carve disabled without it). */
+  activeSource?: ActiveSource;
 }
 
 const worstFirst = (
@@ -51,7 +58,13 @@ const worstFirst = (
  * activity heatmap → category / integrity / protocol / talkers, with a right
  * detail flyout for any incident. Pure composition over `output`.
  */
-export function Dashboard({ output, onJumpToFlows, selectedIncident, onSelectIncident }: DashboardProps) {
+export function Dashboard({
+  output,
+  onJumpToFlows,
+  selectedIncident,
+  onSelectIncident,
+  activeSource,
+}: DashboardProps) {
   const s = output.summary;
 
   const incidents = useMemo(() => [...(s.incidents ?? [])].sort(worstFirst), [s.incidents]);
@@ -65,6 +78,21 @@ export function Dashboard({ output, onJumpToFlows, selectedIncident, onSelectInc
   };
   const toFlowsIp = (ip: string) => onJumpToFlows?.({ ip });
   const toFlowsCat = (category: string) => onJumpToFlows?.({ category });
+
+  // Per-host pcap carve — reuses the retained capture source (disabled when not retained).
+  const canCarve = packetsAvailable(activeSource ?? null);
+  const [carveNotice, setCarveNotice] = useState<string | null>(null);
+  const carveHost = useCallback(
+    async (ip: string) => {
+      const res = await carveSubPcap(
+        { host: ip, start_ns: 0, end_ns: HOST_CARVE_END_NS },
+        activeSource ?? null,
+        `${ip}-carve.pcap`,
+      );
+      if (res.message) setCarveNotice(res.message);
+    },
+    [activeSource],
+  );
 
   return (
     <div className="app-bg min-h-full">
@@ -99,7 +127,17 @@ export function Dashboard({ output, onJumpToFlows, selectedIncident, onSelectInc
         )}
 
         {/* Threat watchlist — the ranked scored hosts (the rail, as a card) */}
-        <ThreatWatchlist threats={s.ip_threats ?? []} onSelect={openHost} />
+        <ThreatWatchlist
+          threats={s.ip_threats ?? []}
+          onSelect={openHost}
+          onCarveHost={carveHost}
+          canCarve={canCarve}
+        />
+        {carveNotice && (
+          <p role="status" className="px-1 text-xs text-[var(--color-text-faint)]">
+            {carveNotice}
+          </p>
+        )}
 
         {/* Zone 3 — activity heatmap ribbon */}
         <ActivityHeatmap
@@ -135,9 +173,13 @@ export function Dashboard({ output, onJumpToFlows, selectedIncident, onSelectInc
 function ThreatWatchlist({
   threats,
   onSelect,
+  onCarveHost,
+  canCarve,
 }: {
   threats: IpThreat[];
   onSelect: (ip: string) => void;
+  onCarveHost?: (ip: string) => void;
+  canCarve?: boolean;
 }) {
   const top = useMemo(() => [...threats].sort(worstFirst).slice(0, 9), [threats]);
   if (top.length === 0) return null;
@@ -156,7 +198,7 @@ function ThreatWatchlist({
         {top.map((t) => {
           const color = sevColor(t.severity);
           return (
-            <li key={t.ip}>
+            <li key={t.ip} className="relative">
               <button
                 type="button"
                 onClick={() => onSelect(t.ip)}
@@ -184,6 +226,29 @@ function ThreatWatchlist({
                   ))}
                 </div>
               </button>
+              {onCarveHost && (
+                <button
+                  type="button"
+                  aria-label={`Carve ${t.ip} host packets`}
+                  title={
+                    canCarve
+                      ? "Carve this host's packets (.pcap)"
+                      : "Packets are only available for captures analyzed from a pcap"
+                  }
+                  disabled={!canCarve}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCarveHost(t.ip);
+                  }}
+                  className={`absolute bottom-1.5 right-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 transition-colors ${
+                    canCarve
+                      ? "text-[var(--color-text-faint)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-accent)]"
+                      : "cursor-not-allowed text-[var(--color-text-faint)] opacity-40"
+                  }`}
+                >
+                  <Scissors size={12} />
+                </button>
+              )}
             </li>
           );
         })}
