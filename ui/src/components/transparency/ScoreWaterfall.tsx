@@ -25,7 +25,9 @@ export function ScoreWaterfall({
       {/* Additive term rows */}
       {terms.map((t, i) => {
         const positive = t.points >= 0;
-        const color = positive ? "var(--color-critical)" : "var(--color-accent)";
+        // positive raises the threat (alarming = critical red); negative reduces it (accent).
+        // NB: the token is --color-sev-critical; bare --color-critical is undefined (renders invisible).
+        const color = positive ? "var(--color-sev-critical)" : "var(--color-accent)";
         const barWidth = `${(Math.abs(t.points) / maxAbs) * 100}%`;
         const signed = `${positive ? "+" : ""}${t.points}`;
         return (

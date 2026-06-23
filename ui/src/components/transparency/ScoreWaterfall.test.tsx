@@ -10,14 +10,18 @@ const evidence = [
 ];
 
 describe("ScoreWaterfall", () => {
-  it("renders a row per additive term, the final score, and the clamp note", () => {
+  it("renders a row per additive term, the authoritative final score, and the clamp note", () => {
     render(<ScoreWaterfall evidence={evidence} score={100} severity="critical" />);
     expect(screen.getByText("category c2")).toBeInTheDocument();
     expect(screen.getByText("ioc: endpoint ip on threat feed")).toBeInTheDocument();
-    expect(screen.getByText(/\+45/)).toBeInTheDocument();
+    // positive term raises the threat → colored with the *defined* critical token,
+    // not the undefined bare --color-critical (which would render invisible).
+    const plus = screen.getByText("+45");
+    expect(plus.getAttribute("style")).toContain("--color-sev-critical");
+    expect(plus.getAttribute("style")).not.toContain("--color-critical)");
     expect(screen.getByText(/-10|−10/)).toBeInTheDocument(); // ascii or unicode minus
-    expect(screen.getAllByText(/Score/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/100/).length).toBeGreaterThanOrEqual(1);
+    // the final row shows the authoritative score (score prop), not the sum of terms
+    expect(screen.getByText("100/100")).toBeInTheDocument();
     expect(screen.getByText(/clamp: raw 105/)).toBeInTheDocument();
   });
 
