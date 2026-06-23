@@ -30,6 +30,106 @@ struct QueryDto {
     end_ns: i64,
 }
 
+// ---------------------------------------------------------------------------
+// carve_pcap — slice/carve a subset of frames into a new pcap
+// ---------------------------------------------------------------------------
+
+/// JS-sent carve query. `host` set → Host target; else Flow (all 5-tuple fields required).
+#[derive(serde::Deserialize)]
+struct CarveQueryDto {
+    host: Option<String>,
+    src_ip: Option<String>,
+    dst_ip: Option<String>,
+    src_port: Option<u16>,
+    dst_port: Option<u16>,
+    proto: Option<u8>,
+    start_ns: i64,
+    end_ns: i64,
+}
+
+fn carve_query_from_dto(dto: CarveQueryDto) -> Result<ppcap_core::CarveQuery, String> {
+    let target = if let Some(h) = dto.host {
+        let ip: std::net::IpAddr = h.parse().map_err(|_| "bad host ip".to_string())?;
+        ppcap_core::CarveTarget::Host { ip }
+    } else {
+        let src_ip = dto
+            .src_ip
+            .ok_or("src_ip required for flow carve")?
+            .parse::<std::net::IpAddr>()
+            .map_err(|_| "bad src_ip".to_string())?;
+        let dst_ip = dto
+            .dst_ip
+            .ok_or("dst_ip required for flow carve")?
+            .parse::<std::net::IpAddr>()
+            .map_err(|_| "bad dst_ip".to_string())?;
+        let src_port = dto.src_port.ok_or("src_port required for flow carve")?;
+        let dst_port = dto.dst_port.ok_or("dst_port required for flow carve")?;
+        let proto = dto.proto.ok_or("proto required for flow carve")?;
+        ppcap_core::CarveTarget::Flow {
+            src_ip,
+            dst_ip,
+            src_port,
+            dst_port,
+            transport: ppcap_core::Transport::from_ip_proto(proto),
+        }
+    };
+    Ok(ppcap_core::CarveQuery {
+        target,
+        start_ns: dto.start_ns,
+        end_ns: dto.end_ns,
+    })
+}
+
+/// Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and carve out frames matching `query_json`
+/// (a `CarveQueryDto`). Returns raw pcap bytes (`Uint8Array` on the JS side), or rejects with
+/// an error string. The capture bytes never leave the device.
+#[wasm_bindgen]
+pub fn carve_pcap(bytes: &[u8], query_json: &str) -> Result<Vec<u8>, JsValue> {
+    let dto: CarveQueryDto =
+        serde_json::from_str(query_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let q = carve_query_from_dto(dto).map_err(|e| JsValue::from_str(&e))?;
+    let len = bytes.len() as u64;
+    let source = ppcap_core::reader::open_reader(Cursor::new(bytes.to_vec()), Some(len))
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let res = ppcap_core::carve_pcap(source, &q, &ppcap_core::PacketCaps::default())
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(res.pcap)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn carve_query_dto_maps_flow_and_host() {
+        let flow = carve_query_from_dto(CarveQueryDto {
+            host: None,
+            src_ip: Some("1.1.1.1".into()),
+            dst_ip: Some("2.2.2.2".into()),
+            src_port: Some(1),
+            dst_port: Some(2),
+            proto: Some(6),
+            start_ns: 0,
+            end_ns: 1,
+        })
+        .unwrap();
+        assert!(matches!(flow.target, ppcap_core::CarveTarget::Flow { .. }));
+
+        let host = carve_query_from_dto(CarveQueryDto {
+            host: Some("9.9.9.9".into()),
+            src_ip: None,
+            dst_ip: None,
+            src_port: None,
+            dst_port: None,
+            proto: None,
+            start_ns: 0,
+            end_ns: 1,
+        })
+        .unwrap();
+        assert!(matches!(host.target, ppcap_core::CarveTarget::Host { .. }));
+    }
+}
+
 /// JS-sent extraction caps (both optional; defaults to the engine's hard limits).
 #[derive(serde::Deserialize)]
 struct CapsDto {
@@ -145,8 +245,16 @@ impl FlowDto {
                 .as_ref()
                 .filter(|h| !h.is_empty())
                 .map(|h| h.to_string()),
-            ja3: rec.ja3.as_ref().filter(|v| !v.is_empty()).map(|v| v.to_string()),
-            ja4: rec.ja4.as_ref().filter(|v| !v.is_empty()).map(|v| v.to_string()),
+            ja3: rec
+                .ja3
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| v.to_string()),
+            ja4: rec
+                .ja4
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| v.to_string()),
             severity: rec.severity.as_str().to_string(),
             threat_score: rec.threat_score,
             ioc: rec.ioc,
