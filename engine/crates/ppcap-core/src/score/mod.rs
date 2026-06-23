@@ -39,7 +39,7 @@ const PTS_TUNNEL: i32 = 25;
 const PTS_MEDIUM_RISK_CAT: i32 = 10; // email / file_transfer / remote_access
 const PTS_BENIGN_CAT: i32 = 3; // web / dns / voip / iot_ot
 
-const PTS_IOC: i32 = 35; // per IOC dimension (ip, domain)
+const PTS_IOC: i32 = 35; // per IOC dimension (ip, domain, tls fingerprint)
 const PTS_EXTERNAL: i32 = 15;
 const PTS_ALL_INTERNAL: i32 = -10;
 const PTS_BEHAVIOR: i32 = 10;
@@ -109,6 +109,10 @@ pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
         acc += PTS_IOC;
         evidence.push("ioc: sni on threat feed (+35)".to_string());
     }
+    if fm.fingerprint {
+        acc += PTS_IOC;
+        evidence.push("ioc: tls fingerprint on threat feed (+35)".to_string());
+    }
 
     // --- Externality term --------------------------------------------------------------
     let lo_ext = classify_ip(rec.key.lo_ip).is_external();
@@ -176,6 +180,7 @@ pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::enrich::{Enricher, ThreatFeed};
     use crate::model::flow::{FlowKey, FlowRecord};
     use crate::model::packet::Transport;
     use std::net::{IpAddr, Ipv4Addr};
@@ -191,6 +196,46 @@ mod tests {
         let mut r = FlowRecord::new(key, 0);
         r.category = cat;
         r
+    }
+
+    /// Sentinel JA3 that is in the embedded builtin set (label "test-sig").
+    const SENTINEL_JA3: &str = "00000000000000000000000000000000";
+
+    #[test]
+    fn fingerprint_ioc_adds_35_once_and_floors_high() {
+        // Use Web category so the flow scores well below 60 pre-IOC (benign path):
+        // +3 (web) -10 (all-internal) = -7 → clamped to 0 → Info.
+        let mut rec = rec(Category::Web);
+        rec.ja3 = Some(SENTINEL_JA3.into());
+        // Set ja4 to the same sentinel — matches_ja4 won't find it (it's ja3-only in
+        // the builtin set) but both fields being set exercises the "ja3_ioc || ja4_ioc"
+        // gate in feed_match without producing a second fingerprint evidence line.
+        rec.ja4 = Some(SENTINEL_JA3.into());
+        let enr = Enricher::new(ThreatFeed::empty());
+        let e = enr.enrich(&rec);
+        assert!(
+            e.ja3_ioc || e.ja4_ioc,
+            "expected fingerprint IOC from sentinel JA3"
+        );
+        let fm = enr.feed_match(&e);
+        assert!(fm.fingerprint, "FeedMatch.fingerprint must be true");
+        let scored = score_flow(&rec, &fm);
+        assert!(
+            scored.severity.rank() >= Severity::High.rank(),
+            "fingerprint IOC must floor severity to High, got {:?}",
+            scored.severity
+        );
+        // +35 applied exactly once even though both ja3 and ja4 fields are set:
+        let fp_count = scored
+            .evidence
+            .iter()
+            .filter(|s| s.contains("tls fingerprint"))
+            .count();
+        assert_eq!(
+            fp_count, 1,
+            "expected exactly one tls fingerprint evidence line, got {fp_count}: {:?}",
+            scored.evidence
+        );
     }
 
     #[test]
@@ -282,6 +327,7 @@ mod tests {
             &FeedMatch {
                 ip: true,
                 domain: true,
+                ..Default::default()
             },
         );
         assert!(s.score <= 100);

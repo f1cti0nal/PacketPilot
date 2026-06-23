@@ -528,8 +528,12 @@ pub struct FlowEnrichment {
     pub hi_class: IpClass,
     pub ip_ioc: bool,
     pub domain_ioc: bool,
-    /// Reserved; always false in Phase 2 (no JA3 on `FlowRecord` yet).
+    /// True when the flow's JA3 fingerprint is on the threat feed.
     pub ja3_ioc: bool,
+    /// True when the flow's JA4 fingerprint is on the threat feed.
+    pub ja4_ioc: bool,
+    /// Family label of the matched fingerprint (e.g. `"Cobalt-Strike"`), if any.
+    pub fingerprint_label: Option<String>,
     /// Human-readable matched indicators, e.g. `["ip 10.0.5.10", "sni auth.bank.example"]`.
     pub ioc_labels: Vec<String>,
 }
@@ -537,7 +541,7 @@ pub struct FlowEnrichment {
 impl FlowEnrichment {
     /// Whether any IOC matched this flow.
     pub fn any_ioc(&self) -> bool {
-        self.ip_ioc || self.domain_ioc || self.ja3_ioc
+        self.ip_ioc || self.domain_ioc || self.ja3_ioc || self.ja4_ioc
     }
 }
 
@@ -546,12 +550,14 @@ impl FlowEnrichment {
 pub struct FeedMatch {
     pub ip: bool,
     pub domain: bool,
+    /// True when the flow's JA3 or JA4 fingerprint is on the threat feed.
+    pub fingerprint: bool,
 }
 
 impl FeedMatch {
-    /// Whether either an IP or a domain indicator matched.
+    /// Whether any IOC dimension (IP, domain, or TLS fingerprint) matched.
     pub fn any(self) -> bool {
-        self.ip || self.domain
+        self.ip || self.domain || self.fingerprint
     }
 }
 
@@ -603,6 +609,24 @@ impl Enricher {
                 e.ioc_labels.push(format!("sni {h}"));
             }
         }
+        if let Some(j) = &rec.ja3 {
+            if self.feed.matches_ja3(j) {
+                e.ja3_ioc = true;
+            }
+        }
+        if let Some(j) = &rec.ja4 {
+            if self.feed.matches_ja4(j) {
+                e.ja4_ioc = true;
+            }
+        }
+        if e.ja3_ioc || e.ja4_ioc {
+            let label = self
+                .feed
+                .fingerprint_label(rec.ja3.as_deref(), rec.ja4.as_deref())
+                .unwrap_or_else(|| "tls fingerprint".to_string());
+            e.fingerprint_label = Some(label.clone());
+            e.ioc_labels.push(format!("tls fingerprint {label}"));
+        }
         e
     }
 
@@ -611,6 +635,7 @@ impl Enricher {
         FeedMatch {
             ip: e.ip_ioc,
             domain: e.domain_ioc,
+            fingerprint: e.ja3_ioc || e.ja4_ioc,
         }
     }
 }
