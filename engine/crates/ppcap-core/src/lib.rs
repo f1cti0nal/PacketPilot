@@ -46,6 +46,7 @@ pub mod gen;
 pub mod metrics;
 pub mod model;
 pub mod packets;
+pub(crate) mod quic;
 pub mod reader;
 pub mod report;
 pub mod score;
