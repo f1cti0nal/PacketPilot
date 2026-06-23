@@ -514,8 +514,6 @@ fn hash_file_sha256(path: &Path) -> Result<String> {
 }
 
 /// One-shot SHA-256 hex of a byte slice (reuses the vendored streaming `Sha256`).
-// Task 2 removes this allow — sha256_hex is unused in prod until JA4 fingerprinting lands.
-#[allow(dead_code)]
 pub(crate) fn sha256_hex(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);
