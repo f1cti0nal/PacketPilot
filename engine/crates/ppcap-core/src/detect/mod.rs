@@ -1580,6 +1580,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::Beacon => 4,          // command-and-control
         FindingKind::DataExfil => 5,       // exfiltration
         FindingKind::DnsTunnel => 5,       // exfiltration / C2 over DNS
+        FindingKind::RuleMatch => 4,       // imported signature — treat as C2-stage by default
     }
 }
 
@@ -1594,6 +1595,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::Beacon => "Command & Control",
         FindingKind::DataExfil => "Exfiltration",
         FindingKind::DnsTunnel => "Exfiltration",
+        FindingKind::RuleMatch => "Signature Match",
     }
 }
 
@@ -1608,6 +1610,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::Beacon => "beaconed to a C2",
         FindingKind::DataExfil => "exfiltrated data",
         FindingKind::DnsTunnel => "tunneled data over DNS",
+        FindingKind::RuleMatch => "triggered a signature rule",
     }
 }
 

@@ -1,7 +1,9 @@
 // Suricata rule subset: types, parser, and content matcher.
 // Implements `parse_rules` (never panics, never errors — unsupported/malformed rules go to
 // `skipped`) and `Rule::matches` (proto + port + substring content check).
+// `apply_rules` is the single-pass pcap scanner that emits `Finding`s for matched rules.
 
+use crate::model::finding::{Finding, FindingKind};
 use crate::model::packet::Transport;
 use crate::model::severity::Severity;
 
@@ -507,6 +509,119 @@ fn salvage_sid(line: &str) -> Option<u32> {
 }
 
 // ---------------------------------------------------------------------------
+// apply_rules — single-pass pcap scanner
+// ---------------------------------------------------------------------------
+
+/// Maximum number of rule-match findings returned from a single `apply_rules` call.
+const MAX_RULE_FINDINGS: usize = 5000;
+
+/// Map a `Severity` to a representative score in its band (mirrors the bands used across detectors).
+///
+/// Bands: Info 0–14, Low 15–34, Medium 35–59, High 60–84, Critical 85–100.
+fn score_for_severity(sev: Severity) -> u16 {
+    match sev {
+        Severity::Info => 7,
+        Severity::Low => 25,
+        Severity::Medium => 47,
+        Severity::High => 70,
+        Severity::Critical => 90,
+    }
+}
+
+/// Stream `reader` once; for each matching `(rule, src_ip, dst_ip, dst_port)` tuple emit one
+/// [`Finding`] of kind [`FindingKind::RuleMatch`]. Duplicate hits on the same 4-tuple are
+/// deduped. Returns at most `MAX_RULE_FINDINGS` findings.
+///
+/// Never panics and never returns an error — individual frame decode failures are silently
+/// skipped, matching the contract of `extract_flow_packets` and `carve_pcap`.
+pub fn apply_rules<R: std::io::Read + 'static>(
+    reader: R,
+    len: Option<u64>,
+    rules: &[Rule],
+) -> Vec<Finding> {
+    use std::collections::HashSet;
+
+    let mut out: Vec<Finding> = Vec::new();
+    if rules.is_empty() {
+        return out;
+    }
+
+    let mut src = match crate::reader::open_reader(reader, len) {
+        Ok(s) => s,
+        Err(_) => return out,
+    };
+
+    // Dedup key: (sid, src_ip_string, dst_ip_string, dst_port)
+    let mut seen: HashSet<(u32, String, String, u16)> = HashSet::new();
+
+    loop {
+        let frame = match src.next_frame() {
+            Ok(Some(f)) => f,
+            Ok(None) => break,
+            Err(_) => break,
+        };
+
+        let meta = match crate::decode::decode_frame(&frame) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let payload: &[u8] = crate::decode::l4_payload(&frame)
+            .map(|x| x.payload)
+            .unwrap_or(&[]);
+        if payload.is_empty() {
+            continue;
+        }
+
+        let dport = meta.dst_port;
+
+        // Skip frames with no IP (ARP, non-IP); we need string keys for dedup + Finding.
+        let (src_str, dst_str) = match (meta.src_ip, meta.dst_ip) {
+            (Some(s), Some(d)) => (s.to_string(), d.to_string()),
+            _ => continue,
+        };
+
+        for r in rules {
+            if r.matches(meta.transport, dport, payload) {
+                let key = (r.sid, src_str.clone(), dst_str.clone(), dport);
+                if seen.insert(key) {
+                    out.push(rule_finding(r, &src_str, &dst_str, dport));
+                    if out.len() >= MAX_RULE_FINDINGS {
+                        return out;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Build a `Finding` for a single rule match.
+fn rule_finding(r: &Rule, src_ip: &str, dst_ip: &str, dport: u16) -> Finding {
+    Finding {
+        kind: FindingKind::RuleMatch,
+        severity: r.severity,
+        score: score_for_severity(r.severity),
+        title: if r.msg.is_empty() {
+            format!("sid:{}", r.sid)
+        } else {
+            r.msg.clone()
+        },
+        src_ip: src_ip.to_string(),
+        dst_ip: Some(dst_ip.to_string()),
+        dst_port: Some(dport),
+        attack: r.mitre.clone(),
+        evidence: vec![
+            format!("rule sid:{}", r.sid),
+            format!("matched content ({} bytes)", r.content.len()),
+        ],
+        interval_ns: None,
+        jitter_cv: None,
+        contacts: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests (RED → GREEN)
 // ---------------------------------------------------------------------------
 
@@ -644,5 +759,101 @@ mod tests {
         assert_eq!(p.skipped.len(), 0, "metadata options must not cause a skip");
         assert_eq!(p.rules.len(), 1);
         assert_eq!(p.rules[0].sid, 300);
+    }
+
+    // ── apply_rules: dedup + match ───────────────────────────────────────────
+
+    /// Build a minimal classic pcap with two TCP/443 data packets from the same flow,
+    /// both carrying a payload that contains "abc" (so dedup must collapse them to 1 finding).
+    fn crafted_tcp_pcap_with_abc() -> Vec<u8> {
+        use crate::gen::{container, frames};
+        use crate::reader::LinkType;
+        use std::io::Write as _;
+        use std::net::Ipv4Addr;
+
+        let client = Ipv4Addr::new(10, 0, 0, 1);
+        let server = Ipv4Addr::new(93, 184, 216, 34);
+
+        let mk = |src: Ipv4Addr,
+                  dst: Ipv4Addr,
+                  sp: u16,
+                  dp: u16,
+                  flags: u8,
+                  payload: &[u8],
+                  ts: i64,
+                  buf: &mut Vec<u8>| {
+            let tcp = frames::build_tcp(src, dst, sp, dp, flags, payload);
+            let ip = frames::build_ipv4(src, dst, 6, 64, tcp.len());
+            let eth = frames::build_ethernet([2; 6], [4; 6], 0x0800);
+            let frame: Vec<u8> = eth.into_iter().chain(ip).chain(tcp).collect();
+            container::write_legacy_record(buf, ts, frame.len() as u32, frame.len() as u32)
+                .unwrap();
+            buf.write_all(&frame).unwrap();
+        };
+
+        let mut buf = Vec::new();
+        container::write_pcap_header(&mut buf, LinkType::Ethernet).unwrap();
+        // Packet 1: payload "GET abc HTTP" — contains "abc"
+        mk(
+            client,
+            server,
+            1234,
+            443,
+            frames::TCP_PSH | frames::TCP_ACK,
+            b"GET abc HTTP",
+            1_000_000_000,
+            &mut buf,
+        );
+        // Packet 2: second packet from same flow, also contains "abc" → must be deduped
+        mk(
+            client,
+            server,
+            1234,
+            443,
+            frames::TCP_PSH | frames::TCP_ACK,
+            b"abc again",
+            1_000_000_100,
+            &mut buf,
+        );
+        buf
+    }
+
+    #[test]
+    fn apply_rules_emits_one_deduped_finding_per_flow() {
+        let pcap = crafted_tcp_pcap_with_abc();
+        let rules = parse_rules(
+            r#"alert tcp any any -> any 443 (msg:"hit"; content:"abc"; sid:77; metadata:mitre T1071;)"#,
+        )
+        .rules;
+        assert_eq!(rules.len(), 1, "rule must parse successfully");
+
+        let findings = apply_rules(
+            std::io::Cursor::new(pcap.clone()),
+            Some(pcap.len() as u64),
+            &rules,
+        );
+
+        // Two packets from the same flow both match, but dedup collapses them → exactly 1 finding.
+        assert_eq!(findings.len(), 1, "dedup must collapse same-flow hits to 1");
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::RuleMatch);
+        assert_eq!(f.title, "hit");
+        assert_eq!(f.attack, vec!["T1071".to_string()]);
+        assert!(
+            f.evidence.iter().any(|e| e.contains("77")),
+            "sid 77 must appear in evidence"
+        );
+
+        // No-match rule → empty.
+        let none = parse_rules(r#"alert tcp any any -> any 443 (content:"zzz"; sid:78;)"#).rules;
+        assert!(
+            apply_rules(
+                std::io::Cursor::new(pcap.clone()),
+                Some(pcap.len() as u64),
+                &none
+            )
+            .is_empty(),
+            "non-matching rule must produce no findings"
+        );
     }
 }

@@ -31,6 +31,8 @@ pub enum FindingKind {
     DataExfil,
     /// DNS tunneling / DGA: high-volume, high-entropy DNS queries (C2 / exfil over DNS).
     DnsTunnel,
+    /// User signature-rule match (imported Suricata-style ruleset).
+    RuleMatch,
 }
 
 impl FindingKind {
@@ -45,6 +47,7 @@ impl FindingKind {
             FindingKind::LateralMovement => "lateral_movement",
             FindingKind::DataExfil => "data_exfil",
             FindingKind::DnsTunnel => "dns_tunnel",
+            FindingKind::RuleMatch => "rule_match",
         }
     }
 }

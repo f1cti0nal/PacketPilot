@@ -419,6 +419,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::LateralMovement => "Lateral Movement",
         FindingKind::DataExfil => "Data Exfiltration",
         FindingKind::DnsTunnel => "DNS Tunnel",
+        FindingKind::RuleMatch => "Signature Match",
     }
 }
 
