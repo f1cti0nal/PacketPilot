@@ -274,6 +274,8 @@ fn compute_ja3(ver: u16, ciphers: &[u16], exts: &[u16], curves: &[u16], ecpf: &[
 ///
 /// Reference: <https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md>
 /// Canonical cross-check example: `t13d1516h2_8daaf6152771_e5627efa2ab1`
+// 8 args (transport added for JA4-Q): a private, single-use builder — a params struct
+// would add boilerplate without legibility, and all args are consumed building ja4_a.
 #[allow(clippy::too_many_arguments)]
 fn compute_ja4(
     transport: Ja4Transport,

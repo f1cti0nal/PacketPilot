@@ -1565,13 +1565,12 @@ mod tests {
         let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
         assert_eq!(m.app_proto, AppProto::Tls);
         assert_eq!(m.sni.as_deref(), Some("decode.example"));
-        // TCP TLS JA4 must start with 't'.
-        if let Some(ref ja4) = m.ja4 {
-            assert!(
-                ja4.starts_with('t'),
-                "TCP TLS JA4 must start with 't', got: {ja4}"
-            );
-        }
+        // TCP TLS JA4 must be present and start with 't' (mirrors the QUIC 'q' assertion).
+        let ja4 = m.ja4.as_deref().expect("TCP TLS JA4 present");
+        assert!(
+            ja4.starts_with('t'),
+            "TCP TLS JA4 must start with 't', got: {ja4}"
+        );
     }
 
     #[test]
