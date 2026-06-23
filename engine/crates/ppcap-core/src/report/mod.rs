@@ -155,6 +155,9 @@ pub fn render_html(
     // ---- Section 3: active incidents (the headline triage unit) ----------------------
     s.push_str(&incidents_html(&sum.incidents));
 
+    // ---- Section 3b: signature matches (imported Suricata-style rule hits) -----------
+    s.push_str(&signature_matches_html(&sum.findings));
+
     // ---- Section 3: severity distribution (inline SVG) -------------------------------
     s.push_str("<section class=\"card\"><h2>Severity distribution</h2>");
     s.push_str(&severity_svg(&sum.severity_counts));
@@ -438,6 +441,76 @@ fn finding_metrics(f: &Finding) -> String {
         parts.push(format!("{} contacts", group_thousands(c)));
     }
     parts.join(" · ")
+}
+
+/// Extract the rule SID from a finding's evidence strings (e.g. `"rule sid:1001 matched…"`).
+/// Defensive: scans each evidence bullet for `"sid:"` and returns the immediately following
+/// decimal digits. Returns `None` when no bullet matches; never panics.
+fn sid_of(f: &Finding) -> Option<&str> {
+    for e in &f.evidence {
+        if let Some(idx) = e.find("sid:") {
+            let rest = &e[idx + 4..];
+            let digits = rest.trim_start();
+            let end = digits
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(digits.len());
+            if end > 0 {
+                return Some(&digits[..end]);
+            }
+        }
+    }
+    None
+}
+
+/// "Signature matches" card section — the imported-rule (`RuleMatch`) findings.
+/// Returns `""` when no `RuleMatch` findings are present (omit-when-empty, so existing report
+/// tests are unaffected). Caps at 50 rows. Every capture-derived string is escaped via [`esc`].
+fn signature_matches_html(findings: &[Finding]) -> String {
+    let matches: Vec<&Finding> = findings
+        .iter()
+        .filter(|f| f.kind == FindingKind::RuleMatch)
+        .collect();
+    if matches.is_empty() {
+        return String::new();
+    }
+    let mut s = String::with_capacity(2048);
+    s.push_str(
+        "<section class=\"card\"><h2>Signature matches</h2>\
+         <table><thead><tr>\
+         <th>Rule</th><th>SID</th><th>Source \u{2192} Destination</th>\
+         <th>ATT&amp;CK</th><th>Severity</th>\
+         </tr></thead><tbody>",
+    );
+    for f in matches.iter().take(50) {
+        let dst = match (&f.dst_ip, f.dst_port) {
+            (Some(ip), Some(p)) => format!("{}:{}", esc(ip), p),
+            (Some(ip), None) => esc(ip),
+            (None, _) => "\u{2014}".to_string(),
+        };
+        let attack = f
+            .attack
+            .iter()
+            .map(|a| esc(a))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sid = sid_of(f).map(esc).unwrap_or_default();
+        let color = sev_color(f.severity);
+        let _ = write!(
+            s,
+            "<tr><td>{title}</td><td>{sid}</td><td>{src} \u{2192} {dst}</td>\
+             <td>{attack}</td>\
+             <td><span class=\"chip\" style=\"background:{color}\">{sev}</span></td></tr>",
+            title = esc(&f.title),
+            sid = sid,
+            src = esc(&f.src_ip),
+            dst = dst,
+            attack = attack,
+            color = color,
+            sev = esc(f.severity.as_str()),
+        );
+    }
+    s.push_str("</tbody></table></section>\n");
+    s
 }
 
 /// The "Active incidents" section: behavioral findings correlated into per-host stories, ordered
@@ -908,5 +981,44 @@ mod tests {
         let out = crate::model::output::AnalysisOutput::default();
         let html = render_html(&out, 0, None);
         assert!(!html.contains("AI Analyst Summary"));
+    }
+
+    #[test]
+    fn report_renders_signature_matches_section() {
+        let mut out = crate::model::output::AnalysisOutput::default();
+        out.summary.findings.push(Finding {
+            kind: FindingKind::RuleMatch,
+            severity: Severity::High,
+            score: 70,
+            title: "C2 beacon".to_string(),
+            src_ip: "10.0.0.5".to_string(),
+            dst_ip: Some("203.0.113.9".to_string()),
+            dst_port: Some(443),
+            attack: vec!["T1071".to_string()],
+            evidence: vec![
+                "rule sid:1001".to_string(),
+                "matched content (3 bytes)".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        });
+        let html = render_html(&out, 0, None);
+        assert!(
+            html.contains("Signature matches"),
+            "section heading missing"
+        );
+        assert!(html.contains("C2 beacon"), "rule title missing");
+        assert!(html.contains("1001"), "sid missing");
+        assert!(html.contains("10.0.0.5"), "src IP missing");
+        assert!(html.contains("203.0.113.9"), "dst IP missing");
+        assert!(html.contains("T1071"), "MITRE technique missing");
+    }
+
+    #[test]
+    fn report_omits_signature_matches_when_none() {
+        let out = crate::model::output::AnalysisOutput::default();
+        let html = render_html(&out, 0, None);
+        assert!(!html.contains("Signature matches"));
     }
 }
