@@ -326,6 +326,32 @@ fn export_stix(summary: AnalysisOutput) -> Result<String, String> {
     Ok(ppcap_core::export::stix_bundle(&summary, now_unix_secs()))
 }
 
+/// Write the MISP event for `summary` to `path`.
+#[tauri::command]
+fn save_misp(summary: AnalysisOutput, path: String) -> Result<(), String> {
+    let s = ppcap_core::export::misp_event(&summary, now_unix_secs());
+    std::fs::write(&path, s).map_err(|e| format!("write misp: {e}"))
+}
+
+/// Write the CEF records for `summary` to `path`.
+#[tauri::command]
+fn save_cef(summary: AnalysisOutput, path: String) -> Result<(), String> {
+    let s = ppcap_core::export::cef_records(&summary);
+    std::fs::write(&path, s).map_err(|e| format!("write cef: {e}"))
+}
+
+/// Return the MISP event string for `summary` (used for copy-to-clipboard).
+#[tauri::command]
+fn export_misp(summary: AnalysisOutput) -> Result<String, String> {
+    Ok(ppcap_core::export::misp_event(&summary, now_unix_secs()))
+}
+
+/// Return the CEF records string for `summary` (used for copy-to-clipboard).
+#[tauri::command]
+fn export_cef(summary: AnalysisOutput) -> Result<String, String> {
+    Ok(ppcap_core::export::cef_records(&summary))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -334,8 +360,12 @@ pub fn run() {
             save_report,
             save_csv,
             save_stix,
+            save_misp,
+            save_cef,
             export_csv,
             export_stix,
+            export_misp,
+            export_cef,
             extract_flow_packets,
             carve_pcap_to,
             set_reputation_key,

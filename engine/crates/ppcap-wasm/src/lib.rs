@@ -314,6 +314,22 @@ pub fn export_stix(output_json: &str, generated_unix_secs: i64) -> Result<String
     Ok(ppcap_core::export::stix_bundle(&out, generated_unix_secs))
 }
 
+/// Export the analysis findings as a MISP event stamped with `generated_unix_secs`.
+#[wasm_bindgen]
+pub fn export_misp(output_json: &str, generated_unix_secs: i64) -> Result<String, JsValue> {
+    let out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(ppcap_core::export::misp_event(&out, generated_unix_secs))
+}
+
+/// Export the analysis findings as CEF (Common Event Format) records.
+#[wasm_bindgen]
+pub fn export_cef(output_json: &str) -> Result<String, JsValue> {
+    let out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(ppcap_core::export::cef_records(&out))
+}
+
 /// Analyze a raw capture (`.pcap`/`.pcapng`) held entirely in memory.
 ///
 /// `bytes` is the capture file; `name` becomes the reported `source_path`. Returns a JSON
