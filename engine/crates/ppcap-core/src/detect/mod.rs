@@ -13,6 +13,8 @@
 //! themselves — keeps detection within the engine's bounded-memory contract regardless of how
 //! many contacts a flow makes.
 
+pub mod rules;
+
 /// Streaming mean/variance over a stream of `i64` samples using Welford's online algorithm.
 ///
 /// Memory is O(1): the individual samples are never retained, only five fixed-size running
