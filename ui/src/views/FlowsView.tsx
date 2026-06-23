@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { normCategory } from "../lib/severity";
 import { humanNumber } from "../lib/format";
-import { extractFlowPackets } from "../lib/packets";
+import { extractFlowPackets, carveSubPcap } from "../lib/packets";
 import { cn } from "../lib/cn";
 import { LoadingState } from "../components/state/LoadingState";
 import { ErrorState } from "../components/state/ErrorState";
@@ -80,6 +80,30 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
   // Stable identity so PacketInspector's focus/Esc effect doesn't re-fire on every render.
   // Also bumps the generation so any in-flight extraction for the closed flow is discarded.
   const closeInspector = useCallback(() => { inspectGen.current++; setInspecting(null); }, []);
+
+  // Carve a sub-pcap for the given flow and surface success/failure via pktError.
+  const carveFlow = useCallback(
+    async (flow: FlowRow) => {
+      const query = {
+        src_ip: flow.srcIp,
+        dst_ip: flow.dstIp,
+        src_port: flow.srcPort,
+        dst_port: flow.dstPort,
+        proto: flow.proto,
+        start_ns: Math.round(flow.startMs * 1e6),
+        end_ns: Math.round(flow.endMs * 1e6),
+      };
+      const name = `${flow.srcIp}-${flow.dstIp}-${flow.srcPort}-${flow.dstPort}.pcap`;
+      const res = await carveSubPcap(query, activeSource, name);
+      if (res.ok) {
+        setPktError(null);
+      } else if (res.message) {
+        setPktError(res.message);
+      }
+    },
+    [activeSource],
+  );
+
   // Default "busiest flows first". Must reference the column's id ("bytes"),
   // not the accessorKey ("bytesTotal") — the explicit column id wins, and a
   // mismatch makes TanStack drop the sort and warn "Column ... does not exist".
@@ -287,6 +311,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
               onClose={() => setSelected(null)}
               activeSource={activeSource}
               onInspectPackets={() => openInspector(selected)}
+              onCarvePcap={() => carveFlow(selected)}
             />
           </aside>
         )}

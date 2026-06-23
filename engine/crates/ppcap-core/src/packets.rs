@@ -4,13 +4,16 @@
 //! to a single 5-tuple flow (both directions) within a time window, each with its TCP seq/ack
 //! and a bounded, base64-encoded payload slice for the UI to hexdump. Nothing is retained
 //! across the call — the source is re-read on demand, keeping memory bounded.
+//!
+//! [`carve_pcap`] writes a self-contained classic pcap of packets matching a [`CarveQuery`].
 
 use base64::Engine as _;
 use serde::Serialize;
+use std::io::Write as _;
 use std::net::IpAddr;
 
 use crate::decode::{decode_frame, l4_payload};
-use crate::error::Result;
+use crate::error::{PpError, Result};
 use crate::model::packet::Transport;
 use crate::reader::PacketSource;
 
@@ -159,6 +162,124 @@ pub fn extract_flow_packets(
         total,
         truncated,
         packets,
+    })
+}
+
+/// 64 MiB carve byte budget (matches the browser's retained-source cap).
+pub const MAX_CARVE_BYTES: usize = 64 * 1024 * 1024;
+
+/// What to carve: a directed flow 5-tuple (matched bidirectionally) or a single host IP.
+#[derive(Clone, Debug)]
+pub enum CarveTarget {
+    Flow {
+        src_ip: IpAddr,
+        dst_ip: IpAddr,
+        src_port: u16,
+        dst_port: u16,
+        transport: Transport,
+    },
+    Host {
+        ip: IpAddr,
+    },
+}
+
+/// The carve request: a target plus an inclusive `[start_ns, end_ns]` window (use a wide range for "all").
+#[derive(Clone, Debug)]
+pub struct CarveQuery {
+    pub target: CarveTarget,
+    pub start_ns: i64,
+    pub end_ns: i64,
+}
+
+/// The carved capture bytes + counters.
+#[derive(Clone, Debug)]
+pub struct CarveResult {
+    pub pcap: Vec<u8>,
+    pub packets: u64,
+    pub truncated: bool,
+    pub skipped_link_mismatch: u64,
+}
+
+/// Stream `source` once and write a classic pcap of the packets matching `q` (bounded by
+/// `caps.max_packets` and [`MAX_CARVE_BYTES`]). The global header carries the capture's link type;
+/// frames with a different link type are skipped (counted). An empty match yields a valid
+/// header-only pcap. Re-reads the capture; nothing is stored across the call; never panics.
+pub fn carve_pcap(
+    mut source: Box<dyn PacketSource>,
+    q: &CarveQuery,
+    caps: &PacketCaps,
+) -> Result<CarveResult> {
+    let lo = q.start_ns.saturating_sub(WINDOW_TOL_NS);
+    let hi = q.end_ns.saturating_add(WINDOW_TOL_NS);
+    let link = source.link_type();
+    let mut buf: Vec<u8> = Vec::new();
+    crate::gen::container::write_pcap_header(&mut buf, link)?;
+
+    let mut packets: u64 = 0;
+    let mut truncated = false;
+    let mut skipped_link_mismatch: u64 = 0;
+
+    while let Some(frame) = source.next_frame()? {
+        if frame.ts_ns < lo || frame.ts_ns > hi {
+            continue;
+        }
+        let meta = match decode_frame(&frame) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let (s, d) = match (meta.src_ip, meta.dst_ip) {
+            (Some(s), Some(d)) => (s, d),
+            _ => continue,
+        };
+        let matched = match &q.target {
+            CarveTarget::Flow {
+                src_ip,
+                dst_ip,
+                src_port,
+                dst_port,
+                transport,
+            } => {
+                meta.transport == *transport
+                    && ((s == *src_ip
+                        && d == *dst_ip
+                        && meta.src_port == *src_port
+                        && meta.dst_port == *dst_port)
+                        || (s == *dst_ip
+                            && d == *src_ip
+                            && meta.src_port == *dst_port
+                            && meta.dst_port == *src_port))
+            }
+            CarveTarget::Host { ip } => s == *ip || d == *ip,
+        };
+        if !matched {
+            continue;
+        }
+        if frame.link_type != link {
+            skipped_link_mismatch += 1;
+            continue;
+        }
+        if packets as usize >= caps.max_packets
+            || buf.len() + 16 + frame.data.len() > MAX_CARVE_BYTES
+        {
+            truncated = true;
+            break;
+        }
+        crate::gen::container::write_legacy_record(
+            &mut buf,
+            frame.ts_ns,
+            frame.cap_len,
+            frame.wire_len,
+        )?;
+        buf.write_all(frame.data)
+            .map_err(|e| PpError::io("write carved frame", e))?;
+        packets += 1;
+    }
+
+    Ok(CarveResult {
+        pcap: buf,
+        packets,
+        truncated,
+        skipped_link_mismatch,
     })
 }
 
@@ -330,5 +451,107 @@ mod tests {
         };
         let fp = extract_flow_packets(src, &q, &PacketCaps::default()).unwrap();
         assert_eq!(fp.total, 0);
+    }
+
+    // ── carve_pcap tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn carve_pcap_round_trips_a_flow() {
+        // Build a synthetic capture in memory using the same tcp_pcap() helper used by
+        // the extract_flow_packets tests.  The flow is client(10.0.0.1:1234) ↔ server(93.184.216.34:443).
+        let bytes = tcp_pcap();
+        let src = open_reader(Cursor::new(bytes.clone()), Some(bytes.len() as u64)).unwrap();
+        let q = CarveQuery {
+            target: CarveTarget::Flow {
+                src_ip: "10.0.0.1".parse().unwrap(),
+                dst_ip: "93.184.216.34".parse().unwrap(),
+                src_port: 1234,
+                dst_port: 443,
+                transport: Transport::Tcp,
+            },
+            start_ns: i64::MIN / 2,
+            end_ns: i64::MAX / 2,
+        };
+        let res = carve_pcap(src, &q, &PacketCaps::default()).unwrap();
+        assert!(res.packets > 0);
+        assert!(!res.truncated);
+        assert_eq!(res.skipped_link_mismatch, 0);
+
+        // Re-open the carved pcap and confirm every frame matches the flow.
+        let mut rd =
+            open_reader(Cursor::new(res.pcap.clone()), Some(res.pcap.len() as u64)).unwrap();
+        let mut n = 0u64;
+        while let Some(f) = rd.next_frame().unwrap() {
+            let m = crate::decode::decode_frame(&f).unwrap();
+            let s = m.src_ip.unwrap();
+            let d = m.dst_ip.unwrap();
+            assert!(
+                s.to_string() == "10.0.0.1" || s.to_string() == "93.184.216.34",
+                "unexpected src {s}"
+            );
+            assert!(
+                d.to_string() == "10.0.0.1" || d.to_string() == "93.184.216.34",
+                "unexpected dst {d}"
+            );
+            n += 1;
+        }
+        assert_eq!(n, res.packets);
+        // The 4 TCP packets must all be carved (the UDP packet must be excluded).
+        assert_eq!(res.packets, 4);
+    }
+
+    #[test]
+    fn carve_host_matches_any_packet_touching_ip() {
+        let bytes = tcp_pcap();
+        let src = open_reader(Cursor::new(bytes.clone()), Some(bytes.len() as u64)).unwrap();
+        let target_ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
+        let q = CarveQuery {
+            target: CarveTarget::Host { ip: target_ip },
+            start_ns: i64::MIN / 2,
+            end_ns: i64::MAX / 2,
+        };
+        let res = carve_pcap(src, &q, &PacketCaps::default()).unwrap();
+        assert!(res.packets > 0);
+
+        // Every carved frame must have src or dst == 10.0.0.1.
+        let mut rd =
+            open_reader(Cursor::new(res.pcap.clone()), Some(res.pcap.len() as u64)).unwrap();
+        while let Some(f) = rd.next_frame().unwrap() {
+            let m = crate::decode::decode_frame(&f).unwrap();
+            let s = m.src_ip.unwrap();
+            let d = m.dst_ip.unwrap();
+            assert!(
+                s == target_ip || d == target_ip,
+                "frame with src={s} dst={d} does not touch {target_ip}"
+            );
+        }
+        // All 5 packets in tcp_pcap() (4 TCP + 1 UDP) involve 10.0.0.1, so all must be carved.
+        assert_eq!(res.packets, 5);
+    }
+
+    #[test]
+    fn carve_empty_match_is_a_valid_header_only_pcap() {
+        // Query with a 5-tuple that does not appear in the capture at all.
+        let bytes = tcp_pcap();
+        let src = open_reader(Cursor::new(bytes.clone()), Some(bytes.len() as u64)).unwrap();
+        let q = CarveQuery {
+            target: CarveTarget::Flow {
+                src_ip: "192.168.1.1".parse().unwrap(),
+                dst_ip: "192.168.1.2".parse().unwrap(),
+                src_port: 9999,
+                dst_port: 9999,
+                transport: Transport::Tcp,
+            },
+            start_ns: i64::MIN / 2,
+            end_ns: i64::MAX / 2,
+        };
+        let res = carve_pcap(src, &q, &PacketCaps::default()).unwrap();
+        assert_eq!(res.packets, 0);
+        assert!(!res.truncated);
+        // The result must be a valid 24-byte header-only pcap.
+        assert_eq!(res.pcap.len(), 24);
+        let mut rd =
+            open_reader(Cursor::new(res.pcap.clone()), Some(res.pcap.len() as u64)).unwrap();
+        assert!(rd.next_frame().unwrap().is_none());
     }
 }

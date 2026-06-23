@@ -429,6 +429,18 @@ export interface FlowPackets { total: number; truncated: boolean; packets: Packe
 /** Active capture source — drives whether packet drill-down is available and which backend serves it. */
 export type ActiveSource = { kind: "path"; path: string } | { kind: "bytes"; bytes: ArrayBuffer } | null;
 
+/** Query passed to carve_pcap / carve_pcap_to — either a host (IP) or a 5-tuple flow, plus a time window. */
+export interface CarveQuery {
+  host?: string;
+  src_ip?: string;
+  dst_ip?: string;
+  src_port?: number;
+  dst_port?: number;
+  proto?: number;
+  start_ns: number;
+  end_ns: number;
+}
+
 export interface SummaryState {
   status: "idle" | "loading" | "ready" | "error";
   data?: AnalysisOutput;

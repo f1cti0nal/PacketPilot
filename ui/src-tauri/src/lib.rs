@@ -86,6 +86,61 @@ fn extract_flow_packets(
         .map_err(|e| e.to_string())
 }
 
+/// Tauri-side carve query DTO. `host` set → Host target; else Flow (all 5-tuple fields required).
+#[derive(serde::Deserialize)]
+struct CarveQueryArg {
+    host: Option<String>,
+    src_ip: Option<String>,
+    dst_ip: Option<String>,
+    src_port: Option<u16>,
+    dst_port: Option<u16>,
+    proto: Option<u8>,
+    start_ns: i64,
+    end_ns: i64,
+}
+
+fn carve_query_from_arg(arg: CarveQueryArg) -> Result<ppcap_core::CarveQuery, String> {
+    let target = if let Some(h) = arg.host {
+        let ip: std::net::IpAddr = h.parse().map_err(|_| "bad host ip".to_string())?;
+        ppcap_core::CarveTarget::Host { ip }
+    } else {
+        let src_ip = arg
+            .src_ip
+            .ok_or("src_ip required for flow carve")?
+            .parse::<std::net::IpAddr>()
+            .map_err(|_| "bad src_ip".to_string())?;
+        let dst_ip = arg
+            .dst_ip
+            .ok_or("dst_ip required for flow carve")?
+            .parse::<std::net::IpAddr>()
+            .map_err(|_| "bad dst_ip".to_string())?;
+        let src_port = arg.src_port.ok_or("src_port required for flow carve")?;
+        let dst_port = arg.dst_port.ok_or("dst_port required for flow carve")?;
+        let proto = arg.proto.ok_or("proto required for flow carve")?;
+        ppcap_core::CarveTarget::Flow {
+            src_ip,
+            dst_ip,
+            src_port,
+            dst_port,
+            transport: ppcap_core::Transport::from_ip_proto(proto),
+        }
+    };
+    Ok(ppcap_core::CarveQuery { target, start_ns: arg.start_ns, end_ns: arg.end_ns })
+}
+
+/// Carve packets matching `query` from `path_in`, write a new pcap to `path_out`, and return
+/// the packet count. Nothing is stored beyond the output file; the source is re-read once.
+#[tauri::command]
+fn carve_pcap_to(path_in: String, query: CarveQueryArg, path_out: String) -> Result<u64, String> {
+    let q = carve_query_from_arg(query)?;
+    let source =
+        ppcap_core::reader::open(std::path::Path::new(&path_in)).map_err(|e| e.to_string())?;
+    let res = ppcap_core::carve_pcap(source, &q, &ppcap_core::PacketCaps::default())
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&path_out, &res.pcap).map_err(|e| format!("write pcap: {e}"))?;
+    Ok(res.packets)
+}
+
 const KEYRING_SERVICE: &str = "packetpilot-reputation";
 const KEYRING_SERVICE_AI: &str = "packetpilot-ai";
 
@@ -282,6 +337,7 @@ pub fn run() {
             export_csv,
             export_stix,
             extract_flow_packets,
+            carve_pcap_to,
             set_reputation_key,
             reputation_key_status,
             reputation_lookup,

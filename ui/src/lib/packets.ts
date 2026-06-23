@@ -1,6 +1,9 @@
-import type { ActiveSource, FlowPackets, FlowRow, PacketRow, WireFlowPackets } from "../types";
-import { isTauri, extractPacketsViaTauri } from "./platform";
-import { extractPacketsViaWasm } from "./wasmEngine";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import type { ActiveSource, CarveQuery, FlowPackets, FlowRow, PacketRow, WireFlowPackets } from "../types";
+import type { ExportResult } from "./platform";
+import { isTauri, extractPacketsViaTauri, downloadBinary } from "./platform";
+import { extractPacketsViaWasm, carvePcapViaWasm } from "./wasmEngine";
 
 export class PacketsUnavailableError extends Error {
   constructor() { super("Packets are only available for captures analyzed from a pcap."); this.name = "PacketsUnavailableError"; }
@@ -45,4 +48,46 @@ export async function extractFlowPackets(source: ActiveSource, flow: FlowRow): P
       ? await extractPacketsViaWasm(source.bytes, query)
       : (() => { throw new PacketsUnavailableError(); })();
   return normalize(wire as WireFlowPackets, flow);
+}
+
+const UNAVAILABLE_MESSAGE = "Packets are only available for captures analyzed from a pcap";
+
+/**
+ * Carve a sub-pcap containing only the frames matching `query` within the time window.
+ * On desktop (Tauri + path source): prompts for a save path and writes the carved pcap via the
+ * native `carve_pcap_to` command.
+ * In the browser (bytes source): carves via WASM and triggers a binary download.
+ */
+export async function carveSubPcap(
+  query: CarveQuery,
+  source: ActiveSource,
+  name: string,
+): Promise<ExportResult> {
+  if (source === null) {
+    return { ok: false, message: `${UNAVAILABLE_MESSAGE}.` };
+  }
+  if (source.kind === "path" && isTauri()) {
+    const path = await save({
+      defaultPath: name,
+      filters: [{ name: "PCAP", extensions: ["pcap"] }],
+    });
+    if (!path) return { ok: false, message: "" }; // user cancelled
+    try {
+      const n = await invoke<number>("carve_pcap_to", { pathIn: source.path, query, pathOut: path });
+      return { ok: true, message: `Carved ${n} packets` };
+    } catch (e) {
+      return { ok: false, message: `Carve failed: ${e}` };
+    }
+  }
+  if (source.kind === "bytes") {
+    try {
+      const bytes = await carvePcapViaWasm(source.bytes, query);
+      downloadBinary(bytes, name, "application/vnd.tcpdump.pcap");
+      return { ok: true, message: "Downloaded" };
+    } catch (e) {
+      return { ok: false, message: `Carve failed: ${e}` };
+    }
+  }
+  // path source without Tauri
+  return { ok: false, message: `${UNAVAILABLE_MESSAGE}.` };
 }
