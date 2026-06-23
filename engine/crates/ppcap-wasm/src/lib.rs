@@ -128,6 +128,109 @@ mod tests {
         .unwrap();
         assert!(matches!(host.target, ppcap_core::CarveTarget::Host { .. }));
     }
+
+    /// Build a minimal classic pcap with a TCP/443 data packet carrying "abc" in the payload.
+    ///
+    /// Encodes the pcap directly as raw bytes (no ppcap-core gen helpers — those are pub(crate)).
+    /// Layout: pcap global header + one legacy packet record with Ethernet/IPv4/TCP frame.
+    fn crafted_tcp443_pcap_with_abc() -> Vec<u8> {
+        let payload: &[u8] = b"GET abc HTTP/1.1";
+
+        // ── TCP header (20 bytes, no options) ─────────────────────────────
+        // src_port=1234, dst_port=443, seq=1, ack=0, flags=PSH|ACK(0x18), window=65535
+        let tcp_len = 20 + payload.len();
+        let mut tcp = vec![
+            0x04, 0xD2, // src port 1234
+            0x01, 0xBB, // dst port 443
+            0x00, 0x00, 0x00, 0x01, // seq
+            0x00, 0x00, 0x00, 0x00, // ack
+            0x50, // data offset = 5 (20 bytes), reserved = 0
+            0x18, // flags: PSH | ACK
+            0xFF, 0xFF, // window
+            0x00, 0x00, // checksum (zero — ppcap-core doesn't verify TCP checksum)
+            0x00, 0x00, // urgent pointer
+        ];
+        tcp.extend_from_slice(payload);
+
+        // ── IPv4 header (20 bytes, no options) ────────────────────────────
+        // src=10.0.0.1, dst=93.184.216.34, proto=6 (TCP), TTL=64
+        let ip_total = 20 + tcp_len as u16;
+        let mut ip: Vec<u8> = vec![
+            0x45, // version=4, IHL=5
+            0x00, // DSCP/ECN
+        ];
+        ip.extend_from_slice(&ip_total.to_be_bytes()); // total length
+        ip.extend_from_slice(&[0x00, 0x00]); // identification
+        ip.extend_from_slice(&[0x40, 0x00]); // flags=DF, fragment offset=0
+        ip.push(64); // TTL
+        ip.push(6); // protocol TCP
+        ip.extend_from_slice(&[0x00, 0x00]); // checksum (not verified)
+        ip.extend_from_slice(&[10, 0, 0, 1]); // src 10.0.0.1
+        ip.extend_from_slice(&[93, 184, 216, 34]); // dst 93.184.216.34
+
+        // ── Ethernet header (14 bytes) ────────────────────────────────────
+        let mut eth: Vec<u8> = vec![
+            0x04, 0x04, 0x04, 0x04, 0x04, 0x04, // dst MAC
+            0x02, 0x02, 0x02, 0x02, 0x02, 0x02, // src MAC
+            0x08, 0x00, // EtherType IPv4
+        ];
+
+        let mut frame = Vec::new();
+        frame.append(&mut eth);
+        frame.append(&mut ip);
+        frame.append(&mut tcp);
+
+        // ── pcap global header (24 bytes, little-endian, Ethernet DLT=1) ──
+        let mut buf: Vec<u8> = vec![
+            0xD4, 0xC3, 0xB2, 0xA1, // magic (little-endian)
+            0x02, 0x00, 0x04, 0x00, // version 2.4
+            0x00, 0x00, 0x00, 0x00, // this zone
+            0x00, 0x00, 0x00, 0x00, // sigfigs
+            0xFF, 0xFF, 0x00, 0x00, // snaplen 65535
+            0x01, 0x00, 0x00, 0x00, // DLT_EN10MB = 1
+        ];
+
+        // ── packet record header (16 bytes) ───────────────────────────────
+        let ts_sec: u32 = 1;
+        let ts_usec: u32 = 0;
+        let cap_len = frame.len() as u32;
+        buf.extend_from_slice(&ts_sec.to_le_bytes());
+        buf.extend_from_slice(&ts_usec.to_le_bytes());
+        buf.extend_from_slice(&cap_len.to_le_bytes());
+        buf.extend_from_slice(&cap_len.to_le_bytes());
+        buf.extend_from_slice(&frame);
+
+        buf
+    }
+
+    #[test]
+    fn apply_rules_folds_matches_into_output() {
+        let pcap = crafted_tcp443_pcap_with_abc();
+
+        // Get the base AnalysisOutput by analyzing the pcap, then extract the `summary` field
+        // (analyze returns AnalyzeResult { summary: AnalysisOutput, flows: [...] }).
+        let analyze_json = crate::analyze(&pcap, "t.pcap".into()).unwrap();
+        let analyze_val: serde_json::Value = serde_json::from_str(&analyze_json).unwrap();
+        let out_json = analyze_val["summary"].to_string();
+
+        let rules = r#"alert tcp any any -> any 443 (msg:"hit"; content:"abc"; sid:7; metadata:mitre T1071;)"#;
+        let res_json = crate::apply_rules(&pcap, rules, &out_json).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&res_json).unwrap();
+
+        assert_eq!(v["loaded"], 1);
+        assert_eq!(v["skipped"], 0);
+        assert!(
+            v["matches"].as_u64().unwrap() >= 1,
+            "expected at least one match"
+        );
+
+        // The finding is folded into output.summary.findings
+        let findings = v["output"]["summary"]["findings"].as_array().unwrap();
+        assert!(
+            findings.iter().any(|f| f["title"] == "hit"),
+            "folded finding with title 'hit' must be present in output.summary.findings"
+        );
+    }
 }
 
 /// JS-sent extraction caps (both optional; defaults to the engine's hard limits).
@@ -268,6 +371,39 @@ impl FlowDto {
 struct AnalyzeResult {
     summary: ppcap_core::AnalysisOutput,
     flows: Vec<FlowDto>,
+}
+
+/// The result of applying a custom ruleset to a pcap via [`apply_rules`].
+#[derive(serde::Serialize)]
+struct RuleApplyResult {
+    output: ppcap_core::AnalysisOutput,
+    loaded: usize,
+    skipped: usize,
+    matches: usize,
+}
+
+/// Parse a ruleset, apply it over the pcap `bytes`, and fold the matches into `output_json`.
+///
+/// `output_json` is the `AnalysisOutput` (the `.summary` field from `analyze`). Returns a JSON
+/// `{ output, loaded, skipped, matches }` where `output` is the updated `AnalysisOutput` with
+/// rule-match findings folded in. Pure + wasm-safe — no C deps, no network.
+#[wasm_bindgen]
+pub fn apply_rules(bytes: &[u8], rules_text: &str, output_json: &str) -> Result<String, JsValue> {
+    let mut out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let parsed = ppcap_core::parse_rules(rules_text);
+    let owned = bytes.to_vec();
+    let len = Some(owned.len() as u64);
+    let rf = ppcap_core::apply_rules(std::io::Cursor::new(owned), len, &parsed.rules);
+    out.summary.apply_findings(&rf);
+    out.summary.findings.extend(rf.iter().cloned());
+    let res = RuleApplyResult {
+        matches: rf.len(),
+        loaded: parsed.rules.len(),
+        skipped: parsed.skipped.len(),
+        output: out,
+    };
+    serde_json::to_string(&res).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Apply reputation verdicts to a completed analysis. `output_json` is the `AnalysisOutput` from

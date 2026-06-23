@@ -125,7 +125,11 @@ fn carve_query_from_arg(arg: CarveQueryArg) -> Result<ppcap_core::CarveQuery, St
             transport: ppcap_core::Transport::from_ip_proto(proto),
         }
     };
-    Ok(ppcap_core::CarveQuery { target, start_ns: arg.start_ns, end_ns: arg.end_ns })
+    Ok(ppcap_core::CarveQuery {
+        target,
+        start_ns: arg.start_ns,
+        end_ns: arg.end_ns,
+    })
 }
 
 /// Carve packets matching `query` from `path_in`, write a new pcap to `path_out`, and return
@@ -139,6 +143,33 @@ fn carve_pcap_to(path_in: String, query: CarveQueryArg, path_out: String) -> Res
         .map_err(|e| e.to_string())?;
     std::fs::write(&path_out, &res.pcap).map_err(|e| format!("write pcap: {e}"))?;
     Ok(res.packets)
+}
+
+#[derive(serde::Serialize)]
+struct RuleApplyResult {
+    output: ppcap_core::AnalysisOutput,
+    loaded: usize,
+    skipped: usize,
+    matches: usize,
+}
+
+#[tauri::command]
+fn apply_rules_to(path: String, rules_text: String, output_json: String) -> Result<String, String> {
+    let mut out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(&output_json).map_err(|e| e.to_string())?;
+    let parsed = ppcap_core::parse_rules(&rules_text);
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let len = std::fs::metadata(&path).ok().map(|m| m.len());
+    let rf = ppcap_core::apply_rules(file, len, &parsed.rules);
+    out.summary.apply_findings(&rf);
+    out.summary.findings.extend(rf.iter().cloned());
+    let res = RuleApplyResult {
+        matches: rf.len(),
+        loaded: parsed.rules.len(),
+        skipped: parsed.skipped.len(),
+        output: out,
+    };
+    serde_json::to_string(&res).map_err(|e| e.to_string())
 }
 
 const KEYRING_SERVICE: &str = "packetpilot-reputation";
@@ -188,7 +219,9 @@ fn reputation_lookup(ips: Vec<String>) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("packetpilot");
+    let cache_dir = dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("packetpilot");
     let verdicts = ppcap_core::lookup_reputation_native(&parsed, &keys, &cache_dir, now);
     serde_json::to_string(&verdicts).map_err(|e| e.to_string())
 }
@@ -207,7 +240,9 @@ fn domain_reputation_lookup(hosts: Vec<String>) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let cache_dir = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("packetpilot");
+    let cache_dir = dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("packetpilot");
     let verdicts = ppcap_core::lookup_domain_reputation_native(&hosts, &keys, &cache_dir, now);
     serde_json::to_string(&verdicts).map_err(|e| e.to_string())
 }
@@ -228,7 +263,11 @@ fn set_ai_key(provider: String, key: String) -> Result<(), String> {
 
 #[tauri::command]
 fn ai_key_status() -> Result<Vec<String>, String> {
-    Ok(if ai_key_for("default")?.is_some() { vec!["default".to_string()] } else { vec![] })
+    Ok(if ai_key_for("default")?.is_some() {
+        vec!["default".to_string()]
+    } else {
+        vec![]
+    })
 }
 
 /// Stream an OpenAI-compatible chat completion to the frontend. `body` is the full request JSON
@@ -254,7 +293,10 @@ async fn ai_chat_stream(
             Ok(r) => r,
             // 4xx/5xx: surface the upstream error body as the failure reason.
             Err(ureq::Error::Status(code, r)) => {
-                return Err(format!("AI endpoint {code}: {}", r.into_string().unwrap_or_default()));
+                return Err(format!(
+                    "AI endpoint {code}: {}",
+                    r.into_string().unwrap_or_default()
+                ));
             }
             Err(e) => return Err(e.to_string()),
         };
@@ -368,6 +410,7 @@ pub fn run() {
             export_cef,
             extract_flow_packets,
             carve_pcap_to,
+            apply_rules_to,
             set_reputation_key,
             reputation_key_status,
             reputation_lookup,

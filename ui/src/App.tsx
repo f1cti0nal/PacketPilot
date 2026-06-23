@@ -42,7 +42,9 @@ import {
   copyStix,
   copyMisp,
   copyCef,
+  applyRules,
 } from "./lib/platform";
+import { packetsAvailable } from "./lib/packets";
 import { analyzeViaWasm, applyReputationWasm, applyDomainReputationWasm } from "./lib/wasmEngine";
 import { EmptyState } from "./components/state/EmptyState";
 import {
@@ -63,6 +65,7 @@ import { DomainConsent } from "./cockpit/DomainConsent";
 import { SettingsDialog } from "./cockpit/SettingsDialog";
 import { AiChatPanel } from "./cockpit/AiChatPanel";
 import { getAiSummary, captureKey } from "./lib/ai/cache";
+import { pickRuleBase } from "./lib/ruleBase";
 
 const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
@@ -141,6 +144,12 @@ export function App() {
   // snapshot); a chain serializes the IP and domain commits so they compose, never clobber.
   const summaryDataRef = useRef<AnalysisOutput | null>(null);
   const repChainRef = useRef<Promise<void>>(Promise.resolve());
+
+  // Rule-loading: base snapshot prevents re-stacking (each reload applies over the original
+  // reputation-enriched summary, not the previously-rules-augmented one).
+  const ruleBaseRef = useRef<{ key: string; data: AnalysisOutput } | null>(null);
+  const [ruleNotice, setRuleNotice] = useState<string | null>(null);
+  const rulesInputRef = useRef<HTMLInputElement | null>(null);
 
   // Eagerly load the bundled sample capture on mount.
   useEffect(() => {
@@ -544,8 +553,43 @@ export function App() {
     else { jumpToFlows({ ip }); }
   }, [summary, jumpToFlows]);
 
+  // Auto-dismiss the rule notice after a short delay.
+  useEffect(() => {
+    if (!ruleNotice) return;
+    const t = window.setTimeout(() => setRuleNotice(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [ruleNotice]);
+
+  const loadRules = useCallback(async (file: File) => {
+    if (summary.status !== "ready" || !summary.data || !packetsAvailable(activeSource)) return;
+    const currentData = summary.data;
+    const text = await file.text();
+    const key = captureKey(currentData);
+    // Reuse the per-capture base so re-loading replaces (not stacks) and reputation isn't clobbered.
+    const base = pickRuleBase(ruleBaseRef, key, currentData);
+    try {
+      const res = await applyRules(text, base, activeSource);
+      setSummary({ status: "ready", data: res.output });
+      setRuleNotice(`Rules: ${res.loaded} loaded, ${res.skipped} skipped, ${res.matches} match${res.matches === 1 ? "" : "es"}`);
+    } catch (e) {
+      setRuleNotice(e instanceof Error ? e.message : "Failed to apply rules");
+    }
+  }, [summary, activeSource]);
+
   return (
     <>
+    {/* Hidden file input for "Load detection rules" — triggered via rulesInputRef.current.click() */}
+    <input
+      ref={rulesInputRef}
+      type="file"
+      accept=".rules,.txt"
+      hidden
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) void loadRules(f);
+        e.target.value = "";
+      }}
+    />
     <AppShell
       activeTab={tab}
       onTabChange={setTab}
@@ -576,6 +620,7 @@ export function App() {
       onPaletteOpenChange={setPaletteOpen}
       onOpenSettings={() => setSettingsOpen(true)}
       onOpenAiChat={summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
+      onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
     >
       {tab === "compare" ? (
         (() => {
@@ -650,6 +695,15 @@ export function App() {
     )}
     {summary.status === "ready" && summary.data && (
       <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} />
+    )}
+    {ruleNotice && (
+      <div
+        role="status"
+        aria-live="polite"
+        className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-xs text-[var(--color-text-dim)] shadow-lg"
+      >
+        {ruleNotice}
+      </div>
     )}
     </>
   );

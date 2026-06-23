@@ -67,6 +67,8 @@ export interface AppShellProps {
   onOpenSettings?: () => void;
   /** Open the AI chat panel. Only provided when a capture is ready. */
   onOpenAiChat?: () => void;
+  /** Trigger the "Load detection rules" file picker. Only provided when packets are available. */
+  onLoadRules?: () => void;
   /** Whether a capture comparison is active (shows the Compare tab). */
   compareActive?: boolean;
   children: ReactNode;
@@ -101,6 +103,7 @@ export function AppShell({
   onPaletteOpenChange,
   onOpenSettings,
   onOpenAiChat,
+  onLoadRules,
   compareActive = false,
   children,
 }: AppShellProps) {
@@ -184,6 +187,9 @@ export function AppShell({
     { id: "go-compare", label: "Compare captures", hint: "view", run: () => onTabChange("recent") },
     { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
     { id: "toggle-rail", label: collapsed ? "Expand sidebar" : "Collapse sidebar", hint: "action", run: onToggleCollapse },
+    ...(onLoadRules ? [
+      { id: "load-rules", label: "Load detection rules…", hint: "action", run: onLoadRules },
+    ] : []),
     ...(canExport ? [
       { id: "export", label: "Export report", hint: "action", run: () => void runExport(onExport) },
       { id: "export-csv", label: "Export CSV", hint: "action", run: () => void runExport(onExportCsv) },
@@ -195,7 +201,7 @@ export function AppShell({
       { id: "export-cef", label: "Export CEF", hint: "action", run: () => void runExport(onExportCef) },
       { id: "export-cef-copy", label: "Copy CEF", hint: "action", run: () => void runExport(onCopyCef) },
     ] : []),
-  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef]);
+  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
@@ -216,6 +222,7 @@ export function AppShell({
         onToggleCollapse={onToggleCollapse}
         onOpenSettings={onOpenSettings}
         onOpenAiChat={onOpenAiChat}
+        onLoadRules={onLoadRules}
       />
       <div className="flex min-h-0 flex-1">
         <ThreatRail
