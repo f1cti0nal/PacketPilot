@@ -12,6 +12,15 @@ const threat: IpThreat = {
   ],
 };
 
+/** Build a minimal IpThreat with optional overrides — keeps test cases brief. */
+function makeThreat(overrides: Partial<IpThreat> = {}): IpThreat {
+  return {
+    ip: "9.9.9.9", ip_class: "public", severity: "high", score: 80,
+    flows: 3, bytes: 1000, ioc: false, tags: [], attack: [], evidence: [],
+    ...overrides,
+  };
+}
+
 describe("ThreatsPanel reputation transparency", () => {
   it("shows the per-provider reputation breakdown and tags on the card", () => {
     render(<ThreatsPanel threats={[threat]} />);
@@ -39,5 +48,17 @@ describe("ThreatsPanel reputation transparency", () => {
   it("renders empty state when no threats", () => {
     render(<ThreatsPanel threats={[]} />);
     expect(screen.getByText("No scored threats")).toBeInTheDocument();
+  });
+});
+
+describe("ThreatsPanel fingerprint chips", () => {
+  it("shows a fingerprint chip naming the malware family", () => {
+    render(<ThreatsPanel threats={[makeThreat({ fingerprints: [{ ja3: "abc", ja4: null, label: "CobaltStrike" }] })]} />);
+    expect(screen.getByText(/CobaltStrike/)).toBeInTheDocument();
+  });
+
+  it("shows no fingerprint chip when there are none", () => {
+    render(<ThreatsPanel threats={[makeThreat({ fingerprints: [] })]} />);
+    expect(screen.queryByText(/CobaltStrike/)).not.toBeInTheDocument();
   });
 });

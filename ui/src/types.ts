@@ -119,6 +119,12 @@ export interface ReputationVerdict {
   fetched_at: number;        // unix seconds
 }
 
+export interface FingerprintHit {
+  ja3: string | null;
+  ja4: string | null;
+  label: string;
+}
+
 export interface IpThreat {
   ip: string;
   ip_class: string;
@@ -131,6 +137,7 @@ export interface IpThreat {
   attack: string[];
   evidence: string[];
   reputation?: ReputationVerdict[];
+  fingerprints?: FingerprintHit[];
 }
 
 export interface DomainThreat {
