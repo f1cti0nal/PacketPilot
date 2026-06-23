@@ -243,6 +243,43 @@ impl Summary {
         }
     }
 
+    /// Merge post-hoc [`Finding`]s (e.g. from an imported ruleset) into the per-IP threat
+    /// rollups so rule matches elevate the implicated hosts' threat cards. Both endpoints of a
+    /// finding are uplifted; an already-higher card is never lowered (raise-only, mirrors the
+    /// `StatsAccumulator::apply_findings` invariant used during the streaming pass). Only IPs
+    /// already present in `ip_threats` are touched — no new rows are created.
+    pub fn apply_findings(&mut self, findings: &[Finding]) {
+        const MAX_EVIDENCE: usize = 16;
+        for f in findings {
+            for ip_str in std::iter::once(f.src_ip.as_str()).chain(f.dst_ip.as_deref()) {
+                let Some(card) = self.ip_threats.iter_mut().find(|c| c.ip == ip_str) else {
+                    continue;
+                };
+                // Raise score/severity (never lower).
+                if f.severity > card.severity
+                    || (f.severity == card.severity && f.score > card.score)
+                {
+                    card.severity = f.severity;
+                    card.score = f.score;
+                    card.evidence.clear();
+                }
+                // Merge ATT&CK ids (deduped, sorted).
+                for atk in &f.attack {
+                    if !card.attack.contains(atk) {
+                        card.attack.push(atk.clone());
+                    }
+                }
+                card.attack.sort();
+                // Append evidence (capped, deduped).
+                for ev in &f.evidence {
+                    if card.evidence.len() < MAX_EVIDENCE && !card.evidence.contains(ev) {
+                        card.evidence.push(ev.clone());
+                    }
+                }
+            }
+        }
+    }
+
     /// Capture start in ns, defaulting to 0 when no packets were seen.
     pub fn capture_start_ns(&self) -> i64 {
         self.first_ts_ns.unwrap_or(0)
