@@ -65,7 +65,7 @@ pub use enrich::{
     FeedMatch, FlowEnrichment, IpClass, RepStatus, ReputationVerdict, ThreatFeed,
 };
 pub use error::{PpError, Result};
-pub use export::{cef_records, findings_csv, misp_event, stix_bundle};
+pub use export::{cef_records, findings_csv, misp_event, sigma_rules, stix_bundle};
 pub use fingerprint::{fingerprint_tls_client_hello, Ja4Transport, TlsFingerprints};
 pub use model::category::Category;
 pub use model::finding::{Finding, FindingKind};

@@ -1,10 +1,11 @@
-//! Export of behavioral findings as analyst/SIEM-friendly CSV and STIX 2.1.
+//! Export of behavioral findings into analyst/SIEM-friendly formats: CSV, STIX 2.1, MISP, CEF, and
+//! Sigma detection rules.
 //!
-//! These turn PacketPilot from a consumer of threat intel into a *producer* of it: the
-//! behavioral findings (and the IPs/techniques they implicate) become a CSV for a spreadsheet
-//! or SIEM, and a STIX 2.1 bundle for TAXII / interchange with other tools.
+//! These turn PacketPilot from a consumer of threat intel into a *producer* of it: the behavioral
+//! findings (and the IPs/techniques they implicate) become a CSV for a spreadsheet, a STIX 2.1
+//! bundle for TAXII, a MISP event, CEF records for a SIEM, and Sigma rules for deployable detection.
 //!
-//! Both functions are pure over an [`AnalysisOutput`]. STIX object ids are derived
+//! Every function is pure over an [`AnalysisOutput`]. STIX object ids are derived
 //! deterministically from content (no `rand` dependency — see [`det_uuid`]), so the same
 //! analysis always produces the same bundle. The "created/modified" wall-clock time is supplied
 //! by the caller (the engine has no clock), exactly like the HTML report.
@@ -342,6 +343,108 @@ pub fn cef_records(out: &AnalysisOutput) -> String {
     lines.join("\n")
 }
 
+/// Render the behavioral findings as Sigma detection rules — a multi-document YAML stream, one rule
+/// per finding. Sigma is the open, vendor-neutral detection-rule format; this turns PacketPilot's
+/// findings into rules an analyst can adapt and deploy in a SIEM (the spec's "auto-generate
+/// Sigma/SIEM rules from observed threats"). Pure over [`AnalysisOutput`]; each rule's `id` is a
+/// deterministic UUID derived from the finding (no randomness), so the same analysis always yields
+/// the same rules.
+pub fn sigma_rules(out: &AnalysisOutput) -> String {
+    let mut docs: Vec<String> = Vec::new();
+    for f in &out.summary.findings {
+        let id = det_uuid(&format!(
+            "sigma|{}|{}|{}|{}",
+            f.kind.as_str(),
+            f.src_ip,
+            f.dst_ip.as_deref().unwrap_or(""),
+            f.dst_port.map(|p| p.to_string()).unwrap_or_default()
+        ));
+        let mut doc = String::new();
+        doc.push_str(&format!(
+            "title: {}\n",
+            yaml_str(&format!("PacketPilot: {}", f.title))
+        ));
+        doc.push_str(&format!("id: {id}\n"));
+        doc.push_str("status: experimental\n");
+        if !f.evidence.is_empty() {
+            doc.push_str(&format!(
+                "description: {}\n",
+                yaml_str(&f.evidence.join("; "))
+            ));
+        }
+        doc.push_str("author: PacketPilot\n");
+        if !f.attack.is_empty() {
+            doc.push_str("references:\n");
+            for a in &f.attack {
+                doc.push_str(&format!("  - {}\n", yaml_str(&attack_url(a))));
+            }
+        }
+        doc.push_str(&format!(
+            "logsource:\n  category: {}\n",
+            sigma_category(f.kind)
+        ));
+        doc.push_str("detection:\n  selection:\n");
+        if let Some(dst) = &f.dst_ip {
+            doc.push_str(&format!("    dst_ip: {}\n", yaml_str(dst)));
+            if let Some(p) = f.dst_port {
+                doc.push_str(&format!("    dst_port: {p}\n"));
+            }
+        } else {
+            // Fan-out findings (e.g. a host sweep) have no single destination — key on the actor.
+            doc.push_str(&format!("    src_ip: {}\n", yaml_str(&f.src_ip)));
+        }
+        doc.push_str("  condition: selection\n");
+        doc.push_str("fields:\n  - src_ip\n  - dst_ip\n  - dst_port\n");
+        doc.push_str("falsepositives:\n  - Legitimate administrative or monitoring traffic\n");
+        doc.push_str(&format!("level: {}\n", sigma_level(f.severity)));
+        if !f.attack.is_empty() {
+            doc.push_str("tags:\n");
+            for a in &f.attack {
+                doc.push_str(&format!("  - attack.{}\n", a.to_ascii_lowercase()));
+            }
+        }
+        docs.push(doc);
+    }
+    docs.join("---\n")
+}
+
+/// A double-quoted YAML scalar with `\`, `"`, and control chars escaped/flattened.
+fn yaml_str(s: &str) -> String {
+    let cleaned = s.replace('\\', "\\\\").replace('"', "\\\"");
+    let cleaned = cleaned.replace(['\n', '\r', '\t'], " ");
+    format!("\"{cleaned}\"")
+}
+
+/// MITRE ATT&CK technique reference URL (sub-techniques map `Txxxx.yyy` -> `Txxxx/yyy`).
+fn attack_url(id: &str) -> String {
+    format!(
+        "https://attack.mitre.org/techniques/{}/",
+        id.replace('.', "/")
+    )
+}
+
+/// Sigma `level` for a finding severity.
+fn sigma_level(sev: crate::model::severity::Severity) -> &'static str {
+    use crate::model::severity::Severity;
+    match sev {
+        Severity::Critical => "critical",
+        Severity::High => "high",
+        Severity::Medium => "medium",
+        Severity::Low => "low",
+        Severity::Info => "informational",
+    }
+}
+
+/// Sigma `logsource.category` best matching a finding kind's protocol.
+fn sigma_category(kind: crate::model::finding::FindingKind) -> &'static str {
+    use crate::model::finding::FindingKind;
+    match kind {
+        FindingKind::DnsTunnel => "dns",
+        FindingKind::CleartextCreds | FindingKind::PiiExposure => "proxy",
+        _ => "firewall",
+    }
+}
+
 /// Quote a CSV field iff it contains a comma, quote, CR, or LF (RFC 4180), doubling quotes.
 fn csv_field(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) {
@@ -558,10 +661,41 @@ mod tests {
     }
 
     #[test]
+    fn sigma_rules_one_doc_per_finding_with_selectors_and_level() {
+        let out = sample_output_with_findings();
+        let s = sigma_rules(&out);
+        // One YAML document per finding (joined by a `---` separator line).
+        let docs: Vec<&str> = s.split("\n---\n").collect();
+        assert_eq!(docs.len(), out.summary.findings.len());
+        for d in &docs {
+            assert!(d.contains("title: "));
+            assert!(d.contains("id: "));
+            assert!(d.contains("detection:"));
+            assert!(d.contains("condition: selection"));
+            assert!(d.contains("level: "));
+            assert!(d.contains("logsource:"));
+        }
+        // The beacon (dst 8.8.8.8, High, T1071) keys on dst_ip and maps the level + ATT&CK tag.
+        let beacon = docs
+            .iter()
+            .find(|d| d.contains("dst_ip: \"8.8.8.8\""))
+            .unwrap();
+        assert!(beacon.contains("level: high"));
+        assert!(beacon.contains("attack.t1071"));
+        // The host sweep (no dst) keys on src_ip instead.
+        let sweep = docs.iter().find(|d| d.contains("attack.t1046")).unwrap();
+        assert!(sweep.contains("src_ip: "));
+        assert!(sweep.contains("level: medium"));
+        // Deterministic.
+        assert_eq!(s, sigma_rules(&out));
+    }
+
+    #[test]
     fn empty_summary_exports_are_valid() {
         let out = empty_output();
         assert!(serde_json::from_str::<serde_json::Value>(&misp_event(&out, 0)).is_ok());
         assert_eq!(cef_records(&out), "");
+        assert_eq!(sigma_rules(&out), "");
     }
 
     #[test]
