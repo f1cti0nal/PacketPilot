@@ -40,7 +40,7 @@ describe("RuleSetsMenu", () => {
     render(<RuleSetsMenu onLoadFile={vi.fn()} onApply={vi.fn()} disabled={true} />);
     fireEvent.click(screen.getByText(/Rules/i));
     expect(screen.getByText("lateral.rules")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Delete rule set lateral\.rules/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Delete rule set lateral\.rules/i }));
     expect(screen.queryByText("lateral.rules")).toBeNull();
   });
 });

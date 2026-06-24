@@ -42,6 +42,7 @@ export function CommandBar({
   onOpenSettings,
   onOpenAiChat,
   rulesMenu,
+  showTabs = true,
 }: {
   captureName: string;
   sha256?: string;
@@ -50,6 +51,8 @@ export function CommandBar({
   collapsed: boolean;
   onToggleCollapse: () => void;
   tabs?: ReadonlyArray<{ id: TabId; label: string; badge?: number }>;
+  /** Render the inline Views switcher. Off on mobile, where the bottom tab bar replaces it. */
+  showTabs?: boolean;
   captureStatus?: "idle" | "loading" | "ready" | "error";
   captureError?: string;
   onRequestLoad?: () => void;
@@ -119,6 +122,7 @@ export function CommandBar({
 
       {/* Right: view switcher + actions */}
       <div className="ml-auto flex items-center gap-2">
+        {showTabs && (
         <nav aria-label="Views" className="flex items-center gap-0.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-0.5">
           {tabs.map((tab) => {
             const active = tab.id === activeTab;
@@ -126,7 +130,7 @@ export function CommandBar({
               <button
                 key={tab.id}
                 type="button"
-                aria-pressed={active}
+                aria-current={active ? "page" : undefined}
                 onClick={() => onTab(tab.id)}
                 className={cn(
                   "rounded-[var(--r-chip)] px-3 py-1 text-xs font-medium transition-colors",
@@ -145,6 +149,7 @@ export function CommandBar({
             );
           })}
         </nav>
+        )}
 
         <ActionButton
           icon={<Upload size={14} />}
@@ -212,6 +217,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={label}
       className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[color:color-mix(in_srgb,var(--color-accent)_50%,var(--color-border))] hover:text-[var(--color-text)] disabled:cursor-default disabled:opacity-50"
     >
       {icon}

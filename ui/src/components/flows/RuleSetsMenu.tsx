@@ -39,10 +39,11 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
+        <div role="menu" aria-label="Rule sets" className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
           {/* Load .rules file row */}
           <button
             type="button"
+            role="menuitem"
             disabled={disabled}
             title={disabled ? "Available for captures analyzed from a pcap" : undefined}
             onClick={() => { setOpen(false); onLoadFile(); }}
@@ -68,6 +69,7 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
                 >
                   <button
                     type="button"
+                    role="menuitem"
                     disabled={disabled}
                     title={disabled ? "Available for captures analyzed from a pcap" : undefined}
                     onClick={() => { setOpen(false); onApply(rs); }}
@@ -77,6 +79,7 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
                   </button>
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={() => setSets(removeRuleSet(rs.id))}
                     aria-label={`Delete rule set ${rs.name}`}
                     className="shrink-0 p-1 text-[var(--color-text-faint)] hover:text-[var(--color-text)]"

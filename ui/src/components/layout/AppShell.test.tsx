@@ -110,4 +110,35 @@ describe("AppShell", () => {
     // The CommandPalette renders with a specific aria-label on its input
     expect(screen.getByLabelText("Command palette query")).toBeInTheDocument();
   });
+
+  it("mobile layout: drops the rail/top tabs for a bottom bar + threat drawer", () => {
+    const real = window.matchMedia;
+    window.matchMedia = ((q: string) => ({
+      matches: true,
+      media: q,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      render(<AppShell {...minimalProps()} />);
+
+      // No always-on rail, and the top Views switcher is gone.
+      expect(screen.queryByRole("complementary")).toBeNull();
+      expect(screen.queryByRole("navigation", { name: "Views" })).toBeNull();
+
+      // Primary navigation is the bottom tab bar.
+      expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
+
+      // Tapping "Threats" opens the drawer, which exposes the rail threats.
+      fireEvent.click(screen.getByRole("button", { name: /Threat watchlist/ }));
+      expect(screen.getByRole("dialog", { name: "Threats" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^10\.13\.37\.7/ })).toBeInTheDocument();
+    } finally {
+      window.matchMedia = real;
+    }
+  });
 });

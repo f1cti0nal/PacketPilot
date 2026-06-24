@@ -13,6 +13,7 @@ import { CommandBar } from "../../cockpit/CommandBar";
 import { ThreatRail } from "../../cockpit/ThreatRail";
 import { CommandPalette } from "../../cockpit/CommandPalette";
 import type { PaletteAction } from "../../cockpit/CommandPalette";
+import { useIsMobile, BottomTabBar, MobileThreatDrawer } from "./MobileNav";
 
 // The shell derives the capture filename from the App-owned summary state and
 // provides a self-contained "load capture" affordance (drag-drop / file picker)
@@ -116,6 +117,14 @@ export function AppShell({
 }: AppShellProps) {
   const [exportHint, setExportHint] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // Mobile-first shell: under `md` the rail becomes a drawer and tabs move to a bottom bar.
+  const isMobile = useIsMobile();
+  const [threatDrawerOpen, setThreatDrawerOpen] = useState(false);
+  // Never strand an open drawer on the desktop layout (e.g. on rotate/resize).
+  useEffect(() => {
+    if (!isMobile) setThreatDrawerOpen(false);
+  }, [isMobile]);
 
   const canExport = summary.status === "ready" && !!summary.data;
 
@@ -234,16 +243,35 @@ export function AppShell({
         onOpenSettings={onOpenSettings}
         onOpenAiChat={onOpenAiChat}
         rulesMenu={rulesMenu}
+        showTabs={!isMobile}
       />
       <div className="flex min-h-0 flex-1">
-        <ThreatRail
-          threats={threats}
-          collapsed={collapsed}
-          activeIp={activeIp}
-          onSelect={onSelectThreat}
-        />
+        {!isMobile && (
+          <ThreatRail
+            threats={threats}
+            collapsed={collapsed}
+            activeIp={activeIp}
+            onSelect={onSelectThreat}
+          />
+        )}
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
+      {isMobile && (
+        <BottomTabBar
+          tabs={tabs}
+          activeTab={activeTab}
+          onTab={onTabChange}
+          threatCount={threats.length}
+          onOpenThreats={() => setThreatDrawerOpen(true)}
+        />
+      )}
+      <MobileThreatDrawer
+        open={isMobile && threatDrawerOpen}
+        onClose={() => setThreatDrawerOpen(false)}
+        threats={threats}
+        activeIp={activeIp}
+        onSelect={onSelectThreat}
+      />
       {loadDialogOpen && (
         <LoadCaptureDialog onReplaceData={onReplaceData} onAnalyzePcap={onAnalyzePcap} onClose={() => onLoadDialogOpenChange(false)} />
       )}
