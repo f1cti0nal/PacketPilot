@@ -112,6 +112,8 @@ fn observe_folds_fwd_and_rev() {
         hassh_server: None,
         arp: None,
         ja3s: None,
+        http_host: None,
+        http_ua: None,
     };
     let mut rev = fwd.clone();
     rev.ts_ns = 900;

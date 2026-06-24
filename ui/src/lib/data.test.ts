@@ -29,6 +29,8 @@ const rawRow: RawFlowRow = {
   ja3: null,
   ja4: null,
   ja3s: null,
+  http_host: null,
+  http_ua: null,
   tls_version: null,
   tls_cipher: null,
   hassh: null,
@@ -124,6 +126,8 @@ describe("flowRowFromWasm", () => {
     ja3: null,
     ja4: null,
     ja3s: null,
+    http_host: null,
+    http_ua: null,
     tls_version: null,
     tls_cipher: null,
     hassh: null,
@@ -190,6 +194,8 @@ describe("ja3/ja4 passthrough", () => {
       ja3: "769,47,0,29,0",
       ja4: "t13d0204h2_aaa_bbb",
       ja3s: "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      http_host: "api.example.com",
+      http_ua: "curl/8.4.0",
       tls_version: "TLS 1.2",
       tls_cipher: "TLS_AES_128_GCM_SHA256",
       hassh: "0df0d56bc302d51d6f1e1c1e0b3e4a5b",
@@ -202,6 +208,8 @@ describe("ja3/ja4 passthrough", () => {
     expect(r.ja3).toBe("769,47,0,29,0");
     expect(r.ja4).toBe("t13d0204h2_aaa_bbb");
     expect(r.ja3s).toBe("a1b2c3d4e5f60718293a4b5c6d7e8f90");
+    expect(r.httpHost).toBe("api.example.com");
+    expect(r.httpUa).toBe("curl/8.4.0");
     expect(r.tlsVersion).toBe("TLS 1.2");
     expect(r.tlsCipher).toBe("TLS_AES_128_GCM_SHA256");
     expect(r.hassh).toBe("0df0d56bc302d51d6f1e1c1e0b3e4a5b");
@@ -230,6 +238,8 @@ describe("ja3/ja4 passthrough", () => {
       ja3: "x",
       ja4: null,
       ja3s: null,
+      http_host: null,
+      http_ua: null,
       tls_version: null,
       tls_cipher: null,
       hassh: null,

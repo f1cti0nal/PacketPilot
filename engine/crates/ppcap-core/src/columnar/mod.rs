@@ -108,6 +108,8 @@ struct Builders {
     hassh: StringBuilder,
     hassh_server: StringBuilder,
     ja3s: StringBuilder,
+    http_host: StringBuilder,
+    http_ua: StringBuilder,
     severity: StringBuilder,
     threat_score: UInt16Builder,
     ioc: BooleanBuilder,
@@ -142,6 +144,8 @@ impl Builders {
             hassh: StringBuilder::new(),
             hassh_server: StringBuilder::new(),
             ja3s: StringBuilder::new(),
+            http_host: StringBuilder::new(),
+            http_ua: StringBuilder::new(),
             severity: StringBuilder::new(),
             threat_score: UInt16Builder::new(),
             ioc: BooleanBuilder::new(),
@@ -181,6 +185,8 @@ impl Builders {
             Arc::new(self.hassh.finish()),
             Arc::new(self.hassh_server.finish()),
             Arc::new(self.ja3s.finish()),
+            Arc::new(self.http_host.finish()),
+            Arc::new(self.http_ua.finish()),
             Arc::new(self.severity.finish()),
             Arc::new(self.threat_score.finish()),
             Arc::new(self.ioc.finish()),
@@ -226,6 +232,8 @@ impl FlowParquetWriter {
             "hassh",
             "hassh_server",
             "ja3s",
+            "http_host",
+            "http_ua",
             "severity",
         ];
 
@@ -347,6 +355,15 @@ impl FlowParquetWriter {
         match &rec.ja3s {
             Some(v) if !v.is_empty() => b.ja3s.append_value(v),
             _ => b.ja3s.append_null(),
+        }
+        // http_host / http_ua: HTTP request headers; present only when an HTTP request was seen.
+        match &rec.http_host {
+            Some(v) if !v.is_empty() => b.http_host.append_value(v),
+            _ => b.http_host.append_null(),
+        }
+        match &rec.http_ua {
+            Some(v) if !v.is_empty() => b.http_ua.append_value(v),
+            _ => b.http_ua.append_null(),
         }
         // Phase-2 verdict columns (never NULL).
         b.severity.append_value(rec.severity.as_str());
@@ -511,6 +528,8 @@ mod tests {
             b.hassh.append_null();
             b.hassh_server.append_null();
             b.ja3s.append_null();
+            b.http_host.append_null();
+            b.http_ua.append_null();
             b.severity.append_value("info");
             b.threat_score.append_value(0);
             b.ioc.append_value(false);
@@ -518,7 +537,7 @@ mod tests {
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 29);
+        assert_eq!(batch.num_columns(), 31);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }

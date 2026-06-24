@@ -428,6 +428,12 @@ export function FlowDetail({
         <Field label="TLS SNI" mono title={flow.sni ?? undefined}>
           {flow.sni ?? <span className="text-[var(--color-text-faint)]">—</span>}
         </Field>
+        <Field label="HTTP Host" mono title={flow.httpHost ?? undefined}>
+          {flow.httpHost ?? <span className="text-[var(--color-text-faint)]">—</span>}
+        </Field>
+        <Field label="HTTP User-Agent" mono title={flow.httpUa ?? undefined}>
+          {flow.httpUa ?? <span className="text-[var(--color-text-faint)]">—</span>}
+        </Field>
         <Field label="TLS JA3" mono title={flow.ja3 ?? undefined}>
           {flow.ja3 ?? <span className="text-[var(--color-text-faint)]">—</span>}
         </Field>

@@ -93,17 +93,17 @@ fn threat_enrichment_end_to_end_with_sample_feed() {
             .downcast_ref::<StringArray>()
             .unwrap();
         let severity = batch
-            .column(26)
+            .column(28)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
         let score = batch
-            .column(27)
+            .column(29)
             .as_any()
             .downcast_ref::<UInt16Array>()
             .unwrap();
         let ioc = batch
-            .column(28)
+            .column(30)
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap();

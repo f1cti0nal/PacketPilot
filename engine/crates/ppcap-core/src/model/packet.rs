@@ -282,6 +282,10 @@ pub struct PacketMeta {
     pub hassh_server: Option<String>,
     /// An ARP sender's IP→MAC claim for ARP-spoofing detection; `None` for non-ARP packets.
     pub arp: Option<ArpClaim>,
+    /// HTTP request `Host` header (derived metadata, like `sni`); `None` otherwise.
+    pub http_host: Option<String>,
+    /// HTTP request `User-Agent` header (derived metadata); `None` otherwise.
+    pub http_ua: Option<String>,
 }
 
 impl PacketMeta {

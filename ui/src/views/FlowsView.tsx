@@ -161,6 +161,10 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           " " +
           (r.sni ?? "") +
           " " +
+          (r.httpHost ?? "") +
+          " " +
+          (r.httpUa ?? "") +
+          " " +
           (r.ja3 ?? "") +
           " " +
           (r.ja4 ?? "") +

@@ -74,6 +74,8 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         hassh_server: None,
         arp: None,
         ja3s: None,
+        http_host: None,
+        http_ua: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -217,7 +219,11 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                     meta.app_proto = AppProto::Dns;
                     meta.dns_qname = qname;
                 }
-                L7Hint::Http { .. } => meta.app_proto = AppProto::Http, // method token dropped
+                L7Hint::Http { host, user_agent } => {
+                    meta.app_proto = AppProto::Http;
+                    meta.http_host = host;
+                    meta.http_ua = user_agent;
+                }
                 L7Hint::Tls { sni, ja3, ja4 } => {
                     meta.app_proto = AppProto::Tls;
                     meta.sni = sni; // Some only when ClientHello carried server_name
@@ -402,8 +408,11 @@ fn strip_null<'a>(data: &'a [u8], meta: &mut PacketMeta) -> Result<(bool, &'a [u
 pub enum L7Hint {
     /// Likely DNS (matched on port 53); `qname` is the first question name if parseable.
     Dns { qname: Option<String> },
-    /// An HTTP request with the sniffed method (e.g. `GET`, `POST`).
-    Http { method: String },
+    /// An HTTP request; `host`/`user_agent` are the sniffed request headers (derived metadata only).
+    Http {
+        host: Option<String>,
+        user_agent: Option<String>,
+    },
     /// A TLS ClientHello; `sni` is the Server Name Indication host if present.
     Tls {
         sni: Option<String>,
@@ -498,8 +507,13 @@ pub fn l7_hint(
                 ja4: None,
             });
         }
-        if let Some(method) = sniff_http_method(payload) {
-            return Some(L7Hint::Http { method });
+        if sniff_http_method(payload).is_some() {
+            // Header metadata lives near the start; bound the scan (mirrors the cred sniff).
+            let scan = &payload[..payload.len().min(1024)];
+            return Some(L7Hint::Http {
+                host: http_header_value(scan, b"host:"),
+                user_agent: http_header_value(scan, b"user-agent:"),
+            });
         }
     }
     // QUIC Initial (UDP long header): form-bit precheck before any crypto.
@@ -629,6 +643,43 @@ fn http_auth_scheme(buf: &[u8]) -> Option<CredScheme> {
         } else if starts_with_ci(token, b"digest") {
             return Some(CredScheme::HttpDigest);
         }
+    }
+    None
+}
+
+/// Longest HTTP header value retained (the `Host` / `User-Agent` columns). Bounds the per-packet
+/// allocation and keeps a crafted giant header from bloating memory.
+const MAX_HTTP_HEADER: usize = 256;
+
+/// Extract an HTTP request header's value by name (`name` includes the trailing `:`), anchored to
+/// the **start of a header line** and bounded to the header block (the body is never scanned). The
+/// value is trimmed, kept to printable ASCII, and capped at [`MAX_HTTP_HEADER`]. Derived metadata
+/// only — the payload is never retained. Returns `None` when the header is absent or empty.
+fn http_header_value(buf: &[u8], name: &[u8]) -> Option<String> {
+    // Headers end at the first blank line; if it is not in the bounded peek, treat all as headers.
+    let headers = match find_ci(buf, b"\r\n\r\n") {
+        Some(end) => &buf[..end],
+        None => buf,
+    };
+    // The request line is the first CRLF line and never starts with a header name, so it is skipped.
+    for raw in headers.split(|&b| b == b'\n') {
+        let line = raw.strip_suffix(b"\r").unwrap_or(raw);
+        if !starts_with_ci(line, name) {
+            continue;
+        }
+        let value = &line[name.len()..];
+        let start = value
+            .iter()
+            .position(|&b| b != b' ' && b != b'\t')
+            .unwrap_or(value.len());
+        let s: String = value[start..]
+            .iter()
+            .take(MAX_HTTP_HEADER)
+            .filter(|&&b| (0x20..0x7f).contains(&b))
+            .map(|&b| b as char)
+            .collect();
+        let s = s.trim().to_string();
+        return if s.is_empty() { None } else { Some(s) };
     }
     None
 }
@@ -973,6 +1024,8 @@ mod tests {
             hassh_server: None,
             arp: None,
             ja3s: None,
+            http_host: None,
+            http_ua: None,
         }
     }
 
@@ -1513,6 +1566,44 @@ mod tests {
         assert_eq!(sniff_http_method(b"NOTAVERB / HTTP"), None);
         assert_eq!(sniff_http_method(b"GE"), None);
         assert_eq!(sniff_http_method(b""), None);
+    }
+
+    #[test]
+    fn http_header_value_extracts_and_bounds() {
+        let req = b"GET /p HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/8.0\r\nAccept: */*\r\n\r\n";
+        assert_eq!(
+            http_header_value(req, b"host:"),
+            Some("example.com".to_string())
+        );
+        assert_eq!(
+            http_header_value(req, b"user-agent:"),
+            Some("curl/8.0".to_string())
+        );
+        // Case-insensitive header name, surrounding whitespace trimmed.
+        assert_eq!(
+            http_header_value(b"GET / HTTP/1.1\r\nhOsT:  x.test \r\n\r\n", b"host:"),
+            Some("x.test".to_string())
+        );
+        // Absent / empty -> None; the request line is never matched.
+        assert_eq!(http_header_value(b"GET / HTTP/1.1\r\nHost:\r\n\r\n", b"host:"), None);
+        assert_eq!(http_header_value(b"GET / HTTP/1.1\r\n\r\n", b"host:"), None);
+        // A header-looking line in the BODY (after the blank line) is not scanned.
+        assert_eq!(
+            http_header_value(b"POST / HTTP/1.1\r\nLen: 5\r\n\r\nHost: evil\r\n", b"host:"),
+            None
+        );
+    }
+
+    #[test]
+    fn l7_hint_http_carries_host_and_user_agent() {
+        let req = b"GET / HTTP/1.1\r\nHost: a.example\r\nUser-Agent: sqlmap/1.0\r\n\r\n";
+        match l7_hint(Transport::Tcp, 50000, 80, req) {
+            Some(L7Hint::Http { host, user_agent }) => {
+                assert_eq!(host, Some("a.example".to_string()));
+                assert_eq!(user_agent, Some("sqlmap/1.0".to_string()));
+            }
+            other => panic!("expected Http, got {other:?}"),
+        }
     }
 
     #[test]

@@ -340,6 +340,8 @@ struct FlowDto {
     hassh: Option<String>,
     hassh_server: Option<String>,
     ja3s: Option<String>,
+    http_host: Option<String>,
+    http_ua: Option<String>,
     severity: String,
     threat_score: u16,
     ioc: bool,
@@ -409,6 +411,16 @@ impl FlowDto {
                 .map(|v| v.to_string()),
             ja3s: rec
                 .ja3s
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| v.to_string()),
+            http_host: rec
+                .http_host
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| v.to_string()),
+            http_ua: rec
+                .http_ua
                 .as_ref()
                 .filter(|v| !v.is_empty())
                 .map(|v| v.to_string()),

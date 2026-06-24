@@ -1,6 +1,6 @@
 //! The canonical flow Parquet/Arrow schema — the single source of truth.
 //!
-//! **29 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
+//! **31 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
 //! SELECT order. The `schema_drift` test (CI guard) asserts all three agree. Any column
 //! change MUST bump [`FLOW_PARQUET_VERSION`] and update the SQL view + `flow_columns_in_order`.
 //!
@@ -15,7 +15,7 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 /// the only flow reader is external DuckDB (`read_parquet` in `sql/schema.sql`), which does
 /// not inspect this value; there is no in-engine reader that enforces it. Bump it whenever a
 /// column is added/removed/reordered.
-pub const FLOW_PARQUET_VERSION: u16 = 8;
+pub const FLOW_PARQUET_VERSION: u16 = 9;
 
 /// Canonical Arrow schema for the persisted flow Parquet table.
 pub fn flow_arrow_schema() -> Arc<Schema> {
@@ -47,14 +47,16 @@ pub fn flow_arrow_schema() -> Arc<Schema> {
         Field::new("hassh", DataType::Utf8, true), // 24 SSH client HASSH (MD5) fingerprint; NULL if none
         Field::new("hassh_server", DataType::Utf8, true), // 25 SSH server HASSHServer (MD5); NULL if none
         Field::new("ja3s", DataType::Utf8, true), // 26 TLS JA3S server fingerprint (MD5); NULL if none
-        Field::new("severity", DataType::Utf8, false),  // 27 lowercase token, never NULL ("info")
-        Field::new("threat_score", DataType::UInt16, false), // 28 0..=100
-        Field::new("ioc", DataType::Boolean, false),    // 29 any feed match on this flow
+        Field::new("http_host", DataType::Utf8, true), // 27 HTTP request Host header; NULL if none
+        Field::new("http_ua", DataType::Utf8, true), // 28 HTTP request User-Agent header; NULL if none
+        Field::new("severity", DataType::Utf8, false),  // 29 lowercase token, never NULL ("info")
+        Field::new("threat_score", DataType::UInt16, false), // 30 0..=100
+        Field::new("ioc", DataType::Boolean, false),    // 31 any feed match on this flow
     ]))
 }
 
 /// CI drift guard: exact column names in canonical order.
-pub fn flow_columns_in_order() -> [&'static str; 29] {
+pub fn flow_columns_in_order() -> [&'static str; 31] {
     [
         "flow_id",
         "capture_id",
@@ -82,6 +84,8 @@ pub fn flow_columns_in_order() -> [&'static str; 29] {
         "hassh",
         "hassh_server",
         "ja3s",
+        "http_host",
+        "http_ua",
         "severity",
         "threat_score",
         "ioc",

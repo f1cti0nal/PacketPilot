@@ -219,6 +219,14 @@ export function FlowsTable({
                   {f.sni}
                 </span>
               )}
+              {f.httpHost && (
+                <span
+                  className="truncate text-xs text-[var(--color-text-dim)]"
+                  title={f.httpUa ? `Host: ${f.httpHost}\nUA: ${f.httpUa}` : `Host: ${f.httpHost}`}
+                >
+                  {f.httpHost}
+                </span>
+              )}
               {(f.ja3 || f.ja4) && (
                 <span
                   className="font-mono-num truncate text-xs text-[var(--color-text-faint)]"
