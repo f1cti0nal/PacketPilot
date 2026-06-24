@@ -31,6 +31,7 @@ const rawRow: RawFlowRow = {
   tls_version: null,
   tls_cipher: null,
   hassh: null,
+  hassh_server: null,
   severity: null,
   threat_score: 0,
   ioc: false,
@@ -124,6 +125,7 @@ describe("flowRowFromWasm", () => {
     tls_version: null,
     tls_cipher: null,
     hassh: null,
+    hassh_server: null,
     severity: "info",
     threat_score: 0,
     ioc: false,
@@ -188,6 +190,7 @@ describe("ja3/ja4 passthrough", () => {
       tls_version: "TLS 1.2",
       tls_cipher: "TLS_AES_128_GCM_SHA256",
       hassh: "0df0d56bc302d51d6f1e1c1e0b3e4a5b",
+      hassh_server: "b12f3a4c5d6e7f8091a2b3c4d5e6f701",
       severity: "info",
       threat_score: 0,
       ioc: false,
@@ -198,6 +201,7 @@ describe("ja3/ja4 passthrough", () => {
     expect(r.tlsVersion).toBe("TLS 1.2");
     expect(r.tlsCipher).toBe("TLS_AES_128_GCM_SHA256");
     expect(r.hassh).toBe("0df0d56bc302d51d6f1e1c1e0b3e4a5b");
+    expect(r.hasshServer).toBe("b12f3a4c5d6e7f8091a2b3c4d5e6f701");
 
     const raw: RawFlowRow = {
       flow_id: BigInt(2),
@@ -224,6 +228,7 @@ describe("ja3/ja4 passthrough", () => {
       tls_version: null,
       tls_cipher: null,
       hassh: null,
+      hassh_server: null,
       severity: null,
       threat_score: 0,
       ioc: false,
@@ -232,5 +237,6 @@ describe("ja3/ja4 passthrough", () => {
     expect(n.ja3).toBe("x");
     expect(n.ja4).toBeNull();
     expect(n.hassh).toBeNull();
+    expect(n.hasshServer).toBeNull();
   });
 });

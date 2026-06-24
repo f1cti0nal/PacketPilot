@@ -243,6 +243,14 @@ export function FlowsTable({
                   {`HASSH ${f.hassh.slice(0, 12)}…`}
                 </span>
               )}
+              {f.hasshServer && (
+                <span
+                  className="font-mono-num truncate text-xs text-[var(--color-text-faint)]"
+                  title={`HASSHServer: ${f.hasshServer}`}
+                >
+                  {`HASSHs ${f.hasshServer.slice(0, 12)}…`}
+                </span>
+              )}
             </span>
           );
         },

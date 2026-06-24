@@ -264,6 +264,9 @@ pub struct PacketMeta {
     /// SSH client HASSH (MD5) fingerprint from a client KEXINIT; `None` otherwise. The SSH analogue
     /// of the client `ja3`/`ja4`. Derived flag — no payload retained.
     pub hassh: Option<String>,
+    /// SSH server HASSHServer (MD5) fingerprint from a server KEXINIT; `None` otherwise. The SSH
+    /// analogue of the server-side `ja3s`. Derived flag — no payload retained.
+    pub hassh_server: Option<String>,
 }
 
 impl PacketMeta {

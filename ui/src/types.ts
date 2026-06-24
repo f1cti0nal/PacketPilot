@@ -296,6 +296,7 @@ export interface RawFlowRow {
   tls_version: string | null;
   tls_cipher: string | null;
   hassh: string | null;
+  hassh_server: string | null;
   severity: string | null;
   threat_score: number;
   ioc: boolean;
@@ -332,6 +333,7 @@ export interface WasmFlow {
   tls_version: string | null;
   tls_cipher: string | null;
   hassh: string | null;
+  hassh_server: string | null;
   severity: string;
   threat_score: number;
   ioc: boolean;
@@ -364,6 +366,7 @@ export interface FlowRow {
   tlsVersion: string | null; // negotiated TLS version label from the ServerHello, if captured
   tlsCipher: string | null; // negotiated TLS cipher-suite label, if captured
   hassh: string | null; // SSH client HASSH (MD5) fingerprint, if captured
+  hasshServer: string | null; // SSH server HASSHServer (MD5) fingerprint, if captured
   bytesC2s: number;
   bytesS2c: number;
   bytesTotal: number; // derived

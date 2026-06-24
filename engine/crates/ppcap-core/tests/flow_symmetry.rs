@@ -109,6 +109,7 @@ fn observe_folds_fwd_and_rev() {
         tls_version: None,
         tls_cipher: None,
         hassh: None,
+        hassh_server: None,
     };
     let mut rev = fwd.clone();
     rev.ts_ns = 900;

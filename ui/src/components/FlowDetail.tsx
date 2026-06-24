@@ -443,6 +443,9 @@ export function FlowDetail({
         <Field label="SSH HASSH" mono title={flow.hassh ?? undefined}>
           {flow.hassh ?? <span className="text-[var(--color-text-faint)]">—</span>}
         </Field>
+        <Field label="SSH HASSHServer" mono title={flow.hasshServer ?? undefined}>
+          {flow.hasshServer ?? <span className="text-[var(--color-text-faint)]">—</span>}
+        </Field>
       </Section>
 
       {/* Traffic */}

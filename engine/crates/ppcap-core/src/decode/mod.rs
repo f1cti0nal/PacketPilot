@@ -69,6 +69,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         tls_version: None,
         tls_cipher: None,
         hassh: None,
+        hassh_server: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -200,9 +201,12 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
             meta.tls_version = Some(version.to_string());
             meta.tls_cipher = Some(cipher);
         }
-        // SSH client fingerprint (HASSH): the algorithm name-lists of a client KEXINIT, MD5-
-        // fingerprinted (the SSH analogue of JA3). TCP-only; payload-free; only set on a client KEXINIT.
+        // SSH fingerprints (HASSH / HASSHServer): the algorithm name-lists of a KEXINIT, MD5-
+        // fingerprinted (the SSH analogue of JA3 / JA3S). TCP-only; payload-free; each is set only on
+        // its own side's KEXINIT (client vs server, oriented by port).
         meta.hassh = crate::ssh::sniff_client_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
+        meta.hassh_server =
+            crate::ssh::sniff_server_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
     }
 
     Ok(())
@@ -926,6 +930,7 @@ mod tests {
             tls_version: None,
             tls_cipher: None,
             hassh: None,
+            hassh_server: None,
         }
     }
 

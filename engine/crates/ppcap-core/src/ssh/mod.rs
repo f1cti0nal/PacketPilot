@@ -1,10 +1,12 @@
-//! SSH client fingerprinting (HASSH) — the SSH analogue of JA3.
+//! SSH fingerprinting (HASSH / HASSHServer) — the SSH analogue of JA3 / JA3S.
 //!
 //! HASSH fingerprints an SSH *client* from the algorithm name-lists it offers in its `SSH_MSG_KEXINIT`
-//! (sent in the clear, before key exchange). It is `MD5("kex;enc_c2s;mac_c2s;comp_c2s")` over the
-//! client's KEXINIT. Distinct SSH stacks (OpenSSH, PuTTY, libssh, paramiko, Go x/crypto/ssh, scanners)
-//! produce distinct HASSHes, so it surfaces scripted/automated SSH clients — a useful companion to the
-//! brute-force detector. Payload-free: only the derived fingerprint is kept, never the handshake bytes.
+//! (sent in the clear, before key exchange): `MD5("kex;enc_c2s;mac_c2s;comp_c2s")`. HASSHServer is the
+//! *server*'s counterpart over its KEXINIT's server→client lists: `MD5("kex;enc_s2c;mac_s2c;comp_s2c")`.
+//! Distinct SSH stacks (OpenSSH, PuTTY, libssh, paramiko, Go x/crypto/ssh, scanners) produce distinct
+//! HASSHes, so they surface scripted/automated SSH clients and identify server builds — a useful
+//! companion to the brute-force detector. Payload-free: only the derived fingerprint is kept, never
+//! the handshake bytes.
 
 use crate::fingerprint::md5_hex;
 use crate::model::packet::Transport;
@@ -24,8 +26,7 @@ const SSH_MSG_KEXINIT: u8 = 20;
 ///
 /// Residual limitation (port-only, no flow state): an SSH server on a port *higher* than the client's
 /// source port (e.g. server :2222, client bound low) inverts the heuristic and would fingerprint the
-/// server's KEXINIT as the client's. The proper fix (a separate `hasshServer` column keyed on true
-/// connection orientation) is deferred to phase B.
+/// server's KEXINIT as the client's (and vice-versa for the server sniff).
 pub(crate) fn sniff_client_hassh(
     transport: Transport,
     src_port: u16,
@@ -44,12 +45,39 @@ pub(crate) fn sniff_client_hassh(
     Some(md5_hex(s.as_bytes()))
 }
 
-/// The four client→server name-lists HASSH is computed from.
+/// Sniff a server HASSHServer from an L4 payload that begins (after an optional identification line)
+/// with an SSH KEXINIT. Returns `MD5("kex;enc_s2c;mac_s2c;comp_s2c")` over the *server*'s KEXINIT, or
+/// `None` when the payload is not a *server*-side SSH KEXINIT. The mirror of [`sniff_client_hassh`]:
+/// TCP-only, and the server's KEXINIT travels *from* the lower / listening port (`src_port < dst_port`,
+/// strict so symmetric `src==dst` drops rather than mislabeling).
+pub(crate) fn sniff_server_hassh(
+    transport: Transport,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) -> Option<String> {
+    if transport != Transport::Tcp {
+        return None;
+    }
+    // The server's KEXINIT travels from the lower/listening port toward the client's ephemeral port.
+    if src_port >= dst_port {
+        return None;
+    }
+    let k = parse_kexinit(payload)?;
+    let s = format!("{};{};{};{}", k.kex, k.enc_s2c, k.mac_s2c, k.comp_s2c);
+    Some(md5_hex(s.as_bytes()))
+}
+
+/// The KEXINIT name-lists HASSH / HASSHServer are computed from (the kex list plus each direction's
+/// encryption / MAC / compression lists).
 struct KexInit {
     kex: String,
     enc_c2s: String,
     mac_c2s: String,
     comp_c2s: String,
+    enc_s2c: String,
+    mac_s2c: String,
+    comp_s2c: String,
 }
 
 /// Parse an SSH KEXINIT, skipping a leading `SSH-…` identification line if the segment carries one.
@@ -84,10 +112,11 @@ fn parse_kexinit(payload: &[u8]) -> Option<KexInit> {
     let kex = r.next()?; // kex_algorithms
     let _host_key = r.next()?; // server_host_key_algorithms
     let enc_c2s = r.next()?; // encryption_algorithms_client_to_server
-    let _enc_s2c = r.next()?; // encryption_algorithms_server_to_client
+    let enc_s2c = r.next()?; // encryption_algorithms_server_to_client
     let mac_c2s = r.next()?; // mac_algorithms_client_to_server
-    let _mac_s2c = r.next()?; // mac_algorithms_server_to_client
+    let mac_s2c = r.next()?; // mac_algorithms_server_to_client
     let comp_c2s = r.next()?; // compression_algorithms_client_to_server
+    let comp_s2c = r.next()?; // compression_algorithms_server_to_client
     // SSH algorithm lists are ASCII; a non-empty ASCII kex list is a strong SSH-ness gate that
     // keeps a structurally-coincidental non-SSH payload from producing a bogus fingerprint.
     if kex.is_empty() || !kex.is_ascii() || !enc_c2s.is_ascii() {
@@ -98,6 +127,9 @@ fn parse_kexinit(payload: &[u8]) -> Option<KexInit> {
         enc_c2s,
         mac_c2s,
         comp_c2s,
+        enc_s2c,
+        mac_s2c,
+        comp_s2c,
     })
 }
 
@@ -200,5 +232,41 @@ mod tests {
         assert!(sniff_client_hassh(Transport::Tcp, 54321, 80, b"GET / HTTP/1.1\r\nHost: x\r\n\r\n").is_none());
         assert!(sniff_client_hassh(Transport::Tcp, 54321, 22, b"").is_none());
         assert!(sniff_client_hassh(Transport::Tcp, 54321, 22, &[0u8; 8]).is_none()); // msg type 0
+    }
+
+    #[test]
+    fn server_hassh_matches_the_md5_of_the_s2c_lists() {
+        // Distinct c2s vs s2c lists so the server fingerprint is provably the server→client one.
+        let lists = [
+            "curve25519-sha256",      // kex
+            "ssh-ed25519",            // host key
+            "aes128-ctr",             // enc_c2s
+            "aes256-gcm@openssh.com", // enc_s2c (different)
+            "hmac-sha2-256",          // mac_c2s
+            "hmac-sha2-512",          // mac_s2c (different)
+            "none",                   // comp_c2s
+            "zlib@openssh.com",       // comp_s2c (different)
+            "",
+            "",
+        ];
+        let pkt = kexinit_packet(&lists);
+        // Server -> client: src_port (22) < dst_port (54321).
+        let fp = sniff_server_hassh(Transport::Tcp, 22, 54321, &pkt).expect("server hassh");
+        let expected =
+            md5_hex(format!("{};{};{};{}", lists[0], lists[3], lists[5], lists[7]).as_bytes());
+        assert_eq!(fp, expected);
+        // Must NOT equal the client (c2s) fingerprint.
+        let client_fp =
+            md5_hex(format!("{};{};{};{}", lists[0], lists[2], lists[4], lists[6]).as_bytes());
+        assert_ne!(fp, client_fp);
+    }
+
+    #[test]
+    fn client_side_or_symmetric_kexinit_is_not_fingerprinted_as_server() {
+        let pkt = kexinit_packet(&LISTS);
+        // Client -> server (dst < src) is not a server HASSH; symmetric ports drop; non-TCP rejected.
+        assert!(sniff_server_hassh(Transport::Tcp, 54321, 22, &pkt).is_none());
+        assert!(sniff_server_hassh(Transport::Tcp, 22, 22, &pkt).is_none());
+        assert!(sniff_server_hassh(Transport::Udp, 22, 54321, &pkt).is_none());
     }
 }
