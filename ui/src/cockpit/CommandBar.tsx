@@ -1,5 +1,6 @@
 // Fixed 56px glass command bar: wordmark + collapse, capture identity + live
 // status pill, view switcher and capture actions.
+import type { ReactNode } from "react";
 import {
   Radar,
   PanelLeftClose,
@@ -10,7 +11,6 @@ import {
   CheckCircle2,
   Settings,
   Sparkles,
-  ShieldAlert,
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { shortHash } from "../lib/format";
@@ -40,7 +40,7 @@ export function CommandBar({
   onOpenPalette,
   onOpenSettings,
   onOpenAiChat,
-  onLoadRules,
+  rulesMenu,
 }: {
   captureName: string;
   sha256?: string;
@@ -58,8 +58,8 @@ export function CommandBar({
   onOpenPalette?: () => void;
   onOpenSettings?: () => void;
   onOpenAiChat?: () => void;
-  /** Trigger the "Load detection rules" file picker. Only provided when packets are available. */
-  onLoadRules?: () => void;
+  /** Slot for the RuleSetsMenu dropdown (or any rules affordance). */
+  rulesMenu?: ReactNode;
 }) {
   return (
     <header className="glass-band relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-3">
@@ -188,16 +188,7 @@ export function CommandBar({
             <Sparkles size={14} />
           </button>
         )}
-        <button
-          type="button"
-          aria-label="Load detection rules"
-          onClick={onLoadRules}
-          disabled={!onLoadRules}
-          title="Load detection rules (.rules / .txt)"
-          className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)] disabled:cursor-default disabled:opacity-40"
-        >
-          <ShieldAlert size={14} />
-        </button>
+        {rulesMenu}
       </div>
     </header>
   );

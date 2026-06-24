@@ -69,6 +69,8 @@ export interface AppShellProps {
   onOpenAiChat?: () => void;
   /** Trigger the "Load detection rules" file picker. Only provided when packets are available. */
   onLoadRules?: () => void;
+  /** Slot rendered in the CommandBar in place of the old ShieldAlert button (e.g. RuleSetsMenu). */
+  rulesMenu?: ReactNode;
   /** Whether a capture comparison is active (shows the Compare tab). */
   compareActive?: boolean;
   children: ReactNode;
@@ -104,6 +106,7 @@ export function AppShell({
   onOpenSettings,
   onOpenAiChat,
   onLoadRules,
+  rulesMenu,
   compareActive = false,
   children,
 }: AppShellProps) {
@@ -222,7 +225,7 @@ export function AppShell({
         onToggleCollapse={onToggleCollapse}
         onOpenSettings={onOpenSettings}
         onOpenAiChat={onOpenAiChat}
-        onLoadRules={onLoadRules}
+        rulesMenu={rulesMenu}
       />
       <div className="flex min-h-0 flex-1">
         <ThreatRail
