@@ -33,7 +33,9 @@ export function saveRuleSet(name: string, text: string): { ok: boolean; sets: Ru
   if (trimmed === "") return { ok: false, sets: listRuleSets(), message: "Empty name" };
   if (text.length > MAX_RULESET_BYTES) return { ok: false, sets: listRuleSets(), message: "Ruleset too large to save" };
   const list = listRuleSets().filter((s) => s.name !== trimmed);
-  list.push({ id: `rs_${trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: trimmed, text });
+  // id derives from the (unique, upsert-by-name) trimmed name WITHOUT slug-normalization, so two
+  // distinct names can't collide on one id (the slug bug that bit FilterProfile ids — task_f8a7c13d).
+  list.push({ id: `rs_${trimmed}`, name: trimmed, text });
   persist(list);
   return { ok: true, sets: list };
 }

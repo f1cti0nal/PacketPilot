@@ -10,6 +10,16 @@ describe("ruleSets", () => {
     expect(listRuleSets().map((s) => s.name)).toEqual(["c2.rules"]);
     expect(localStorage.getItem("packetpilot.ruleSets.v1")).toContain("c2.rules");
   });
+
+  it("gives distinct names distinct ids (no slug collision); removeRuleSet drops only one", () => {
+    // "C2 Hunt" and "c2-hunt" would slug to the same value — assert they get distinct ids.
+    const a = saveRuleSet("C2 Hunt", "alert tcp any any -> any 1 (content:\"a\"; sid:1;)").sets;
+    saveRuleSet("c2-hunt", "alert tcp any any -> any 2 (content:\"b\"; sid:2;)");
+    const ids = listRuleSets().map((s) => s.id);
+    expect(new Set(ids).size).toBe(2); // distinct ids
+    const remaining = removeRuleSet(a.find((s) => s.name === "C2 Hunt")!.id);
+    expect(remaining.map((s) => s.name)).toEqual(["c2-hunt"]); // only "C2 Hunt" removed
+  });
   it("upserts by trimmed name (keeps one, updated text)", () => {
     saveRuleSet("set", "a"); saveRuleSet("set", "b");
     const list = listRuleSets();
