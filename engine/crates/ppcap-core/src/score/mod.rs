@@ -27,6 +27,7 @@
 use crate::enrich::{attack_for, classify_ip, FeedMatch};
 use crate::model::category::Category;
 use crate::model::flow::FlowRecord;
+use crate::model::summary::ScoreTerm;
 
 pub use crate::model::severity::Severity;
 
@@ -61,82 +62,164 @@ pub struct ScoredFlow {
     pub evidence: Vec<String>,
     /// MITRE ATT&CK technique ids (0 or 1 in Phase 2).
     pub attack: Vec<String>,
+    /// Typed additive score contributions (one per `add_term` call). Mirrors the `(±N)`
+    /// evidence strings but machine-readable. Clamp/floor entries are NOT terms.
+    #[serde(default)]
+    pub terms: Vec<ScoreTerm>,
+}
+
+/// Push one additive scoring contribution: bumps the accumulator, records a typed
+/// [`ScoreTerm`], and appends a byte-identical `"{label} ({points:+})"` evidence string.
+fn add_term(
+    acc: &mut i32,
+    evidence: &mut Vec<String>,
+    terms: &mut Vec<ScoreTerm>,
+    label: impl Into<String>,
+    points: i32,
+) {
+    let label = label.into();
+    *acc += points;
+    terms.push(ScoreTerm {
+        label: label.clone(),
+        points,
+    });
+    evidence.push(format!("{label} ({points:+})"));
 }
 
 /// Score one classified flow against the feed-match summary. Pure and deterministic.
 pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
     let mut acc: i32 = 0;
     let mut evidence: Vec<String> = Vec::new();
+    let mut terms: Vec<ScoreTerm> = Vec::new();
 
     // --- Category term -----------------------------------------------------------------
     match rec.category {
         Category::C2 => {
-            acc += PTS_C2;
-            evidence.push("category c2 (+45)".to_string());
+            add_term(&mut acc, &mut evidence, &mut terms, "category c2", PTS_C2);
         }
         Category::Anomalous => {
-            acc += PTS_ANOMALOUS;
-            evidence.push("category anomalous (+40)".to_string());
+            add_term(
+                &mut acc,
+                &mut evidence,
+                &mut terms,
+                "category anomalous",
+                PTS_ANOMALOUS,
+            );
         }
         Category::Scan => {
-            acc += PTS_SCAN;
-            evidence.push("category scan (+25)".to_string());
+            add_term(
+                &mut acc,
+                &mut evidence,
+                &mut terms,
+                "category scan",
+                PTS_SCAN,
+            );
         }
         Category::TunnelVpn => {
-            acc += PTS_TUNNEL;
-            evidence.push("category tunnel_vpn (+25)".to_string());
+            add_term(
+                &mut acc,
+                &mut evidence,
+                &mut terms,
+                "category tunnel_vpn",
+                PTS_TUNNEL,
+            );
         }
         Category::Email | Category::FileTransfer | Category::RemoteAccess => {
-            acc += PTS_MEDIUM_RISK_CAT;
-            evidence.push(format!("category {} (+10)", rec.category.as_str()));
+            add_term(
+                &mut acc,
+                &mut evidence,
+                &mut terms,
+                format!("category {}", rec.category.as_str()),
+                PTS_MEDIUM_RISK_CAT,
+            );
         }
         Category::Web | Category::Dns | Category::Voip | Category::IotOt => {
-            acc += PTS_BENIGN_CAT;
-            evidence.push(format!("category {} (+3)", rec.category.as_str()));
+            add_term(
+                &mut acc,
+                &mut evidence,
+                &mut terms,
+                format!("category {}", rec.category.as_str()),
+                PTS_BENIGN_CAT,
+            );
         }
         Category::Unknown => {
             // +0; still recorded for transparency.
-            evidence.push("category unknown (+0)".to_string());
+            add_term(&mut acc, &mut evidence, &mut terms, "category unknown", 0);
         }
     }
 
     // --- IOC terms ---------------------------------------------------------------------
     if fm.ip {
-        acc += PTS_IOC;
-        evidence.push("ioc: endpoint ip on threat feed (+35)".to_string());
+        add_term(
+            &mut acc,
+            &mut evidence,
+            &mut terms,
+            "ioc: endpoint ip on threat feed",
+            PTS_IOC,
+        );
     }
     if fm.domain {
-        acc += PTS_IOC;
-        evidence.push("ioc: sni on threat feed (+35)".to_string());
+        add_term(
+            &mut acc,
+            &mut evidence,
+            &mut terms,
+            "ioc: sni on threat feed",
+            PTS_IOC,
+        );
     }
     if fm.fingerprint {
-        acc += PTS_IOC;
-        evidence.push("ioc: tls fingerprint on threat feed (+35)".to_string());
+        add_term(
+            &mut acc,
+            &mut evidence,
+            &mut terms,
+            "ioc: tls fingerprint on threat feed",
+            PTS_IOC,
+        );
     }
 
     // --- Externality term --------------------------------------------------------------
     let lo_ext = classify_ip(rec.key.lo_ip).is_external();
     let hi_ext = classify_ip(rec.key.hi_ip).is_external();
     if lo_ext || hi_ext {
-        acc += PTS_EXTERNAL;
-        evidence.push("external public peer (+15)".to_string());
+        add_term(
+            &mut acc,
+            &mut evidence,
+            &mut terms,
+            "external public peer",
+            PTS_EXTERNAL,
+        );
     } else {
-        acc += PTS_ALL_INTERNAL;
-        evidence.push("all-internal peers (-10)".to_string());
+        add_term(
+            &mut acc,
+            &mut evidence,
+            &mut terms,
+            "all-internal peers",
+            PTS_ALL_INTERNAL,
+        );
     }
 
     // --- Behavioral terms --------------------------------------------------------------
     if rec.category == Category::Scan && rec.pkts_rev == 0 {
-        acc += PTS_BEHAVIOR;
-        evidence.push("behavior: scan-shaped probe (+10)".to_string());
+        add_term(
+            &mut acc,
+            &mut evidence,
+            &mut terms,
+            "behavior: scan-shaped probe",
+            PTS_BEHAVIOR,
+        );
     }
     if rec.category == Category::C2
         && rec.total_bytes() <= BEACON_MAX_BYTES
         && rec.pkts_fwd >= 2
         && rec.pkts_rev >= 2
     {
-        acc += PTS_BEHAVIOR;
-        evidence.push("behavior: beacon-shaped (+10)".to_string());
+        add_term(
+            &mut acc,
+            &mut evidence,
+            &mut terms,
+            "behavior: beacon-shaped",
+            PTS_BEHAVIOR,
+        );
     }
 
     // --- Summation + clamp + reconcile -------------------------------------------------
@@ -174,6 +257,7 @@ pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
         score,
         evidence,
         attack,
+        terms,
     }
 }
 
@@ -338,5 +422,73 @@ mod tests {
         let r = rec(Category::Unknown);
         let s = score_flow(&r, &FeedMatch::default());
         assert!(s.evidence.iter().any(|e| e == "category unknown (+0)"));
+    }
+
+    #[test]
+    fn score_flow_emits_typed_terms_matching_evidence() {
+        // Mirror the ioc_plus_c2_forces_critical fixture: C2 category + ip IOC.
+        // This hits: category c2 (+45), ioc: endpoint ip on threat feed (+35),
+        //            all-internal peers (-10), behavior: beacon-shaped (+10).
+        let mut r = rec(Category::C2);
+        r.pkts_fwd = 3;
+        r.pkts_rev = 3;
+        r.bytes_fwd = 100;
+        r.bytes_rev = 100;
+        let sc = score_flow(
+            &r,
+            &FeedMatch {
+                ip: true,
+                ..Default::default()
+            },
+        );
+
+        // Additive terms are typed:
+        assert!(
+            sc.terms
+                .iter()
+                .any(|t| t.label == "category c2" && t.points == 45),
+            "expected category c2 term: {:?}",
+            sc.terms
+        );
+        assert!(
+            sc.terms
+                .iter()
+                .any(|t| t.label == "ioc: endpoint ip on threat feed" && t.points == 35),
+            "expected ioc ip term: {:?}",
+            sc.terms
+        );
+        assert!(
+            sc.terms
+                .iter()
+                .any(|t| t.label == "all-internal peers" && t.points == -10),
+            "expected all-internal term: {:?}",
+            sc.terms
+        );
+        assert!(
+            sc.terms
+                .iter()
+                .any(|t| t.label == "behavior: beacon-shaped" && t.points == 10),
+            "expected beacon-shaped term: {:?}",
+            sc.terms
+        );
+
+        // Every term has a byte-identical evidence string:
+        for t in &sc.terms {
+            let expected = format!("{} ({:+})", t.label, t.points);
+            assert!(
+                sc.evidence.contains(&expected),
+                "missing evidence for term {t:?}; evidence = {:?}",
+                sc.evidence
+            );
+        }
+
+        // Clamp/floor are NOT terms:
+        assert!(
+            !sc.terms
+                .iter()
+                .any(|t| t.label.starts_with("clamp") || t.label.starts_with("floor")),
+            "clamp/floor must not appear in terms: {:?}",
+            sc.terms
+        );
     }
 }

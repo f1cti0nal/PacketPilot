@@ -35,6 +35,7 @@ fn sample() -> AnalysisOutput {
         evidence: vec!["beacon <script>alert(1)</script> & co".into()],
         reputation: Vec::new(),
         fingerprints: vec![],
+        score_terms: vec![],
     }];
 
     AnalysisOutput {

@@ -296,6 +296,7 @@ mod apply_tests {
             evidence: vec![],
             reputation: vec![],
             fingerprints: vec![],
+            score_terms: vec![],
         }
     }
 

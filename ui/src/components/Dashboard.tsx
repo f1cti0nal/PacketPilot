@@ -173,6 +173,7 @@ export function Dashboard({
         onJumpToFlows={toFlowsIp}
         scoreEvidence={selectedIncident ? threatByHost.get(selectedIncident.host)?.evidence : undefined}
         hostScore={selectedIncident ? threatByHost.get(selectedIncident.host)?.score : undefined}
+        scoreTerms={selectedIncident ? threatByHost.get(selectedIncident.host)?.score_terms : undefined}
       />
     </div>
   );

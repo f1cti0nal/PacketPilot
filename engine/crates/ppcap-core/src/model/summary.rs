@@ -113,6 +113,13 @@ pub struct FingerprintHit {
     pub label: String,
 }
 
+/// One additive scoring contribution (label + signed points). Mirrors the `(±N)` evidence string.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ScoreTerm {
+    pub label: String,
+    pub points: i32,
+}
+
 /// One per-IP threat rollup row (the worst verdict seen across that IP's flows).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IpThreat {
@@ -139,6 +146,11 @@ pub struct IpThreat {
     /// `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub fingerprints: Vec<FingerprintHit>,
+    /// Additive scoring terms from the IP's worst (representative) flow. Mirrors the
+    /// per-term `(±N)` evidence strings; useful for structured score explanation.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub score_terms: Vec<ScoreTerm>,
 }
 
 /// One per-domain (TLS SNI host) rollup row, ranked by traffic. A display surface — not
@@ -304,6 +316,14 @@ mod tests {
             "flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#;
         let row: IpThreat = serde_json::from_str(json).unwrap();
         assert!(row.reputation.is_empty());
+    }
+
+    #[test]
+    fn ip_threat_score_terms_defaults_empty_on_old_json() {
+        // An older summary row written before score_terms existed must still deserialize.
+        let json = r#"{"ip":"203.0.113.7","ip_class":"public","severity":"low","score":20,"flows":3,"bytes":1000,"ioc":false,"tags":["public"],"attack":[],"evidence":[]}"#;
+        let row: IpThreat = serde_json::from_str(json).unwrap();
+        assert!(row.score_terms.is_empty());
     }
 
     #[test]

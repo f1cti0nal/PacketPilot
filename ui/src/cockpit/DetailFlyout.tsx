@@ -2,7 +2,7 @@
 // evidence[] rendered as a mono log, and a deep-link back to the flows table.
 import { useEffect, useRef } from "react";
 import { ArrowRight, X } from "lucide-react";
-import type { Incident } from "../types";
+import type { Incident, ScoreTerm } from "../types";
 import { sevColor } from "./viz";
 import { SeverityChip, SeverityDot, MitreTag, SectionLabel } from "./primitives";
 import { EvidenceList } from "../components/transparency/EvidenceList";
@@ -18,12 +18,14 @@ export function DetailFlyout({
   onJumpToFlows,
   scoreEvidence,
   hostScore,
+  scoreTerms,
 }: {
   incident: Incident | null;
   onClose: () => void;
   onJumpToFlows?: (host: string) => void;
   scoreEvidence?: string[];
   hostScore?: number;
+  scoreTerms?: ScoreTerm[];
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -108,6 +110,7 @@ export function DetailFlyout({
               evidence={scoreEvidence}
               score={hostScore ?? incident.score}
               severity={incident.severity}
+              scoreTerms={scoreTerms}
             />
           )}
 

@@ -15,8 +15,8 @@ use crate::model::flow::FlowRecord;
 use crate::model::packet::{PacketMeta, Transport};
 use crate::model::severity::Severity;
 use crate::model::summary::{
-    CategoryCount, FingerprintHit, IpThreat, PortCount, ProtoCount, SeverityCounts, Summary,
-    TimeBucket, TopTalker,
+    CategoryCount, FingerprintHit, IpThreat, PortCount, ProtoCount, ScoreTerm, SeverityCounts,
+    Summary, TimeBucket, TopTalker,
 };
 use crate::score::ScoredFlow;
 
@@ -120,6 +120,7 @@ struct IpThreatStat {
     attack: BTreeSet<String>,          // deterministic sorted union
     evidence: Vec<String>,             // bounded, deduped
     fingerprints: Vec<FingerprintHit>, // bounded (MAX_FP_PER_IP), deduped by full equality
+    terms: Vec<ScoreTerm>, // additive scoring terms from the worst (representative) flow
 }
 
 /// The streaming summary accumulator.
@@ -333,6 +334,7 @@ impl StatsAccumulator {
                 e.max_sev = f.severity;
                 e.max_score = f.threat_score;
                 e.evidence.clear();
+                e.terms = sc.terms.clone();
                 for ev in &sc.evidence {
                     if e.evidence.len() >= self.cfg.max_evidence_per_ip {
                         break;
@@ -559,6 +561,7 @@ impl StatsAccumulator {
                     evidence: s.evidence.clone(),
                     reputation: Vec::new(),
                     fingerprints: s.fingerprints.clone(),
+                    score_terms: s.terms.clone(),
                 }
             })
             .collect();
@@ -1521,6 +1524,7 @@ mod tests {
             score: 5,
             evidence: vec!["category web (+3)".to_string()],
             attack: vec![],
+            terms: vec![],
         };
         acc.observe_scored_flow(&f, &sc);
 
@@ -1578,6 +1582,7 @@ mod tests {
             score: 95,
             evidence: vec!["ioc: endpoint ip on threat feed (+35)".to_string()],
             attack: vec!["T1071".to_string()],
+            terms: vec![],
         };
         acc.observe_scored_flow(&f, &sc);
 
@@ -1622,6 +1627,7 @@ mod tests {
             score: 0,
             evidence: vec![],
             attack: vec![],
+            terms: vec![],
         };
 
         // "a.example" — 200 bytes, 1 flow.
@@ -1688,6 +1694,7 @@ mod tests {
                     "all-internal peers (-10)".to_string(),
                 ],
                 attack: vec![],
+                terms: vec![],
             };
             acc.observe_scored_flow(&f, &sc);
         }
@@ -1705,6 +1712,7 @@ mod tests {
                 "floor: ioc + c2/anomalous forces Critical (>= 90)".to_string(),
             ],
             attack: vec!["T1071".to_string()],
+            terms: vec![],
         };
         acc.observe_scored_flow(&worst, &worst_sc);
 
@@ -1750,6 +1758,7 @@ mod tests {
             score: 80,
             evidence: vec![],
             attack: vec![],
+            terms: vec![],
         };
         acc.observe_flow(&f);
         acc.observe_scored_flow(&f, &sc);
@@ -1793,6 +1802,7 @@ mod tests {
             score: 3,
             evidence: vec![],
             attack: vec![],
+            terms: vec![],
         };
         acc.observe_flow(&f);
         acc.observe_scored_flow(&f, &sc);
@@ -1806,6 +1816,76 @@ mod tests {
         assert!(
             t.fingerprints.is_empty(),
             "unmatched ja3 must not produce fingerprint hits"
+        );
+    }
+
+    #[test]
+    fn ip_threat_carries_worst_flow_score_terms() {
+        // Scenario: three benign Info flows close first (they have no meaningful terms),
+        // then the worst C2 flow closes with additive terms. The IpThreat card must carry
+        // the worst flow's terms — not the benign flows' empty/placeholder terms.
+        use crate::model::summary::ScoreTerm;
+
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let attacker = ip4(10, 0, 0, 11);
+        let c2_server = ip4(198, 51, 100, 1);
+
+        // Benign Info flows (arrive first).
+        for _ in 0..3 {
+            let mut f = flow(Transport::Tcp, attacker, c2_server, Category::Web, 2, 100);
+            f.severity = Severity::Info;
+            f.threat_score = 3;
+            let sc = ScoredFlow {
+                severity: Severity::Info,
+                score: 3,
+                evidence: vec!["category web (+3)".to_string()],
+                attack: vec![],
+                terms: vec![ScoreTerm {
+                    label: "category web".to_string(),
+                    points: 3,
+                }],
+            };
+            acc.observe_flow(&f);
+            acc.observe_scored_flow(&f, &sc);
+        }
+
+        // Worst flow: C2, with additive terms matching the brief's assertion.
+        let mut worst = flow(Transport::Tcp, attacker, c2_server, Category::C2, 4, 500);
+        worst.severity = Severity::High;
+        worst.threat_score = 45;
+        let worst_sc = ScoredFlow {
+            severity: Severity::High,
+            score: 45,
+            evidence: vec!["category c2 (+45)".to_string()],
+            attack: vec!["T1071".to_string()],
+            terms: vec![ScoreTerm {
+                label: "category c2".to_string(),
+                points: 45,
+            }],
+        };
+        acc.observe_flow(&worst);
+        acc.observe_scored_flow(&worst, &worst_sc);
+
+        let s = acc.finish();
+        let card = s
+            .ip_threats
+            .iter()
+            .find(|c| c.ip == "10.0.0.11")
+            .expect("attacker ip_threat row present");
+
+        // The card must carry the worst flow's terms (category c2, +45).
+        assert!(
+            card.score_terms
+                .iter()
+                .any(|t| t.label == "category c2" && t.points == 45),
+            "score_terms must reflect worst flow: {:?}",
+            card.score_terms
+        );
+        // The benign "category web" term must NOT appear (terms are worst-flow only).
+        assert!(
+            !card.score_terms.iter().any(|t| t.label == "category web"),
+            "benign terms must not appear in score_terms: {:?}",
+            card.score_terms
         );
     }
 }
