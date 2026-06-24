@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm, renderReportWasm } = vi.hoisted(() => ({
+const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm } = vi.hoisted(() => ({
   invoke: vi.fn(),
   save: vi.fn(),
   isTauri: vi.fn(),
@@ -8,6 +8,7 @@ const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, ex
   exportStixWasm: vi.fn(),
   exportMispWasm: vi.fn(),
   exportCefWasm: vi.fn(),
+  exportSigmaWasm: vi.fn(),
   applyRulesWasm: vi.fn(),
   renderReportWasm: vi.fn(),
 }));
@@ -15,10 +16,10 @@ const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, ex
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save, open: vi.fn() }));
 vi.mock("./tauri-detect", () => ({ isTauri }));
-vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm, renderReportWasm }));
+vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm }));
 vi.mock("./data", () => ({ loadFlows: vi.fn() }));
 
-import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef, applyRules, exportReport } from "./platform";
+import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef, exportSigma, copySigma, applyRules, exportReport } from "./platform";
 import type { AnalysisOutput, ActiveSource } from "../types";
 
 const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknown as AnalysisOutput;
@@ -26,7 +27,7 @@ const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknow
 beforeEach(() => {
   invoke.mockReset(); save.mockReset(); isTauri.mockReset();
   exportCsvWasm.mockReset(); exportStixWasm.mockReset();
-  exportMispWasm.mockReset(); exportCefWasm.mockReset(); renderReportWasm.mockReset();
+  exportMispWasm.mockReset(); exportCefWasm.mockReset(); exportSigmaWasm.mockReset(); renderReportWasm.mockReset();
 });
 
 describe("platform structured export", () => {
@@ -188,6 +189,37 @@ describe("platform structured export", () => {
     exportCefWasm.mockRejectedValue(new Error("cef boom"));
     const r = await exportCef(summary);
     expect(r.ok).toBe(false);
+  });
+
+  it("exportSigma on desktop opens a save dialog and invokes save_sigma", async () => {
+    isTauri.mockReturnValue(true);
+    save.mockResolvedValue("/tmp/out-sigma.yml");
+    const r = await exportSigma(summary);
+    expect(save).toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith("save_sigma", { summary, path: "/tmp/out-sigma.yml" });
+    expect(r.ok).toBe(true);
+  });
+
+  it("exportSigma in the browser generates via WASM and downloads", async () => {
+    isTauri.mockReturnValue(false);
+    exportSigmaWasm.mockResolvedValue("title: PacketPilot: ...");
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fake"), revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const r = await exportSigma(summary);
+    expect(exportSigmaWasm).toHaveBeenCalledWith(JSON.stringify(summary));
+    expect(click).toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    click.mockRestore();
+  });
+
+  it("copySigma writes the Sigma rules to the clipboard", async () => {
+    isTauri.mockReturnValue(false);
+    exportSigmaWasm.mockResolvedValue("title: PacketPilot: ...");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const r = await copySigma(summary);
+    expect(writeText).toHaveBeenCalledWith("title: PacketPilot: ...");
+    expect(r.ok).toBe(true);
   });
 
   // ── exportReport (browser) ───────────────────────────────────────────────────

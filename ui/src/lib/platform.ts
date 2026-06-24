@@ -4,7 +4,7 @@ import type { ActiveSource, AnalysisOutput, FlowRow, WireFlowPackets } from "../
 import { loadFlows } from "./data";
 import { isTauri } from "./tauri-detect";
 export { isTauri } from "./tauri-detect";
-import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, applyRulesWasm, renderReportWasm } from "./wasmEngine";
+import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm } from "./wasmEngine";
 export type { RuleApplyResult } from "./wasmEngine";
 
 interface AnalyzeDto {
@@ -253,6 +253,37 @@ export async function copyCef(summary: AnalysisOutput): Promise<ExportResult> {
     const s = isTauri()
       ? await invoke<string>("export_cef", { summary })
       : await exportCefWasm(JSON.stringify(summary));
+    return copyText(s);
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
+}
+
+export async function exportSigma(summary: AnalysisOutput): Promise<ExportResult> {
+  const name = `${captureBase(summary)}-sigma.yml`;
+  if (isTauri()) {
+    const path = await save({ defaultPath: name, filters: [{ name: "Sigma", extensions: ["yml", "yaml"] }] });
+    if (!path) return { ok: false, message: "" };
+    try {
+      await invoke("save_sigma", { summary, path });
+      return { ok: true, message: "Sigma rules saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
+  }
+  try {
+    downloadText(await exportSigmaWasm(JSON.stringify(summary)), name, "text/yaml");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
+}
+
+export async function copySigma(summary: AnalysisOutput): Promise<ExportResult> {
+  try {
+    const s = isTauri()
+      ? await invoke<string>("export_sigma", { summary })
+      : await exportSigmaWasm(JSON.stringify(summary));
     return copyText(s);
   } catch (e) {
     return { ok: false, message: `Copy failed: ${e}` };

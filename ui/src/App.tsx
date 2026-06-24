@@ -38,10 +38,12 @@ import {
   exportStix,
   exportMisp,
   exportCef,
+  exportSigma,
   copyCsv,
   copyStix,
   copyMisp,
   copyCef,
+  copySigma,
   applyRules,
 } from "./lib/platform";
 import { packetsAvailable } from "./lib/packets";
@@ -539,6 +541,14 @@ export function App() {
     if (summary.status !== "ready" || !summary.data) return undefined;
     return copyCef(summary.data);
   }, [summary]);
+  const handleExportSigma = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return exportSigma(summary.data);
+  }, [summary]);
+  const handleCopySigma = useCallback(async () => {
+    if (summary.status !== "ready" || !summary.data) return undefined;
+    return copySigma(summary.data);
+  }, [summary]);
 
   const jumpToFlows = useCallback(
     (filter: { severity?: Severity; category?: string; ip?: string }) => {
@@ -619,6 +629,8 @@ export function App() {
       onCopyMisp={handleCopyMisp}
       onExportCef={handleExportCef}
       onCopyCef={handleCopyCef}
+      onExportSigma={handleExportSigma}
+      onCopySigma={handleCopySigma}
       threats={summary.status === "ready" ? summary.data?.summary.ip_threats ?? [] : []}
       activeIp={activeIp}
       onSelectThreat={openThreat}

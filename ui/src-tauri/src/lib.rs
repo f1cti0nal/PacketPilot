@@ -393,6 +393,19 @@ fn export_cef(summary: AnalysisOutput) -> Result<String, String> {
     Ok(ppcap_core::export::cef_records(&summary))
 }
 
+/// Write the Sigma rules for `summary` to `path`.
+#[tauri::command]
+fn save_sigma(summary: AnalysisOutput, path: String) -> Result<(), String> {
+    let s = ppcap_core::export::sigma_rules(&summary);
+    std::fs::write(&path, s).map_err(|e| format!("write sigma: {e}"))
+}
+
+/// Return the Sigma rules string for `summary` (used for copy-to-clipboard).
+#[tauri::command]
+fn export_sigma(summary: AnalysisOutput) -> Result<String, String> {
+    Ok(ppcap_core::export::sigma_rules(&summary))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -403,10 +416,12 @@ pub fn run() {
             save_stix,
             save_misp,
             save_cef,
+            save_sigma,
             export_csv,
             export_stix,
             export_misp,
             export_cef,
+            export_sigma,
             extract_flow_packets,
             carve_pcap_to,
             apply_rules_to,
