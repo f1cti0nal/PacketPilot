@@ -408,9 +408,9 @@ impl TlsCertReassembler {
             let buf = self.buffers.get_mut(&key).expect("buffer present");
             if buf.weak_parsed {
                 None
-            } else if let Some((version, cipher)) = parse_server_hello(&buf.bytes) {
+            } else if let Some(sh) = parse_server_hello(&buf.bytes) {
                 buf.weak_parsed = true;
-                let reasons = weak_tls_reasons(version, cipher);
+                let reasons = weak_tls_reasons(sh.version, sh.cipher);
                 if reasons.is_empty() {
                     None
                 } else {
@@ -418,8 +418,8 @@ impl TlsCertReassembler {
                         client,
                         server,
                         server_port,
-                        version,
-                        cipher,
+                        version: sh.version,
+                        cipher: sh.cipher,
                         reasons,
                     })
                 }
@@ -580,7 +580,18 @@ fn extract_first_cert(cert_msg: &[u8]) -> CertSearch {
 /// record. The ServerHello is small and always fits the first segment; returns `None` on any
 /// truncation. The "real" version is taken from the `supported_versions` extension (TLS 1.3) when
 /// present, else the record's `legacy_version`.
-fn parse_server_hello(payload: &[u8]) -> Option<(u16, u16)> {
+/// Parsed ServerHello fields used across the TLS sniffs.
+struct ServerHello {
+    /// Negotiated version: `supported_versions`-unmasked (authoritative for TLS 1.3), else legacy.
+    version: u16,
+    /// The ServerHello `legacy_version` field (what JA3S hashes; frozen `0x0303` for TLS 1.3).
+    legacy_version: u16,
+    cipher: u16,
+    /// ServerHello extension types in wire order, GREASE removed (for JA3S).
+    ext_types: Vec<u16>,
+}
+
+fn parse_server_hello(payload: &[u8]) -> Option<ServerHello> {
     // record: content_type(22) version(2) length(2)
     if *payload.first()? != 22 {
         return None;
@@ -601,7 +612,7 @@ fn parse_server_hello(payload: &[u8]) -> Option<(u16, u16)> {
 
 /// Parse a ServerHello body: `legacy_version(2) random(32) session_id(1+n) cipher_suite(2)
 /// compression(1) [extensions(2+n)]`.
-fn parse_server_hello_body(body: &[u8]) -> Option<(u16, u16)> {
+fn parse_server_hello_body(body: &[u8]) -> Option<ServerHello> {
     let legacy_version = u16::from_be_bytes([*body.first()?, *body.get(1)?]);
     let sid_len = *body.get(34)? as usize; // after version(2) + random(32)
     let cipher_pos = 35usize.checked_add(sid_len)?;
@@ -609,8 +620,10 @@ fn parse_server_hello_body(body: &[u8]) -> Option<(u16, u16)> {
     let mut pos = cipher_pos.checked_add(3)?; // skip cipher(2) + compression(1)
 
     // Extensions are optional; the ServerHello `supported_versions` (0x002b) is the 2-byte
-    // *selected* version (the authoritative one in TLS 1.3).
+    // *selected* version (the authoritative one in TLS 1.3). Collect the (non-GREASE) extension
+    // types in wire order for JA3S.
     let mut version = legacy_version;
+    let mut ext_types: Vec<u16> = Vec::new();
     if let (Some(&hi), Some(&lo)) = (body.get(pos), body.get(pos + 1)) {
         let ext_total = ((hi as usize) << 8) | lo as usize;
         pos += 2;
@@ -626,10 +639,32 @@ fn parse_server_hello_body(body: &[u8]) -> Option<(u16, u16)> {
             if etype == 0x002b && elen >= 2 {
                 version = u16::from_be_bytes([body[data_start], body[data_start + 1]]);
             }
+            if !crate::fingerprint::is_grease(etype) {
+                ext_types.push(etype);
+            }
             pos = data_end;
         }
     }
-    Some((version, cipher))
+    Some(ServerHello {
+        version,
+        legacy_version,
+        cipher,
+        ext_types,
+    })
+}
+
+/// Compute JA3S = `MD5("SSLVersion,Cipher,Extensions")` over a ServerHello: the legacy version, the
+/// selected cipher, and the (GREASE-removed) extension types, each decimal, extensions dash-joined.
+/// The server-side counterpart to the client JA3.
+fn ja3s_hash(sh: &ServerHello) -> String {
+    let exts = sh
+        .ext_types
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("-");
+    let s = format!("{},{},{}", sh.legacy_version, sh.cipher, exts);
+    crate::fingerprint::md5_hex(s.as_bytes())
 }
 
 /// Weak / deprecated reasons for a negotiated `(version, cipher)`; empty when the connection is fine.
@@ -669,9 +704,10 @@ fn weak_cipher(cipher: u16) -> Option<(&'static str, u8)> {
 /// Sniff the negotiated TLS posture from a server payload that begins with a ServerHello: the
 /// protocol version name and a cipher-suite label. Used by `decode` to populate the per-flow
 /// `tls_version` / `tls_cipher` columns. Payload-free; `None` when the payload is not a ServerHello.
-pub(crate) fn sniff_server_hello(payload: &[u8]) -> Option<(&'static str, String)> {
-    let (version, cipher) = parse_server_hello(payload)?;
-    Some((tls_version_name(version), cipher_label(cipher)))
+pub(crate) fn sniff_server_hello(payload: &[u8]) -> Option<(&'static str, String, String)> {
+    let sh = parse_server_hello(payload)?;
+    let ja3s = ja3s_hash(&sh);
+    Some((tls_version_name(sh.version), cipher_label(sh.cipher), ja3s))
 }
 
 /// A display label for a cipher suite: the IANA name when known, else `0xNNNN`.
@@ -1254,6 +1290,39 @@ mod tests {
             .reasons
             .iter()
             .any(|r| matches!(r, WeakTlsReason::DeprecatedVersion { version: 0x0302 }))));
+    }
+
+    #[test]
+    fn ja3s_hashes_legacy_version_cipher_and_extensions() {
+        // Struct-level: known fields -> the canonical "SSLVersion,Cipher,Extensions" string.
+        let sh = ServerHello {
+            version: 0x0304,
+            legacy_version: 0x0303,          // 771
+            cipher: 0x1301,                  // 4865
+            ext_types: vec![0x002b, 0x0033], // 43-51
+        };
+        assert_eq!(ja3s_hash(&sh), crate::fingerprint::md5_hex(b"771,4865,43-51"));
+        // No extensions -> a trailing empty field.
+        let bare = ServerHello {
+            version: 0x0303,
+            legacy_version: 0x0303,
+            cipher: 0x009c, // 156
+            ext_types: vec![],
+        };
+        assert_eq!(ja3s_hash(&bare), crate::fingerprint::md5_hex(b"771,156,"));
+    }
+
+    #[test]
+    fn sniff_server_hello_returns_ja3s() {
+        // TLS 1.3 ServerHello: legacy 0x0303, AES-128-GCM, supported_versions ext (0x002b = 43).
+        let hello = testcert::server_hello(0x0303, 0x1301, Some(0x0304));
+        let (_ver, cipher, ja3s) = sniff_server_hello(&hello).expect("server hello");
+        assert_eq!(cipher, "TLS_AES_128_GCM_SHA256");
+        assert_eq!(ja3s, crate::fingerprint::md5_hex(b"771,4865,43"));
+        // A ServerHello with no extensions -> empty extensions field.
+        let bare = testcert::server_hello(0x0303, 0x009C, None);
+        let (_v, _c, ja3s2) = sniff_server_hello(&bare).expect("bare hello");
+        assert_eq!(ja3s2, crate::fingerprint::md5_hex(b"771,156,"));
     }
 
     #[test]

@@ -142,6 +142,8 @@ pub struct FlowRecord {
     pub ja3: Option<String>,
     /// First non-empty JA4 fingerprint observed on this flow; `None` if none seen.
     pub ja4: Option<String>,
+    /// First non-empty JA3S (server ServerHello) fingerprint observed on this flow; `None` if none.
+    pub ja3s: Option<String>,
     /// Negotiated TLS version label ("TLS 1.2" …) from the server ServerHello; `None` if none seen.
     pub tls_version: Option<String>,
     /// Negotiated TLS cipher-suite label from the server ServerHello; `None` if none seen.
@@ -187,6 +189,7 @@ impl FlowRecord {
             sni: None,
             ja3: None,
             ja4: None,
+            ja3s: None,
             tls_version: None,
             tls_cipher: None,
             hassh: None,
@@ -234,6 +237,13 @@ impl FlowRecord {
             if let Some(v) = &p.ja4 {
                 if !v.is_empty() {
                     self.ja4 = Some(v.clone());
+                }
+            }
+        }
+        if self.ja3s.is_none() {
+            if let Some(v) = &p.ja3s {
+                if !v.is_empty() {
+                    self.ja3s = Some(v.clone());
                 }
             }
         }
@@ -354,6 +364,7 @@ mod tests {
             hassh: None,
             hassh_server: None,
             arp: None,
+            ja3s: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -412,6 +423,7 @@ mod tests {
             hassh: None,
             hassh_server: None,
             arp: None,
+            ja3s: None,
         };
 
         let mut p1 = base.clone();

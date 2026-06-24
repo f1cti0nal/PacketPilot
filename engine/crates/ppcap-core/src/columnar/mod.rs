@@ -107,6 +107,7 @@ struct Builders {
     tls_cipher: StringBuilder,
     hassh: StringBuilder,
     hassh_server: StringBuilder,
+    ja3s: StringBuilder,
     severity: StringBuilder,
     threat_score: UInt16Builder,
     ioc: BooleanBuilder,
@@ -140,6 +141,7 @@ impl Builders {
             tls_cipher: StringBuilder::new(),
             hassh: StringBuilder::new(),
             hassh_server: StringBuilder::new(),
+            ja3s: StringBuilder::new(),
             severity: StringBuilder::new(),
             threat_score: UInt16Builder::new(),
             ioc: BooleanBuilder::new(),
@@ -178,6 +180,7 @@ impl Builders {
             Arc::new(self.tls_cipher.finish()),
             Arc::new(self.hassh.finish()),
             Arc::new(self.hassh_server.finish()),
+            Arc::new(self.ja3s.finish()),
             Arc::new(self.severity.finish()),
             Arc::new(self.threat_score.finish()),
             Arc::new(self.ioc.finish()),
@@ -222,6 +225,7 @@ impl FlowParquetWriter {
             "tls_cipher",
             "hassh",
             "hassh_server",
+            "ja3s",
             "severity",
         ];
 
@@ -338,6 +342,11 @@ impl FlowParquetWriter {
         match &rec.hassh_server {
             Some(v) if !v.is_empty() => b.hassh_server.append_value(v),
             _ => b.hassh_server.append_null(),
+        }
+        // ja3s: server TLS fingerprint; present only for an observed ServerHello, NULL otherwise.
+        match &rec.ja3s {
+            Some(v) if !v.is_empty() => b.ja3s.append_value(v),
+            _ => b.ja3s.append_null(),
         }
         // Phase-2 verdict columns (never NULL).
         b.severity.append_value(rec.severity.as_str());
@@ -501,6 +510,7 @@ mod tests {
             b.tls_cipher.append_null();
             b.hassh.append_null();
             b.hassh_server.append_null();
+            b.ja3s.append_null();
             b.severity.append_value("info");
             b.threat_score.append_value(0);
             b.ioc.append_value(false);
@@ -508,7 +518,7 @@ mod tests {
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 28);
+        assert_eq!(batch.num_columns(), 29);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }

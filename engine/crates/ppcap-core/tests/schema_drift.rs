@@ -11,7 +11,7 @@ fn arrow_schema_matches_canonical_order() {
     let schema = flow_arrow_schema();
     let names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
     let canonical = flow_columns_in_order();
-    assert_eq!(names.len(), 28);
+    assert_eq!(names.len(), 29);
     assert_eq!(names.as_slice(), &canonical[..], "Arrow field order drift");
 }
 

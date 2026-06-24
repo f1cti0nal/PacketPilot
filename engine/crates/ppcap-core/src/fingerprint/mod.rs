@@ -105,7 +105,7 @@ pub struct TlsFingerprints {
 /// GREASE values have the pattern `{0,1,..f}A{0,1,..f}A` in hex — the high byte equals
 /// the low byte and both nibbles end in `0xA` (i.e. 0x0A0A, 0x1A1A … 0xFAFA).
 #[inline]
-fn is_grease(v: u16) -> bool {
+pub(crate) fn is_grease(v: u16) -> bool {
     let hi = (v >> 8) as u8;
     let lo = (v & 0xff) as u8;
     hi == lo && (lo & 0x0f) == 0x0a
