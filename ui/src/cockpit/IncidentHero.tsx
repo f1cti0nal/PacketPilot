@@ -11,6 +11,7 @@ import {
   Unlock,
   Crosshair,
   FileWarning,
+  ScanSearch,
   ShieldAlert,
   ShieldOff,
   Shuffle,
@@ -38,6 +39,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   weak_tls: { label: "Weak TLS", Icon: ShieldOff },
   icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
   dga: { label: "DGA Domains", Icon: Shuffle },
+  port_scan: { label: "Port Scan", Icon: ScanSearch },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -54,6 +56,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   weak_tls: "Collection",
   icmp_tunnel: "Exfiltration",
   dga: "Command & Control",
+  port_scan: "Discovery",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
@@ -63,6 +66,7 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   lateral_movement: "hosts",
   dns_tunnel: "queries",
   dga: "domains",
+  port_scan: "ports",
   cleartext_creds: "exposures",
 };
 
