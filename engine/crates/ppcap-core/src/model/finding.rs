@@ -33,6 +33,8 @@ pub enum FindingKind {
     DnsTunnel,
     /// User signature-rule match (imported Suricata-style ruleset).
     RuleMatch,
+    /// Suspicious server TLS certificate (self-signed / expired / hostname-mismatched).
+    TlsCertHealth,
 }
 
 impl FindingKind {
@@ -48,6 +50,7 @@ impl FindingKind {
             FindingKind::DataExfil => "data_exfil",
             FindingKind::DnsTunnel => "dns_tunnel",
             FindingKind::RuleMatch => "rule_match",
+            FindingKind::TlsCertHealth => "tls_cert_health",
         }
     }
 }

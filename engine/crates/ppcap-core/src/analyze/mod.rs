@@ -18,9 +18,10 @@ use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_lateral_movement,
-    detect_pii_exposure, detect_sweeps, suppress_swept_by_lateral, BeaconParams, BehaviorTracker,
-    BruteForceParams, CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams,
-    LateralMovementParams, PiiExposureParams, SweepParams,
+    detect_pii_exposure, detect_sweeps, detect_tls_cert_health, suppress_swept_by_lateral,
+    BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams, DetectConfig,
+    DnsTunnelParams, ExfilParams, LateralMovementParams, PiiExposureParams, SweepParams,
+    TlsCertHealthParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -29,6 +30,7 @@ use crate::model::output::AnalysisOutput;
 use crate::reader::PacketSource;
 use crate::score::score_flow;
 use crate::stats::{StatsAccumulator, StatsConfig};
+use crate::tls::TlsCertReassembler;
 use crate::{PpError, Result};
 
 /// JSON/output schema version emitted in [`AnalysisOutput::schema_version`].
@@ -67,6 +69,8 @@ pub struct PipelineConfig {
     pub lateral: LateralMovementParams,
     /// DNS-tunneling-detector tuning.
     pub dns_tunnel: DnsTunnelParams,
+    /// TLS server-certificate-health-detector tuning.
+    pub tls_cert_health: TlsCertHealthParams,
 }
 
 impl Default for PipelineConfig {
@@ -94,6 +98,7 @@ impl Default for PipelineConfig {
             pii: PiiExposureParams::default(),
             lateral: LateralMovementParams::default(),
             dns_tunnel: DnsTunnelParams::default(),
+            tls_cert_health: TlsCertHealthParams::default(),
         }
     }
 }
@@ -183,6 +188,9 @@ pub fn run_source_visiting(
     // Cross-flow behavioral tracker: fed one "contact" per closed flow, queried at finish for
     // beaconing/sweep findings. Bounded like every other per-key map.
     let mut tracker = BehaviorTracker::new(DetectConfig::default());
+    // Bounded server-TLS-handshake reassembler: reads the cleartext server Certificate (TLS ≤ 1.2)
+    // out of band from the same packets, for the certificate-health detector. Drained at EOF.
+    let mut cert_reasm = TlsCertReassembler::new();
     let mut writer: Option<FlowParquetWriter> = match &cfg.flows_parquet {
         Some(p) => Some(FlowParquetWriter::create(p, cfg.writer.clone())?),
         None => None,
@@ -212,6 +220,11 @@ pub fn run_source_visiting(
             Ok(Some(frame)) => {
                 let frame_bytes = frame.wire_len as u64;
                 let decode_result = crate::decode::decode_frame(&frame);
+                // Feed the TLS cert reassembler while the frame is still borrowed (it needs the
+                // raw server payload bytes, which `PacketMeta` does not retain).
+                if let Ok(ref meta) = decode_result {
+                    cert_reasm.observe(meta, &frame);
+                }
                 (frame_bytes, decode_result)
             }
             // Lenient mode: a torn/truncated final record (a non-fatal reader-level framing
@@ -308,6 +321,17 @@ pub fn run_source_visiting(
     // Cross-flow behavioral detection runs once, after every flow's contact has been folded in.
     // Its findings uplift the implicated hosts' per-IP threat cards *before* the summary sorts
     // and truncates them, so a beaconing host/C2 surfaces in the Top Threats panel.
+    // Fold every completed server-certificate observation into the tracker before detection runs.
+    for obs in cert_reasm.into_observations() {
+        tracker.observe_tls_cert(
+            obs.client,
+            obs.server,
+            obs.server_port,
+            obs.issues,
+            obs.subject_cn,
+            obs.sni,
+        );
+    }
     let lateral = detect_lateral_movement(&tracker, &cfg.lateral);
     // An established admin fan-out is lateral movement (real sessions), not a probe sweep, so the
     // more-specific lateral finding suppresses any host-sweep on the same (src, port).
@@ -320,6 +344,7 @@ pub fn run_source_visiting(
     findings.extend(detect_pii_exposure(&tracker, &cfg.pii));
     findings.extend(lateral);
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
+    findings.extend(detect_tls_cert_health(&tracker, &cfg.tls_cert_health));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

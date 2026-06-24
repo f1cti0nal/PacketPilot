@@ -127,6 +127,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
 use crate::model::packet::{CredScheme, PiiKind};
+use crate::tls::CertIssue;
 
 /// Identity of a directed "destination contact channel": one source reaching one
 /// `(dst_ip, dst_port)` service. Beaconing periodicity is measured per channel because each
@@ -294,6 +295,25 @@ pub struct DnsTunnelCandidate {
     pub sample: Option<String>,
 }
 
+/// A server's leaf certificate health issues, as observed on a `(client -> server:port)` flow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TlsCertObservation {
+    issues: Vec<CertIssue>,
+    subject_cn: Option<String>,
+    sni: Option<String>,
+}
+
+/// A `(client, server, server_port)` flow whose server presented a problematic TLS certificate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TlsCertCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub issues: Vec<CertIssue>,
+    pub subject_cn: Option<String>,
+    pub sni: Option<String>,
+}
+
 /// Tuning for the behavioral tracker. Both caps keep memory bounded on adversarial captures.
 #[derive(Debug, Clone)]
 pub struct DetectConfig {
@@ -332,6 +352,8 @@ pub struct BehaviorTracker {
     /// Per-`(source, dst, dst_port)` plaintext PII exposures: the sniffed kind and the number of
     /// packets that exposed PII on that channel.
     pii: HashMap<(IpAddr, IpAddr, u16), (PiiKind, u64)>,
+    /// Per-`(client, server, server_port)` TLS server-certificate health observations.
+    tls_certs: HashMap<(IpAddr, IpAddr, u16), TlsCertObservation>,
 }
 
 impl BehaviorTracker {
@@ -344,6 +366,7 @@ impl BehaviorTracker {
             dns: HashMap::new(),
             creds: HashMap::new(),
             pii: HashMap::new(),
+            tls_certs: HashMap::new(),
         }
     }
 
@@ -375,6 +398,34 @@ impl BehaviorTracker {
         }
         let e = self.creds.entry(key).or_insert((scheme, 0));
         e.1 += 1;
+    }
+
+    /// Fold one server TLS certificate observation: `client` reached `server:port` and the server
+    /// presented a certificate with the given health `issues`. Keeps the first observation per
+    /// channel. Bounded: a brand-new channel at capacity is dropped.
+    pub fn observe_tls_cert(
+        &mut self,
+        client: IpAddr,
+        server: IpAddr,
+        server_port: u16,
+        issues: Vec<CertIssue>,
+        subject_cn: Option<String>,
+        sni: Option<String>,
+    ) {
+        if issues.is_empty() {
+            return;
+        }
+        let key = (client, server, server_port);
+        if !self.tls_certs.contains_key(&key)
+            && self.tls_certs.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        self.tls_certs.entry(key).or_insert(TlsCertObservation {
+            issues,
+            subject_cn,
+            sni,
+        });
     }
 
     /// Fold one DNS query: `src` asked `resolver` for `qname`. Accumulates the volume, the
@@ -668,6 +719,38 @@ impl BehaviorTracker {
         });
         out
     }
+
+    /// All `(client, server, server_port)` flows whose server presented a problematic TLS
+    /// certificate. Returned worst (highest single-issue severity, then most issues) first, then
+    /// by channel for determinism.
+    pub fn tls_cert_candidates(&self) -> Vec<TlsCertCandidate> {
+        let mut out: Vec<TlsCertCandidate> = self
+            .tls_certs
+            .iter()
+            .map(|(&(client, server, server_port), obs)| TlsCertCandidate {
+                client,
+                server,
+                server_port,
+                issues: obs.issues.clone(),
+                subject_cn: obs.subject_cn.clone(),
+                sni: obs.sni.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            worst_issue_rank(&b.issues)
+                .cmp(&worst_issue_rank(&a.issues))
+                .then(b.issues.len().cmp(&a.issues.len()))
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+                .then(a.server_port.cmp(&b.server_port))
+        });
+        out
+    }
+}
+
+/// The seriousness of the worst single issue in a set (0 if empty).
+fn worst_issue_rank(issues: &[CertIssue]) -> u8 {
+    issues.iter().map(|i| i.severity_rank()).max().unwrap_or(0)
 }
 
 use crate::enrich::classify_ip;
@@ -1471,6 +1554,109 @@ fn shannon_entropy(s: &str) -> f64 {
     h
 }
 
+/// Tuning for the TLS certificate-health detector.
+#[derive(Debug, Clone)]
+pub struct TlsCertHealthParams {
+    /// Master switch.
+    pub enabled: bool,
+}
+
+impl Default for TlsCertHealthParams {
+    fn default() -> Self {
+        TlsCertHealthParams { enabled: true }
+    }
+}
+
+/// Detect suspicious server TLS certificates (self-signed / expired / not-yet-valid / hostname
+/// mismatch) reassembled from cleartext TLS (≤ 1.2) handshakes. One [`Finding`] per
+/// `(client, server, server_port)` flow, attributed to the **client** so it correlates with any
+/// beacon / exfil to the same destination. Base severity tracks the worst single issue; two or
+/// more distinct issues escalate one band. ATT&CK T1573 (Encrypted Channel); T1557
+/// (Adversary-in-the-Middle) is added when the certificate name does not match the requested host.
+/// Deterministic order.
+pub fn detect_tls_cert_health(
+    tracker: &BehaviorTracker,
+    params: &TlsCertHealthParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.tls_cert_candidates() {
+        // Distinct issue kinds, preserving the deterministic order the issues arrive in.
+        let mut kinds: Vec<&str> = Vec::new();
+        for issue in &c.issues {
+            if !kinds.contains(&issue.kind_str()) {
+                kinds.push(issue.kind_str());
+            }
+        }
+        let mut severity = match worst_issue_rank(&c.issues) {
+            3 => Severity::High,
+            2 => Severity::Medium,
+            _ => Severity::Low,
+        };
+        // Multiple distinct problems on one certificate raise confidence — bump one band, but cap
+        // at High: a certificate anomaly alone is never Critical (incident correlation escalates a
+        // host that *also* beacons / exfils to the same destination).
+        let multi = kinds.len() >= 2;
+        if multi && severity != Severity::High {
+            severity = escalate(severity);
+        }
+        let mut score = match severity {
+            Severity::Critical => 82,
+            Severity::High => 68,
+            Severity::Medium => 48,
+            Severity::Low => 30,
+            Severity::Info => 12,
+        };
+        if multi {
+            score = (score + 6).min(100);
+        }
+
+        let mut attack = vec!["T1573".to_string()];
+        if c.issues
+            .iter()
+            .any(|i| matches!(i, CertIssue::NameMismatch { .. }))
+        {
+            attack.push("T1557".to_string());
+        }
+
+        let mut evidence: Vec<String> = c.issues.iter().map(|i| i.evidence()).collect();
+        if let Some(cn) = &c.subject_cn {
+            evidence.push(format!("certificate subject CN: {cn}"));
+        }
+        if let Some(sni) = &c.sni {
+            evidence.push(format!("requested host (SNI): {sni}"));
+        }
+        evidence.push(
+            "verify the server's identity — self-signed/expired/mismatched TLS is common in C2 and on-path interception"
+                .to_string(),
+        );
+
+        findings.push(Finding {
+            kind: FindingKind::TlsCertHealth,
+            severity,
+            score,
+            title: format!(
+                "Suspicious TLS certificate: {} -> {}:{} ({})",
+                c.client,
+                c.server,
+                c.server_port,
+                kinds.join(", ")
+            ),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: Some(c.server_port),
+            attack,
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        });
+    }
+    findings
+}
+
 /// Correlate behavioral findings into per-host incidents, ordered along the kill chain
 /// (discovery -> command-and-control -> exfiltration). A host exhibiting two or more distinct
 /// stages is escalated one severity band — a multi-stage chain is a confirmed incident.
@@ -1581,6 +1767,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::DataExfil => 5,       // exfiltration
         FindingKind::DnsTunnel => 5,       // exfiltration / C2 over DNS
         FindingKind::RuleMatch => 4,       // imported signature — treat as C2-stage by default
+        FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
     }
 }
 
@@ -1596,6 +1783,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::DataExfil => "Exfiltration",
         FindingKind::DnsTunnel => "Exfiltration",
         FindingKind::RuleMatch => "Signature Match",
+        FindingKind::TlsCertHealth => "Command & Control",
     }
 }
 
@@ -1611,6 +1799,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::DataExfil => "exfiltrated data",
         FindingKind::DnsTunnel => "tunneled data over DNS",
         FindingKind::RuleMatch => "triggered a signature rule",
+        FindingKind::TlsCertHealth => "presented a suspicious TLS certificate",
     }
 }
 
@@ -2893,5 +3082,63 @@ mod tests {
                 .any(|f| f.kind == FindingKind::RuleMatch),
             "RuleMatch not in summary.findings"
         );
+    }
+
+    // ── tls cert health ───────────────────────────────────────────────────────
+
+    #[test]
+    fn tls_cert_health_flags_escalates_and_maps_attack() {
+        let client = ip(10, 0, 0, 5);
+        let server = ip(203, 0, 113, 9);
+
+        // Two distinct issues (self-signed + name mismatch): Medium base escalates to High, and
+        // the name mismatch adds the Adversary-in-the-Middle technique.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_tls_cert(
+            client,
+            server,
+            443,
+            vec![
+                CertIssue::SelfSigned,
+                CertIssue::NameMismatch {
+                    sni: "good.example".into(),
+                },
+            ],
+            Some("c2.evil".into()),
+            Some("good.example".into()),
+        );
+        let f = detect_tls_cert_health(&t, &TlsCertHealthParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::TlsCertHealth);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.5");
+        assert_eq!(f[0].dst_ip.as_deref(), Some("203.0.113.9"));
+        assert_eq!(f[0].dst_port, Some(443));
+        assert!(f[0].attack.iter().any(|a| a == "T1573"));
+        assert!(f[0].attack.iter().any(|a| a == "T1557"));
+
+        // A single expired issue stays Low and carries only T1573.
+        let mut t2 = BehaviorTracker::new(DetectConfig::default());
+        t2.observe_tls_cert(
+            client,
+            server,
+            443,
+            vec![CertIssue::Expired {
+                not_after: 20_190_101_000_000,
+                observed: 20_250_101_000_000,
+            }],
+            None,
+            None,
+        );
+        let f2 = detect_tls_cert_health(&t2, &TlsCertHealthParams::default());
+        assert_eq!(f2.len(), 1);
+        assert_eq!(f2[0].severity, Severity::Low);
+        assert!(f2[0].attack.iter().all(|a| a != "T1557"));
+
+        // Disabled -> nothing; an empty issue list is never recorded.
+        assert!(detect_tls_cert_health(&t, &TlsCertHealthParams { enabled: false }).is_empty());
+        let mut t3 = BehaviorTracker::new(DetectConfig::default());
+        t3.observe_tls_cert(client, server, 443, vec![], None, None);
+        assert!(detect_tls_cert_health(&t3, &TlsCertHealthParams::default()).is_empty());
     }
 }
