@@ -423,6 +423,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::DataExfil => "Data Exfiltration",
         FindingKind::DnsTunnel => "DNS Tunnel",
         FindingKind::RuleMatch => "Signature Match",
+        FindingKind::TlsCertHealth => "TLS Cert Health",
     }
 }
 
