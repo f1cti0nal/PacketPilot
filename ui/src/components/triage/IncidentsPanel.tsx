@@ -11,6 +11,7 @@ import {
   Radar,
   Radio,
   ScanSearch,
+  Split,
   ShieldAlert,
   ShieldOff,
   Shuffle,
@@ -47,6 +48,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
   dga: { label: "DGA Domains", Icon: Shuffle },
   port_scan: { label: "Port Scan", Icon: ScanSearch },
+  arp_spoof: { label: "ARP Spoofing", Icon: Split },
 };
 
 /** Worst-first ordering. */
