@@ -14,6 +14,7 @@ import {
   ShieldOff,
   Siren,
   Unlock,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,6 +42,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   rule_match: { label: "Signature Match", Icon: Crosshair },
   tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
   weak_tls: { label: "Weak TLS", Icon: ShieldOff },
+  icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
 };
 
 /** Worst-first ordering. */

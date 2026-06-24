@@ -17,16 +17,17 @@ use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
-    detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_lateral_movement,
-    detect_pii_exposure, detect_sweeps, detect_tls_cert_health, detect_weak_tls,
-    suppress_swept_by_lateral, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams, LateralMovementParams,
-    PiiExposureParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
+    detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
+    detect_lateral_movement, detect_pii_exposure, detect_sweeps, detect_tls_cert_health,
+    detect_weak_tls, suppress_swept_by_lateral, BeaconParams, BehaviorTracker, BruteForceParams,
+    CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
+    LateralMovementParams, PiiExposureParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
 use crate::model::flow::FlowRecord;
 use crate::model::output::AnalysisOutput;
+use crate::model::packet::Transport;
 use crate::reader::PacketSource;
 use crate::score::score_flow;
 use crate::stats::{StatsAccumulator, StatsConfig};
@@ -73,6 +74,8 @@ pub struct PipelineConfig {
     pub tls_cert_health: TlsCertHealthParams,
     /// Weak / deprecated TLS detector tuning.
     pub weak_tls: WeakTlsParams,
+    /// ICMP tunneling (covert-channel) detector tuning.
+    pub icmp_tunnel: IcmpTunnelParams,
 }
 
 impl Default for PipelineConfig {
@@ -102,6 +105,7 @@ impl Default for PipelineConfig {
             dns_tunnel: DnsTunnelParams::default(),
             tls_cert_health: TlsCertHealthParams::default(),
             weak_tls: WeakTlsParams::default(),
+            icmp_tunnel: IcmpTunnelParams::default(),
         }
     }
 }
@@ -269,6 +273,21 @@ pub fn run_source_visiting(
                 if let (Some(kind), Some(src), Some(dst)) = (meta.pii, meta.src_ip, meta.dst_ip) {
                     tracker.observe_pii(src, dst, meta.dst_port, kind);
                 }
+                // ICMP tunneling: fold echo request/reply data sizes per (src, dst). Sustained
+                // large echo payloads are a covert-channel / exfil shape.
+                if let (Some(t), Some(src), Some(dst)) = (meta.icmp_type, meta.src_ip, meta.dst_ip)
+                {
+                    let is_echo = match meta.transport {
+                        Transport::Icmp => t == 8 || t == 0, // echo request / reply
+                        Transport::Icmpv6 => t == 128 || t == 129,
+                        _ => false,
+                    };
+                    if is_echo {
+                        // payload_len is the whole ICMP message; the 8-byte header is not data.
+                        let data = meta.payload_len.saturating_sub(8) as u64;
+                        tracker.observe_icmp_echo(src, dst, data);
+                    }
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -361,6 +380,7 @@ pub fn run_source_visiting(
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     findings.extend(detect_tls_cert_health(&tracker, &cfg.tls_cert_health));
     findings.extend(detect_weak_tls(&tracker, &cfg.weak_tls));
+    findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
@@ -1616,5 +1636,56 @@ mod tests {
         assert_eq!(dns.dst_ip.as_deref(), Some("10.0.0.53"));
         assert!(dns.attack.iter().any(|a| a == "T1071.004"));
         assert!(dns.contacts.unwrap() >= 30);
+    }
+
+    #[test]
+    fn pipeline_surfaces_icmp_tunnel_finding_without_threat_feed() {
+        use crate::gen::{container, frames};
+        use std::io::Write;
+        use std::net::Ipv4Addr;
+
+        let client = Ipv4Addr::new(10, 0, 0, 5);
+        let c2 = Ipv4Addr::new(45, 77, 13, 37); // external (public)
+        let base: i64 = 1_700_000_000 * 1_000_000_000;
+
+        let mut buf: Vec<u8> = Vec::new();
+        container::write_pcap_header(&mut buf, crate::reader::LinkType::Ethernet).unwrap();
+
+        // 40 large ICMP echo requests client -> external host (data smuggled in the echo payload).
+        for i in 0..40i64 {
+            // ICMP echo request: type 8, code 0, checksum (unchecked), id, seq.
+            let mut icmp = vec![8u8, 0, 0, 0, 0x12, 0x34, (i >> 8) as u8, i as u8];
+            icmp.extend(std::iter::repeat_n(0xABu8, 1024)); // 1 KB of tunneled data
+            let ip = frames::build_ipv4(client, c2, 1, 64, icmp.len()); // IPPROTO_ICMP = 1
+            let mut frame = frames::build_ethernet(
+                [0x02, 0, 0, 0, 0, 5],
+                [0x02, 0, 0, 0, 0, 1],
+                frames::ETHERTYPE_IPV4,
+            );
+            frame.extend_from_slice(&ip);
+            frame.extend_from_slice(&icmp);
+            let ts = base + i * 1_000_000;
+            let wl = frame.len() as u32;
+            container::write_legacy_record(&mut buf, ts, wl, wl).unwrap();
+            buf.write_all(&frame).unwrap();
+        }
+
+        let mut tf = tempfile::NamedTempFile::new().unwrap();
+        tf.write_all(&buf).unwrap();
+        tf.flush().unwrap();
+
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let icmp = out
+            .summary
+            .findings
+            .iter()
+            .find(|f| f.kind == crate::model::finding::FindingKind::IcmpTunnel)
+            .unwrap_or_else(|| panic!("no ICMP-tunnel finding: {:?}", out.summary.findings));
+        assert_eq!(icmp.severity, crate::model::severity::Severity::High);
+        assert_eq!(icmp.src_ip, "10.0.0.5");
+        assert_eq!(icmp.dst_ip.as_deref(), Some("45.77.13.37"));
+        assert!(icmp.attack.iter().any(|a| a == "T1095"));
+        assert!(icmp.contacts.unwrap() >= 32);
     }
 }
