@@ -1,0 +1,56 @@
+// Well-known port -> service name, for labelling the top-ports panel. Transport-agnostic (the few
+// ports that differ by transport map to their dominant service). Absence of a name signals a
+// non-standard port — useful triage signal in itself.
+const WELL_KNOWN: Record<number, string> = {
+  20: "FTP-data",
+  21: "FTP",
+  22: "SSH",
+  23: "Telnet",
+  25: "SMTP",
+  53: "DNS",
+  67: "DHCP",
+  68: "DHCP",
+  69: "TFTP",
+  80: "HTTP",
+  88: "Kerberos",
+  110: "POP3",
+  123: "NTP",
+  135: "MSRPC",
+  137: "NetBIOS",
+  138: "NetBIOS",
+  139: "NetBIOS",
+  143: "IMAP",
+  161: "SNMP",
+  162: "SNMP",
+  389: "LDAP",
+  443: "HTTPS",
+  445: "SMB",
+  465: "SMTPS",
+  500: "IKE",
+  514: "Syslog",
+  587: "Submission",
+  636: "LDAPS",
+  993: "IMAPS",
+  995: "POP3S",
+  1080: "SOCKS",
+  1433: "MSSQL",
+  1521: "Oracle",
+  1900: "SSDP",
+  3306: "MySQL",
+  3389: "RDP",
+  5060: "SIP",
+  5061: "SIP-TLS",
+  5353: "mDNS",
+  5432: "PostgreSQL",
+  5900: "VNC",
+  6379: "Redis",
+  8080: "HTTP-alt",
+  8443: "HTTPS-alt",
+  9200: "Elasticsearch",
+  27017: "MongoDB",
+};
+
+/** The well-known service name for a port, or `null` for a non-standard / unknown port. */
+export function serviceName(port: number): string | null {
+  return WELL_KNOWN[port] ?? null;
+}
