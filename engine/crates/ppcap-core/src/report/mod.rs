@@ -430,6 +430,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::PortScan => "Port Scan",
         FindingKind::ArpSpoof => "ARP Spoofing",
         FindingKind::SynFlood => "SYN Flood",
+        FindingKind::SuspiciousUa => "Suspicious User-Agent",
     }
 }
 

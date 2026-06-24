@@ -171,7 +171,8 @@ export type FindingKind =
   | "dga"
   | "port_scan"
   | "arp_spoof"
-  | "syn_flood";
+  | "syn_flood"
+  | "suspicious_ua";
 
 /**
  * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a

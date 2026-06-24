@@ -266,6 +266,18 @@ pub struct ArpSpoofCandidate {
     pub macs: usize,
 }
 
+/// A source that presented a known attack-tool HTTP User-Agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolUaCandidate {
+    pub src: IpAddr,
+    /// The matched tool label (e.g. `"sqlmap"`).
+    pub tool: &'static str,
+    /// Number of requests from this source carrying a tool User-Agent.
+    pub hits: u64,
+    /// One example User-Agent string.
+    pub sample: String,
+}
+
 /// A `(target, port)` service hit by many half-open connections — a SYN-flood / TCP-DoS candidate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SynFloodCandidate {
@@ -486,6 +498,52 @@ pub struct BehaviorTracker {
     /// Per-`(target, port)` count of half-open / never-completed connections + the distinct sources
     /// — the SYN-flood / TCP-DoS signal. Bounded (the source set is capped).
     syn_flood: HashMap<(IpAddr, u16), SynFloodStat>,
+    /// Per-source attack-tool identified by its HTTP User-Agent. Bounded by `max_tracked_keys`.
+    tool_ua: HashMap<IpAddr, ToolUaStat>,
+}
+
+/// Per-source attack-tool User-Agent observation: the matched tool, how many requests carried it,
+/// and one example User-Agent string for the evidence.
+#[derive(Debug, Clone)]
+struct ToolUaStat {
+    tool: &'static str,
+    hits: u64,
+    sample: String,
+}
+
+/// High-confidence attack-tool / scanner User-Agent substrings (matched case-insensitively) → the
+/// tool label. Deliberately limited to *unambiguous* tool signatures — no dual-use client
+/// (`curl` / `python-requests` / `wget`) a legitimate script also uses — so a match is a real
+/// indicator, not noise.
+#[rustfmt::skip]
+const TOOL_USER_AGENTS: &[(&str, &str)] = &[
+    ("sqlmap", "sqlmap"),
+    ("nikto", "Nikto"),
+    ("nmap scripting engine", "Nmap NSE"),
+    ("masscan", "masscan"),
+    ("zgrab", "zgrab"),
+    ("nuclei", "Nuclei"),
+    ("gobuster", "Gobuster"),
+    ("dirbuster", "DirBuster"),
+    ("feroxbuster", "feroxbuster"),
+    ("wpscan", "WPScan"),
+    // NB: "hydra" is deliberately NOT listed — it is an ordinary word / product name (the Hydra
+    // livecoding tool, config frameworks, CI systems) that collides with benign User-Agents, and
+    // THC-Hydra is a login brute-forcer (caught by the brute-force detector) that rarely emits an
+    // HTTP UA. Every entry here must be a *coined* tool token with no realistic benign collision.
+    ("nessus", "Nessus"),
+    ("openvas", "OpenVAS"),
+    ("acunetix", "Acunetix"),
+    ("() {", "Shellshock probe"),
+];
+
+/// Match a User-Agent against the known-tool table, returning the tool label of the first hit.
+fn match_tool_ua(ua: &str) -> Option<&'static str> {
+    let lower = ua.to_ascii_lowercase();
+    TOOL_USER_AGENTS
+        .iter()
+        .find(|(needle, _)| lower.contains(needle))
+        .map(|(_, label)| *label)
 }
 
 /// Per-`(target, port)` SYN-flood statistics: how many half-open connections, from how many sources.
@@ -514,6 +572,7 @@ impl BehaviorTracker {
             dga: HashMap::new(),
             arp: HashMap::new(),
             syn_flood: HashMap::new(),
+            tool_ua: HashMap::new(),
         }
     }
 
@@ -866,6 +925,45 @@ impl BehaviorTracker {
                 .then(a.dst.cmp(&b.dst))
                 .then(a.dst_port.cmp(&b.dst_port))
         });
+        out
+    }
+
+    /// Fold one HTTP `User-Agent` from `src`. If it matches a known attack-tool signature, record the
+    /// tool (keeping the first example UA) and bump the per-source hit count. Non-tool UAs are
+    /// ignored. Bounded: a brand-new source at capacity is dropped.
+    pub fn observe_user_agent(&mut self, src: IpAddr, ua: &str) {
+        let Some(tool) = match_tool_ua(ua) else {
+            return;
+        };
+        if let Some(stat) = self.tool_ua.get_mut(&src) {
+            stat.hits = stat.hits.saturating_add(1);
+        } else if self.tool_ua.len() < self.cfg.max_tracked_keys.max(1) {
+            let sample: String = ua.chars().take(120).collect();
+            self.tool_ua.insert(
+                src,
+                ToolUaStat {
+                    tool,
+                    hits: 1,
+                    sample,
+                },
+            );
+        }
+    }
+
+    /// All sources that presented a known attack-tool User-Agent. Returned most-active first, then
+    /// by source for determinism.
+    pub fn tool_ua_candidates(&self) -> Vec<ToolUaCandidate> {
+        let mut out: Vec<ToolUaCandidate> = self
+            .tool_ua
+            .iter()
+            .map(|(&src, s)| ToolUaCandidate {
+                src,
+                tool: s.tool,
+                hits: s.hits,
+                sample: s.sample.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| b.hits.cmp(&a.hits).then(a.src.cmp(&b.src)));
         out
     }
 
@@ -1699,6 +1797,53 @@ pub fn detect_syn_flood(tracker: &BehaviorTracker, params: &SynFloodParams) -> V
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.incomplete),
+        });
+    }
+    findings
+}
+
+/// Tuning for the suspicious-User-Agent (attack-tool) detector.
+#[derive(Debug, Clone)]
+pub struct SuspiciousUaParams {
+    /// Master switch.
+    pub enabled: bool,
+}
+
+impl Default for SuspiciousUaParams {
+    fn default() -> Self {
+        SuspiciousUaParams { enabled: true }
+    }
+}
+
+/// Detect attack tools / scanners from the behavioral tracker: one [`Finding`] per source that sent
+/// an HTTP request with a known attack-tool [`User-Agent`](TOOL_USER_AGENTS) (sqlmap, Nikto, Nmap NSE,
+/// masscan, …). High severity, ATT&CK T1595 (Active Scanning). Deterministic order.
+pub fn detect_suspicious_ua(tracker: &BehaviorTracker, params: &SuspiciousUaParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.tool_ua_candidates() {
+        let shown: String = c.sample.chars().take(80).collect();
+        findings.push(Finding {
+            kind: FindingKind::SuspiciousUa,
+            severity: Severity::High,
+            score: 66,
+            title: format!("Attack tool {} from {}", c.tool, c.src),
+            src_ip: c.src.to_string(),
+            dst_ip: None,
+            dst_port: None,
+            attack: vec!["T1595".to_string()],
+            evidence: vec![
+                format!(
+                    "{} request(s) with a {} User-Agent — a known attack tool / scanner",
+                    c.hits, c.tool
+                ),
+                format!("User-Agent: {shown}"),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.hits),
         });
     }
     findings
@@ -2686,6 +2831,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::PortScan => 0,      // discovery (vertical service enumeration)
         FindingKind::ArpSpoof => 3,      // collection (adversary-in-the-middle positioning)
         FindingKind::SynFlood => 6,      // impact (service denial)
+        FindingKind::SuspiciousUa => 0,  // discovery (active scanning with a known tool)
     }
 }
 
@@ -2708,6 +2854,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::PortScan => "Discovery",
         FindingKind::ArpSpoof => "Collection",
         FindingKind::SynFlood => "Impact",
+        FindingKind::SuspiciousUa => "Discovery",
     }
 }
 
@@ -2730,6 +2877,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::PortScan => "scanned ports on a host",
         FindingKind::ArpSpoof => "poisoned ARP caches",
         FindingKind::SynFlood => "flooded a service with half-open connections",
+        FindingKind::SuspiciousUa => "used a known attack tool",
     }
 }
 
@@ -3170,6 +3318,45 @@ mod tests {
             few.observe_flow_contact(ip(192, 168, 0, i as u8), server, 443, 0, 60, 60);
         }
         assert!(detect_syn_flood(&few, &SynFloodParams::default()).is_empty());
+    }
+
+    // ── suspicious User-Agent (attack tools) ─────────────────────────────────────
+
+    #[test]
+    fn detect_suspicious_ua_flags_known_attack_tools() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        // Two sqlmap requests + one nikto from a different host.
+        t.observe_user_agent(attacker, "sqlmap/1.7.2#stable (https://sqlmap.org)");
+        t.observe_user_agent(attacker, "sqlmap/1.7.2#stable (https://sqlmap.org)");
+        t.observe_user_agent(ip(10, 0, 0, 5), "Mozilla/5.00 (Nikto/2.5.0)");
+        // A benign browser UA is ignored.
+        t.observe_user_agent(ip(10, 0, 0, 6), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120");
+
+        let f = detect_suspicious_ua(&t, &SuspiciousUaParams::default());
+        assert_eq!(f.len(), 2, "findings: {f:?}");
+        // Most-active first: sqlmap host (2 hits) before nikto (1).
+        assert_eq!(f[0].kind, FindingKind::SuspiciousUa);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.9");
+        assert!(f[0].attack.iter().any(|a| a == "T1595"));
+        assert_eq!(f[0].contacts, Some(2));
+        assert!(f[0].title.contains("sqlmap"));
+        assert!(f[1].title.contains("Nikto"));
+    }
+
+    #[test]
+    fn match_tool_ua_is_case_insensitive_and_ignores_dual_use_clients() {
+        assert_eq!(match_tool_ua("SQLMAP/1.0"), Some("sqlmap"));
+        assert_eq!(match_tool_ua("() { :; }; /bin/bash"), Some("Shellshock probe"));
+        // Dual-use clients are NOT flagged (too noisy to be an indicator on their own).
+        assert_eq!(match_tool_ua("curl/8.4.0"), None);
+        assert_eq!(match_tool_ua("python-requests/2.31"), None);
+        assert_eq!(match_tool_ua("Mozilla/5.0 Chrome/120"), None);
+        // Ordinary words / product names that collide with a tool name are NOT flagged: only coined
+        // tool tokens are listed (no bare "hydra", which is a real product/word).
+        assert_eq!(match_tool_ua("Hydra-Livecoding/1.4 (https://hydra.ojack.xyz)"), None);
+        assert_eq!(match_tool_ua("MyApp/2.0 (hydration-service)"), None);
     }
 
     #[test]

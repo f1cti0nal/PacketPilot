@@ -2,6 +2,7 @@
 // first. Only the top (critical) incident breathes; secondaries are static.
 import {
   ArrowUpFromLine,
+  Bug,
   ChevronRight,
   Globe,
   KeyRound,
@@ -44,6 +45,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   port_scan: { label: "Port Scan", Icon: ScanSearch },
   arp_spoof: { label: "ARP Spoofing", Icon: Split },
   syn_flood: { label: "SYN Flood", Icon: Waves },
+  suspicious_ua: { label: "Attack Tool", Icon: Bug },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -63,6 +65,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   port_scan: "Discovery",
   arp_spoof: "Collection",
   syn_flood: "Impact",
+  suspicious_ua: "Discovery",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
@@ -75,6 +78,7 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   port_scan: "ports",
   arp_spoof: "MACs",
   syn_flood: "half-open conns",
+  suspicious_ua: "requests",
   cleartext_creds: "exposures",
 };
 

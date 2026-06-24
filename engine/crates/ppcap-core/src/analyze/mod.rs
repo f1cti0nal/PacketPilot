@@ -18,12 +18,12 @@ use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_dga, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
-    detect_arp_spoof, detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_sweeps,
-    detect_syn_flood, detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral,
-    ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams,
-    DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams,
-    PiiExposureParams, PortScanParams, SweepParams, SynFloodParams, TlsCertHealthParams,
-    WeakTlsParams,
+    detect_arp_spoof, detect_lateral_movement, detect_pii_exposure, detect_port_scan,
+    detect_suspicious_ua, detect_sweeps, detect_syn_flood, detect_tls_cert_health, detect_weak_tls,
+    suppress_swept_by_lateral, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
+    CleartextCredsParams, DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
+    LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams,
+    SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -86,6 +86,8 @@ pub struct PipelineConfig {
     pub arp_spoof: ArpSpoofParams,
     /// SYN-flood / TCP-DoS detector tuning.
     pub syn_flood: SynFloodParams,
+    /// Suspicious-User-Agent (attack-tool) detector tuning.
+    pub suspicious_ua: SuspiciousUaParams,
 }
 
 impl Default for PipelineConfig {
@@ -120,6 +122,7 @@ impl Default for PipelineConfig {
             port_scan: PortScanParams::default(),
             arp_spoof: ArpSpoofParams::default(),
             syn_flood: SynFloodParams::default(),
+            suspicious_ua: SuspiciousUaParams::default(),
         }
     }
 }
@@ -310,6 +313,11 @@ pub fn run_source_visiting(
                         claim.sender_mac,
                     );
                 }
+                // Attack-tool User-Agent: fold each HTTP request's UA; the tracker keeps only the
+                // ones that match a known tool signature (the derived label, never raw payload).
+                if let (Some(ua), Some(src)) = (&meta.http_ua, meta.src_ip) {
+                    tracker.observe_user_agent(src, ua);
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -407,6 +415,7 @@ pub fn run_source_visiting(
     findings.extend(detect_port_scan(&tracker, &cfg.port_scan));
     findings.extend(detect_arp_spoof(&tracker, &cfg.arp_spoof));
     findings.extend(detect_syn_flood(&tracker, &cfg.syn_flood));
+    findings.extend(detect_suspicious_ua(&tracker, &cfg.suspicious_ua));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

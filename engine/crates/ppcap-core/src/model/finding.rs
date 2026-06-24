@@ -48,6 +48,8 @@ pub enum FindingKind {
     ArpSpoof,
     /// SYN flood / TCP DoS: one service hit by a flood of half-open (never-completed) connections.
     SynFlood,
+    /// Known attack-tool / scanner identified by its HTTP User-Agent (sqlmap, nikto, nmap, …).
+    SuspiciousUa,
 }
 
 impl FindingKind {
@@ -70,6 +72,7 @@ impl FindingKind {
             FindingKind::PortScan => "port_scan",
             FindingKind::ArpSpoof => "arp_spoof",
             FindingKind::SynFlood => "syn_flood",
+            FindingKind::SuspiciousUa => "suspicious_ua",
         }
     }
 }

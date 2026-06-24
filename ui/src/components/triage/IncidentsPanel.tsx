@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import {
   Activity,
   ArrowUpFromLine,
+  Bug,
   ChevronRight,
   Crosshair,
   Globe,
@@ -51,6 +52,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   port_scan: { label: "Port Scan", Icon: ScanSearch },
   arp_spoof: { label: "ARP Spoofing", Icon: Split },
   syn_flood: { label: "SYN Flood", Icon: Waves },
+  suspicious_ua: { label: "Attack Tool", Icon: Bug },
 };
 
 /** Worst-first ordering. */
