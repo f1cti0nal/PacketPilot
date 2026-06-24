@@ -10,6 +10,7 @@ import {
   Network,
   Radar,
   Radio,
+  ShieldAlert,
   Siren,
   Unlock,
   type LucideIcon,
@@ -37,6 +38,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   data_exfil: { label: "Data Exfiltration", Icon: ArrowUpFromLine },
   dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
   rule_match: { label: "Signature Match", Icon: Crosshair },
+  tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
 };
 
 /** Worst-first ordering. */

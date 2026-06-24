@@ -20,6 +20,7 @@ import { AiSummaryCard } from "../cockpit/AiSummaryCard";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
 import { SignatureMatchesPanel } from "./triage/SignatureMatchesPanel";
+import { CertHealthPanel } from "./triage/CertHealthPanel";
 
 /**
  * Navigation request raised from the dashboard when the analyst drills into a
@@ -164,6 +165,7 @@ export function Dashboard({
           </div>
         </div>
         <SignatureMatchesPanel findings={s.findings ?? []} onJump={toFlowsIp} />
+        <CertHealthPanel findings={s.findings ?? []} onJump={toFlowsIp} />
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
       </div>
 
