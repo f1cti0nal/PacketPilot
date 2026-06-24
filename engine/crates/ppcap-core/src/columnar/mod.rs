@@ -106,6 +106,7 @@ struct Builders {
     tls_version: StringBuilder,
     tls_cipher: StringBuilder,
     hassh: StringBuilder,
+    hassh_server: StringBuilder,
     severity: StringBuilder,
     threat_score: UInt16Builder,
     ioc: BooleanBuilder,
@@ -138,6 +139,7 @@ impl Builders {
             tls_version: StringBuilder::new(),
             tls_cipher: StringBuilder::new(),
             hassh: StringBuilder::new(),
+            hassh_server: StringBuilder::new(),
             severity: StringBuilder::new(),
             threat_score: UInt16Builder::new(),
             ioc: BooleanBuilder::new(),
@@ -175,6 +177,7 @@ impl Builders {
             Arc::new(self.tls_version.finish()),
             Arc::new(self.tls_cipher.finish()),
             Arc::new(self.hassh.finish()),
+            Arc::new(self.hassh_server.finish()),
             Arc::new(self.severity.finish()),
             Arc::new(self.threat_score.finish()),
             Arc::new(self.ioc.finish()),
@@ -218,6 +221,7 @@ impl FlowParquetWriter {
             "tls_version",
             "tls_cipher",
             "hassh",
+            "hassh_server",
             "severity",
         ];
 
@@ -326,10 +330,14 @@ impl FlowParquetWriter {
             Some(v) if !v.is_empty() => b.tls_cipher.append_value(v),
             _ => b.tls_cipher.append_null(),
         }
-        // hassh: SSH client fingerprint; present only for an observed client KEXINIT, NULL otherwise.
+        // hassh / hassh_server: SSH fingerprints; present only for an observed KEXINIT, NULL otherwise.
         match &rec.hassh {
             Some(v) if !v.is_empty() => b.hassh.append_value(v),
             _ => b.hassh.append_null(),
+        }
+        match &rec.hassh_server {
+            Some(v) if !v.is_empty() => b.hassh_server.append_value(v),
+            _ => b.hassh_server.append_null(),
         }
         // Phase-2 verdict columns (never NULL).
         b.severity.append_value(rec.severity.as_str());
@@ -492,6 +500,7 @@ mod tests {
             b.tls_version.append_null();
             b.tls_cipher.append_null();
             b.hassh.append_null();
+            b.hassh_server.append_null();
             b.severity.append_value("info");
             b.threat_score.append_value(0);
             b.ioc.append_value(false);
@@ -499,7 +508,7 @@ mod tests {
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 27);
+        assert_eq!(batch.num_columns(), 28);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }

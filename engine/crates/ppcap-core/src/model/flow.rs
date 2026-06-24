@@ -149,6 +149,9 @@ pub struct FlowRecord {
     /// SSH client HASSH (MD5) fingerprint from a client KEXINIT; `None` if none seen. The SSH
     /// analogue of `ja3` — first non-empty value seen wins (sticky).
     pub hassh: Option<String>,
+    /// SSH server HASSHServer (MD5) fingerprint from a server KEXINIT; `None` if none seen. The SSH
+    /// analogue of `ja3s` — first non-empty value seen wins (sticky).
+    pub hassh_server: Option<String>,
     /// Derivation of `app_proto`: `Some("payload")`, `Some("port")`, or `None` (unknown /
     /// shape-only). Set by the classify stage; written to the `app_proto_src` column.
     pub app_proto_src: Option<&'static str>,
@@ -187,6 +190,7 @@ impl FlowRecord {
             tls_version: None,
             tls_cipher: None,
             hassh: None,
+            hassh_server: None,
             app_proto_src: None,
             severity: crate::model::severity::Severity::Info,
             threat_score: 0,
@@ -247,12 +251,19 @@ impl FlowRecord {
                 }
             }
         }
-        // hassh: SSH client fingerprint. Client-only (decode sets it only on a client KEXINIT), so
-        // direction-independent like ja3 — first non-empty value wins (sticky).
+        // hassh / hassh_server: SSH fingerprints. Each is set by decode only on its own side's
+        // KEXINIT, so direction-independent like ja3 — first non-empty value wins (sticky).
         if self.hassh.is_none() {
             if let Some(v) = &p.hassh {
                 if !v.is_empty() {
                     self.hassh = Some(v.clone());
+                }
+            }
+        }
+        if self.hassh_server.is_none() {
+            if let Some(v) = &p.hassh_server {
+                if !v.is_empty() {
+                    self.hassh_server = Some(v.clone());
                 }
             }
         }
@@ -341,6 +352,7 @@ mod tests {
             tls_version: None,
             tls_cipher: None,
             hassh: None,
+            hassh_server: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -397,6 +409,7 @@ mod tests {
             tls_version: None,
             tls_cipher: None,
             hassh: None,
+            hassh_server: None,
         };
 
         let mut p1 = base.clone();

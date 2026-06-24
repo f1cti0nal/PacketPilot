@@ -446,6 +446,7 @@ mod tests {
             tls_version: None,
             tls_cipher: None,
             hassh: None,
+            hassh_server: None,
         }
     }
 

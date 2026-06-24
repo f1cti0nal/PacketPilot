@@ -23,7 +23,7 @@ CREATE VIEW flow AS
 SELECT flow_id, capture_id, src_ip, dst_ip, src_port, dst_port, proto, app_proto,
        bytes_c2s, bytes_s2c, pkts, start_ts, end_ts, tcp_flags_c2s, tcp_flags_s2c,
        ttl_min_c2s, category, app_proto_src, sni, ja3, ja4, tls_version, tls_cipher,
-       hassh, severity, threat_score, ioc
+       hassh, hassh_server, severity, threat_score, ioc
 FROM read_parquet('{CASE_DIR}/parquet/flow/*.parquet', union_by_name = true);
 
 -- packet_index VIEW (Phase 0 may emit zero parts; view still resolves once a part exists).
