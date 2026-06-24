@@ -969,6 +969,7 @@ mod tests {
             dns_qname: None,
             cleartext_cred: None,
             pii: None,
+            icmp_type: None,
         }
     }
 

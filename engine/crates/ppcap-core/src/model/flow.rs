@@ -304,6 +304,7 @@ mod tests {
             dns_qname: None,
             cleartext_cred: None,
             pii: None,
+            icmp_type: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -356,6 +357,7 @@ mod tests {
             dns_qname: None,
             cleartext_cred: None,
             pii: None,
+            icmp_type: None,
         };
 
         let mut p1 = base.clone();

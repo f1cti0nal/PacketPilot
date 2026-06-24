@@ -37,6 +37,8 @@ pub enum FindingKind {
     TlsCertHealth,
     /// Weak or deprecated TLS negotiated (SSLv3 / TLS 1.0-1.1, or a weak cipher suite).
     WeakTls,
+    /// ICMP tunneling: a sustained, large-payload ICMP echo channel (covert channel / C2 / exfil).
+    IcmpTunnel,
 }
 
 impl FindingKind {
@@ -54,6 +56,7 @@ impl FindingKind {
             FindingKind::RuleMatch => "rule_match",
             FindingKind::TlsCertHealth => "tls_cert_health",
             FindingKind::WeakTls => "weak_tls",
+            FindingKind::IcmpTunnel => "icmp_tunnel",
         }
     }
 }

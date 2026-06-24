@@ -252,6 +252,9 @@ pub struct PacketMeta {
     /// Plaintext PII class sniffed from the payload (credit card, SSN); `None` on the common path.
     /// A derived flag only — the PII value itself is never retained.
     pub pii: Option<PiiKind>,
+    /// ICMP/ICMPv6 message type (first byte of the ICMP header); `None` for non-ICMP. Used to
+    /// isolate echo request/reply for covert-channel (ICMP tunneling) detection.
+    pub icmp_type: Option<u8>,
 }
 
 impl PacketMeta {

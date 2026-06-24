@@ -425,6 +425,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::RuleMatch => "Signature Match",
         FindingKind::TlsCertHealth => "TLS Cert Health",
         FindingKind::WeakTls => "Weak TLS",
+        FindingKind::IcmpTunnel => "ICMP Tunnel",
     }
 }
 

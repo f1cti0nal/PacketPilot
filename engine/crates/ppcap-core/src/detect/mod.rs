@@ -284,6 +284,29 @@ struct DnsStats {
     sample: Option<String>,
 }
 
+/// Per-`(source, dst)` ICMP echo statistics for covert-channel (tunneling) detection.
+#[derive(Debug, Clone, Default)]
+struct IcmpStats {
+    /// Number of echo request/reply messages seen on this channel.
+    echoes: u64,
+    /// Total ICMP echo *data* bytes (excluding the 8-byte ICMP header).
+    data_bytes: u64,
+    /// Largest single echo data payload.
+    max_data: u32,
+}
+
+/// A `(source, dst)` channel whose ICMP echo traffic looks like a covert tunnel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IcmpTunnelCandidate {
+    pub src: IpAddr,
+    pub dst: IpAddr,
+    pub echoes: u64,
+    pub data_bytes: u64,
+    pub max_data: u32,
+    /// Mean echo data payload (bytes).
+    pub mean_data: u64,
+}
+
 /// A `(source, resolver)` channel whose DNS queries look like tunneling / DGA.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DnsTunnelCandidate {
@@ -375,6 +398,8 @@ pub struct BehaviorTracker {
     tls_certs: HashMap<(IpAddr, IpAddr, u16), TlsCertObservation>,
     /// Per-`(client, server, server_port)` weak / deprecated TLS observations.
     weak_tls: HashMap<(IpAddr, IpAddr, u16), WeakTlsObservation>,
+    /// Per-`(source, dst)` ICMP echo statistics for covert-channel detection.
+    icmp: HashMap<(IpAddr, IpAddr), IcmpStats>,
 }
 
 impl BehaviorTracker {
@@ -389,6 +414,7 @@ impl BehaviorTracker {
             pii: HashMap::new(),
             tls_certs: HashMap::new(),
             weak_tls: HashMap::new(),
+            icmp: HashMap::new(),
         }
     }
 
@@ -499,6 +525,24 @@ impl BehaviorTracker {
         }
         if e.sample.is_none() && !qname.is_empty() {
             e.sample = Some(qname.to_string());
+        }
+    }
+
+    /// Fold one ICMP echo request/reply: `src -> dst` carrying `data_bytes` of echo payload (the
+    /// ICMP message minus its 8-byte header). Accumulates count, total and peak data per channel —
+    /// the signal that separates a covert ICMP tunnel from ordinary ping. Bounded: a brand-new
+    /// channel at capacity is dropped.
+    pub fn observe_icmp_echo(&mut self, src: IpAddr, dst: IpAddr, data_bytes: u64) {
+        let key = (src, dst);
+        if !self.icmp.contains_key(&key) && self.icmp.len() >= self.cfg.max_tracked_keys.max(1) {
+            return;
+        }
+        let e = self.icmp.entry(key).or_default();
+        e.echoes += 1;
+        e.data_bytes = e.data_bytes.saturating_add(data_bytes);
+        let d = data_bytes.min(u32::MAX as u64) as u32;
+        if d > e.max_data {
+            e.max_data = d;
         }
     }
 
@@ -819,6 +863,41 @@ impl BehaviorTracker {
                 .then(a.client.cmp(&b.client))
                 .then(a.server.cmp(&b.server))
                 .then(a.server_port.cmp(&b.server_port))
+        });
+        out
+    }
+
+    /// All `(src, dst)` ICMP echo channels meeting the covert-tunnel thresholds: at least
+    /// `min_echoes` echo messages AND either a peak or mean data payload of at least
+    /// `min_large_data` bytes (ordinary ping is small and low-volume). Worst (most data) first.
+    pub fn icmp_tunnel_candidates(
+        &self,
+        min_echoes: u64,
+        min_large_data: u32,
+    ) -> Vec<IcmpTunnelCandidate> {
+        let mut out: Vec<IcmpTunnelCandidate> = self
+            .icmp
+            .iter()
+            .filter_map(|(&(src, dst), s)| {
+                let mean = s.data_bytes / s.echoes.max(1);
+                // A covert tunnel sustains large payloads, so gate on the MEAN — a single large
+                // probe (e.g. one PMTU/jumbo-frame ping among normal pings) must not trip it.
+                let sustained_large = mean >= min_large_data as u64;
+                (s.echoes >= min_echoes && sustained_large).then_some(IcmpTunnelCandidate {
+                    src,
+                    dst,
+                    echoes: s.echoes,
+                    data_bytes: s.data_bytes,
+                    max_data: s.max_data,
+                    mean_data: mean,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.data_bytes
+                .cmp(&a.data_bytes)
+                .then(a.src.cmp(&b.src))
+                .then(a.dst.cmp(&b.dst))
         });
         out
     }
@@ -1803,6 +1882,73 @@ pub fn detect_weak_tls(tracker: &BehaviorTracker, params: &WeakTlsParams) -> Vec
     findings
 }
 
+/// Tuning for the ICMP tunneling (covert-channel) detector.
+#[derive(Debug, Clone)]
+pub struct IcmpTunnelParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum echo messages on a channel before it is considered (sustained, not a one-off ping).
+    pub min_echoes: u64,
+    /// Minimum peak/mean echo *data* payload (bytes). Ordinary ping carries 32-56 bytes.
+    pub min_large_data: u32,
+}
+
+impl Default for IcmpTunnelParams {
+    fn default() -> Self {
+        IcmpTunnelParams {
+            enabled: true,
+            // A real tunnel sustains many echoes carrying ~1 KB each; these floors sit well above
+            // ordinary ping (32-56 B) and routine large-payload diagnostics (`ping -s 200`).
+            min_echoes: 32,
+            min_large_data: 512,
+        }
+    }
+}
+
+/// Detect ICMP tunneling: a sustained `(src -> dst)` ICMP echo channel carrying large data
+/// payloads — the shape of covert C2 / exfil over ICMP (ptunnel, icmptunnel, Loki). One [`Finding`]
+/// per channel, High severity, ATT&CK T1095 (Non-Application Layer Protocol) + T1048.003 (exfil
+/// over an unencrypted non-C2 protocol). Deterministic order.
+pub fn detect_icmp_tunnel(tracker: &BehaviorTracker, params: &IcmpTunnelParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.icmp_tunnel_candidates(params.min_echoes, params.min_large_data) {
+        // Covert ICMP tunnels reach an external endpoint; sustained large pings to an internal host
+        // are overwhelmingly diagnostics (PMTU / jumbo-frame / latency monitoring). Gate to
+        // external destinations, matching detect_exfil.
+        if !classify_ip(c.dst).is_external() {
+            continue;
+        }
+        let kb = c.data_bytes as f64 / 1024.0;
+        findings.push(Finding {
+            kind: FindingKind::IcmpTunnel,
+            severity: Severity::High,
+            score: 70,
+            title: format!(
+                "ICMP tunnel: {} -> {} ({} echoes, {:.1} KB)",
+                c.src, c.dst, c.echoes, kb
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: Some(c.dst.to_string()),
+            dst_port: None,
+            attack: vec!["T1095".to_string(), "T1048.003".to_string()],
+            evidence: vec![
+                format!(
+                    "{} ICMP echo messages to {} carrying {:.1} KB of data (mean {} B, peak {} B per echo)",
+                    c.echoes, c.dst, kb, c.mean_data, c.max_data
+                ),
+                "ICMP echo is not a data-transfer protocol — sustained large echo payloads indicate a covert channel / exfil".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.echoes),
+        });
+    }
+    findings
+}
+
 /// Correlate behavioral findings into per-host incidents, ordered along the kill chain
 /// (discovery -> command-and-control -> exfiltration). A host exhibiting two or more distinct
 /// stages is escalated one severity band — a multi-stage chain is a confirmed incident.
@@ -1915,6 +2061,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::RuleMatch => 4,       // imported signature — treat as C2-stage by default
         FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
         FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
+        FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
     }
 }
 
@@ -1932,6 +2079,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::RuleMatch => "Signature Match",
         FindingKind::TlsCertHealth => "Command & Control",
         FindingKind::WeakTls => "Collection",
+        FindingKind::IcmpTunnel => "Exfiltration",
     }
 }
 
@@ -1949,6 +2097,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::RuleMatch => "triggered a signature rule",
         FindingKind::TlsCertHealth => "presented a suspicious TLS certificate",
         FindingKind::WeakTls => "negotiated weak or deprecated TLS",
+        FindingKind::IcmpTunnel => "tunneled data over ICMP",
     }
 }
 
@@ -3339,5 +3488,75 @@ mod tests {
         let mut t3 = BehaviorTracker::new(DetectConfig::default());
         t3.observe_weak_tls(client, server, 443, 0x0303, 0x009C, vec![]);
         assert!(detect_weak_tls(&t3, &WeakTlsParams::default()).is_empty());
+    }
+
+    #[test]
+    fn icmp_tunnel_flagged_for_sustained_large_echoes() {
+        let bot = ip(10, 0, 0, 5);
+        let c2 = ip(45, 77, 13, 37); // public (external)
+
+        // 40 echoes carrying ~1 KB each to an external host -> a covert tunnel.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..40 {
+            t.observe_icmp_echo(bot, c2, 1024);
+        }
+        let f = detect_icmp_tunnel(&t, &IcmpTunnelParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::IcmpTunnel);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.5");
+        assert_eq!(f[0].dst_ip.as_deref(), Some("45.77.13.37"));
+        assert!(f[0].attack.iter().any(|a| a == "T1095"));
+        assert_eq!(f[0].contacts, Some(40));
+    }
+
+    #[test]
+    fn ordinary_ping_is_not_flagged() {
+        let c2 = ip(45, 77, 13, 37); // public
+
+        // Many small pings (32-byte data) to an external host -> high volume, small mean.
+        let mut small = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..200 {
+            small.observe_icmp_echo(ip(10, 0, 0, 5), c2, 32);
+        }
+        assert!(detect_icmp_tunnel(&small, &IcmpTunnelParams::default()).is_empty());
+
+        // A few large echoes -> below the volume floor.
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..3 {
+            few.observe_icmp_echo(ip(10, 0, 0, 5), c2, 1200);
+        }
+        assert!(detect_icmp_tunnel(&few, &IcmpTunnelParams::default()).is_empty());
+
+        // Mixed: 31 small pings + ONE large diagnostic probe. The mean stays small, so the single
+        // peak must NOT trip the detector (regression for the dropped max-data OR-branch).
+        let mut mixed = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..31 {
+            mixed.observe_icmp_echo(ip(10, 0, 0, 5), c2, 32);
+        }
+        mixed.observe_icmp_echo(ip(10, 0, 0, 5), c2, 4000);
+        assert!(detect_icmp_tunnel(&mixed, &IcmpTunnelParams::default()).is_empty());
+
+        // Sustained large pings to an INTERNAL host are diagnostics, not exfil: the external-only
+        // gate suppresses it even though the volume/size thresholds are met.
+        let mut internal = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..64 {
+            internal.observe_icmp_echo(ip(10, 0, 0, 5), ip(10, 0, 0, 6), 1024);
+        }
+        assert!(detect_icmp_tunnel(&internal, &IcmpTunnelParams::default()).is_empty());
+
+        // Disabled -> nothing.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..40 {
+            t.observe_icmp_echo(ip(10, 0, 0, 5), c2, 1024);
+        }
+        assert!(detect_icmp_tunnel(
+            &t,
+            &IcmpTunnelParams {
+                enabled: false,
+                ..Default::default()
+            }
+        )
+        .is_empty());
     }
 }

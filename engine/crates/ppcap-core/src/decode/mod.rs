@@ -65,6 +65,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         dns_qname: None,
         cleartext_cred: None,
         pii: None,
+        icmp_type: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -153,8 +154,10 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         Transport::Tcp => l4::decode_tcp(l4, meta)?,
         Transport::Udp => l4::decode_udp(l4, meta)?,
         Transport::Sctp => l4::decode_sctp(l4, meta)?,
-        // ICMP / ICMPv6 / Other: no ports; payload_len already seeded from L3 total length.
-        Transport::Icmp | Transport::Icmpv6 | Transport::Other(_) => {}
+        // ICMP / ICMPv6: no ports; payload_len already seeded from L3 total length. Capture the
+        // message type (first byte) so the covert-channel detector can isolate echo request/reply.
+        Transport::Icmp | Transport::Icmpv6 => meta.icmp_type = l4.first().copied(),
+        Transport::Other(_) => {}
     }
 
     // L7 enrichment: peek at the L4 payload (NO retention). The payload begins after the
@@ -905,7 +908,29 @@ mod tests {
             dns_qname: None,
             cleartext_cred: None,
             pii: None,
+            icmp_type: None,
         }
+    }
+
+    #[test]
+    fn icmp_echo_sets_type_and_payload_len() {
+        // IPv4 + ICMP echo request (type 8) with an 8-byte ICMP header + 56 data bytes.
+        let mut icmp = vec![8u8, 0, 0, 0, 0x12, 0x34, 0, 1];
+        icmp.extend(std::iter::repeat_n(0xABu8, 56));
+        let mut bytes = crate::gen::frames::build_ipv4(
+            Ipv4Addr::new(10, 0, 0, 5),
+            Ipv4Addr::new(10, 0, 0, 6),
+            1, // IPPROTO_ICMP
+            64,
+            icmp.len(),
+        );
+        bytes.extend_from_slice(&icmp);
+
+        let mut meta = blank_meta();
+        decode_l3(&bytes, &mut meta).unwrap();
+        assert_eq!(meta.transport, Transport::Icmp);
+        assert_eq!(meta.icmp_type, Some(8));
+        assert_eq!(meta.payload_len, 64); // 8-byte ICMP header + 56 data bytes
     }
 
     fn frame<'a>(link_type: LinkType, data: &'a [u8]) -> RawFrame<'a> {
