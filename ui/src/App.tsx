@@ -66,6 +66,8 @@ import { SettingsDialog } from "./cockpit/SettingsDialog";
 import { AiChatPanel } from "./cockpit/AiChatPanel";
 import { getAiSummary, captureKey } from "./lib/ai/cache";
 import { pickRuleBase } from "./lib/ruleBase";
+import { saveRuleSet, type RuleSet } from "./lib/ruleSets";
+import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
 
 const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
@@ -560,10 +562,9 @@ export function App() {
     return () => window.clearTimeout(t);
   }, [ruleNotice]);
 
-  const loadRules = useCallback(async (file: File) => {
+  const applyRuleText = useCallback(async (text: string) => {
     if (summary.status !== "ready" || !summary.data || !packetsAvailable(activeSource)) return;
     const currentData = summary.data;
-    const text = await file.text();
     const key = captureKey(currentData);
     // Reuse the per-capture base so re-loading replaces (not stacks) and reputation isn't clobbered.
     const base = pickRuleBase(ruleBaseRef, key, currentData);
@@ -575,6 +576,14 @@ export function App() {
       setRuleNotice(e instanceof Error ? e.message : "Failed to apply rules");
     }
   }, [summary, activeSource]);
+
+  const loadRules = useCallback(async (file: File) => {
+    const text = await file.text();
+    saveRuleSet(file.name, text); // persist (non-fatal if it fails)
+    await applyRuleText(text);
+  }, [applyRuleText]);
+
+  const applyRuleSet = useCallback((rs: RuleSet) => { void applyRuleText(rs.text); }, [applyRuleText]);
 
   return (
     <>
@@ -621,6 +630,7 @@ export function App() {
       onOpenSettings={() => setSettingsOpen(true)}
       onOpenAiChat={summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
+      rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
     >
       {tab === "compare" ? (
         (() => {

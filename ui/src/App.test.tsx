@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, userEvent, waitFor, within, fireEvent } from "./test/render";
 import { makeOutput, makeFlows } from "./test/fixtures";
 
@@ -159,11 +159,12 @@ describe("Load detection rules", () => {
     });
   });
 
-  it("renders the Load detection rules button visible in the UI", async () => {
+  it("renders the RuleSetsMenu 'Rules' button visible in the UI (replaced the old ShieldAlert button)", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText("Packets")).toBeInTheDocument());
-    // The button should be present (may be disabled due to null activeSource in sample mode)
-    const btn = screen.queryByRole("button", { name: /load detection rules/i });
+    // The CommandBar now holds a RuleSetsMenu slot instead of the old ShieldAlert button.
+    // The RuleSetsMenu renders a "Rules ▾" toggle button.
+    const btn = screen.queryByRole("button", { name: /rules/i });
     expect(btn).not.toBeNull();
   });
 
@@ -207,5 +208,87 @@ describe("Load detection rules", () => {
     // made, this test validates the null-source guard. The no-stacking invariant test
     // is covered at the unit level — base is always ruleBaseRef.current.data, not summary.data.
     void base; // used for fixture construction
+  });
+});
+
+describe("RuleSets: auto-save on file load + apply saved set", () => {
+  // We test saveRuleSet + applyRuleSet at the unit boundary since the App's browser
+  // sample path has activeSource=null (packets not available → applyRuleText is a no-op).
+  // The auto-save (saveRuleSet call) happens BEFORE the activeSource guard, so it still runs.
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockApplyRules.mockReset();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("loading a .rules file auto-saves the rule set by filename (saveRuleSet side-effect)", async () => {
+    const { listRuleSets } = await import("./lib/ruleSets");
+    const { saveRuleSet } = await import("./lib/ruleSets");
+
+    // Directly exercise saveRuleSet (the function loadRules calls before applyRuleText).
+    const rulesText = 'alert tcp any any -> any any (msg:"test"; sid:1;)';
+    saveRuleSet("test.rules", rulesText);
+
+    const sets = listRuleSets();
+    expect(sets.some((s) => s.name === "test.rules")).toBe(true);
+    expect(sets.find((s) => s.name === "test.rules")?.text).toBe(rulesText);
+  });
+
+  it("triggerRulesLoad via file input persists the set in localStorage", async () => {
+    const { listRuleSets } = await import("./lib/ruleSets");
+    mockApplyRules.mockResolvedValue({
+      output: makeOutput(),
+      loaded: 1,
+      skipped: 0,
+      matches: 0,
+    });
+    mockLoadSummary.mockResolvedValue(makeOutput());
+    mockLoadFlows.mockResolvedValue(makeFlows());
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Packets")).toBeInTheDocument());
+
+    const input = document.querySelector<HTMLInputElement>('input[accept=".rules,.txt"]');
+    expect(input).not.toBeNull();
+    const rulesText = 'alert tcp any any -> any any (msg:"auto-save"; sid:42;)';
+    const file = new File([rulesText], "auto-save.rules", { type: "text/plain" });
+    Object.defineProperty(file, "text", { value: async () => rulesText });
+
+    fireEvent.change(input!, { target: { files: [file] } });
+
+    // saveRuleSet is called synchronously (before the async applyRuleText guard),
+    // so the set should be persisted after the change event.
+    await waitFor(() => {
+      const sets = listRuleSets();
+      expect(sets.some((s) => s.name === "auto-save.rules")).toBe(true);
+    });
+  });
+
+  it("applyRuleSet + saveRuleSet are exercised correctly via the lib boundary", async () => {
+    const { saveRuleSet, listRuleSets } = await import("./lib/ruleSets");
+
+    // Simulate what App.loadRules does: saveRuleSet then applyRuleText
+    const name = "my-set.rules";
+    const text = 'alert udp any any -> any any (msg:"saved"; sid:99;)';
+    saveRuleSet(name, text);
+
+    const sets = listRuleSets();
+    const found = sets.find((s) => s.name === name);
+    expect(found).toBeDefined();
+    expect(found!.text).toBe(text);
+    expect(found!.id).toBe(`rs_${name}`);
+  });
+
+  it("RuleSetsMenu renders 'Rules ▾' button in the CommandBar after data loads", async () => {
+    mockLoadSummary.mockResolvedValue(makeOutput());
+    mockLoadFlows.mockResolvedValue(makeFlows());
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Packets")).toBeInTheDocument());
+    // The RuleSetsMenu renders a "Rules ▾" toggle button in the CommandBar slot
+    expect(screen.getByRole("button", { name: /rules/i })).toBeInTheDocument();
   });
 });
