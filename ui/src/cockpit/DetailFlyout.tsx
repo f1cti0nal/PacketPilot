@@ -9,6 +9,7 @@ import { EvidenceList } from "../components/transparency/EvidenceList";
 import { FindingMetrics } from "../components/transparency/FindingMetrics";
 import { ScoreWaterfall } from "../components/transparency/ScoreWaterfall";
 import { TriageAnnotation } from "./TriageAnnotation";
+import { vendorForMac } from "../lib/oui";
 
 const humanizeKind = (k: string) =>
   k.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
@@ -20,6 +21,8 @@ export function DetailFlyout({
   scoreEvidence,
   hostScore,
   scoreTerms,
+  resolvedDomain,
+  mac,
   captureKey,
 }: {
   incident: Incident | null;
@@ -28,6 +31,10 @@ export function DetailFlyout({
   scoreEvidence?: string[];
   hostScore?: number;
   scoreTerms?: ScoreTerm[];
+  /** Passive-DNS domain this host's IP resolved from, if known. */
+  resolvedDomain?: string;
+  /** L2 MAC address claimed by this host's IP via ARP, if known. */
+  mac?: string;
   captureKey?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -91,6 +98,38 @@ export function DetailFlyout({
         {/* Body */}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <p className="t-body text-[var(--color-text-dim)]">{incident.narrative}</p>
+
+          {(resolvedDomain || mac) && (
+            <>
+              <SectionLabel className="mb-2 mt-5">Identity</SectionLabel>
+              <dl className="flex flex-col gap-1 text-xs">
+                {resolvedDomain && (
+                  <div className="flex items-baseline gap-2">
+                    <dt className="shrink-0 text-[var(--color-text-faint)]">Resolved from</dt>
+                    <dd
+                      className="font-mono-num truncate text-[var(--color-text-dim)]"
+                      title={resolvedDomain}
+                    >
+                      {resolvedDomain}
+                    </dd>
+                  </div>
+                )}
+                {mac && (
+                  <div className="flex items-baseline gap-2">
+                    <dt className="shrink-0 text-[var(--color-text-faint)]">MAC</dt>
+                    <dd className="font-mono-num text-[var(--color-text-dim)]">
+                      {mac}
+                      {vendorForMac(mac) && (
+                        <span className="ml-1.5 text-[var(--color-text-faint)]">
+                          ({vendorForMac(mac)})
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </>
+          )}
 
           {captureKey && (
             <>

@@ -43,3 +43,25 @@ describe("DetailFlyout score waterfall", () => {
     expect(screen.queryByText(/Score breakdown/i)).toBeNull();
   });
 });
+
+describe("DetailFlyout identity", () => {
+  it("shows the resolved domain + MAC with an OUI vendor when provided", () => {
+    render(
+      <DetailFlyout
+        incident={incident}
+        onClose={() => {}}
+        resolvedDomain="evil.example"
+        mac="00:0c:29:ab:cd:ef"
+      />,
+    );
+    expect(screen.getByText("Identity")).toBeInTheDocument();
+    expect(screen.getByText("evil.example")).toBeInTheDocument();
+    expect(screen.getByText(/00:0c:29:ab:cd:ef/)).toBeInTheDocument();
+    expect(screen.getByText("(VMware)")).toBeInTheDocument();
+  });
+
+  it("omits the identity section when neither domain nor MAC is known", () => {
+    render(<DetailFlyout incident={incident} onClose={() => {}} />);
+    expect(screen.queryByText("Identity")).toBeNull();
+  });
+});

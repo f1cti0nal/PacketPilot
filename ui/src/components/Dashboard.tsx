@@ -80,6 +80,15 @@ export function Dashboard({
   const [hero, ...secondary] = incidents;
   const incidentByHost = useMemo(() => new Map(incidents.map((i) => [i.host, i])), [incidents]);
   const threatByHost = useMemo(() => new Map((s.ip_threats ?? []).map((t) => [t.ip, t])), [s.ip_threats]);
+  // Passive-DNS domain + L2 MAC, keyed by host IP, for inline identity in the flyout.
+  const domainByIp = useMemo(
+    () => new Map((s.resolved_ips ?? []).map((r) => [r.ip, r.domain])),
+    [s.resolved_ips],
+  );
+  const macByIp = useMemo(
+    () => new Map((s.arp_hosts ?? []).map((h) => [h.ip, h.mac])),
+    [s.arp_hosts],
+  );
 
   // Selecting a host opens its incident in the flyout when one exists.
   const openHost = (host: string) => {
@@ -198,6 +207,8 @@ export function Dashboard({
         scoreEvidence={selectedIncident ? threatByHost.get(selectedIncident.host)?.evidence : undefined}
         hostScore={selectedIncident ? threatByHost.get(selectedIncident.host)?.score : undefined}
         scoreTerms={selectedIncident ? threatByHost.get(selectedIncident.host)?.score_terms : undefined}
+        resolvedDomain={selectedIncident ? domainByIp.get(selectedIncident.host) : undefined}
+        mac={selectedIncident ? macByIp.get(selectedIncident.host) : undefined}
         captureKey={captureKey(output)}
       />
     </div>
