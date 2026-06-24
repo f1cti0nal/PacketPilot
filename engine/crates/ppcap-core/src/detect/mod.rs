@@ -249,6 +249,18 @@ pub struct PortScanCandidate {
 /// lateral-movement detector's `min_session_bytes` floor.
 const SCAN_SESSION_BYTES: u64 = 512;
 
+/// An IP claimed by many distinct MAC addresses via ARP — an ARP cache-poisoning candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArpSpoofCandidate {
+    pub ip: IpAddr,
+    /// Count of distinct MAC addresses observed claiming this IP.
+    pub macs: usize,
+}
+
+/// Cap on distinct MACs tracked per IP — far above the detection threshold, so the count is exact in
+/// practice while peak memory stays bounded on a pathological capture.
+const MAX_ARP_MACS: usize = 64;
+
 /// A channel with many connection attempts to one authentication service (brute-force shape).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BruteForceCandidate {
@@ -448,6 +460,9 @@ pub struct BehaviorTracker {
     icmp: HashMap<(IpAddr, IpAddr), IcmpStats>,
     /// Per-source DGA statistics (distinct algorithmically-random registered domains resolved).
     dga: HashMap<IpAddr, DgaStats>,
+    /// Per-IP set of distinct MAC addresses that claimed it via ARP — the ARP cache-poisoning
+    /// signal (one IP claimed by multiple MACs). Bounded in both dimensions.
+    arp: HashMap<IpAddr, HashSet<[u8; 6]>>,
 }
 
 impl BehaviorTracker {
@@ -465,6 +480,7 @@ impl BehaviorTracker {
             weak_tls: HashMap::new(),
             icmp: HashMap::new(),
             dga: HashMap::new(),
+            arp: HashMap::new(),
         }
     }
 
@@ -552,6 +568,37 @@ impl BehaviorTracker {
             cipher,
             reasons,
         });
+    }
+
+    /// Fold one ARP claim: `ip` was announced as belonging to `mac`. Accumulates the set of distinct
+    /// MACs seen claiming each IP — the cache-poisoning signal. Bounded: a brand-new IP at capacity
+    /// is dropped, and the per-IP MAC set is capped.
+    pub fn observe_arp(&mut self, ip: IpAddr, mac: [u8; 6]) {
+        if let Some(set) = self.arp.get_mut(&ip) {
+            if set.len() < MAX_ARP_MACS {
+                set.insert(mac);
+            }
+        } else if self.arp.len() < self.cfg.max_tracked_keys.max(1) {
+            let mut set = HashSet::new();
+            set.insert(mac);
+            self.arp.insert(ip, set);
+        }
+    }
+
+    /// All IPs claimed by at least `min_macs` distinct MAC addresses — the ARP-spoofing signal.
+    /// Returned most-MACs first, then by IP for determinism.
+    pub fn arp_spoof_candidates(&self, min_macs: usize) -> Vec<ArpSpoofCandidate> {
+        let mut out: Vec<ArpSpoofCandidate> = self
+            .arp
+            .iter()
+            .filter(|(_, macs)| macs.len() >= min_macs)
+            .map(|(&ip, macs)| ArpSpoofCandidate {
+                ip,
+                macs: macs.len(),
+            })
+            .collect();
+        out.sort_by(|a, b| b.macs.cmp(&a.macs).then(a.ip.cmp(&b.ip)));
+        out
     }
 
     /// Fold one DNS query: `src` asked `resolver` for `qname`. Accumulates the volume, the
@@ -1439,6 +1486,63 @@ pub fn detect_port_scan(tracker: &BehaviorTracker, params: &PortScanParams) -> V
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.ports as u64),
+        });
+    }
+    findings
+}
+
+/// Tuning for the ARP-spoofing detector.
+#[derive(Debug, Clone)]
+pub struct ArpSpoofParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum distinct MACs claiming one IP before it is flagged. 2 is the canonical cache-poisoning
+    /// signal (the real host plus the attacker); raise it to tolerate environments with deliberate
+    /// IP/MAC churn.
+    pub min_macs: usize,
+    /// IPs never flagged — virtual IPs that legitimately migrate between MACs (VRRP/CARP/HSRP
+    /// failover, NIC-teaming, a DHCP-churned address). Empty by default; populate per deployment.
+    pub ignore_ips: Vec<IpAddr>,
+}
+
+impl Default for ArpSpoofParams {
+    fn default() -> Self {
+        ArpSpoofParams {
+            enabled: true,
+            min_macs: 2,
+            ignore_ips: Vec::new(),
+        }
+    }
+}
+
+/// Detect ARP spoofing / cache poisoning from the behavioral tracker: one [`Finding`] per IP claimed
+/// by at least [`ArpSpoofParams::min_macs`] distinct MAC addresses — the adversary-in-the-middle
+/// signature on a local segment. High severity, ATT&CK T1557.002. Deterministic order.
+pub fn detect_arp_spoof(tracker: &BehaviorTracker, params: &ArpSpoofParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.arp_spoof_candidates(params.min_macs.max(2)) {
+        if params.ignore_ips.contains(&c.ip) {
+            continue;
+        }
+        findings.push(Finding {
+            kind: FindingKind::ArpSpoof,
+            severity: Severity::High,
+            score: 70,
+            title: format!("ARP spoofing: {} claimed by {} MACs", c.ip, c.macs),
+            src_ip: c.ip.to_string(),
+            dst_ip: None,
+            dst_port: None,
+            attack: vec!["T1557.002".to_string()],
+            evidence: vec![
+                format!("{} distinct MAC addresses claimed {} via ARP", c.macs, c.ip),
+                "one IP, multiple MACs — ARP cache poisoning / adversary-in-the-middle".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.macs as u64),
         });
     }
     findings
@@ -2424,6 +2528,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
         FindingKind::Dga => 4,           // command-and-control (C2 domain rendezvous)
         FindingKind::PortScan => 0,      // discovery (vertical service enumeration)
+        FindingKind::ArpSpoof => 3,      // collection (adversary-in-the-middle positioning)
     }
 }
 
@@ -2444,6 +2549,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::IcmpTunnel => "Exfiltration",
         FindingKind::Dga => "Command & Control",
         FindingKind::PortScan => "Discovery",
+        FindingKind::ArpSpoof => "Collection",
     }
 }
 
@@ -2464,6 +2570,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::IcmpTunnel => "tunneled data over ICMP",
         FindingKind::Dga => "resolved algorithmically-generated C2 domains",
         FindingKind::PortScan => "scanned ports on a host",
+        FindingKind::ArpSpoof => "poisoned ARP caches",
     }
 }
 
@@ -2812,6 +2919,48 @@ mod tests {
             ..PortScanParams::default()
         };
         assert!(detect_port_scan(&t, &params).is_empty());
+    }
+
+    // ── ARP spoofing ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn detect_arp_spoof_flags_one_ip_claimed_by_multiple_macs() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let gateway = ip(10, 0, 0, 1);
+        // The real gateway MAC, then an attacker's MAC claiming the same IP (cache poisoning).
+        t.observe_arp(gateway, [0x00, 0x11, 0x22, 0x33, 0x44, 0x55]);
+        t.observe_arp(gateway, [0xde, 0xad, 0xbe, 0xef, 0x00, 0x01]);
+        t.observe_arp(gateway, [0x00, 0x11, 0x22, 0x33, 0x44, 0x55]); // repeat real MAC
+
+        let f = detect_arp_spoof(&t, &ArpSpoofParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::ArpSpoof);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.1");
+        assert!(f[0].attack.iter().any(|a| a == "T1557.002"));
+        assert_eq!(f[0].contacts, Some(2));
+    }
+
+    #[test]
+    fn arp_spoof_not_flagged_for_stable_or_ignored_bindings() {
+        // A normal segment: each IP has exactly one MAC.
+        let mut stable = BehaviorTracker::new(DetectConfig::default());
+        for last in 1..=10u8 {
+            stable.observe_arp(ip(10, 0, 0, last), [0, 0, 0, 0, 0, last]);
+        }
+        assert!(detect_arp_spoof(&stable, &ArpSpoofParams::default()).is_empty());
+
+        // A virtual IP that legitimately migrates between MACs (failover) is exempted via ignore_ips.
+        let vip = ip(10, 0, 0, 254);
+        let mut churn = BehaviorTracker::new(DetectConfig::default());
+        churn.observe_arp(vip, [0, 0, 0, 0, 0, 1]);
+        churn.observe_arp(vip, [0, 0, 0, 0, 0, 2]);
+        assert_eq!(detect_arp_spoof(&churn, &ArpSpoofParams::default()).len(), 1);
+        let params = ArpSpoofParams {
+            ignore_ips: vec![vip],
+            ..ArpSpoofParams::default()
+        };
+        assert!(detect_arp_spoof(&churn, &params).is_empty());
     }
 
     #[test]

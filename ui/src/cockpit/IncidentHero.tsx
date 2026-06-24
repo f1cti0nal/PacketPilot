@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   ShieldOff,
   Shuffle,
+  Split,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
@@ -40,6 +41,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
   dga: { label: "DGA Domains", Icon: Shuffle },
   port_scan: { label: "Port Scan", Icon: ScanSearch },
+  arp_spoof: { label: "ARP Spoofing", Icon: Split },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -57,6 +59,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   icmp_tunnel: "Exfiltration",
   dga: "Command & Control",
   port_scan: "Discovery",
+  arp_spoof: "Collection",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
@@ -67,6 +70,7 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   dns_tunnel: "queries",
   dga: "domains",
   port_scan: "ports",
+  arp_spoof: "MACs",
   cleartext_creds: "exposures",
 };
 

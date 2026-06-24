@@ -204,6 +204,16 @@ const TCP_SYN: u8 = 0x02;
 const TCP_RST: u8 = 0x04;
 const TCP_ACK: u8 = 0x10;
 
+/// An ARP sender's IP→MAC binding, extracted from an ARP request/reply. Used to detect ARP cache
+/// poisoning (one IP claimed by multiple MACs). Derived flag — no frame bytes retained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArpClaim {
+    /// The sender's protocol (IPv4) address.
+    pub sender_ip: std::net::Ipv4Addr,
+    /// The sender's hardware (MAC) address.
+    pub sender_mac: [u8; 6],
+}
+
 /// One decoded packet's metadata. No payload retained (bounded memory).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PacketMeta {
@@ -267,6 +277,8 @@ pub struct PacketMeta {
     /// SSH server HASSHServer (MD5) fingerprint from a server KEXINIT; `None` otherwise. The SSH
     /// analogue of the server-side `ja3s`. Derived flag — no payload retained.
     pub hassh_server: Option<String>,
+    /// An ARP sender's IP→MAC claim for ARP-spoofing detection; `None` for non-ARP packets.
+    pub arp: Option<ArpClaim>,
 }
 
 impl PacketMeta {

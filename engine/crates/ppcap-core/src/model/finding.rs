@@ -44,6 +44,8 @@ pub enum FindingKind {
     Dga,
     /// Vertical port scan: one source probing many distinct ports on a single host (service discovery).
     PortScan,
+    /// ARP spoofing / cache poisoning: one IP address claimed by multiple MAC addresses (MITM).
+    ArpSpoof,
 }
 
 impl FindingKind {
@@ -64,6 +66,7 @@ impl FindingKind {
             FindingKind::IcmpTunnel => "icmp_tunnel",
             FindingKind::Dga => "dga",
             FindingKind::PortScan => "port_scan",
+            FindingKind::ArpSpoof => "arp_spoof",
         }
     }
 }
