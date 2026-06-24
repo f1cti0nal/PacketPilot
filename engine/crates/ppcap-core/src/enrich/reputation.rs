@@ -328,6 +328,7 @@ mod apply_tests {
             http_hosts: Vec::new(),
             user_agents: Vec::new(),
             resolved_ips: Vec::new(),
+            arp_hosts: Vec::new(),
             findings,
             incidents: vec![],
         }

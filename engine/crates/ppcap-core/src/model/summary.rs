@@ -190,6 +190,14 @@ pub struct ResolvedDomain {
     pub resolutions: u64,
 }
 
+/// One L2 host rollup row: an IP and the MAC address that claimed it via ARP (`aa:bb:cc:dd:ee:ff`).
+/// The OUI (first three bytes) identifies the device vendor — surfaced as L2 asset identity.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArpHost {
+    pub ip: String,
+    pub mac: String,
+}
+
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Summary {
@@ -247,6 +255,10 @@ pub struct Summary {
     /// `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub resolved_ips: Vec<ResolvedDomain>,
+    /// L2 host identity: IP → MAC bindings observed via ARP. `#[serde(default)]` keeps older
+    /// summaries readable.
+    #[serde(default)]
+    pub arp_hosts: Vec<ArpHost>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -290,6 +302,7 @@ impl Summary {
             http_hosts: Vec::new(),
             user_agents: Vec::new(),
             resolved_ips: Vec::new(),
+            arp_hosts: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
         }

@@ -165,6 +165,8 @@ pub struct StatsAccumulator {
     per_http_ua: HashMap<String, u64>,
     /// Passive DNS: resolved-IP → (first domain seen, resolution count). Bounded by `max_tracked_keys`.
     resolved: HashMap<IpAddr, (String, u64)>,
+    /// L2 host identity: IP → first MAC seen claiming it via ARP. Bounded by `max_tracked_keys`.
+    arp_macs: HashMap<IpAddr, [u8; 6]>,
 }
 
 /// Upper bound on distinct destination ports retained per source for scan detection.
@@ -198,6 +200,7 @@ impl StatsAccumulator {
             per_http_host: HashMap::new(),
             per_http_ua: HashMap::new(),
             resolved: HashMap::new(),
+            arp_macs: HashMap::new(),
         }
     }
 
@@ -233,6 +236,15 @@ impl StatsAccumulator {
             |s| s.pkts,
             SecStat::default,
         );
+
+        // L2 host identity: an ARP claim binds an IP to a MAC (first MAC per IP wins, bounded).
+        // Recorded BEFORE the IP-endpoint short-circuit, since ARP frames carry no IP layer.
+        if let Some(claim) = &p.arp {
+            let ip = IpAddr::V4(claim.sender_ip);
+            if !self.arp_macs.contains_key(&ip) && self.arp_macs.len() < self.cfg.max_tracked_keys {
+                self.arp_macs.insert(ip, claim.sender_mac);
+            }
+        }
 
         // ARP / non-IP frames: counted, then short-circuit the IP/transport path.
         let Some((src_ip, src_port, dst_ip, dst_port)) = p.endpoints() else {
@@ -666,6 +678,19 @@ impl StatsAccumulator {
         resolved_ips.sort_by(|a, b| b.resolutions.cmp(&a.resolutions).then(a.ip.cmp(&b.ip)));
         resolved_ips.truncate(TOP_K_RESOLVED);
 
+        // L2 host rollup: IP → MAC bindings observed via ARP, ordered by IP. Top-N.
+        const TOP_K_ARP: usize = 64;
+        let mut arp_hosts: Vec<crate::model::summary::ArpHost> = self
+            .arp_macs
+            .iter()
+            .map(|(ip, mac)| crate::model::summary::ArpHost {
+                ip: ip.to_string(),
+                mac: format_mac(mac),
+            })
+            .collect();
+        arp_hosts.sort_by(|a, b| a.ip.cmp(&b.ip));
+        arp_hosts.truncate(TOP_K_ARP);
+
         Summary {
             total_packets: self.total_packets,
             total_bytes: self.total_bytes,
@@ -690,6 +715,7 @@ impl StatsAccumulator {
             http_hosts,
             user_agents,
             resolved_ips,
+            arp_hosts,
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.
@@ -999,6 +1025,14 @@ fn bump_string_capped(map: &mut HashMap<String, u64>, key: &str, cap: usize) {
     } else if map.len() < cap.max(1) {
         map.insert(key.to_string(), 1);
     }
+}
+
+/// Format a 6-byte MAC address as lowercase colon-separated hex (`aa:bb:cc:dd:ee:ff`).
+fn format_mac(mac: &[u8; 6]) -> String {
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    )
 }
 
 #[cfg(test)]
@@ -1820,6 +1854,31 @@ mod tests {
         assert_eq!(s.resolved_ips[0].domain, "evil.example");
         assert_eq!(s.resolved_ips[0].resolutions, 2);
         assert!(s.resolved_ips.iter().any(|r| r.ip == "1.1.1.1" && r.domain == "good.example"));
+    }
+
+    #[test]
+    fn arp_hosts_record_ip_to_mac_from_arp_claims() {
+        use crate::model::packet::ArpClaim;
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        // An ARP frame (no IP endpoints) carrying a sender IP->MAC claim.
+        let mut p = pkt(0, 0, 60, Transport::Other(0), None, None, 0, 0, 0);
+        p.l3 = Protocol::Arp;
+        p.arp = Some(ArpClaim {
+            sender_ip: Ipv4Addr::new(10, 0, 0, 5),
+            sender_mac: [0x00, 0x1a, 0x2b, 0x3c, 0x4d, 0x5e],
+        });
+        acc.observe_packet(&p);
+        // A second claim for the same IP must NOT overwrite (first MAC wins).
+        let mut p2 = p.clone();
+        p2.arp = Some(ArpClaim {
+            sender_ip: Ipv4Addr::new(10, 0, 0, 5),
+            sender_mac: [0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        });
+        acc.observe_packet(&p2);
+
+        let s = acc.finish();
+        let h = s.arp_hosts.iter().find(|h| h.ip == "10.0.0.5").expect("arp host");
+        assert_eq!(h.mac, "00:1a:2b:3c:4d:5e");
     }
 
     #[test]

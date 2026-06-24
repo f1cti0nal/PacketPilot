@@ -98,6 +98,8 @@ export interface Summary {
   user_agents?: UserAgentCount[];
   /** Passive DNS: resolved-IP → domain mappings from DNS answers; absent in older summaries. */
   resolved_ips?: ResolvedDomain[];
+  /** L2 host identity: IP → MAC bindings observed via ARP; absent in older summaries. */
+  arp_hosts?: ArpHost[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -177,6 +179,12 @@ export interface ResolvedDomain {
   ip: string;
   domain: string;
   resolutions: number;
+}
+
+/** One L2 host: an IP and the MAC that claimed it via ARP (the OUI identifies the device vendor). */
+export interface ArpHost {
+  ip: string;
+  mac: string;
 }
 
 /** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */
