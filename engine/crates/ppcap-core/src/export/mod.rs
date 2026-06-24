@@ -503,6 +503,7 @@ mod tests {
             evidence: vec!["test evidence".to_string()],
             reputation: vec![],
             fingerprints: vec![],
+            score_terms: vec![],
         }];
         base
     }
