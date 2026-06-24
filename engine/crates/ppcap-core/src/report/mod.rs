@@ -428,6 +428,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::IcmpTunnel => "ICMP Tunnel",
         FindingKind::Dga => "DGA Domains",
         FindingKind::PortScan => "Port Scan",
+        FindingKind::ArpSpoof => "ARP Spoofing",
     }
 }
 

@@ -18,8 +18,8 @@ use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_dga, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
-    detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_sweeps,
-    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, BeaconParams,
+    detect_arp_spoof, detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_sweeps,
+    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams,
     BehaviorTracker, BruteForceParams, CleartextCredsParams, DetectConfig, DgaParams,
     DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams, PiiExposureParams,
     PortScanParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
@@ -81,6 +81,8 @@ pub struct PipelineConfig {
     pub dga: DgaParams,
     /// Vertical port-scan detector tuning.
     pub port_scan: PortScanParams,
+    /// ARP-spoofing detector tuning.
+    pub arp_spoof: ArpSpoofParams,
 }
 
 impl Default for PipelineConfig {
@@ -113,6 +115,7 @@ impl Default for PipelineConfig {
             icmp_tunnel: IcmpTunnelParams::default(),
             dga: DgaParams::default(),
             port_scan: PortScanParams::default(),
+            arp_spoof: ArpSpoofParams::default(),
         }
     }
 }
@@ -295,6 +298,14 @@ pub fn run_source_visiting(
                         tracker.observe_icmp_echo(src, dst, data);
                     }
                 }
+                // ARP spoofing: fold each ARP sender's IP->MAC claim. One IP claimed by multiple
+                // MACs is cache poisoning (adversary-in-the-middle on the local segment).
+                if let Some(claim) = meta.arp {
+                    tracker.observe_arp(
+                        std::net::IpAddr::V4(claim.sender_ip),
+                        claim.sender_mac,
+                    );
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -390,6 +401,7 @@ pub fn run_source_visiting(
     findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
     findings.extend(detect_dga(&tracker, &cfg.dga));
     findings.extend(detect_port_scan(&tracker, &cfg.port_scan));
+    findings.extend(detect_arp_spoof(&tracker, &cfg.arp_spoof));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

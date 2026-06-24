@@ -33,7 +33,9 @@
 //! exercised by this module's unit tests.
 
 use crate::error::PpError;
-use crate::model::packet::{AppProto, CredScheme, PacketMeta, PiiKind, Protocol, Transport};
+use crate::model::packet::{
+    AppProto, ArpClaim, CredScheme, PacketMeta, PiiKind, Protocol, Transport,
+};
 use crate::reader::{LinkType, RawFrame};
 use crate::Result;
 
@@ -70,6 +72,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         tls_cipher: None,
         hassh: None,
         hassh_server: None,
+        arp: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -121,6 +124,7 @@ fn dispatch_ethertype(ethertype: u16, l3: &[u8], meta: &mut PacketMeta) -> Resul
         ETHERTYPE_IPV4 | ETHERTYPE_IPV6 => decode_l3(l3, meta),
         ETHERTYPE_ARP => {
             meta.l3 = Protocol::Arp;
+            meta.arp = parse_arp(l3);
             Ok(())
         }
         _ => {
@@ -129,6 +133,40 @@ fn dispatch_ethertype(ethertype: u16, l3: &[u8], meta: &mut PacketMeta) -> Resul
             Ok(())
         }
     }
+}
+
+/// Extract an IPv4-over-Ethernet ARP packet's sender IP→MAC claim. `None` for a truncated packet, a
+/// non-Ethernet/IPv4 ARP, or the unspecified sender (`0.0.0.0`, an ARP probe). Bounded and
+/// allocation-free; only the derived claim is kept (no frame bytes retained).
+fn parse_arp(p: &[u8]) -> Option<ArpClaim> {
+    // htype(2) ptype(2) hlen(1) plen(1) op(2) sha(6) spa(4) tha(6) tpa(4) = 28 bytes minimum.
+    if p.len() < 28 {
+        return None;
+    }
+    // IPv4 over Ethernet only: htype=1, ptype=0x0800, hlen=6, plen=4.
+    if u16::from_be_bytes([p[0], p[1]]) != 1
+        || u16::from_be_bytes([p[2], p[3]]) != 0x0800
+        || p[4] != 6
+        || p[5] != 4
+    {
+        return None;
+    }
+    let sender_mac = [p[8], p[9], p[10], p[11], p[12], p[13]];
+    let sender_ip = std::net::Ipv4Addr::new(p[14], p[15], p[16], p[17]);
+    // The unspecified sender (0.0.0.0) is an ARP probe / DHCP DAD — it makes no IP→MAC claim.
+    if sender_ip.is_unspecified() {
+        return None;
+    }
+    // An all-zero or broadcast sender hardware address is never a legitimate ARP sender (an IEEE-802
+    // unicast source cannot be all-zero or broadcast). Reject it so a malformed / crafted frame can't
+    // supply a phantom second MAC that nudges a benign single-MAC host over the spoof threshold.
+    if sender_mac == [0u8; 6] || sender_mac == [0xFFu8; 6] {
+        return None;
+    }
+    Some(ArpClaim {
+        sender_ip,
+        sender_mac,
+    })
 }
 
 /// Decode an L3 slice (for raw-IP link types, or after L2 stripping) into `meta`,
@@ -931,6 +969,7 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            arp: None,
         }
     }
 
@@ -1071,6 +1110,45 @@ mod tests {
         assert_eq!(m.l3, Protocol::Arp);
         assert_eq!(m.src_ip, None);
         assert_eq!(m.dst_ip, None);
+    }
+
+    #[test]
+    fn parse_arp_extracts_ipv4_sender_claim() {
+        // IPv4-over-Ethernet ARP reply: htype=1, ptype=0x0800, hlen=6, plen=4, op=2.
+        let mut p = vec![0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x02];
+        p.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef, 0x00, 0x01]); // sender MAC
+        p.extend_from_slice(&[10, 0, 0, 1]); // sender IP
+        p.extend_from_slice(&[0; 6]); // target MAC
+        p.extend_from_slice(&[10, 0, 0, 9]); // target IP
+        let claim = parse_arp(&p).expect("arp claim");
+        assert_eq!(claim.sender_ip, std::net::Ipv4Addr::new(10, 0, 0, 1));
+        assert_eq!(claim.sender_mac, [0xde, 0xad, 0xbe, 0xef, 0x00, 0x01]);
+    }
+
+    #[test]
+    fn parse_arp_rejects_short_unspecified_and_non_ethernet() {
+        // Too short.
+        assert!(parse_arp(&[0u8; 10]).is_none());
+        // Unspecified sender (0.0.0.0 = ARP probe / DHCP DAD) — no claim.
+        let mut probe = vec![0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01];
+        probe.extend_from_slice(&[0xaa; 6]);
+        probe.extend_from_slice(&[0, 0, 0, 0]); // sender IP 0.0.0.0
+        probe.extend_from_slice(&[0; 6]);
+        probe.extend_from_slice(&[10, 0, 0, 9]);
+        assert!(parse_arp(&probe).is_none());
+        // Non-Ethernet/IPv4 (wrong ptype) is rejected.
+        let mut bad = vec![0x00, 0x01, 0x86, 0xdd, 0x06, 0x04, 0x00, 0x01];
+        bad.extend_from_slice(&[0u8; 20]);
+        assert!(parse_arp(&bad).is_none());
+        // An all-zero or broadcast sender MAC is never a legitimate sender — no claim.
+        for sha in [[0u8; 6], [0xFFu8; 6]] {
+            let mut p = vec![0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x02];
+            p.extend_from_slice(&sha);
+            p.extend_from_slice(&[10, 0, 0, 1]); // valid sender IP
+            p.extend_from_slice(&[0; 6]);
+            p.extend_from_slice(&[10, 0, 0, 9]);
+            assert!(parse_arp(&p).is_none());
+        }
     }
 
     #[test]

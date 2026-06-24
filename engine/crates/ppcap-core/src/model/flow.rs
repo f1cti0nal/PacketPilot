@@ -353,6 +353,7 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            arp: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -410,6 +411,7 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            arp: None,
         };
 
         let mut p1 = base.clone();

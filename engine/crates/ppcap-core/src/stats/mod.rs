@@ -974,6 +974,7 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            arp: None,
         }
     }
 
