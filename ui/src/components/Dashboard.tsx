@@ -18,6 +18,7 @@ import { TopTalkersCard } from "../cockpit/TopTalkersCard";
 import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
 import { AiSummaryCard } from "../cockpit/AiSummaryCard";
 import { ThreatGraph } from "../cockpit/ThreatGraph";
+import { TriageBadge } from "../cockpit/TriageAnnotation";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
 import { SignatureMatchesPanel } from "./triage/SignatureMatchesPanel";
@@ -136,6 +137,7 @@ export function Dashboard({
           onSelect={openHost}
           onCarveHost={carveHost}
           canCarve={canCarve}
+          captureKey={captureKey(output)}
         />
         {carveNotice && (
           <p role="status" className="px-1 text-xs text-[var(--color-text-faint)]">
@@ -180,6 +182,7 @@ export function Dashboard({
         scoreEvidence={selectedIncident ? threatByHost.get(selectedIncident.host)?.evidence : undefined}
         hostScore={selectedIncident ? threatByHost.get(selectedIncident.host)?.score : undefined}
         scoreTerms={selectedIncident ? threatByHost.get(selectedIncident.host)?.score_terms : undefined}
+        captureKey={captureKey(output)}
       />
     </div>
   );
@@ -191,11 +194,13 @@ function ThreatWatchlist({
   onSelect,
   onCarveHost,
   canCarve,
+  captureKey,
 }: {
   threats: IpThreat[];
   onSelect: (ip: string) => void;
   onCarveHost?: (ip: string) => void;
   canCarve?: boolean;
+  captureKey: string;
 }) {
   const top = useMemo(() => [...threats].sort(worstFirst).slice(0, 9), [threats]);
   if (top.length === 0) return null;
@@ -226,6 +231,7 @@ function ThreatWatchlist({
                   <span className="font-mono-num min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">
                     {t.ip}
                   </span>
+                  <TriageBadge captureKey={captureKey} ip={t.ip} />
                   {t.ioc && <IocDot />}
                   <span className="font-mono-num shrink-0 text-xs font-semibold tabular-nums" style={{ color }}>
                     {t.score}
