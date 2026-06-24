@@ -46,6 +46,8 @@ pub enum FindingKind {
     PortScan,
     /// ARP spoofing / cache poisoning: one IP address claimed by multiple MAC addresses (MITM).
     ArpSpoof,
+    /// SYN flood / TCP DoS: one service hit by a flood of half-open (never-completed) connections.
+    SynFlood,
 }
 
 impl FindingKind {
@@ -67,6 +69,7 @@ impl FindingKind {
             FindingKind::Dga => "dga",
             FindingKind::PortScan => "port_scan",
             FindingKind::ArpSpoof => "arp_spoof",
+            FindingKind::SynFlood => "syn_flood",
         }
     }
 }
