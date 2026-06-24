@@ -18,10 +18,11 @@ use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_dga, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
-    detect_lateral_movement, detect_pii_exposure, detect_sweeps, detect_tls_cert_health,
-    detect_weak_tls, suppress_swept_by_lateral, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
-    LateralMovementParams, PiiExposureParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
+    detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_sweeps,
+    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, BeaconParams,
+    BehaviorTracker, BruteForceParams, CleartextCredsParams, DetectConfig, DgaParams,
+    DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams, PiiExposureParams,
+    PortScanParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -78,6 +79,8 @@ pub struct PipelineConfig {
     pub icmp_tunnel: IcmpTunnelParams,
     /// DGA (domain-generation-algorithm) detector tuning.
     pub dga: DgaParams,
+    /// Vertical port-scan detector tuning.
+    pub port_scan: PortScanParams,
 }
 
 impl Default for PipelineConfig {
@@ -109,6 +112,7 @@ impl Default for PipelineConfig {
             weak_tls: WeakTlsParams::default(),
             icmp_tunnel: IcmpTunnelParams::default(),
             dga: DgaParams::default(),
+            port_scan: PortScanParams::default(),
         }
     }
 }
@@ -385,6 +389,7 @@ pub fn run_source_visiting(
     findings.extend(detect_weak_tls(&tracker, &cfg.weak_tls));
     findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
     findings.extend(detect_dga(&tracker, &cfg.dga));
+    findings.extend(detect_port_scan(&tracker, &cfg.port_scan));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
