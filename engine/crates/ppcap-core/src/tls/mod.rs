@@ -325,9 +325,11 @@ impl TlsCertReassembler {
             None => return,
         };
 
-        // A ClientHello (the only thing decode tags `AppProto::Tls`): learn the server endpoint
-        // and, if present, the requested host for the later name-mismatch check.
-        if meta.app_proto == AppProto::Tls {
+        // A ClientHello: decode now also tags a *ServerHello* as `AppProto::Tls`, so distinguish on
+        // the one field only a ServerHello sets — `tls_version`. Every ClientHello shape (fully
+        // fingerprinted, SNI-only, or the structural fallback) leaves `tls_version` None, so this
+        // admits them all while excluding the ServerHello. Learn the server endpoint + requested SNI.
+        if meta.app_proto == AppProto::Tls && meta.tls_version.is_none() {
             self.note_client_hello(src, sport, dst, dport, meta.sni.as_deref());
             return;
         }
@@ -663,6 +665,62 @@ fn weak_cipher(cipher: u16) -> Option<(&'static str, u8)> {
         .find(|(c, _, _)| *c == cipher)
         .map(|(_, name, rank)| (*name, *rank))
 }
+
+/// Sniff the negotiated TLS posture from a server payload that begins with a ServerHello: the
+/// protocol version name and a cipher-suite label. Used by `decode` to populate the per-flow
+/// `tls_version` / `tls_cipher` columns. Payload-free; `None` when the payload is not a ServerHello.
+pub(crate) fn sniff_server_hello(payload: &[u8]) -> Option<(&'static str, String)> {
+    let (version, cipher) = parse_server_hello(payload)?;
+    Some((tls_version_name(version), cipher_label(cipher)))
+}
+
+/// A display label for a cipher suite: the IANA name when known, else `0xNNNN`.
+fn cipher_label(cipher: u16) -> String {
+    cipher_name(cipher)
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| format!("0x{cipher:04x}"))
+}
+
+/// IANA name for a common modern or notable-weak cipher suite, if known.
+fn cipher_name(cipher: u16) -> Option<&'static str> {
+    COMMON_CIPHERS
+        .iter()
+        .find(|(c, _)| *c == cipher)
+        .map(|(_, n)| *n)
+        .or_else(|| weak_cipher(cipher).map(|(n, _)| n))
+}
+
+/// Cipher suites common in modern TLS (1.3 + TLS 1.2 ECDHE/GCM/CHACHA + a few RSA/DHE), for naming
+/// the per-flow cipher column. Weak suites are named from [`WEAK_CIPHERS`].
+#[rustfmt::skip]
+const COMMON_CIPHERS: &[(u16, &str)] = &[
+    (0x1301, "TLS_AES_128_GCM_SHA256"),
+    (0x1302, "TLS_AES_256_GCM_SHA384"),
+    (0x1303, "TLS_CHACHA20_POLY1305_SHA256"),
+    (0x1304, "TLS_AES_128_CCM_SHA256"),
+    (0x1305, "TLS_AES_128_CCM_8_SHA256"),
+    (0xC02B, "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"),
+    (0xC02C, "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"),
+    (0xC02F, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"),
+    (0xC030, "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"),
+    (0xCCA8, "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"),
+    (0xCCA9, "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"),
+    (0xC013, "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"),
+    (0xC014, "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"),
+    (0xC027, "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"),
+    (0xC028, "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"),
+    (0xC023, "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"),
+    (0xC024, "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"),
+    (0xC009, "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"),
+    (0xC00A, "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"),
+    (0x009C, "TLS_RSA_WITH_AES_128_GCM_SHA256"),
+    (0x009D, "TLS_RSA_WITH_AES_256_GCM_SHA384"),
+    (0x002F, "TLS_RSA_WITH_AES_128_CBC_SHA"),
+    (0x0035, "TLS_RSA_WITH_AES_256_CBC_SHA"),
+    (0x003C, "TLS_RSA_WITH_AES_128_CBC_SHA256"),
+    (0x009E, "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256"),
+    (0x009F, "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"),
+];
 
 /// Curated table of broken / obsolete cipher suites an analyst cares about: NULL (no encryption),
 /// anonymous (no authentication), EXPORT (40/56-bit), RC4, single-DES, and 3DES. Value, IANA name,

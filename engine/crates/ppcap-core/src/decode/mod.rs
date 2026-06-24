@@ -66,6 +66,8 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         cleartext_cred: None,
         pii: None,
         icmp_type: None,
+        tls_version: None,
+        tls_cipher: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -189,6 +191,14 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
             sniff_cleartext_cred(meta.transport, meta.src_port, meta.dst_port, payload);
         // Plaintext PII exposure: derive only the PII *kind* (credit card / SSN), never the value.
         meta.pii = sniff_pii(meta.transport, payload);
+        // TLS server posture: the negotiated version + cipher from a ServerHello (server-side
+        // counterpart to the ClientHello's sni/ja3/ja4). Payload-free; only set when the payload
+        // begins a ServerHello.
+        if let Some((version, cipher)) = crate::tls::sniff_server_hello(payload) {
+            meta.app_proto = AppProto::Tls;
+            meta.tls_version = Some(version.to_string());
+            meta.tls_cipher = Some(cipher);
+        }
     }
 
     Ok(())
@@ -909,6 +919,8 @@ mod tests {
             cleartext_cred: None,
             pii: None,
             icmp_type: None,
+            tls_version: None,
+            tls_cipher: None,
         }
     }
 
@@ -931,6 +943,40 @@ mod tests {
         assert_eq!(meta.transport, Transport::Icmp);
         assert_eq!(meta.icmp_type, Some(8));
         assert_eq!(meta.payload_len, 64); // 8-byte ICMP header + 56 data bytes
+    }
+
+    #[test]
+    fn serverhello_sets_tls_version_and_cipher_but_clienthello_does_not() {
+        use crate::gen::frames::{build_ipv4, build_tcp, IP_PROTO_TCP, TCP_ACK, TCP_PSH};
+        let server = Ipv4Addr::new(203, 0, 113, 9);
+        let client = Ipv4Addr::new(10, 0, 0, 5);
+
+        // A server ServerHello (TLS 1.2 + ECDHE_RSA_AES128_GCM 0xC02F) sets the server-side fields.
+        let sh = crate::tls::testcert::server_hello(0x0303, 0xC02F, None);
+        let tcp = build_tcp(server, client, 443, 51000, TCP_PSH | TCP_ACK, &sh);
+        let mut l3 = build_ipv4(server, client, IP_PROTO_TCP, 64, tcp.len());
+        l3.extend_from_slice(&tcp);
+        let mut sm = blank_meta();
+        decode_l3(&l3, &mut sm).unwrap();
+        assert_eq!(sm.app_proto, AppProto::Tls);
+        assert_eq!(sm.tls_version.as_deref(), Some("TLS 1.2"));
+        assert_eq!(
+            sm.tls_cipher.as_deref(),
+            Some("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
+        );
+        assert!(sm.ja3.is_none()); // server side, no client fingerprint
+
+        // A ClientHello fingerprints (ja3/ja4) but must NOT set the server-side fields.
+        let ch = crate::gen::frames::tls_client_hello_payload("example.com");
+        let tcp2 = build_tcp(client, server, 51000, 443, TCP_PSH | TCP_ACK, &ch);
+        let mut l3b = build_ipv4(client, server, IP_PROTO_TCP, 64, tcp2.len());
+        l3b.extend_from_slice(&tcp2);
+        let mut cm = blank_meta();
+        decode_l3(&l3b, &mut cm).unwrap();
+        assert_eq!(cm.app_proto, AppProto::Tls);
+        assert!(cm.ja3.is_some());
+        assert_eq!(cm.tls_version, None);
+        assert_eq!(cm.tls_cipher, None);
     }
 
     fn frame<'a>(link_type: LinkType, data: &'a [u8]) -> RawFrame<'a> {

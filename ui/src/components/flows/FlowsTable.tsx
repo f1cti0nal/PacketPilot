@@ -227,6 +227,14 @@ export function FlowsTable({
                   {f.ja4 ? `JA4 ${f.ja4.slice(0, 12)}…` : `JA3 ${f.ja3!.slice(0, 12)}…`}
                 </span>
               )}
+              {f.tlsVersion && (
+                <span
+                  className="font-mono-num shrink-0 rounded border border-[var(--color-border)] px-1 text-[0.65rem] text-[var(--color-text-faint)]"
+                  title={f.tlsCipher ? `${f.tlsVersion} · ${f.tlsCipher}` : f.tlsVersion}
+                >
+                  {f.tlsVersion}
+                </span>
+              )}
             </span>
           );
         },

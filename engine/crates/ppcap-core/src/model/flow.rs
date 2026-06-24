@@ -142,6 +142,10 @@ pub struct FlowRecord {
     pub ja3: Option<String>,
     /// First non-empty JA4 fingerprint observed on this flow; `None` if none seen.
     pub ja4: Option<String>,
+    /// Negotiated TLS version label ("TLS 1.2" …) from the server ServerHello; `None` if none seen.
+    pub tls_version: Option<String>,
+    /// Negotiated TLS cipher-suite label from the server ServerHello; `None` if none seen.
+    pub tls_cipher: Option<String>,
     /// Derivation of `app_proto`: `Some("payload")`, `Some("port")`, or `None` (unknown /
     /// shape-only). Set by the classify stage; written to the `app_proto_src` column.
     pub app_proto_src: Option<&'static str>,
@@ -177,6 +181,8 @@ impl FlowRecord {
             sni: None,
             ja3: None,
             ja4: None,
+            tls_version: None,
+            tls_cipher: None,
             app_proto_src: None,
             severity: crate::model::severity::Severity::Info,
             threat_score: 0,
@@ -220,6 +226,20 @@ impl FlowRecord {
             if let Some(v) = &p.ja4 {
                 if !v.is_empty() {
                     self.ja4 = Some(v.clone());
+                }
+            }
+        }
+        if self.tls_version.is_none() {
+            if let Some(v) = &p.tls_version {
+                if !v.is_empty() {
+                    self.tls_version = Some(v.clone());
+                }
+            }
+        }
+        if self.tls_cipher.is_none() {
+            if let Some(v) = &p.tls_cipher {
+                if !v.is_empty() {
+                    self.tls_cipher = Some(v.clone());
                 }
             }
         }
@@ -305,6 +325,8 @@ mod tests {
             cleartext_cred: None,
             pii: None,
             icmp_type: None,
+            tls_version: None,
+            tls_cipher: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -358,19 +380,26 @@ mod tests {
             cleartext_cred: None,
             pii: None,
             icmp_type: None,
+            tls_version: None,
+            tls_cipher: None,
         };
 
         let mut p1 = base.clone();
         p1.ja3 = Some("aaa".into());
         p1.ja4 = Some("t13d0000".into());
+        p1.tls_version = Some("TLS 1.2".into());
+        p1.tls_cipher = Some("TLS_AES_128_GCM_SHA256".into());
         r.observe(&p1, dir);
 
-        // Second packet has different ja3 — first-seen value must win.
+        // Second packet has different ja3 / tls — first-seen value must win.
         let mut p2 = base.clone();
         p2.ja3 = Some("bbb".into());
+        p2.tls_version = Some("TLS 1.0".into());
         r.observe(&p2, dir);
 
         assert_eq!(r.ja3.as_deref(), Some("aaa")); // first wins, sticky
         assert_eq!(r.ja4.as_deref(), Some("t13d0000"));
+        assert_eq!(r.tls_version.as_deref(), Some("TLS 1.2"));
+        assert_eq!(r.tls_cipher.as_deref(), Some("TLS_AES_128_GCM_SHA256"));
     }
 }

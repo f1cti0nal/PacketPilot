@@ -255,6 +255,12 @@ pub struct PacketMeta {
     /// ICMP/ICMPv6 message type (first byte of the ICMP header); `None` for non-ICMP. Used to
     /// isolate echo request/reply for covert-channel (ICMP tunneling) detection.
     pub icmp_type: Option<u8>,
+    /// Negotiated TLS protocol version label ("TLS 1.2" …) from a server ServerHello; `None`
+    /// otherwise. The server-side counterpart to the client `ja3`/`ja4`/`sni`.
+    pub tls_version: Option<String>,
+    /// Negotiated TLS cipher-suite label (IANA name or `0xNNNN`) from a server ServerHello; `None`
+    /// otherwise.
+    pub tls_cipher: Option<String>,
 }
 
 impl PacketMeta {
