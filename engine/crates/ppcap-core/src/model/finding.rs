@@ -35,6 +35,8 @@ pub enum FindingKind {
     RuleMatch,
     /// Suspicious server TLS certificate (self-signed / expired / hostname-mismatched).
     TlsCertHealth,
+    /// Weak or deprecated TLS negotiated (SSLv3 / TLS 1.0-1.1, or a weak cipher suite).
+    WeakTls,
 }
 
 impl FindingKind {
@@ -51,6 +53,7 @@ impl FindingKind {
             FindingKind::DnsTunnel => "dns_tunnel",
             FindingKind::RuleMatch => "rule_match",
             FindingKind::TlsCertHealth => "tls_cert_health",
+            FindingKind::WeakTls => "weak_tls",
         }
     }
 }

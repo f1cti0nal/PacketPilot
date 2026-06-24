@@ -213,6 +213,84 @@ pub(crate) struct CertObservation {
     pub sni: Option<String>,
 }
 
+/// Why a negotiated TLS connection is considered weak. Derived from the cleartext ServerHello, so
+/// it is observable for *every* TLS version (the ServerHello itself is never encrypted).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WeakTlsReason {
+    /// The negotiated protocol is older than TLS 1.2 (SSL 3.0 / TLS 1.0 / TLS 1.1).
+    DeprecatedVersion { version: u16 },
+    /// The negotiated cipher suite is broken or obsolete (NULL / anon / EXPORT / RC4 / DES / 3DES).
+    WeakCipher {
+        cipher: u16,
+        name: &'static str,
+        rank: u8,
+    },
+}
+
+impl WeakTlsReason {
+    /// Stable kebab-case token for the reason kind.
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            WeakTlsReason::DeprecatedVersion { .. } => "deprecated-version",
+            WeakTlsReason::WeakCipher { .. } => "weak-cipher",
+        }
+    }
+
+    /// Relative seriousness (higher = worse). Drives the finding severity.
+    pub fn severity_rank(&self) -> u8 {
+        match self {
+            // SSL 3.0 is High; TLS 1.0 / 1.1 are Low (still common on legacy infra).
+            WeakTlsReason::DeprecatedVersion { version } => {
+                if *version == 0x0300 {
+                    3
+                } else {
+                    1
+                }
+            }
+            WeakTlsReason::WeakCipher { rank, .. } => *rank,
+        }
+    }
+
+    /// One explainable evidence bullet.
+    pub fn evidence(&self) -> String {
+        match self {
+            WeakTlsReason::DeprecatedVersion { version } => format!(
+                "deprecated protocol negotiated: {} (use TLS 1.2 or 1.3)",
+                tls_version_name(*version)
+            ),
+            WeakTlsReason::WeakCipher { name, .. } => {
+                format!("weak cipher suite negotiated: {name}")
+            }
+        }
+    }
+}
+
+/// A completed weak-TLS observation: which client reached which server, and why the negotiated TLS
+/// is weak.
+pub(crate) struct WeakTlsObservation {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub version: u16,
+    pub cipher: u16,
+    pub reasons: Vec<WeakTlsReason>,
+}
+
+/// Everything the reassembler produced over the capture.
+pub(crate) struct ReassemblerResults {
+    pub certs: Vec<CertObservation>,
+    pub weak_tls: Vec<WeakTlsObservation>,
+}
+
+/// One in-flight server handshake: the reassembled bytes plus whether its ServerHello has already
+/// been parsed for weak-TLS (so we record that observation exactly once per flight even though the
+/// ServerHello may not be complete in the first segment).
+#[derive(Default)]
+struct FlightBuf {
+    bytes: Vec<u8>,
+    weak_parsed: bool,
+}
+
 /// Streaming, bounded reassembler for server TLS handshake flights. Fed every decoded packet
 /// during the single analysis pass; it watches for ClientHellos (to learn the server endpoint and
 /// the requested SNI), then reassembles the matching server's Certificate message in arrival order
@@ -222,9 +300,10 @@ pub(crate) struct TlsCertReassembler {
     watched: HashSet<(IpAddr, u16)>,
     /// `(client, client_port, server, server_port)` -> requested SNI.
     sni: HashMap<(IpAddr, u16, IpAddr, u16), String>,
-    /// `(server, server_port, client, client_port)` -> in-flight server handshake bytes.
-    buffers: HashMap<(IpAddr, u16, IpAddr, u16), Vec<u8>>,
+    /// `(server, server_port, client, client_port)` -> in-flight server handshake flight.
+    buffers: HashMap<(IpAddr, u16, IpAddr, u16), FlightBuf>,
     observations: Vec<CertObservation>,
+    weak_tls: Vec<WeakTlsObservation>,
 }
 
 impl TlsCertReassembler {
@@ -234,6 +313,7 @@ impl TlsCertReassembler {
             sni: HashMap::new(),
             buffers: HashMap::new(),
             observations: Vec::new(),
+            weak_tls: Vec::new(),
         }
     }
 
@@ -305,18 +385,48 @@ impl TlsCertReassembler {
             if !starts_with_server_hello(payload) || self.buffers.len() >= MAX_BUFFERS {
                 return;
             }
-            self.buffers.insert(key, Vec::new());
+            self.buffers.insert(key, FlightBuf::default());
         }
 
         {
             let buf = self.buffers.get_mut(&key).expect("buffer present");
-            let room = MAX_BUF_BYTES.saturating_sub(buf.len());
+            let room = MAX_BUF_BYTES.saturating_sub(buf.bytes.len());
             if room == 0 {
                 self.buffers.remove(&key);
                 return;
             }
             let take = payload.len().min(room);
-            buf.extend_from_slice(&payload[..take]);
+            buf.bytes.extend_from_slice(&payload[..take]);
+        }
+
+        // Weak / deprecated TLS check on the *reassembled* buffer, retried after each segment until
+        // the ServerHello (negotiated version + cipher) is complete, then recorded once per flight —
+        // the same reassembly discipline the certificate path uses below.
+        let weak_obs = {
+            let buf = self.buffers.get_mut(&key).expect("buffer present");
+            if buf.weak_parsed {
+                None
+            } else if let Some((version, cipher)) = parse_server_hello(&buf.bytes) {
+                buf.weak_parsed = true;
+                let reasons = weak_tls_reasons(version, cipher);
+                if reasons.is_empty() {
+                    None
+                } else {
+                    Some(WeakTlsObservation {
+                        client,
+                        server,
+                        server_port,
+                        version,
+                        cipher,
+                        reasons,
+                    })
+                }
+            } else {
+                None
+            }
+        };
+        if let Some(obs) = weak_obs {
+            self.weak_tls.push(obs);
         }
 
         enum Action {
@@ -326,10 +436,10 @@ impl TlsCertReassembler {
         }
         let action = {
             let buf = self.buffers.get(&key).expect("buffer present");
-            match find_leaf_certificate(buf) {
+            match find_leaf_certificate(&buf.bytes) {
                 CertSearch::Found(der) => Action::Found(der),
                 CertSearch::Abort => Action::Remove,
-                CertSearch::NeedMore if buf.len() >= MAX_BUF_BYTES => Action::Remove,
+                CertSearch::NeedMore if buf.bytes.len() >= MAX_BUF_BYTES => Action::Remove,
                 CertSearch::NeedMore => Action::Keep,
             }
         };
@@ -362,9 +472,12 @@ impl TlsCertReassembler {
         }
     }
 
-    /// Drain every completed certificate observation.
-    pub(crate) fn into_observations(self) -> Vec<CertObservation> {
-        self.observations
+    /// Drain everything the reassembler produced (certificate health + weak-TLS observations).
+    pub(crate) fn into_results(self) -> ReassemblerResults {
+        ReassemblerResults {
+            certs: self.observations,
+            weak_tls: self.weak_tls,
+        }
     }
 }
 
@@ -460,6 +573,144 @@ fn extract_first_cert(cert_msg: &[u8]) -> CertSearch {
     };
     CertSearch::Found(entry.to_vec())
 }
+
+/// Parse the negotiated `(version, cipher)` from a server payload that begins with a ServerHello
+/// record. The ServerHello is small and always fits the first segment; returns `None` on any
+/// truncation. The "real" version is taken from the `supported_versions` extension (TLS 1.3) when
+/// present, else the record's `legacy_version`.
+fn parse_server_hello(payload: &[u8]) -> Option<(u16, u16)> {
+    // record: content_type(22) version(2) length(2)
+    if *payload.first()? != 22 {
+        return None;
+    }
+    let rec_len = ((*payload.get(3)? as usize) << 8) | *payload.get(4)? as usize;
+    let rec_end = 5usize.checked_add(rec_len)?.min(payload.len());
+    let rec = payload.get(5..rec_end)?;
+    // handshake message: type(1)=2 (ServerHello), length(3), body
+    if *rec.first()? != 2 {
+        return None;
+    }
+    let body_len =
+        ((*rec.get(1)? as usize) << 16) | ((*rec.get(2)? as usize) << 8) | *rec.get(3)? as usize;
+    let body_end = 4usize.checked_add(body_len)?.min(rec.len());
+    let body = rec.get(4..body_end)?;
+    parse_server_hello_body(body)
+}
+
+/// Parse a ServerHello body: `legacy_version(2) random(32) session_id(1+n) cipher_suite(2)
+/// compression(1) [extensions(2+n)]`.
+fn parse_server_hello_body(body: &[u8]) -> Option<(u16, u16)> {
+    let legacy_version = u16::from_be_bytes([*body.first()?, *body.get(1)?]);
+    let sid_len = *body.get(34)? as usize; // after version(2) + random(32)
+    let cipher_pos = 35usize.checked_add(sid_len)?;
+    let cipher = u16::from_be_bytes([*body.get(cipher_pos)?, *body.get(cipher_pos + 1)?]);
+    let mut pos = cipher_pos.checked_add(3)?; // skip cipher(2) + compression(1)
+
+    // Extensions are optional; the ServerHello `supported_versions` (0x002b) is the 2-byte
+    // *selected* version (the authoritative one in TLS 1.3).
+    let mut version = legacy_version;
+    if let (Some(&hi), Some(&lo)) = (body.get(pos), body.get(pos + 1)) {
+        let ext_total = ((hi as usize) << 8) | lo as usize;
+        pos += 2;
+        let ext_end = pos.saturating_add(ext_total).min(body.len());
+        while pos + 4 <= ext_end {
+            let etype = u16::from_be_bytes([body[pos], body[pos + 1]]);
+            let elen = ((body[pos + 2] as usize) << 8) | body[pos + 3] as usize;
+            let data_start = pos + 4;
+            let data_end = match data_start.checked_add(elen) {
+                Some(e) if e <= ext_end => e,
+                _ => break,
+            };
+            if etype == 0x002b && elen >= 2 {
+                version = u16::from_be_bytes([body[data_start], body[data_start + 1]]);
+            }
+            pos = data_end;
+        }
+    }
+    Some((version, cipher))
+}
+
+/// Weak / deprecated reasons for a negotiated `(version, cipher)`; empty when the connection is fine.
+fn weak_tls_reasons(version: u16, cipher: u16) -> Vec<WeakTlsReason> {
+    let mut out = Vec::new();
+    // Deprecated protocol: SSL 3.0 (0x0300), TLS 1.0 (0x0301), TLS 1.1 (0x0302) — all below 0x0303.
+    if (0x0300..0x0303).contains(&version) {
+        out.push(WeakTlsReason::DeprecatedVersion { version });
+    }
+    if let Some((name, rank)) = weak_cipher(cipher) {
+        out.push(WeakTlsReason::WeakCipher { cipher, name, rank });
+    }
+    out
+}
+
+/// Human name for a TLS protocol version word.
+fn tls_version_name(v: u16) -> &'static str {
+    match v {
+        0x0300 => "SSL 3.0",
+        0x0301 => "TLS 1.0",
+        0x0302 => "TLS 1.1",
+        0x0303 => "TLS 1.2",
+        0x0304 => "TLS 1.3",
+        _ => "unknown TLS version",
+    }
+}
+
+/// Look up a known-weak cipher suite: returns its name and severity rank (3 = NULL/anon/EXPORT,
+/// 2 = RC4/DES/MD5, 1 = 3DES). Strong modern suites are absent → no finding (conservative).
+fn weak_cipher(cipher: u16) -> Option<(&'static str, u8)> {
+    WEAK_CIPHERS
+        .iter()
+        .find(|(c, _, _)| *c == cipher)
+        .map(|(_, name, rank)| (*name, *rank))
+}
+
+/// Curated table of broken / obsolete cipher suites an analyst cares about: NULL (no encryption),
+/// anonymous (no authentication), EXPORT (40/56-bit), RC4, single-DES, and 3DES. Value, IANA name,
+/// severity rank.
+#[rustfmt::skip]
+const WEAK_CIPHERS: &[(u16, &str, u8)] = &[
+    // NULL — no encryption.
+    (0x0000, "TLS_NULL_WITH_NULL_NULL", 3),
+    (0x0001, "TLS_RSA_WITH_NULL_MD5", 3),
+    (0x0002, "TLS_RSA_WITH_NULL_SHA", 3),
+    (0x003B, "TLS_RSA_WITH_NULL_SHA256", 3),
+    (0xC001, "TLS_ECDH_ECDSA_WITH_NULL_SHA", 3),
+    (0xC006, "TLS_ECDHE_ECDSA_WITH_NULL_SHA", 3),
+    (0xC010, "TLS_ECDHE_RSA_WITH_NULL_SHA", 3),
+    // EXPORT — deliberately crippled key sizes.
+    (0x0003, "TLS_RSA_EXPORT_WITH_RC4_40_MD5", 3),
+    (0x0006, "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5", 3),
+    (0x0008, "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA", 3),
+    (0x0011, "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA", 3),
+    (0x0014, "TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA", 3),
+    // Anonymous key exchange — no server authentication (trivial MITM).
+    (0x0018, "TLS_DH_anon_WITH_RC4_128_MD5", 3),
+    (0x001B, "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA", 3),
+    (0x0034, "TLS_DH_anon_WITH_AES_128_CBC_SHA", 3),
+    (0x003A, "TLS_DH_anon_WITH_AES_256_CBC_SHA", 3),
+    (0xC015, "TLS_ECDH_anon_WITH_NULL_SHA", 3),
+    (0xC016, "TLS_ECDH_anon_WITH_RC4_128_SHA", 3),
+    (0xC017, "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA", 3),
+    (0xC018, "TLS_ECDH_anon_WITH_AES_128_CBC_SHA", 3),
+    (0xC019, "TLS_ECDH_anon_WITH_AES_256_CBC_SHA", 3),
+    // RC4 — broken stream cipher.
+    (0x0004, "TLS_RSA_WITH_RC4_128_MD5", 2),
+    (0x0005, "TLS_RSA_WITH_RC4_128_SHA", 2),
+    (0xC007, "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA", 2),
+    (0xC011, "TLS_ECDHE_RSA_WITH_RC4_128_SHA", 2),
+    (0xC002, "TLS_ECDH_ECDSA_WITH_RC4_128_SHA", 2),
+    (0xC00C, "TLS_ECDH_RSA_WITH_RC4_128_SHA", 2),
+    // Single DES — 56-bit.
+    (0x0009, "TLS_RSA_WITH_DES_CBC_SHA", 2),
+    (0x0012, "TLS_DHE_DSS_WITH_DES_CBC_SHA", 2),
+    (0x0015, "TLS_DHE_RSA_WITH_DES_CBC_SHA", 2),
+    // 3DES — obsolete (Sweet32), but still authenticated/encrypted: Low.
+    (0x000A, "TLS_RSA_WITH_3DES_EDE_CBC_SHA", 1),
+    (0x0016, "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA", 1),
+    (0xC008, "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA", 1),
+    (0xC012, "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA", 1),
+    (0xC003, "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA", 1),
+];
 
 // ---------------------------------------------------------------------------------------------
 // Test helpers: hand-built DER certificates and TLS server flights.
@@ -587,6 +838,27 @@ pub(crate) mod testcert {
         out.extend(tls_record(&certificate));
         out
     }
+
+    /// A single ServerHello record negotiating `legacy_version` + `cipher`, optionally carrying a
+    /// `supported_versions` extension (the TLS 1.3 selected version).
+    pub(crate) fn server_hello(
+        legacy_version: u16,
+        cipher: u16,
+        supported: Option<u16>,
+    ) -> Vec<u8> {
+        let mut body = legacy_version.to_be_bytes().to_vec();
+        body.extend_from_slice(&[0u8; 32]); // random
+        body.push(0x00); // session_id length
+        body.extend_from_slice(&cipher.to_be_bytes());
+        body.push(0x00); // compression
+        if let Some(v) = supported {
+            let mut ext = vec![0x00, 0x2b, 0x00, 0x02];
+            ext.extend_from_slice(&v.to_be_bytes());
+            body.extend_from_slice(&(ext.len() as u16).to_be_bytes());
+            body.extend_from_slice(&ext);
+        }
+        tls_record(&hs_msg(2, &body))
+    }
 }
 
 #[cfg(test)]
@@ -683,7 +955,7 @@ mod tests {
         r.note_client_hello(client, 51000, server, 443, Some("good.example"));
         r.feed_server(server, 443, client, 51000, &flight, 20_250_101_000_000);
 
-        let obs = r.into_observations();
+        let obs = r.into_results().certs;
         assert_eq!(obs.len(), 1);
         assert_eq!(obs[0].client, client);
         assert_eq!(obs[0].server, server);
@@ -829,7 +1101,7 @@ mod tests {
             r.observe(&meta, &frame);
         }
 
-        let obs = r.into_observations();
+        let obs = r.into_results().certs;
         assert_eq!(
             obs.len(),
             1,
@@ -848,5 +1120,108 @@ mod tests {
             .issues
             .iter()
             .any(|i| matches!(i, CertIssue::NameMismatch { .. })));
+    }
+
+    fn feed_hello(version: u16, cipher: u16, supported: Option<u16>) -> Vec<WeakTlsObservation> {
+        let mut r = TlsCertReassembler::new();
+        let client: IpAddr = "10.0.0.5".parse().unwrap();
+        let server: IpAddr = "203.0.113.9".parse().unwrap();
+        r.note_client_hello(client, 51000, server, 443, None);
+        r.feed_server(
+            server,
+            443,
+            client,
+            51000,
+            &testcert::server_hello(version, cipher, supported),
+            20_250_101_000_000,
+        );
+        r.into_results().weak_tls
+    }
+
+    #[test]
+    fn flags_deprecated_tls_version() {
+        // TLS 1.0 with a strong-ish cipher -> deprecated-version only (Low).
+        let w = feed_hello(0x0301, 0x002F, None);
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].version, 0x0301);
+        assert!(w[0]
+            .reasons
+            .iter()
+            .any(|r| matches!(r, WeakTlsReason::DeprecatedVersion { .. })));
+        assert_eq!(
+            w[0].reasons.iter().map(|r| r.severity_rank()).max(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn flags_weak_cipher_and_ssl3_is_high() {
+        // RC4 over TLS 1.2 -> weak cipher (Medium, rank 2).
+        let rc4 = feed_hello(0x0303, 0x0005, None);
+        assert_eq!(rc4.len(), 1);
+        assert!(rc4[0]
+            .reasons
+            .iter()
+            .any(|r| matches!(r, WeakTlsReason::WeakCipher { .. })));
+        assert_eq!(
+            rc4[0].reasons.iter().map(|r| r.severity_rank()).max(),
+            Some(2)
+        );
+
+        // SSL 3.0 with a NULL cipher -> two High reasons.
+        let ssl3 = feed_hello(0x0300, 0x0001, None);
+        assert_eq!(ssl3[0].reasons.len(), 2);
+        assert_eq!(
+            ssl3[0].reasons.iter().map(|r| r.severity_rank()).max(),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn strong_tls_is_not_flagged() {
+        // TLS 1.2 legacy version + AES128-GCM-SHA256 cipher -> nothing.
+        assert!(feed_hello(0x0303, 0x009C, None).is_empty());
+        // TLS 1.3 via the supported_versions extension (legacy_version frozen at 0x0303).
+        assert!(feed_hello(0x0303, 0x1301, Some(0x0304)).is_empty());
+    }
+
+    #[test]
+    fn supported_versions_extension_unmasks_tls13() {
+        // A real TLS 1.3 ServerHello pins legacy_version to TLS 1.2 and carries the true version in
+        // the supported_versions extension — must NOT be read as deprecated.
+        assert!(feed_hello(0x0303, 0x1301, Some(0x0304)).is_empty());
+        // Conversely, supported_versions advertising TLS 1.1 is still deprecated.
+        let w = feed_hello(0x0303, 0x1301, Some(0x0302));
+        assert!(w.iter().any(|o| o
+            .reasons
+            .iter()
+            .any(|r| matches!(r, WeakTlsReason::DeprecatedVersion { version: 0x0302 }))));
+    }
+
+    #[test]
+    fn weak_tls_detected_when_serverhello_spans_segments() {
+        // TLS 1.0 + RC4, but the ServerHello is split *before* the cipher field, so the opening
+        // segment cannot be parsed on its own — the parse must be retried on the reassembled buffer.
+        let hello = testcert::server_hello(0x0301, 0x0005, None);
+        let (head, tail) = hello.split_at(8); // record header + handshake type, but no cipher yet
+
+        let mut r = TlsCertReassembler::new();
+        let client: IpAddr = "10.0.0.5".parse().unwrap();
+        let server: IpAddr = "203.0.113.9".parse().unwrap();
+        r.note_client_hello(client, 51000, server, 443, None);
+
+        r.feed_server(server, 443, client, 51000, head, 20_250_101_000_000);
+        assert!(
+            r.weak_tls.is_empty(),
+            "a ServerHello head too short to reach the cipher must not yet be flagged"
+        );
+        r.feed_server(server, 443, client, 51000, tail, 20_250_101_000_000);
+        assert_eq!(
+            r.weak_tls.len(),
+            1,
+            "reassembled ServerHello must be flagged"
+        );
+        assert_eq!(r.weak_tls[0].version, 0x0301);
+        assert_eq!(r.weak_tls[0].cipher, 0x0005);
     }
 }
