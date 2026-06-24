@@ -1,19 +1,23 @@
 import { parseScoreTerms } from "../../lib/scoreTerms";
 import { SectionLabel } from "../../cockpit/primitives";
 import { sevColor } from "../../cockpit/viz";
-import type { Severity } from "../../types";
+import type { Severity, ScoreTerm } from "../../types";
 
 /** Visual +N / -N breakdown waterfall for a threat score's evidence strings. */
 export function ScoreWaterfall({
   evidence,
   score,
   severity,
+  scoreTerms,
 }: {
   evidence: string[];
   score: number;
   severity: Severity;
+  scoreTerms?: ScoreTerm[];
 }) {
-  const { terms, notes } = parseScoreTerms(evidence);
+  const { terms, notes } = scoreTerms && scoreTerms.length
+    ? { terms: scoreTerms, notes: parseScoreTerms(evidence).notes }
+    : parseScoreTerms(evidence);
   if (terms.length === 0 && notes.length === 0) return null;
 
   const maxAbs = Math.max(1, ...terms.map((t) => Math.abs(t.points)));

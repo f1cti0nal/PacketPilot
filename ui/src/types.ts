@@ -125,6 +125,12 @@ export interface FingerprintHit {
   label: string;
 }
 
+/** One additive scoring contribution — mirrors engine ScoreTerm. */
+export interface ScoreTerm {
+  label: string;
+  points: number;
+}
+
 export interface IpThreat {
   ip: string;
   ip_class: string;
@@ -138,6 +144,7 @@ export interface IpThreat {
   evidence: string[];
   reputation?: ReputationVerdict[];
   fingerprints?: FingerprintHit[];
+  score_terms?: ScoreTerm[];
 }
 
 export interface DomainThreat {

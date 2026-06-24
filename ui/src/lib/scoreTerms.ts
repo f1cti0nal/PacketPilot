@@ -1,8 +1,5 @@
-/** One additive scoring contribution parsed from an evidence string. */
-export interface ScoreTerm {
-  label: string;
-  points: number;
-}
+import type { ScoreTerm } from "../types";
+export type { ScoreTerm };
 
 /** Additive terms + non-additive annotations (clamp/floor) parsed from IpThreat.evidence. */
 export interface ParsedScore {
