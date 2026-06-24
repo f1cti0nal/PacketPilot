@@ -47,6 +47,8 @@ export interface AppShellProps {
   onCopyMisp?: () => Promise<ExportResult | undefined>;
   onExportCef?: () => Promise<ExportResult | undefined>;
   onCopyCef?: () => Promise<ExportResult | undefined>;
+  onExportSigma?: () => Promise<ExportResult | undefined>;
+  onCopySigma?: () => Promise<ExportResult | undefined>;
   /** Threat rail data from the active capture. */
   threats: IpThreat[];
   /** Currently active/focused IP in the threat rail. */
@@ -95,6 +97,8 @@ export function AppShell({
   onCopyMisp,
   onExportCef,
   onCopyCef,
+  onExportSigma,
+  onCopySigma,
   threats,
   activeIp,
   onSelectThreat,
@@ -161,8 +165,10 @@ export function AppShell({
       { id: "misp-copy", label: "MISP event — copy", run: () => void runExport(onCopyMisp) },
       { id: "cef", label: "CEF — download", run: () => void runExport(onExportCef) },
       { id: "cef-copy", label: "CEF — copy", run: () => void runExport(onCopyCef) },
+      { id: "sigma", label: "Sigma rules — download", run: () => void runExport(onExportSigma) },
+      { id: "sigma-copy", label: "Sigma rules — copy", run: () => void runExport(onCopySigma) },
     ],
-    [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef],
+    [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma],
   );
 
   // Capture filename: derived from the App-owned summary state.
@@ -203,8 +209,10 @@ export function AppShell({
       { id: "export-misp-copy", label: "Copy MISP event", hint: "action", run: () => void runExport(onCopyMisp) },
       { id: "export-cef", label: "Export CEF", hint: "action", run: () => void runExport(onExportCef) },
       { id: "export-cef-copy", label: "Copy CEF", hint: "action", run: () => void runExport(onCopyCef) },
+      { id: "export-sigma", label: "Export Sigma rules", hint: "action", run: () => void runExport(onExportSigma) },
+      { id: "export-sigma-copy", label: "Copy Sigma rules", hint: "action", run: () => void runExport(onCopySigma) },
     ] : []),
-  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef]);
+  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">

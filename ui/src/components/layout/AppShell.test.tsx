@@ -79,6 +79,21 @@ describe("AppShell", () => {
     await screen.findByText(/Report saved/i);
   });
 
+  it("Sigma rules export and copy actions are wired to their handlers", async () => {
+    const u = userEvent.setup();
+    const onExportSigma = vi.fn(async () => ({ ok: true as const, message: "Sigma rules saved" }));
+    const onCopySigma = vi.fn(async () => ({ ok: true as const, message: "Copied" }));
+    render(<AppShell {...minimalProps({ onExportSigma, onCopySigma })} />);
+
+    await u.click(screen.getByRole("button", { name: /export/i }));
+    await u.click(screen.getByText("Sigma rules — download"));
+    expect(onExportSigma).toHaveBeenCalled();
+
+    await u.click(screen.getByRole("button", { name: /export/i }));
+    await u.click(screen.getByText("Sigma rules — copy"));
+    expect(onCopySigma).toHaveBeenCalled();
+  });
+
   it("shows the capture filename from the summary source_path", () => {
     render(<AppShell {...minimalProps()} />);
     // makeOutput().source_path = "captures/test.pcap" → basename = "test.pcap"

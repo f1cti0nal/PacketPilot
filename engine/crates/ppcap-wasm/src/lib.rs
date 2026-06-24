@@ -489,6 +489,14 @@ pub fn export_cef(output_json: &str) -> Result<String, JsValue> {
     Ok(ppcap_core::export::cef_records(&out))
 }
 
+/// Export the analysis findings as Sigma detection rules (multi-document YAML).
+#[wasm_bindgen]
+pub fn export_sigma(output_json: &str) -> Result<String, JsValue> {
+    let out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(ppcap_core::export::sigma_rules(&out))
+}
+
 /// Render the full HTML triage report for `output_json` (browser parity with the desktop `save_report`).
 #[wasm_bindgen]
 pub fn render_report(

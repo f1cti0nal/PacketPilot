@@ -17,6 +17,7 @@ import initWasm, {
   export_stix as wasmExportStix,
   export_misp as wasmExportMisp,
   export_cef as wasmExportCef,
+  export_sigma as wasmExportSigma,
   carve_pcap as wasmCarvePcap,
   render_report as wasmRenderReport,
 } from "../wasm/ppcap_wasm.js";
@@ -157,6 +158,12 @@ export async function exportMispWasm(outputJson: string, generatedUnixSecs: numb
 export async function exportCefWasm(outputJson: string): Promise<string> {
   await ensureWasm();
   return wasmExportCef(outputJson);
+}
+
+/** Export findings as Sigma detection rules (multi-document YAML) via WASM (browser path). */
+export async function exportSigmaWasm(outputJson: string): Promise<string> {
+  await ensureWasm();
+  return wasmExportSigma(outputJson);
 }
 
 /**
