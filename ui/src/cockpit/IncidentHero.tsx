@@ -13,6 +13,7 @@ import {
   FileWarning,
   ShieldAlert,
   ShieldOff,
+  Shuffle,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +37,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
   weak_tls: { label: "Weak TLS", Icon: ShieldOff },
   icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
+  dga: { label: "DGA Domains", Icon: Shuffle },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -51,6 +53,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   tls_cert_health: "Command & Control",
   weak_tls: "Collection",
   icmp_tunnel: "Exfiltration",
+  dga: "Command & Control",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
@@ -59,6 +62,7 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   brute_force: "attempts",
   lateral_movement: "hosts",
   dns_tunnel: "queries",
+  dga: "domains",
   cleartext_creds: "exposures",
 };
 

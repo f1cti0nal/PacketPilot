@@ -12,6 +12,7 @@ import {
   Radio,
   ShieldAlert,
   ShieldOff,
+  Shuffle,
   Siren,
   Unlock,
   Waypoints,
@@ -43,6 +44,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
   weak_tls: { label: "Weak TLS", Icon: ShieldOff },
   icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
+  dga: { label: "DGA Domains", Icon: Shuffle },
 };
 
 /** Worst-first ordering. */
