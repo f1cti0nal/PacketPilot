@@ -445,6 +445,7 @@ mod tests {
             icmp_type: None,
             tls_version: None,
             tls_cipher: None,
+            hassh: None,
         }
     }
 

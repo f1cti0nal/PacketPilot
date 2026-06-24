@@ -337,6 +337,7 @@ struct FlowDto {
     ja4: Option<String>,
     tls_version: Option<String>,
     tls_cipher: Option<String>,
+    hassh: Option<String>,
     severity: String,
     threat_score: u16,
     ioc: bool,
@@ -391,6 +392,11 @@ impl FlowDto {
                 .map(|v| v.to_string()),
             tls_cipher: rec
                 .tls_cipher
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| v.to_string()),
+            hassh: rec
+                .hassh
                 .as_ref()
                 .filter(|v| !v.is_empty())
                 .map(|v| v.to_string()),

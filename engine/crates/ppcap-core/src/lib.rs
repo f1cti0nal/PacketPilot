@@ -50,6 +50,7 @@ pub(crate) mod quic;
 pub mod reader;
 pub mod report;
 pub mod score;
+pub(crate) mod ssh;
 pub mod stats;
 pub mod tls;
 

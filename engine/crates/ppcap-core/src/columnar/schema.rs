@@ -1,6 +1,6 @@
 //! The canonical flow Parquet/Arrow schema — the single source of truth.
 //!
-//! **26 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
+//! **27 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
 //! SELECT order. The `schema_drift` test (CI guard) asserts all three agree. Any column
 //! change MUST bump [`FLOW_PARQUET_VERSION`] and update the SQL view + `flow_columns_in_order`.
 //!
@@ -15,7 +15,7 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 /// the only flow reader is external DuckDB (`read_parquet` in `sql/schema.sql`), which does
 /// not inspect this value; there is no in-engine reader that enforces it. Bump it whenever a
 /// column is added/removed/reordered.
-pub const FLOW_PARQUET_VERSION: u16 = 5;
+pub const FLOW_PARQUET_VERSION: u16 = 6;
 
 /// Canonical Arrow schema for the persisted flow Parquet table.
 pub fn flow_arrow_schema() -> Arc<Schema> {
@@ -44,14 +44,15 @@ pub fn flow_arrow_schema() -> Arc<Schema> {
         Field::new("ja4", DataType::Utf8, true), // 21 TLS JA4 fingerprint; NULL if none observed
         Field::new("tls_version", DataType::Utf8, true), // 22 negotiated TLS version label; NULL if none
         Field::new("tls_cipher", DataType::Utf8, true), // 23 negotiated cipher-suite label; NULL if none
-        Field::new("severity", DataType::Utf8, false),  // 24 lowercase token, never NULL ("info")
-        Field::new("threat_score", DataType::UInt16, false), // 25 0..=100
-        Field::new("ioc", DataType::Boolean, false),    // 26 any feed match on this flow
+        Field::new("hassh", DataType::Utf8, true), // 24 SSH client HASSH (MD5) fingerprint; NULL if none
+        Field::new("severity", DataType::Utf8, false),  // 25 lowercase token, never NULL ("info")
+        Field::new("threat_score", DataType::UInt16, false), // 26 0..=100
+        Field::new("ioc", DataType::Boolean, false),    // 27 any feed match on this flow
     ]))
 }
 
 /// CI drift guard: exact column names in canonical order.
-pub fn flow_columns_in_order() -> [&'static str; 26] {
+pub fn flow_columns_in_order() -> [&'static str; 27] {
     [
         "flow_id",
         "capture_id",
@@ -76,6 +77,7 @@ pub fn flow_columns_in_order() -> [&'static str; 26] {
         "ja4",
         "tls_version",
         "tls_cipher",
+        "hassh",
         "severity",
         "threat_score",
         "ioc",

@@ -261,6 +261,9 @@ pub struct PacketMeta {
     /// Negotiated TLS cipher-suite label (IANA name or `0xNNNN`) from a server ServerHello; `None`
     /// otherwise.
     pub tls_cipher: Option<String>,
+    /// SSH client HASSH (MD5) fingerprint from a client KEXINIT; `None` otherwise. The SSH analogue
+    /// of the client `ja3`/`ja4`. Derived flag — no payload retained.
+    pub hassh: Option<String>,
 }
 
 impl PacketMeta {

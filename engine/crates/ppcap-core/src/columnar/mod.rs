@@ -105,6 +105,7 @@ struct Builders {
     ja4: StringBuilder,
     tls_version: StringBuilder,
     tls_cipher: StringBuilder,
+    hassh: StringBuilder,
     severity: StringBuilder,
     threat_score: UInt16Builder,
     ioc: BooleanBuilder,
@@ -136,6 +137,7 @@ impl Builders {
             ja4: StringBuilder::new(),
             tls_version: StringBuilder::new(),
             tls_cipher: StringBuilder::new(),
+            hassh: StringBuilder::new(),
             severity: StringBuilder::new(),
             threat_score: UInt16Builder::new(),
             ioc: BooleanBuilder::new(),
@@ -172,6 +174,7 @@ impl Builders {
             Arc::new(self.ja4.finish()),
             Arc::new(self.tls_version.finish()),
             Arc::new(self.tls_cipher.finish()),
+            Arc::new(self.hassh.finish()),
             Arc::new(self.severity.finish()),
             Arc::new(self.threat_score.finish()),
             Arc::new(self.ioc.finish()),
@@ -214,6 +217,7 @@ impl FlowParquetWriter {
             "sni",
             "tls_version",
             "tls_cipher",
+            "hassh",
             "severity",
         ];
 
@@ -321,6 +325,11 @@ impl FlowParquetWriter {
         match &rec.tls_cipher {
             Some(v) if !v.is_empty() => b.tls_cipher.append_value(v),
             _ => b.tls_cipher.append_null(),
+        }
+        // hassh: SSH client fingerprint; present only for an observed client KEXINIT, NULL otherwise.
+        match &rec.hassh {
+            Some(v) if !v.is_empty() => b.hassh.append_value(v),
+            _ => b.hassh.append_null(),
         }
         // Phase-2 verdict columns (never NULL).
         b.severity.append_value(rec.severity.as_str());
@@ -482,6 +491,7 @@ mod tests {
             b.ja4.append_null();
             b.tls_version.append_null();
             b.tls_cipher.append_null();
+            b.hassh.append_null();
             b.severity.append_value("info");
             b.threat_score.append_value(0);
             b.ioc.append_value(false);
@@ -489,7 +499,7 @@ mod tests {
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 26);
+        assert_eq!(batch.num_columns(), 27);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }

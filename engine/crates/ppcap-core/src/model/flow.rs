@@ -146,6 +146,9 @@ pub struct FlowRecord {
     pub tls_version: Option<String>,
     /// Negotiated TLS cipher-suite label from the server ServerHello; `None` if none seen.
     pub tls_cipher: Option<String>,
+    /// SSH client HASSH (MD5) fingerprint from a client KEXINIT; `None` if none seen. The SSH
+    /// analogue of `ja3` — first non-empty value seen wins (sticky).
+    pub hassh: Option<String>,
     /// Derivation of `app_proto`: `Some("payload")`, `Some("port")`, or `None` (unknown /
     /// shape-only). Set by the classify stage; written to the `app_proto_src` column.
     pub app_proto_src: Option<&'static str>,
@@ -183,6 +186,7 @@ impl FlowRecord {
             ja4: None,
             tls_version: None,
             tls_cipher: None,
+            hassh: None,
             app_proto_src: None,
             severity: crate::model::severity::Severity::Info,
             threat_score: 0,
@@ -240,6 +244,15 @@ impl FlowRecord {
             if let Some(v) = &p.tls_cipher {
                 if !v.is_empty() {
                     self.tls_cipher = Some(v.clone());
+                }
+            }
+        }
+        // hassh: SSH client fingerprint. Client-only (decode sets it only on a client KEXINIT), so
+        // direction-independent like ja3 — first non-empty value wins (sticky).
+        if self.hassh.is_none() {
+            if let Some(v) = &p.hassh {
+                if !v.is_empty() {
+                    self.hassh = Some(v.clone());
                 }
             }
         }
@@ -327,6 +340,7 @@ mod tests {
             icmp_type: None,
             tls_version: None,
             tls_cipher: None,
+            hassh: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -382,6 +396,7 @@ mod tests {
             icmp_type: None,
             tls_version: None,
             tls_cipher: None,
+            hassh: None,
         };
 
         let mut p1 = base.clone();
