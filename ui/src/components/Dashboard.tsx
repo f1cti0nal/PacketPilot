@@ -20,6 +20,7 @@ import { AiSummaryCard } from "../cockpit/AiSummaryCard";
 import { ThreatGraph } from "../cockpit/ThreatGraph";
 import { ProtocolSunburst } from "../cockpit/ProtocolSunburst";
 import { TopPortsCard } from "../cockpit/TopPortsCard";
+import { HttpOverviewCard } from "../cockpit/HttpOverviewCard";
 import { TriageBadge } from "../cockpit/TriageAnnotation";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
@@ -176,6 +177,9 @@ export function Dashboard({
           </div>
           <div className="lg:col-span-6">
             <TopPortsCard ports={s.port_histogram ?? []} />
+          </div>
+          <div className="lg:col-span-12">
+            <HttpOverviewCard hosts={s.http_hosts ?? []} userAgents={s.user_agents ?? []} />
           </div>
         </div>
         <SignatureMatchesPanel findings={s.findings ?? []} onJump={toFlowsIp} />

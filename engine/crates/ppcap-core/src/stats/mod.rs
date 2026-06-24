@@ -159,6 +159,10 @@ pub struct StatsAccumulator {
     per_ip_threat: HashMap<IpAddr, IpThreatStat>,
     /// Per-SNI-domain traffic rollups; bounded by `max_tracked_keys`.
     per_domain: HashMap<String, DomainStat>,
+    /// Per-HTTP-request-`Host` flow counts; bounded by `max_tracked_keys`.
+    per_http_host: HashMap<String, u64>,
+    /// Per-HTTP-request-`User-Agent` flow counts; bounded by `max_tracked_keys`.
+    per_http_ua: HashMap<String, u64>,
 }
 
 /// Upper bound on distinct destination ports retained per source for scan detection.
@@ -189,6 +193,8 @@ impl StatsAccumulator {
             severity_counts: SeverityCounts::default(),
             per_ip_threat: HashMap::new(),
             per_domain: HashMap::new(),
+            per_http_host: HashMap::new(),
+            per_http_ua: HashMap::new(),
         }
     }
 
@@ -377,6 +383,14 @@ impl StatsAccumulator {
                 e.flows += 1;
                 e.bytes += f.total_bytes();
             }
+        }
+
+        // HTTP Host / User-Agent rollups (flow-count-ranked; bounded the same way).
+        if let Some(host) = f.http_host.as_deref() {
+            bump_string_capped(&mut self.per_http_host, host, self.cfg.max_tracked_keys);
+        }
+        if let Some(ua) = f.http_ua.as_deref() {
+            bump_string_capped(&mut self.per_http_ua, ua, self.cfg.max_tracked_keys);
         }
     }
 
@@ -594,6 +608,30 @@ impl StatsAccumulator {
         });
         domain_threats.truncate(TOP_K_DOMAINS);
 
+        // HTTP host / User-Agent rollups: desc by flows, tie-break asc by string. Top-N.
+        const TOP_K_HTTP: usize = 15;
+        let mut http_hosts: Vec<crate::model::summary::HttpHostCount> = self
+            .per_http_host
+            .iter()
+            .map(|(host, &flows)| crate::model::summary::HttpHostCount {
+                host: host.clone(),
+                flows,
+            })
+            .collect();
+        http_hosts.sort_by(|a, b| b.flows.cmp(&a.flows).then(a.host.cmp(&b.host)));
+        http_hosts.truncate(TOP_K_HTTP);
+
+        let mut user_agents: Vec<crate::model::summary::UserAgentCount> = self
+            .per_http_ua
+            .iter()
+            .map(|(ua, &flows)| crate::model::summary::UserAgentCount {
+                user_agent: ua.clone(),
+                flows,
+            })
+            .collect();
+        user_agents.sort_by(|a, b| b.flows.cmp(&a.flows).then(a.user_agent.cmp(&b.user_agent)));
+        user_agents.truncate(TOP_K_HTTP);
+
         Summary {
             total_packets: self.total_packets,
             total_bytes: self.total_bytes,
@@ -615,6 +653,8 @@ impl StatsAccumulator {
             severity_counts: self.severity_counts,
             ip_threats,
             domain_threats,
+            http_hosts,
+            user_agents,
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.
@@ -912,6 +952,17 @@ fn bump_bounded<K, V, U, W, D>(
             map.insert(key, candidate);
         }
         // else: candidate is no heavier than the lightest survivor -> drop it.
+    }
+}
+
+/// Bump a `String`-keyed flow counter, bounded like the SNI-domain rollup: an existing key always
+/// increments; a brand-new key is added only while under `cap` (no eviction — a heavy-hitter
+/// histogram, not an exact set).
+fn bump_string_capped(map: &mut HashMap<String, u64>, key: &str, cap: usize) {
+    if let Some(c) = map.get_mut(key) {
+        *c += 1;
+    } else if map.len() < cap.max(1) {
+        map.insert(key.to_string(), 1);
     }
 }
 
@@ -1677,6 +1728,38 @@ mod tests {
             .domain_threats
             .iter()
             .all(|d| d.reputation.is_empty()));
+    }
+
+    #[test]
+    fn http_host_and_user_agent_rollups_ranked_by_flows() {
+        use crate::score::ScoredFlow;
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let sc = || ScoredFlow {
+            severity: crate::model::severity::Severity::Info,
+            score: 0,
+            evidence: vec![],
+            attack: vec![],
+            terms: vec![],
+        };
+        let make = |host: Option<&str>, ua: Option<&str>| {
+            let mut f = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 100);
+            f.http_host = host.map(|s| s.to_string());
+            f.http_ua = ua.map(|s| s.to_string());
+            f
+        };
+        // a.example x3, b.example x1; curl/8 x2, sqlmap/1 x1.
+        acc.observe_scored_flow(&make(Some("a.example"), Some("curl/8")), &sc());
+        acc.observe_scored_flow(&make(Some("a.example"), Some("curl/8")), &sc());
+        acc.observe_scored_flow(&make(Some("a.example"), Some("sqlmap/1")), &sc());
+        acc.observe_scored_flow(&make(Some("b.example"), None), &sc());
+        acc.observe_scored_flow(&make(None, None), &sc()); // no HTTP metadata -> neither
+
+        let s = acc.finish();
+        assert_eq!(s.http_hosts[0].host, "a.example");
+        assert_eq!(s.http_hosts[0].flows, 3);
+        assert_eq!(s.http_hosts[1].host, "b.example");
+        assert_eq!(s.user_agents[0].user_agent, "curl/8");
+        assert_eq!(s.user_agents[0].flows, 2);
     }
 
     #[test]

@@ -165,6 +165,21 @@ pub struct DomainThreat {
     pub reputation: Vec<crate::enrich::ReputationVerdict>,
 }
 
+/// One HTTP host rollup row: a request `Host` and the number of flows that carried it. Ranked by
+/// flow count — a display surface for the capture's web destinations.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HttpHostCount {
+    pub host: String,
+    pub flows: u64,
+}
+
+/// One HTTP User-Agent rollup row: a request `User-Agent` and the number of flows that carried it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UserAgentCount {
+    pub user_agent: String,
+    pub flows: u64,
+}
+
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Summary {
@@ -210,6 +225,14 @@ pub struct Summary {
     /// Top TLS SNI hosts by traffic. `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub domain_threats: Vec<DomainThreat>,
+    /// Top HTTP request `Host` headers by flow count. `#[serde(default)]` keeps older summaries
+    /// readable.
+    #[serde(default)]
+    pub http_hosts: Vec<HttpHostCount>,
+    /// Top HTTP request `User-Agent` headers by flow count. `#[serde(default)]` keeps older
+    /// summaries readable.
+    #[serde(default)]
+    pub user_agents: Vec<UserAgentCount>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -250,6 +273,8 @@ impl Summary {
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),
             domain_threats: Vec::new(),
+            http_hosts: Vec::new(),
+            user_agents: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
         }

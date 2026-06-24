@@ -92,6 +92,10 @@ export interface Summary {
   severity_counts?: SeverityCounts;
   ip_threats?: IpThreat[];
   domain_threats?: DomainThreat[];
+  /** Top HTTP request Host headers by flow count; absent in older summaries. */
+  http_hosts?: HttpHostCount[];
+  /** Top HTTP request User-Agent headers by flow count; absent in older summaries. */
+  user_agents?: UserAgentCount[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -152,6 +156,18 @@ export interface DomainThreat {
   flows: number;
   bytes: number;
   reputation?: ReputationVerdict[];
+}
+
+/** One HTTP request-Host rollup row: the host and how many flows carried it. */
+export interface HttpHostCount {
+  host: string;
+  flows: number;
+}
+
+/** One HTTP request-User-Agent rollup row: the UA and how many flows carried it. */
+export interface UserAgentCount {
+  user_agent: string;
+  flows: number;
 }
 
 /** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */
