@@ -18,6 +18,7 @@ import { TopTalkersCard } from "../cockpit/TopTalkersCard";
 import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
 import { AiSummaryCard } from "../cockpit/AiSummaryCard";
 import { ThreatGraph } from "../cockpit/ThreatGraph";
+import { ProtocolSunburst } from "../cockpit/ProtocolSunburst";
 import { TriageBadge } from "../cockpit/TriageAnnotation";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
@@ -168,6 +169,9 @@ export function Dashboard({
           </div>
           <div className="lg:col-span-6">
             <TopTalkersCard talkers={s.top_talkers} onSelect={openHost} />
+          </div>
+          <div className="lg:col-span-6">
+            <ProtocolSunburst hierarchy={s.protocol_hierarchy ?? []} />
           </div>
         </div>
         <SignatureMatchesPanel findings={s.findings ?? []} onJump={toFlowsIp} />
