@@ -165,6 +165,8 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           " " +
           (r.ja4 ?? "") +
           " " +
+          (r.ja3s ?? "") +
+          " " +
           (r.hassh ?? "") +
           " " +
           (r.hasshServer ?? "") +

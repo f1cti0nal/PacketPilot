@@ -294,6 +294,7 @@ export interface RawFlowRow {
   sni: string | null;
   ja3: string | null;
   ja4: string | null;
+  ja3s: string | null;
   tls_version: string | null;
   tls_cipher: string | null;
   hassh: string | null;
@@ -331,6 +332,7 @@ export interface WasmFlow {
   sni: string | null;
   ja3: string | null;
   ja4: string | null;
+  ja3s: string | null;
   tls_version: string | null;
   tls_cipher: string | null;
   hassh: string | null;
@@ -364,6 +366,7 @@ export interface FlowRow {
   sni: string | null; // TLS SNI host from the ClientHello, if captured
   ja3: string | null; // TLS JA3 fingerprint, if captured
   ja4: string | null; // TLS JA4 fingerprint, if captured
+  ja3s: string | null; // TLS JA3S server fingerprint from the ServerHello, if captured
   tlsVersion: string | null; // negotiated TLS version label from the ServerHello, if captured
   tlsCipher: string | null; // negotiated TLS cipher-suite label, if captured
   hassh: string | null; // SSH client HASSH (MD5) fingerprint, if captured
