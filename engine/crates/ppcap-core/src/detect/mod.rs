@@ -249,12 +249,32 @@ pub struct PortScanCandidate {
 /// lateral-movement detector's `min_session_bytes` floor.
 const SCAN_SESSION_BYTES: u64 = 512;
 
+/// A flow whose *client→server* wire bytes stay below this is a half-open / abandoned connection —
+/// the client sent only handshake control (SYN/ACK/RST), never an application request. A real client
+/// (even a tiny request, a health check, an HTTP 204) sends a request packet and exceeds the floor,
+/// so this cleanly separates a SYN/TCP-DoS flood from a busy small-response service. Deliberately
+/// far stricter than `SCAN_SESSION_BYTES` (and a different question — "did the client make a
+/// request?", not "did the flow exchange a session?"). ~256 leaves headroom for a couple of
+/// retransmitted SYNs while staying below any real request (≥ ~275 B with the handshake).
+const SYN_FLOOD_HALF_OPEN_BYTES: u64 = 256;
+
 /// An IP claimed by many distinct MAC addresses via ARP — an ARP cache-poisoning candidate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArpSpoofCandidate {
     pub ip: IpAddr,
     /// Count of distinct MAC addresses observed claiming this IP.
     pub macs: usize,
+}
+
+/// A `(target, port)` service hit by many half-open connections — a SYN-flood / TCP-DoS candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SynFloodCandidate {
+    pub dst: IpAddr,
+    pub dst_port: u16,
+    /// Number of incomplete (never-completed) connections to this service.
+    pub incomplete: u64,
+    /// Distinct source IPs involved (1 = single-source flood, many = distributed).
+    pub sources: usize,
 }
 
 /// Cap on distinct MACs tracked per IP — far above the detection threshold, so the count is exact in
@@ -463,6 +483,18 @@ pub struct BehaviorTracker {
     /// Per-IP set of distinct MAC addresses that claimed it via ARP — the ARP cache-poisoning
     /// signal (one IP claimed by multiple MACs). Bounded in both dimensions.
     arp: HashMap<IpAddr, HashSet<[u8; 6]>>,
+    /// Per-`(target, port)` count of half-open / never-completed connections + the distinct sources
+    /// — the SYN-flood / TCP-DoS signal. Bounded (the source set is capped).
+    syn_flood: HashMap<(IpAddr, u16), SynFloodStat>,
+}
+
+/// Per-`(target, port)` SYN-flood statistics: how many half-open connections, from how many sources.
+#[derive(Debug, Clone, Default)]
+struct SynFloodStat {
+    /// Count of incomplete (no completed bidirectional session) connections to this target service.
+    incomplete: u64,
+    /// Distinct source IPs (bounded) — distinguishes a single-source flood from a distributed one.
+    sources: HashSet<IpAddr>,
 }
 
 impl BehaviorTracker {
@@ -481,6 +513,7 @@ impl BehaviorTracker {
             icmp: HashMap::new(),
             dga: HashMap::new(),
             arp: HashMap::new(),
+            syn_flood: HashMap::new(),
         }
     }
 
@@ -724,6 +757,34 @@ impl BehaviorTracker {
                 self.port_scan.insert(pkey, set);
             }
         }
+
+        // SYN flood / TCP DoS: count HALF-OPEN connections per *target* (dst, port) using a MUCH
+        // stricter gate than the port-scan probe gate above. A genuine flood / abandoned connection
+        // has the CLIENT send no real request (only SYN / handshake control), so its client->server
+        // wire bytes stay below the handshake floor; a real client — even a tiny request, a health
+        // check, or an HTTP 204 — always pushes a request and exceeds it, so busy small-response
+        // services do NOT count. We key on "the client sent nothing real", NOT on `bytes_in == 0`: a
+        // flood to an OPEN port still draws a SYN-ACK back, so its `bytes_in` is ~60, not 0. Orthogonal
+        // to the port scan (many ports on one host); here the signal is many half-opens to one service.
+        if bytes_out < SYN_FLOOD_HALF_OPEN_BYTES {
+            let tkey = (dst, dst_port);
+            if let Some(stat) = self.syn_flood.get_mut(&tkey) {
+                stat.incomplete = stat.incomplete.saturating_add(1);
+                if stat.sources.len() < self.cfg.max_fanout_per_src {
+                    stat.sources.insert(src);
+                }
+            } else if self.syn_flood.len() < self.cfg.max_tracked_keys.max(1) {
+                let mut sources = HashSet::new();
+                sources.insert(src);
+                self.syn_flood.insert(
+                    tkey,
+                    SynFloodStat {
+                        incomplete: 1,
+                        sources,
+                    },
+                );
+            }
+        }
     }
 
     /// Borrow the inter-arrival series for a channel, if tracked.
@@ -781,6 +842,29 @@ impl BehaviorTracker {
                 .cmp(&a.ports)
                 .then(a.src.cmp(&b.src))
                 .then(a.dst.cmp(&b.dst))
+        });
+        out
+    }
+
+    /// All `(target, port)` services hit by at least `min_incomplete` half-open connections — the
+    /// SYN-flood signal. Returned most-incomplete first, then by target/port for determinism.
+    pub fn syn_flood_candidates(&self, min_incomplete: u64) -> Vec<SynFloodCandidate> {
+        let mut out: Vec<SynFloodCandidate> = self
+            .syn_flood
+            .iter()
+            .filter(|(_, s)| s.incomplete >= min_incomplete)
+            .map(|(&(dst, dst_port), s)| SynFloodCandidate {
+                dst,
+                dst_port,
+                incomplete: s.incomplete,
+                sources: s.sources.len(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.incomplete
+                .cmp(&a.incomplete)
+                .then(a.dst.cmp(&b.dst))
+                .then(a.dst_port.cmp(&b.dst_port))
         });
         out
     }
@@ -1543,6 +1627,78 @@ pub fn detect_arp_spoof(tracker: &BehaviorTracker, params: &ArpSpoofParams) -> V
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.macs as u64),
+        });
+    }
+    findings
+}
+
+/// Tuning for the SYN-flood / TCP-DoS detector.
+#[derive(Debug, Clone)]
+pub struct SynFloodParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum half-open connections to one `(target, port)` before it is flagged. A real flood is
+    /// thousands; the floor sits well above the handful of incomplete connects a busy public service
+    /// sees from ordinary churn.
+    pub min_incomplete: u64,
+    /// Targets never flagged. Empty by default; populate per deployment for a known load-tested host.
+    pub ignore_dst: Vec<IpAddr>,
+}
+
+impl Default for SynFloodParams {
+    fn default() -> Self {
+        SynFloodParams {
+            enabled: true,
+            min_incomplete: 200,
+            ignore_dst: Vec::new(),
+        }
+    }
+}
+
+/// Detect SYN floods / TCP DoS from the behavioral tracker: one [`Finding`] per `(target, port)`
+/// service hit by at least [`SynFloodParams::min_incomplete`] half-open (never-completed)
+/// connections. High severity, ATT&CK T1499.001 (Endpoint DoS: OS Exhaustion Flood). Deterministic
+/// order.
+pub fn detect_syn_flood(tracker: &BehaviorTracker, params: &SynFloodParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.syn_flood_candidates(params.min_incomplete) {
+        if params.ignore_dst.contains(&c.dst) {
+            continue;
+        }
+        let distributed = c.sources > 1;
+        findings.push(Finding {
+            kind: FindingKind::SynFlood,
+            severity: Severity::High,
+            score: 68,
+            title: format!(
+                "SYN flood: {}:{} hit by {} half-open connections",
+                c.dst, c.dst_port, c.incomplete
+            ),
+            src_ip: c.dst.to_string(),
+            dst_ip: None,
+            dst_port: Some(c.dst_port),
+            attack: vec!["T1499.001".to_string()],
+            evidence: vec![
+                format!(
+                    "{} half-open connections from {} source{} to {}:{}",
+                    c.incomplete,
+                    c.sources,
+                    if c.sources == 1 { "" } else { "s" },
+                    c.dst,
+                    c.dst_port
+                ),
+                if distributed {
+                    "many sources, never-completed handshakes — distributed TCP DoS".to_string()
+                } else {
+                    "never-completed handshakes flooding one service — TCP DoS".to_string()
+                },
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.incomplete),
         });
     }
     findings
@@ -2529,6 +2685,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::Dga => 4,           // command-and-control (C2 domain rendezvous)
         FindingKind::PortScan => 0,      // discovery (vertical service enumeration)
         FindingKind::ArpSpoof => 3,      // collection (adversary-in-the-middle positioning)
+        FindingKind::SynFlood => 6,      // impact (service denial)
     }
 }
 
@@ -2550,6 +2707,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::Dga => "Command & Control",
         FindingKind::PortScan => "Discovery",
         FindingKind::ArpSpoof => "Collection",
+        FindingKind::SynFlood => "Impact",
     }
 }
 
@@ -2571,6 +2729,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::Dga => "resolved algorithmically-generated C2 domains",
         FindingKind::PortScan => "scanned ports on a host",
         FindingKind::ArpSpoof => "poisoned ARP caches",
+        FindingKind::SynFlood => "flooded a service with half-open connections",
     }
 }
 
@@ -2961,6 +3120,56 @@ mod tests {
             ..ArpSpoofParams::default()
         };
         assert!(detect_arp_spoof(&churn, &params).is_empty());
+    }
+
+    // ── SYN flood / TCP DoS ──────────────────────────────────────────────────────
+
+    #[test]
+    fn detect_syn_flood_flags_many_half_open_connections_to_one_service() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let target = ip(10, 0, 0, 80);
+        // 300 half-open connections (no completed session) from many spoofed-looking sources to 80.
+        for i in 0..300u32 {
+            let src = ip(192, 168, (i >> 8) as u8, i as u8);
+            t.observe_flow_contact(src, target, 80, 0, 60, 60); // ~SYN/SYN-ACK only, no data
+        }
+        let f = detect_syn_flood(&t, &SynFloodParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::SynFlood);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.80");
+        assert_eq!(f[0].dst_port, Some(80));
+        assert!(f[0].attack.iter().any(|a| a == "T1499.001"));
+        assert!(f[0].contacts.unwrap() >= 200);
+    }
+
+    #[test]
+    fn syn_flood_not_flagged_for_completed_sessions_or_below_threshold() {
+        // Many COMPLETED sessions to one service (a busy web server) — not a flood.
+        let mut busy = BehaviorTracker::new(DetectConfig::default());
+        let server = ip(10, 0, 0, 80);
+        for i in 0..300u32 {
+            let src = ip(192, 168, (i >> 8) as u8, i as u8);
+            busy.observe_flow_contact(src, server, 443, 0, 4_000, 40_000); // real sessions, bytes both ways
+        }
+        assert!(detect_syn_flood(&busy, &SynFloodParams::default()).is_empty());
+
+        // A busy SMALL-RESPONSE service (health checks / HTTP 204 / OCSP): the server's bytes are
+        // tiny, but each client SENT a real request, so client->server bytes exceed the half-open
+        // floor and none count — the review's worst false-positive case.
+        let mut healthz = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..300u32 {
+            let src = ip(192, 168, (i >> 8) as u8, i as u8);
+            healthz.observe_flow_contact(src, server, 80, 0, 400, 120); // real request, tiny response
+        }
+        assert!(detect_syn_flood(&healthz, &SynFloodParams::default()).is_empty());
+
+        // A handful of half-open connections — below the flood floor.
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..20u32 {
+            few.observe_flow_contact(ip(192, 168, 0, i as u8), server, 443, 0, 60, 60);
+        }
+        assert!(detect_syn_flood(&few, &SynFloodParams::default()).is_empty());
     }
 
     #[test]

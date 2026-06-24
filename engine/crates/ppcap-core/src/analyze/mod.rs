@@ -19,10 +19,11 @@ use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_dga, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
     detect_arp_spoof, detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_sweeps,
-    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams,
-    BehaviorTracker, BruteForceParams, CleartextCredsParams, DetectConfig, DgaParams,
-    DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams, PiiExposureParams,
-    PortScanParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
+    detect_syn_flood, detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral,
+    ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams,
+    DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams,
+    PiiExposureParams, PortScanParams, SweepParams, SynFloodParams, TlsCertHealthParams,
+    WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -83,6 +84,8 @@ pub struct PipelineConfig {
     pub port_scan: PortScanParams,
     /// ARP-spoofing detector tuning.
     pub arp_spoof: ArpSpoofParams,
+    /// SYN-flood / TCP-DoS detector tuning.
+    pub syn_flood: SynFloodParams,
 }
 
 impl Default for PipelineConfig {
@@ -116,6 +119,7 @@ impl Default for PipelineConfig {
             dga: DgaParams::default(),
             port_scan: PortScanParams::default(),
             arp_spoof: ArpSpoofParams::default(),
+            syn_flood: SynFloodParams::default(),
         }
     }
 }
@@ -402,6 +406,7 @@ pub fn run_source_visiting(
     findings.extend(detect_dga(&tracker, &cfg.dga));
     findings.extend(detect_port_scan(&tracker, &cfg.port_scan));
     findings.extend(detect_arp_spoof(&tracker, &cfg.arp_spoof));
+    findings.extend(detect_syn_flood(&tracker, &cfg.syn_flood));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

@@ -17,6 +17,7 @@ import {
   Shuffle,
   Siren,
   Unlock,
+  Waves,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
@@ -49,6 +50,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   dga: { label: "DGA Domains", Icon: Shuffle },
   port_scan: { label: "Port Scan", Icon: ScanSearch },
   arp_spoof: { label: "ARP Spoofing", Icon: Split },
+  syn_flood: { label: "SYN Flood", Icon: Waves },
 };
 
 /** Worst-first ordering. */
