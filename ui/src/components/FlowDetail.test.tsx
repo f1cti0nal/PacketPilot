@@ -189,6 +189,22 @@ describe("FlowDetail", () => {
     expect(screen.getAllByText("TLS").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("shows the SSH HASSH fingerprint when present", () => {
+    render(
+      <FlowDetail
+        flow={{ ...flow, hassh: "0df0d56bc302d51d6f1e1c1e0b3e4a5b" }}
+        onClose={vi.fn()}
+        activeSource={noSource}
+        onInspectPackets={vi.fn()}
+        onCarvePcap={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("SSH HASSH")).toBeInTheDocument();
+    expect(
+      screen.getByText("0df0d56bc302d51d6f1e1c1e0b3e4a5b"),
+    ).toBeInTheDocument();
+  });
+
   it("renders flow identity section header", () => {
     render(
       <FlowDetail

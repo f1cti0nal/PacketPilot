@@ -235,6 +235,14 @@ export function FlowsTable({
                   {f.tlsVersion}
                 </span>
               )}
+              {f.hassh && (
+                <span
+                  className="font-mono-num truncate text-xs text-[var(--color-text-faint)]"
+                  title={`HASSH: ${f.hassh}`}
+                >
+                  {`HASSH ${f.hassh.slice(0, 12)}…`}
+                </span>
+              )}
             </span>
           );
         },

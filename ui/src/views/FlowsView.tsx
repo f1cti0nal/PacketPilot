@@ -165,6 +165,8 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           " " +
           (r.ja4 ?? "") +
           " " +
+          (r.hassh ?? "") +
+          " " +
           r.protoLabel +
           " " +
           r.severity +

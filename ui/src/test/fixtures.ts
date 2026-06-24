@@ -73,6 +73,7 @@ export function makeFlows(n = 5): FlowRow[] {
     srcPort: 40000 + i, dstPort: 443, proto: 6, protoLabel: "TCP",
     appProto: "TLS", appProtoSrc: "payload", sni: null, ja3: null, ja4: null,
     tlsVersion: i === 0 ? "TLS 1.2" : null, tlsCipher: i === 0 ? "TLS_AES_128_GCM_SHA256" : null,
+    hassh: i === 1 ? "0df0d56bc302d51d6f1e1c1e0b3e4a5b" : null,
     bytesC2s: i === 0 ? 1_200_000 : 1000, bytesS2c: 500,
     bytesTotal: (i === 0 ? 1_200_000 : 1000) + 500,
     pkts: 10, startMs: 1_700_000_000_000 + i * 1000, endMs: 1_700_000_001_000 + i * 1000, durationMs: 1000,

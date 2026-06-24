@@ -64,6 +64,8 @@ describe("FlowsView", () => {
     expect(twenties.length).toBeGreaterThanOrEqual(2);
     // Default sort is bytes-desc; row 0 has bytesTotal=1_200_500 → "1.14 MB"
     expect(screen.getByText("1.14 MB")).toBeInTheDocument();
+    // Row 1 carries a HASSH; its truncated chip renders in the proto column.
+    expect(screen.getByText(/HASSH 0df0d56bc302/)).toBeInTheDocument();
   });
 
   it("typing in 'Filter flows' narrows the rows", async () => {

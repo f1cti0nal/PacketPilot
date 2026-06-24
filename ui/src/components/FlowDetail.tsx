@@ -440,6 +440,9 @@ export function FlowDetail({
         <Field label="TLS cipher" mono title={flow.tlsCipher ?? undefined}>
           {flow.tlsCipher ?? <span className="text-[var(--color-text-faint)]">—</span>}
         </Field>
+        <Field label="SSH HASSH" mono title={flow.hassh ?? undefined}>
+          {flow.hassh ?? <span className="text-[var(--color-text-faint)]">—</span>}
+        </Field>
       </Section>
 
       {/* Traffic */}
