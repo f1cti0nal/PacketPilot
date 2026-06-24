@@ -96,6 +96,8 @@ export interface Summary {
   http_hosts?: HttpHostCount[];
   /** Top HTTP request User-Agent headers by flow count; absent in older summaries. */
   user_agents?: UserAgentCount[];
+  /** Passive DNS: resolved-IP → domain mappings from DNS answers; absent in older summaries. */
+  resolved_ips?: ResolvedDomain[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -168,6 +170,13 @@ export interface HttpHostCount {
 export interface UserAgentCount {
   user_agent: string;
   flows: number;
+}
+
+/** One passive-DNS rollup row: a resolved IP, the domain a DNS answer mapped it from, and count. */
+export interface ResolvedDomain {
+  ip: string;
+  domain: string;
+  resolutions: number;
 }
 
 /** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */

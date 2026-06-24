@@ -327,6 +327,7 @@ mod apply_tests {
             domain_threats: Vec::new(),
             http_hosts: Vec::new(),
             user_agents: Vec::new(),
+            resolved_ips: Vec::new(),
             findings,
             incidents: vec![],
         }

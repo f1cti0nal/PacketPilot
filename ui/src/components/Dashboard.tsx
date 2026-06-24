@@ -21,6 +21,7 @@ import { ThreatGraph } from "../cockpit/ThreatGraph";
 import { ProtocolSunburst } from "../cockpit/ProtocolSunburst";
 import { TopPortsCard } from "../cockpit/TopPortsCard";
 import { HttpOverviewCard } from "../cockpit/HttpOverviewCard";
+import { DnsResolutionsCard } from "../cockpit/DnsResolutionsCard";
 import { TriageBadge } from "../cockpit/TriageAnnotation";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
@@ -185,6 +186,7 @@ export function Dashboard({
         <SignatureMatchesPanel findings={s.findings ?? []} onJump={toFlowsIp} />
         <CertHealthPanel findings={s.findings ?? []} onJump={toFlowsIp} />
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
+        <DnsResolutionsCard resolved={s.resolved_ips ?? []} />
       </div>
 
       <DetailFlyout

@@ -65,6 +65,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         ja3: None,
         ja4: None,
         dns_qname: None,
+        dns_answers: Vec::new(),
         cleartext_cred: None,
         pii: None,
         icmp_type: None,
@@ -215,9 +216,10 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         let payload = l4.get(consumed..).unwrap_or(&[]);
         if let Some(hint) = l7_hint(meta.transport, meta.src_port, meta.dst_port, payload) {
             match hint {
-                L7Hint::Dns { qname } => {
+                L7Hint::Dns { qname, answers } => {
                     meta.app_proto = AppProto::Dns;
                     meta.dns_qname = qname;
+                    meta.dns_answers = answers;
                 }
                 L7Hint::Http { host, user_agent } => {
                     meta.app_proto = AppProto::Http;
@@ -406,8 +408,12 @@ fn strip_null<'a>(data: &'a [u8], meta: &mut PacketMeta) -> Result<(bool, &'a [u
 /// (uncaptured-by-`PacketMeta`) payload bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum L7Hint {
-    /// Likely DNS (matched on port 53); `qname` is the first question name if parseable.
-    Dns { qname: Option<String> },
+    /// Likely DNS (matched on port 53); `qname` is the first question name if parseable, `answers`
+    /// the resolved A/AAAA IPs from a response's answer section (empty for queries).
+    Dns {
+        qname: Option<String>,
+        answers: Vec<std::net::IpAddr>,
+    },
     /// An HTTP request; `host`/`user_agent` are the sniffed request headers (derived metadata only).
     Http {
         host: Option<String>,
@@ -471,6 +477,116 @@ pub fn sniff_dns_qname(payload: &[u8]) -> Option<String> {
         off = end;
     }
     None // exceeded the label cap without a root terminator => malformed
+}
+
+/// Skip a DNS name starting at `off`, returning the offset just past it. Handles a label sequence
+/// (terminated by a zero length) and a compression pointer (`0xC0…`, two bytes — not followed, since
+/// we only need to advance). Bounded and bounds-checked; `None` on truncation / malformation.
+fn dns_skip_name(payload: &[u8], mut off: usize) -> Option<usize> {
+    for _ in 0..128 {
+        let len = *payload.get(off)? as usize;
+        if len == 0 {
+            return Some(off + 1);
+        }
+        if len & 0xC0 == 0xC0 {
+            // Compression pointer: a 2-byte pointer ends the name here.
+            return off.checked_add(2);
+        }
+        if len & 0xC0 != 0 {
+            return None; // reserved label type
+        }
+        off = off.checked_add(1 + len)?;
+    }
+    None
+}
+
+/// Extract the resolved IPs from a DNS *response*'s answer section: the `A` (type 1) and `AAAA`
+/// (type 28) record data, paired by the caller with the question name for passive-DNS attribution.
+/// Best-effort and defensive — every index is bounds-checked and any malformed record stops the scan
+/// (keeping whatever was parsed), so it never panics on adversarial input. Bounded to `MAX_ANSWERS`.
+fn sniff_dns_answers(payload: &[u8]) -> Vec<std::net::IpAddr> {
+    const MAX_ANSWERS: usize = 16;
+    let mut out: Vec<std::net::IpAddr> = Vec::new();
+    if payload.len() < 12 {
+        return out;
+    }
+    let qd = u16::from_be_bytes([payload[4], payload[5]]) as usize;
+    let an = u16::from_be_bytes([payload[6], payload[7]]) as usize;
+    if an == 0 {
+        return out;
+    }
+    let mut off = 12usize; // after the header
+    // Real responses echo the question(s) (qdcount is virtually always 1). A pathological qdcount
+    // would leave `off` mid-question after a *truncated* skip, letting an attacker lay out the
+    // unskipped question bytes so the answer loop misreads them as a fake A/AAAA RR — injecting an
+    // attacker-chosen IP paired with the genuine question name. So bail entirely above a small bound
+    // rather than truncate-and-desync; the bound also keeps the loop cheap.
+    const MAX_DNS_QUESTIONS: usize = 8;
+    if qd > MAX_DNS_QUESTIONS {
+        return out;
+    }
+    // Skip the question section (each: NAME + qtype(2) + qclass(2)).
+    for _ in 0..qd {
+        off = match dns_skip_name(payload, off) {
+            Some(o) => o,
+            None => return out,
+        };
+        off = match off.checked_add(4) {
+            Some(o) => o,
+            None => return out,
+        };
+    }
+    // Parse answer RRs: NAME + type(2) class(2) ttl(4) rdlength(2) + RDATA.
+    for _ in 0..an.min(64) {
+        if out.len() >= MAX_ANSWERS {
+            break;
+        }
+        off = match dns_skip_name(payload, off) {
+            Some(o) => o,
+            None => break,
+        };
+        let Some(hdr) = payload.get(off..off + 10) else {
+            break;
+        };
+        let rtype = u16::from_be_bytes([hdr[0], hdr[1]]);
+        let rdlen = u16::from_be_bytes([hdr[8], hdr[9]]) as usize;
+        let rdata_start = off + 10;
+        let Some(rdata_end) = rdata_start.checked_add(rdlen) else {
+            break;
+        };
+        let Some(rdata) = payload.get(rdata_start..rdata_end) else {
+            break;
+        };
+        match (rtype, rdlen_kind(rdlen)) {
+            (1, RdLen::A) => {
+                out.push(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                    rdata[0], rdata[1], rdata[2], rdata[3],
+                )));
+            }
+            (28, RdLen::Aaaa) => {
+                let mut b = [0u8; 16];
+                b.copy_from_slice(rdata);
+                out.push(std::net::IpAddr::V6(std::net::Ipv6Addr::from(b)));
+            }
+            _ => {}
+        }
+        off = rdata_end;
+    }
+    out
+}
+
+/// Classify a DNS RDLENGTH as an A (4) / AAAA (16) record length (else neither).
+enum RdLen {
+    A,
+    Aaaa,
+    Other,
+}
+fn rdlen_kind(rdlen: usize) -> RdLen {
+    match rdlen {
+        4 => RdLen::A,
+        16 => RdLen::Aaaa,
+        _ => RdLen::Other,
+    }
 }
 
 /// Top-level L7 sniff: combine port heuristics with a payload peek. `payload` is the L4
@@ -560,6 +676,7 @@ pub fn l7_hint(
     {
         return Some(L7Hint::Dns {
             qname: sniff_dns_qname(payload),
+            answers: sniff_dns_answers(payload),
         });
     }
     None
@@ -1015,6 +1132,7 @@ mod tests {
             ja3: None,
             ja4: None,
             dns_qname: None,
+            dns_answers: Vec::new(),
             cleartext_cred: None,
             pii: None,
             icmp_type: None,
@@ -1569,6 +1687,48 @@ mod tests {
     }
 
     #[test]
+    fn sniff_dns_answers_extracts_a_and_aaaa_records() {
+        // Header: id, flags(response), qd=1, an=2, ns=0, ar=0.
+        let mut p: Vec<u8> = vec![0x12, 0x34, 0x81, 0x80, 0, 1, 0, 2, 0, 0, 0, 0];
+        // Question: "ex" "com" 0, qtype A (1), qclass IN (1).
+        p.extend_from_slice(&[2, b'e', b'x', 3, b'c', b'o', b'm', 0, 0, 1, 0, 1]);
+        // Answer 1: name pointer (0xC00C), type A, class IN, ttl, rdlen 4, 93.184.216.34.
+        p.extend_from_slice(&[0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 93, 184, 216, 34]);
+        // Answer 2: name pointer, type AAAA (28), class IN, ttl, rdlen 16, ::1.
+        p.extend_from_slice(&[0xC0, 0x0C, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+        p.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+
+        let ips = sniff_dns_answers(&p);
+        assert_eq!(ips.len(), 2);
+        assert_eq!(ips[0], std::net::IpAddr::V4(std::net::Ipv4Addr::new(93, 184, 216, 34)));
+        assert!(matches!(ips[1], std::net::IpAddr::V6(_)));
+        // A query (an=0) yields no answers.
+        let q = crate::gen::frames::dns_query_payload("example.com", 1);
+        assert!(sniff_dns_answers(&q).is_empty());
+    }
+
+    #[test]
+    fn sniff_dns_answers_never_panics_on_arbitrary_bytes() {
+        for n in 0..40usize {
+            let buf: Vec<u8> = (0..n).map(|i| (i as u8).wrapping_mul(37)).collect();
+            let _ = sniff_dns_answers(&buf);
+        }
+        // A response claiming many answers but truncated rdata must not panic or over-read.
+        let mut p: Vec<u8> = vec![0, 0, 0x81, 0x80, 0, 0, 0, 9, 0, 0, 0, 0];
+        p.extend_from_slice(&[0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 1, 2]); // rdlen 4, only 2 present
+        let _ = sniff_dns_answers(&p);
+    }
+
+    #[test]
+    fn sniff_dns_answers_bails_on_large_qdcount_no_question_byte_injection() {
+        // qdcount=9 (> the cap) with a crafted "question #9" laid out to look like an A record
+        // (type 1, rdlen 4, 6.6.6.6). The skip cap must NOT desync into it: bail -> no mapping.
+        let mut p: Vec<u8> = vec![0x00, 0x00, 0x81, 0x80, 0, 9, 0, 1, 0, 0, 0, 0];
+        p.extend_from_slice(&[0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 6, 6, 6, 6]);
+        assert!(sniff_dns_answers(&p).is_empty());
+    }
+
+    #[test]
     fn http_header_value_extracts_and_bounds() {
         let req = b"GET /p HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/8.0\r\nAccept: */*\r\n\r\n";
         assert_eq!(
@@ -1770,7 +1930,10 @@ mod tests {
         assert!(!is_dns_port(80, 443));
         assert_eq!(
             l7_hint(Transport::Udp, 40000, 53, &[]),
-            Some(L7Hint::Dns { qname: None })
+            Some(L7Hint::Dns {
+                qname: None,
+                answers: vec![],
+            })
         );
     }
 

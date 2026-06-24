@@ -103,6 +103,7 @@ fn observe_folds_fwd_and_rev() {
         ja3: None,
         ja4: None,
         dns_qname: None,
+        dns_answers: Vec::new(),
         cleartext_cred: None,
         pii: None,
         icmp_type: None,

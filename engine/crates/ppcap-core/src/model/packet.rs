@@ -259,6 +259,9 @@ pub struct PacketMeta {
     /// otherwise. Transient (folded into per-resolver stats, then dropped) — used for DNS
     /// tunneling / DGA detection.
     pub dns_qname: Option<String>,
+    /// Resolved A/AAAA IPs from a DNS *response* answer section; empty otherwise. Transient — folded
+    /// into the passive-DNS (IP→domain) rollup with `dns_qname`, then dropped.
+    pub dns_answers: Vec<std::net::IpAddr>,
     /// Cleartext credential scheme sniffed from the payload (HTTP Basic/Digest, FTP USER/PASS);
     /// `None` on the common path. A derived flag only — the credential itself is never retained.
     pub cleartext_cred: Option<CredScheme>,

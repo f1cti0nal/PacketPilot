@@ -163,6 +163,8 @@ pub struct StatsAccumulator {
     per_http_host: HashMap<String, u64>,
     /// Per-HTTP-request-`User-Agent` flow counts; bounded by `max_tracked_keys`.
     per_http_ua: HashMap<String, u64>,
+    /// Passive DNS: resolved-IP → (first domain seen, resolution count). Bounded by `max_tracked_keys`.
+    resolved: HashMap<IpAddr, (String, u64)>,
 }
 
 /// Upper bound on distinct destination ports retained per source for scan detection.
@@ -195,6 +197,7 @@ impl StatsAccumulator {
             per_domain: HashMap::new(),
             per_http_host: HashMap::new(),
             per_http_ua: HashMap::new(),
+            resolved: HashMap::new(),
         }
     }
 
@@ -290,6 +293,23 @@ impl StatsAccumulator {
         // Scanner tracking: record (src -> dst_port) spread for SYN-only probes.
         if p.is_tcp_syn_only() {
             self.record_scan_probe(src_ip, dst_port);
+        }
+
+        // Passive DNS: map each resolved answer IP to the domain it came from (first domain wins,
+        // resolution count bumped). Bounded by max_tracked_keys.
+        if !p.dns_answers.is_empty() {
+            if let Some(raw) = p.dns_qname.as_deref() {
+                let domain = raw.trim().to_ascii_lowercase();
+                if valid_domain(&domain) {
+                    for &ip in &p.dns_answers {
+                        if let Some((_, count)) = self.resolved.get_mut(&ip) {
+                            *count += 1;
+                        } else if self.resolved.len() < self.cfg.max_tracked_keys {
+                            self.resolved.insert(ip, (domain.clone(), 1));
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -632,6 +652,20 @@ impl StatsAccumulator {
         user_agents.sort_by(|a, b| b.flows.cmp(&a.flows).then(a.user_agent.cmp(&b.user_agent)));
         user_agents.truncate(TOP_K_HTTP);
 
+        // Passive-DNS rollup: desc by resolution count, tie-break asc by IP string. Top-N.
+        const TOP_K_RESOLVED: usize = 50;
+        let mut resolved_ips: Vec<crate::model::summary::ResolvedDomain> = self
+            .resolved
+            .iter()
+            .map(|(ip, (domain, count))| crate::model::summary::ResolvedDomain {
+                ip: ip.to_string(),
+                domain: domain.clone(),
+                resolutions: *count,
+            })
+            .collect();
+        resolved_ips.sort_by(|a, b| b.resolutions.cmp(&a.resolutions).then(a.ip.cmp(&b.ip)));
+        resolved_ips.truncate(TOP_K_RESOLVED);
+
         Summary {
             total_packets: self.total_packets,
             total_bytes: self.total_bytes,
@@ -655,6 +689,7 @@ impl StatsAccumulator {
             domain_threats,
             http_hosts,
             user_agents,
+            resolved_ips,
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.
@@ -1018,6 +1053,7 @@ mod tests {
             ja3: None,
             ja4: None,
             dns_qname: None,
+            dns_answers: Vec::new(),
             cleartext_cred: None,
             pii: None,
             icmp_type: None,
@@ -1760,6 +1796,30 @@ mod tests {
         assert_eq!(s.http_hosts[1].host, "b.example");
         assert_eq!(s.user_agents[0].user_agent, "curl/8");
         assert_eq!(s.user_agents[0].flows, 2);
+    }
+
+    #[test]
+    fn passive_dns_maps_resolved_ips_to_their_domain() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        // A DNS response (src_port 53) resolving evil.example -> 93.184.216.34, seen twice.
+        let mut resp = |domain: &str, ips: &[IpAddr]| {
+            let mut p = pkt(0, 0, 100, Transport::Udp, Some(ip4(10, 0, 0, 1)), Some(ip4(8, 8, 8, 8)), 53, 40000, 0);
+            p.dns_qname = Some(domain.to_string());
+            p.dns_answers = ips.to_vec();
+            acc.observe_packet(&p);
+        };
+        let evil_ip = ip4(93, 184, 216, 34);
+        resp("evil.example", &[evil_ip]);
+        resp("evil.example", &[evil_ip]);
+        resp("good.example", &[ip4(1, 1, 1, 1)]);
+        // A DNS query with no answers contributes nothing.
+        resp("query.example", &[]);
+
+        let s = acc.finish();
+        assert_eq!(s.resolved_ips[0].ip, "93.184.216.34"); // most resolutions first
+        assert_eq!(s.resolved_ips[0].domain, "evil.example");
+        assert_eq!(s.resolved_ips[0].resolutions, 2);
+        assert!(s.resolved_ips.iter().any(|r| r.ip == "1.1.1.1" && r.domain == "good.example"));
     }
 
     #[test]

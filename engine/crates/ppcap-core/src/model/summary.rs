@@ -180,6 +180,16 @@ pub struct UserAgentCount {
     pub flows: u64,
 }
 
+/// One passive-DNS rollup row: a resolved IP and the domain a DNS `A`/`AAAA` answer mapped it from,
+/// with how many response packets carried that mapping. Lets a later flow to that IP be attributed
+/// back to the domain it came from.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ResolvedDomain {
+    pub ip: String,
+    pub domain: String,
+    pub resolutions: u64,
+}
+
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Summary {
@@ -233,6 +243,10 @@ pub struct Summary {
     /// summaries readable.
     #[serde(default)]
     pub user_agents: Vec<UserAgentCount>,
+    /// Passive DNS: resolved-IP → domain mappings from DNS answers, ranked by resolution count.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub resolved_ips: Vec<ResolvedDomain>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -275,6 +289,7 @@ impl Summary {
             domain_threats: Vec::new(),
             http_hosts: Vec::new(),
             user_agents: Vec::new(),
+            resolved_ips: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
         }
