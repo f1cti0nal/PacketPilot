@@ -42,6 +42,8 @@ pub enum FindingKind {
     /// Domain-generation-algorithm activity: one host resolving many distinct algorithmically-random
     /// registered domains (the C2 rendezvous pattern of DGA malware).
     Dga,
+    /// Vertical port scan: one source probing many distinct ports on a single host (service discovery).
+    PortScan,
 }
 
 impl FindingKind {
@@ -61,6 +63,7 @@ impl FindingKind {
             FindingKind::WeakTls => "weak_tls",
             FindingKind::IcmpTunnel => "icmp_tunnel",
             FindingKind::Dga => "dga",
+            FindingKind::PortScan => "port_scan",
         }
     }
 }

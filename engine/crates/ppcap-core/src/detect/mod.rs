@@ -236,6 +236,19 @@ pub struct SweepCandidate {
     pub hosts: usize,
 }
 
+/// A `(source, host)` pair where the source probed many distinct ports — a vertical port scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PortScanCandidate {
+    pub src: IpAddr,
+    pub dst: IpAddr,
+    pub ports: usize,
+}
+
+/// A flow that transferred at least this many *wire* bytes in BOTH directions is treated as a real
+/// session, not a port-scan probe (a SYN/RST probe stays far below this each way). Mirrors the
+/// lateral-movement detector's `min_session_bytes` floor.
+const SCAN_SESSION_BYTES: u64 = 512;
+
 /// A channel with many connection attempts to one authentication service (brute-force shape).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BruteForceCandidate {
@@ -416,6 +429,9 @@ pub struct BehaviorTracker {
     cfg: DetectConfig,
     channels: HashMap<ContactKey, ContactSeries>,
     fanout: HashMap<(IpAddr, u16), HashSet<IpAddr>>,
+    /// Per-`(source, host)` set of distinct destination ports probed — the vertical port-scan
+    /// signal (the orthogonal axis to `fanout`'s horizontal sweep). Bounded in both dimensions.
+    port_scan: HashMap<(IpAddr, IpAddr), HashSet<u16>>,
     /// Per-`(source, resolver)` DNS query statistics for tunneling / DGA detection.
     dns: HashMap<(IpAddr, IpAddr), DnsStats>,
     /// Per-`(source, dst, dst_port)` cleartext credential exposures: the sniffed scheme and the
@@ -441,6 +457,7 @@ impl BehaviorTracker {
             cfg,
             channels: HashMap::new(),
             fanout: HashMap::new(),
+            port_scan: HashMap::new(),
             dns: HashMap::new(),
             creds: HashMap::new(),
             pii: HashMap::new(),
@@ -639,6 +656,27 @@ impl BehaviorTracker {
             set.insert(dst);
             self.fanout.insert(fkey, set);
         }
+
+        // Per-(source, host) distinct destination-port set (vertical port-scan signal), bounded the
+        // same way. Count a port ONLY for a *probe* flow — one that did not complete a real
+        // bidirectional session. A scan (SYN/RST, half-open) exchanges almost nothing each way,
+        // while a busy legit client to one host (passive-FTP data ports, health checks, mesh calls)
+        // completes real sessions with bytes in both directions. Without this gate, a busy FTP
+        // client looks identical to a scanner; the port count alone cannot separate them.
+        let completed_session =
+            bytes_out >= SCAN_SESSION_BYTES && bytes_in >= SCAN_SESSION_BYTES;
+        if !completed_session {
+            let pkey = (src, dst);
+            if let Some(set) = self.port_scan.get_mut(&pkey) {
+                if set.len() < self.cfg.max_fanout_per_src {
+                    set.insert(dst_port);
+                }
+            } else if self.port_scan.len() < self.cfg.max_tracked_keys.max(1) {
+                let mut set = HashSet::new();
+                set.insert(dst_port);
+                self.port_scan.insert(pkey, set);
+            }
+        }
     }
 
     /// Borrow the inter-arrival series for a channel, if tracked.
@@ -674,6 +712,28 @@ impl BehaviorTracker {
                 .cmp(&a.hosts)
                 .then(a.src.cmp(&b.src))
                 .then(a.dst_port.cmp(&b.dst_port))
+        });
+        out
+    }
+
+    /// All `(src, host)` pairs where the source probed at least `min_ports` distinct ports — a
+    /// vertical port scan. Returned most-ports first, then by source/host for determinism.
+    pub fn port_scan_candidates(&self, min_ports: usize) -> Vec<PortScanCandidate> {
+        let mut out: Vec<PortScanCandidate> = self
+            .port_scan
+            .iter()
+            .filter(|(_, ports)| ports.len() >= min_ports)
+            .map(|(&(src, dst), ports)| PortScanCandidate {
+                src,
+                dst,
+                ports: ports.len(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.ports
+                .cmp(&a.ports)
+                .then(a.src.cmp(&b.src))
+                .then(a.dst.cmp(&b.dst))
         });
         out
     }
@@ -1317,6 +1377,68 @@ pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Fin
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+        });
+    }
+    findings
+}
+
+/// Tuning for the vertical port-scan detector.
+#[derive(Debug, Clone)]
+pub struct PortScanParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum distinct *probed* ports on one `(src, host)` to call it a scan. Only probe flows
+    /// (no completed bidirectional session — see `SCAN_SESSION_BYTES`) count, so a busy legit client
+    /// with real sessions to many ports of one host (passive-FTP data ports, health checks) does not
+    /// accumulate toward the floor. Set well above ordinary client behavior all the same.
+    pub min_ports: usize,
+    /// Sources never flagged — vulnerability scanners / monitoring probes whose job *is* to scan.
+    /// Empty by default; populate per deployment to silence the sanctioned scanner.
+    pub ignore_src: Vec<IpAddr>,
+}
+
+impl Default for PortScanParams {
+    fn default() -> Self {
+        PortScanParams {
+            enabled: true,
+            min_ports: 30,
+            ignore_src: Vec::new(),
+        }
+    }
+}
+
+/// Detect vertical port scans from the behavioral tracker: one [`Finding`] per `(src, host)` where
+/// the source probed at least [`PortScanParams::min_ports`] distinct ports on a single host — the
+/// orthogonal axis to a horizontal host sweep. Network-service / remote-system discovery; High
+/// severity, ATT&CK T1046. Deterministic order.
+pub fn detect_port_scan(tracker: &BehaviorTracker, params: &PortScanParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.port_scan_candidates(params.min_ports) {
+        if params.ignore_src.contains(&c.src) {
+            continue;
+        }
+        findings.push(Finding {
+            kind: FindingKind::PortScan,
+            severity: Severity::High,
+            score: 64,
+            title: format!(
+                "Port scan: {} probed {} ports on {}",
+                c.src, c.ports, c.dst
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: Some(c.dst.to_string()),
+            dst_port: None,
+            attack: vec!["T1046".to_string()],
+            evidence: vec![
+                format!("{} distinct ports contacted on {}", c.ports, c.dst),
+                "vertical scan / network-service discovery".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.ports as u64),
         });
     }
     findings
@@ -2301,6 +2423,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
         FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
         FindingKind::Dga => 4,           // command-and-control (C2 domain rendezvous)
+        FindingKind::PortScan => 0,      // discovery (vertical service enumeration)
     }
 }
 
@@ -2320,6 +2443,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::WeakTls => "Collection",
         FindingKind::IcmpTunnel => "Exfiltration",
         FindingKind::Dga => "Command & Control",
+        FindingKind::PortScan => "Discovery",
     }
 }
 
@@ -2339,6 +2463,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::WeakTls => "negotiated weak or deprecated TLS",
         FindingKind::IcmpTunnel => "tunneled data over ICMP",
         FindingKind::Dga => "resolved algorithmically-generated C2 domains",
+        FindingKind::PortScan => "scanned ports on a host",
     }
 }
 
@@ -2607,6 +2732,86 @@ mod tests {
             ..SweepParams::default()
         };
         assert!(detect_sweeps(&t, &params).is_empty());
+    }
+
+    // ── vertical port scan ──────────────────────────────────────────────────────
+
+    #[test]
+    fn detect_port_scan_flags_many_ports_on_one_host() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        let victim = ip(10, 0, 1, 5);
+        // One source probes 40 distinct ports on a single host (nmap-style vertical scan).
+        for port in 1..=40u16 {
+            t.observe_contact(attacker, victim, port, 0);
+        }
+        let findings = detect_port_scan(&t, &PortScanParams::default());
+        assert_eq!(findings.len(), 1, "findings: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::PortScan);
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.src_ip, "10.0.0.9");
+        assert_eq!(f.dst_ip.as_deref(), Some("10.0.1.5"));
+        assert!(f.dst_port.is_none()); // the scan spans many ports, not one
+        assert!(f.attack.iter().any(|a| a == "T1046"));
+        assert!(f.contacts.unwrap() >= 30);
+    }
+
+    #[test]
+    fn port_scan_not_flagged_below_threshold_or_when_fanned_across_hosts() {
+        // Below the floor: a client hits a handful of ports on one host (web + a few services).
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        for port in [80u16, 443, 22, 8080, 3000] {
+            few.observe_contact(ip(10, 0, 0, 5), ip(10, 0, 1, 5), port, 0);
+        }
+        assert!(detect_port_scan(&few, &PortScanParams::default()).is_empty());
+
+        // Many ports, but spread one-per-host (a horizontal sweep, not a vertical scan): each
+        // (src, host) pair sees a single port, so the port-scan signal stays at 1.
+        let mut spread = BehaviorTracker::new(DetectConfig::default());
+        for last in 1..=40u8 {
+            spread.observe_contact(ip(10, 0, 0, 5), ip(10, 0, 1, last), 1000 + last as u16, 0);
+        }
+        assert!(detect_port_scan(&spread, &PortScanParams::default()).is_empty());
+    }
+
+    #[test]
+    fn port_scan_ignores_completed_sessions_only_probes_count() {
+        // A busy legit client opens REAL bidirectional sessions to 40 distinct ports of one host
+        // (e.g. a passive-FTP mirror's data ports): bytes flow both ways, so none are scan probes.
+        let mut busy = BehaviorTracker::new(DetectConfig::default());
+        let client = ip(10, 0, 0, 5);
+        let server = ip(10, 0, 1, 5);
+        for port in 1..=40u16 {
+            busy.observe_flow_contact(client, server, port, 0, 8_000, 64_000);
+        }
+        assert!(
+            detect_port_scan(&busy, &PortScanParams::default()).is_empty(),
+            "completed sessions must not be a scan"
+        );
+
+        // The same 40 ports as bare probes (no session bytes) ARE a scan.
+        let mut scan = BehaviorTracker::new(DetectConfig::default());
+        for port in 1..=40u16 {
+            scan.observe_flow_contact(client, server, port, 0, 60, 40);
+        }
+        assert_eq!(detect_port_scan(&scan, &PortScanParams::default()).len(), 1);
+    }
+
+    #[test]
+    fn port_scan_ignore_src_exempts_a_sanctioned_scanner() {
+        let scanner = ip(10, 0, 0, 9);
+        let victim = ip(10, 0, 1, 5);
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for port in 1..=40u16 {
+            t.observe_contact(scanner, victim, port, 0);
+        }
+        assert_eq!(detect_port_scan(&t, &PortScanParams::default()).len(), 1);
+        let params = PortScanParams {
+            ignore_src: vec![scanner],
+            ..PortScanParams::default()
+        };
+        assert!(detect_port_scan(&t, &params).is_empty());
     }
 
     #[test]
