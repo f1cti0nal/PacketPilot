@@ -186,7 +186,7 @@ fn write_then_read_flow_parquet() {
     let mut iocs: Vec<bool> = Vec::new();
     for batch in reader {
         let batch = batch.unwrap();
-        assert_eq!(batch.schema().fields().len(), 28);
+        assert_eq!(batch.schema().fields().len(), 29);
         total_rows += batch.num_rows();
 
         let src = batch
@@ -227,19 +227,20 @@ fn write_then_read_flow_parquet() {
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
-        // severity / threat_score / ioc shifted +4 by tls_version / tls_cipher / hassh / hassh_server.
+        // severity / threat_score / ioc shifted +5 by tls_version / tls_cipher / hassh /
+        // hassh_server / ja3s.
         let sev = batch
-            .column(25)
+            .column(26)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
         let ts = batch
-            .column(26)
+            .column(27)
             .as_any()
             .downcast_ref::<UInt16Array>()
             .unwrap();
         let ioc = batch
-            .column(27)
+            .column(28)
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap();

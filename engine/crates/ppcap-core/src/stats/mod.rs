@@ -975,6 +975,7 @@ mod tests {
             hassh: None,
             hassh_server: None,
             arp: None,
+            ja3s: None,
         }
     }
 
