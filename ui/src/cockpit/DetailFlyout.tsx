@@ -8,6 +8,7 @@ import { SeverityChip, SeverityDot, MitreTag, SectionLabel } from "./primitives"
 import { EvidenceList } from "../components/transparency/EvidenceList";
 import { FindingMetrics } from "../components/transparency/FindingMetrics";
 import { ScoreWaterfall } from "../components/transparency/ScoreWaterfall";
+import { TriageAnnotation } from "./TriageAnnotation";
 
 const humanizeKind = (k: string) =>
   k.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
@@ -19,6 +20,7 @@ export function DetailFlyout({
   scoreEvidence,
   hostScore,
   scoreTerms,
+  captureKey,
 }: {
   incident: Incident | null;
   onClose: () => void;
@@ -26,6 +28,7 @@ export function DetailFlyout({
   scoreEvidence?: string[];
   hostScore?: number;
   scoreTerms?: ScoreTerm[];
+  captureKey?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -88,6 +91,13 @@ export function DetailFlyout({
         {/* Body */}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <p className="t-body text-[var(--color-text-dim)]">{incident.narrative}</p>
+
+          {captureKey && (
+            <>
+              <SectionLabel className="mb-2 mt-5">Triage</SectionLabel>
+              <TriageAnnotation captureKey={captureKey} ip={incident.host} />
+            </>
+          )}
 
           <SectionLabel className="mb-2 mt-5">Kill-chain stages</SectionLabel>
           <div className="flex flex-wrap items-center gap-1.5">
