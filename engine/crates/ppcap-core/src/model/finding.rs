@@ -39,6 +39,9 @@ pub enum FindingKind {
     WeakTls,
     /// ICMP tunneling: a sustained, large-payload ICMP echo channel (covert channel / C2 / exfil).
     IcmpTunnel,
+    /// Domain-generation-algorithm activity: one host resolving many distinct algorithmically-random
+    /// registered domains (the C2 rendezvous pattern of DGA malware).
+    Dga,
 }
 
 impl FindingKind {
@@ -57,6 +60,7 @@ impl FindingKind {
             FindingKind::TlsCertHealth => "tls_cert_health",
             FindingKind::WeakTls => "weak_tls",
             FindingKind::IcmpTunnel => "icmp_tunnel",
+            FindingKind::Dga => "dga",
         }
     }
 }

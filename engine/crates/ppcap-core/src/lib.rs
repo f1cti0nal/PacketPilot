@@ -57,7 +57,7 @@ pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::{
     fold_rule_findings, BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams,
-    DetectConfig, DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams,
+    DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams,
     PiiExposureParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
 };
 pub use enrich::{

@@ -426,6 +426,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::TlsCertHealth => "TLS Cert Health",
         FindingKind::WeakTls => "Weak TLS",
         FindingKind::IcmpTunnel => "ICMP Tunnel",
+        FindingKind::Dga => "DGA Domains",
     }
 }
 
