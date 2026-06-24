@@ -58,8 +58,9 @@ function CertCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) 
 }
 
 /**
- * Consolidated read-only list of suspicious-server-certificate (`tls_cert_health`) findings —
- * self-signed / expired / hostname-mismatched TLS certs surfaced by the engine. Hidden when none.
+ * Consolidated read-only list of server-side TLS posture findings — suspicious certificates
+ * (`tls_cert_health`: self-signed / expired / hostname-mismatched) and weak/deprecated negotiation
+ * (`weak_tls`: SSLv3 / TLS 1.0-1.1 or a weak cipher). Hidden when none.
  */
 export function CertHealthPanel({
   findings,
@@ -68,25 +69,27 @@ export function CertHealthPanel({
   findings: Finding[];
   onJump?: (ip: string) => void;
 }) {
-  const certs = (findings ?? []).filter((f) => f.kind === "tls_cert_health");
-  if (certs.length === 0) return null;
+  const tls = (findings ?? []).filter(
+    (f) => f.kind === "tls_cert_health" || f.kind === "weak_tls",
+  );
+  if (tls.length === 0) return null;
   return (
     <section
       data-component="CertHealthPanel"
-      aria-label="TLS certificate issues"
+      aria-label="TLS issues"
       className="rounded-lg border border-border bg-surface p-4 shadow-sm"
     >
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
-          <ShieldAlert size={15} className="text-[var(--color-sev-high)]" /> TLS certificate issues
+          <ShieldAlert size={15} className="text-[var(--color-sev-high)]" /> TLS issues
         </h2>
         <span className="font-mono-num text-xs text-[var(--color-text-faint)]">
-          {humanNumber(certs.length)} flagged
+          {humanNumber(tls.length)} flagged
         </span>
       </div>
       <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {certs.slice(0, 50).map((f, i) => (
-          <CertCard key={`${f.src_ip}-${f.dst_ip ?? "nodst"}-${i}`} f={f} onJump={onJump} />
+        {tls.slice(0, 50).map((f, i) => (
+          <CertCard key={`${f.kind}-${f.src_ip}-${f.dst_ip ?? "nodst"}-${i}`} f={f} onJump={onJump} />
         ))}
       </ul>
     </section>

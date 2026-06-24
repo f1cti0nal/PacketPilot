@@ -11,6 +11,7 @@ import {
   Radar,
   Radio,
   ShieldAlert,
+  ShieldOff,
   Siren,
   Unlock,
   type LucideIcon,
@@ -39,6 +40,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
   rule_match: { label: "Signature Match", Icon: Crosshair },
   tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
+  weak_tls: { label: "Weak TLS", Icon: ShieldOff },
 };
 
 /** Worst-first ordering. */

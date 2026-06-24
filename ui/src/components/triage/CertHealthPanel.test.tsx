@@ -22,6 +22,18 @@ const certFinding = (over: Partial<Finding> = {}): Finding => ({
   ...over,
 });
 
+const weakFinding = (over: Partial<Finding> = {}): Finding => ({
+  ...certFinding(),
+  kind: "weak_tls",
+  severity: "medium",
+  score: 44,
+  title: "Weak TLS: 10.0.0.5 -> 198.51.100.7:443 (weak-cipher)",
+  dst_ip: "198.51.100.7",
+  attack: ["T1040"],
+  evidence: ["weak cipher suite negotiated: TLS_RSA_WITH_RC4_128_SHA"],
+  ...over,
+});
+
 describe("CertHealthPanel", () => {
   it("renders cert findings with evidence, endpoints, and ATT&CK tags", () => {
     render(<CertHealthPanel findings={[certFinding()]} />);
@@ -32,7 +44,15 @@ describe("CertHealthPanel", () => {
     expect(screen.getByText("T1557")).toBeInTheDocument();
   });
 
-  it("renders nothing when there are no cert-health findings", () => {
+  it("also renders weak-TLS findings in the same panel", () => {
+    render(<CertHealthPanel findings={[certFinding(), weakFinding()]} />);
+    expect(screen.getByText(/Suspicious TLS certificate/)).toBeInTheDocument();
+    expect(screen.getByText(/Weak TLS/)).toBeInTheDocument();
+    expect(screen.getByText(/RC4/)).toBeInTheDocument();
+    expect(screen.getByText("198.51.100.7:443")).toBeInTheDocument();
+  });
+
+  it("renders nothing when there are no TLS findings", () => {
     const { container } = render(
       <CertHealthPanel findings={[{ ...certFinding(), kind: "beacon" }]} />,
     );

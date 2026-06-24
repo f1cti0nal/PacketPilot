@@ -12,6 +12,7 @@ import {
   Crosshair,
   FileWarning,
   ShieldAlert,
+  ShieldOff,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "../lib/cn";
@@ -32,6 +33,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
   rule_match: { label: "Signature Match", Icon: Crosshair },
   tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
+  weak_tls: { label: "Weak TLS", Icon: ShieldOff },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -45,6 +47,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   data_exfil: "Exfiltration",
   rule_match: "Detection",
   tls_cert_health: "Command & Control",
+  weak_tls: "Collection",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
