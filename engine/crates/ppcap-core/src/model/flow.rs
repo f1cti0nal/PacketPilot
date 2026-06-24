@@ -390,6 +390,7 @@ mod tests {
             ja3s: None,
             http_host: None,
             http_ua: None,
+            download: None,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -452,6 +453,7 @@ mod tests {
             ja3s: None,
             http_host: None,
             http_ua: None,
+            download: None,
         };
 
         let mut p1 = base.clone();

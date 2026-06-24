@@ -23,6 +23,7 @@ import { TopPortsCard } from "../cockpit/TopPortsCard";
 import { HttpOverviewCard } from "../cockpit/HttpOverviewCard";
 import { DnsResolutionsCard } from "../cockpit/DnsResolutionsCard";
 import { LocalHostsCard } from "../cockpit/LocalHostsCard";
+import { DownloadsCard } from "../cockpit/DownloadsCard";
 import { TriageBadge } from "../cockpit/TriageAnnotation";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
@@ -198,6 +199,7 @@ export function Dashboard({
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
         <DnsResolutionsCard resolved={s.resolved_ips ?? []} />
         <LocalHostsCard hosts={s.arp_hosts ?? []} />
+        <DownloadsCard downloads={s.downloads ?? []} />
       </div>
 
       <DetailFlyout

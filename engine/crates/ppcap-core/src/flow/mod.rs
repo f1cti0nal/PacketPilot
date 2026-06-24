@@ -452,6 +452,7 @@ mod tests {
             ja3s: None,
             http_host: None,
             http_ua: None,
+            download: None,
         }
     }
 

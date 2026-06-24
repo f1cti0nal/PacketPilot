@@ -34,7 +34,7 @@
 
 use crate::error::PpError;
 use crate::model::packet::{
-    AppProto, ArpClaim, CredScheme, PacketMeta, PiiKind, Protocol, Transport,
+    AppProto, ArpClaim, CredScheme, DownloadKind, PacketMeta, PiiKind, Protocol, Transport,
 };
 use crate::reader::{LinkType, RawFrame};
 use crate::Result;
@@ -77,6 +77,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         ja3s: None,
         http_host: None,
         http_ua: None,
+        download: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -255,6 +256,9 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         meta.hassh = crate::ssh::sniff_client_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
         meta.hassh_server =
             crate::ssh::sniff_server_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
+        // Downloaded-file class from an HTTP response's Content-Type / filename (header-only peek;
+        // no body bytes are read). `None` for requests, ordinary content, and non-HTTP.
+        meta.download = sniff_http_download(payload);
     }
 
     Ok(())
@@ -801,6 +805,81 @@ fn http_header_value(buf: &[u8], name: &[u8]) -> Option<String> {
     None
 }
 
+/// Classify a downloaded-file class from an HTTP **response**'s `Content-Type` / `Content-Disposition`
+/// headers (header-only peek; the body is never read). `None` for requests, non-HTTP, and ordinary
+/// content. Only the *class* is derived — no filename or body bytes are retained. Never panics.
+fn sniff_http_download(payload: &[u8]) -> Option<DownloadKind> {
+    // Only an HTTP *response* status line ("HTTP/1.1 200 OK") declares a served content type. A
+    // request line ("GET /x HTTP/1.1") merely *contains* "HTTP/" later, so the prefix check excludes it.
+    if !starts_with_ci(payload, b"HTTP/") {
+        return None;
+    }
+    let scan = &payload[..payload.len().min(1024)];
+    let ctype = http_header_value(scan, b"content-type:")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let ext = http_header_value(scan, b"content-disposition:")
+        .and_then(|cd| cdisp_filename_ext(&cd))
+        .unwrap_or_default();
+    classify_download(&ctype, &ext)
+}
+
+/// Extract a lowercase file extension (sans dot) from a `Content-Disposition` value's `filename=`
+/// parameter, e.g. `attachment; filename="setup.exe"` -> `"exe"`. `None` when absent or extensionless.
+fn cdisp_filename_ext(cdisp: &str) -> Option<String> {
+    let lower = cdisp.to_ascii_lowercase();
+    let idx = lower.find("filename=")?;
+    let rest = lower[idx + "filename=".len()..].trim_start_matches('"');
+    let end = rest.find(['"', ';']).unwrap_or(rest.len());
+    let name = &rest[..end];
+    let dot = name.rfind('.')?;
+    let ext = &name[dot + 1..];
+    if ext.is_empty() {
+        None
+    } else {
+        Some(ext.to_string())
+    }
+}
+
+/// Map a lowercase `Content-Type` and filename extension to a notable [`DownloadKind`], or `None`
+/// for ordinary content. Extension takes precedence (servers often serve `application/octet-stream`).
+fn classify_download(ctype: &str, ext: &str) -> Option<DownloadKind> {
+    const EXE_MIME: &[&str] = &[
+        "application/x-msdownload",
+        "application/x-dosexec",
+        "application/x-executable",
+        "application/x-mach-binary",
+        "application/vnd.microsoft.portable-executable",
+    ];
+    const EXE_EXT: &[&str] = &["exe", "dll", "scr", "com", "sys"];
+    const INSTALLER_EXT: &[&str] = &["msi", "pkg", "dmg", "deb", "rpm"];
+    const SCRIPT_MIME: &[&str] = &["application/x-sh", "text/x-shellscript"];
+    const SCRIPT_EXT: &[&str] = &["ps1", "bat", "cmd", "vbs", "hta", "jar", "sh", "py", "js"];
+    const ARCHIVE_MIME: &[&str] = &[
+        "application/zip",
+        "application/x-rar-compressed",
+        "application/x-7z-compressed",
+        "application/gzip",
+        "application/x-tar",
+    ];
+    const ARCHIVE_EXT: &[&str] = &["zip", "rar", "7z", "tar", "gz", "cab"];
+
+    let mime_hit = |set: &[&str]| set.iter().any(|m| ctype.contains(m));
+    let ext_hit = |set: &[&str]| !ext.is_empty() && set.contains(&ext);
+
+    if mime_hit(EXE_MIME) || ext_hit(EXE_EXT) {
+        Some(DownloadKind::Executable)
+    } else if ext_hit(INSTALLER_EXT) || ctype.contains("application/x-msi") {
+        Some(DownloadKind::Installer)
+    } else if mime_hit(SCRIPT_MIME) || ext_hit(SCRIPT_EXT) {
+        Some(DownloadKind::Script)
+    } else if mime_hit(ARCHIVE_MIME) || ext_hit(ARCHIVE_EXT) {
+        Some(DownloadKind::Archive)
+    } else {
+        None
+    }
+}
+
 /// Sniff a *cleartext* credential exposure from a bounded TCP-payload peek — HTTP Basic/Digest
 /// auth (the request is plaintext, so an HTTPS request would be TLS-wrapped and never match) or
 /// FTP `USER`/`PASS` control commands. Returns only the derived [`CredScheme`]; the credential is
@@ -1144,6 +1223,7 @@ mod tests {
             ja3s: None,
             http_host: None,
             http_ua: None,
+            download: None,
         }
     }
 
@@ -1752,6 +1832,29 @@ mod tests {
             http_header_value(b"POST / HTTP/1.1\r\nLen: 5\r\n\r\nHost: evil\r\n", b"host:"),
             None
         );
+    }
+
+    #[test]
+    fn sniff_http_download_classifies_notable_responses() {
+        // Executable by Content-Type.
+        let exe = b"HTTP/1.1 200 OK\r\nContent-Type: application/x-msdownload\r\n\r\nMZ\x90\x00";
+        assert_eq!(sniff_http_download(exe), Some(DownloadKind::Executable));
+        // Script by Content-Disposition filename (the type is generic octet-stream).
+        let ps1 = b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"payload.ps1\"\r\n\r\n";
+        assert_eq!(sniff_http_download(ps1), Some(DownloadKind::Script));
+        // Installer + archive by extension.
+        let msi = b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=setup.msi\r\n\r\n";
+        assert_eq!(sniff_http_download(msi), Some(DownloadKind::Installer));
+        let zip = b"HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\n\r\n";
+        assert_eq!(sniff_http_download(zip), Some(DownloadKind::Archive));
+        // Ordinary content -> None; a REQUEST (not a response) -> None.
+        let html = b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<html>";
+        assert_eq!(sniff_http_download(html), None);
+        let req = b"GET /app.json HTTP/1.1\r\nHost: x\r\n\r\n";
+        assert_eq!(sniff_http_download(req), None);
+        // A `.json` filename must NOT be misread as a `.js` script (precise extension match).
+        let json = b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=data.json\r\n\r\n";
+        assert_eq!(sniff_http_download(json), None);
     }
 
     #[test]

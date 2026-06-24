@@ -100,6 +100,8 @@ export interface Summary {
   resolved_ips?: ResolvedDomain[];
   /** L2 host identity: IP → MAC bindings observed via ARP; absent in older summaries. */
   arp_hosts?: ArpHost[];
+  /** Downloads overview: notable file classes served over HTTP; absent in older summaries. */
+  downloads?: DownloadEvent[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -185,6 +187,15 @@ export interface ResolvedDomain {
 export interface ArpHost {
   ip: string;
   mac: string;
+}
+
+/** One downloads-overview row: a client that received a notable file class over HTTP from a server. */
+export interface DownloadEvent {
+  client: string;
+  server: string;
+  /** "executable" | "script" | "installer" | "archive". */
+  kind: string;
+  count: number;
 }
 
 /** Cross-flow behavioral detection kind (engine `FindingKind`, snake-case wire token). */

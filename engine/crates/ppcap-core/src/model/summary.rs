@@ -198,6 +198,18 @@ pub struct ArpHost {
     pub mac: String,
 }
 
+/// One downloads-overview row: a client that received a notable file class (executable / script /
+/// installer / archive) over HTTP from a server, with how many such responses were seen. Inferred
+/// from the response `Content-Type`/filename — no body bytes are retained.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DownloadEvent {
+    pub client: String,
+    pub server: String,
+    /// The file class (`executable` / `script` / `installer` / `archive`).
+    pub kind: String,
+    pub count: u64,
+}
+
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Summary {
@@ -259,6 +271,10 @@ pub struct Summary {
     /// summaries readable.
     #[serde(default)]
     pub arp_hosts: Vec<ArpHost>,
+    /// Downloads overview: notable file classes served over HTTP, per client/server. `#[serde(default)]`
+    /// keeps older summaries readable.
+    #[serde(default)]
+    pub downloads: Vec<DownloadEvent>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -303,6 +319,7 @@ impl Summary {
             user_agents: Vec::new(),
             resolved_ips: Vec::new(),
             arp_hosts: Vec::new(),
+            downloads: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
         }

@@ -198,6 +198,34 @@ impl PiiKind {
     }
 }
 
+/// A notable downloaded-file class inferred from an HTTP response's `Content-Type` / filename, for
+/// the downloads overview. Only risky/notable classes are recognised; ordinary content (html, images,
+/// json, …) is left unclassified (`None`). Derived metadata only — no body bytes are retained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DownloadKind {
+    /// A native executable or library (PE/ELF/Mach-O, `.exe`/`.dll`/`.scr`…).
+    Executable,
+    /// A script / interpreted payload (`.ps1`/`.bat`/`.vbs`/`.js`/`.sh`…).
+    Script,
+    /// A software installer / package (`.msi`/`.pkg`/`.dmg`/`.deb`/`.rpm`).
+    Installer,
+    /// A compressed archive (`.zip`/`.rar`/`.7z`/`.tar`/`.gz`…) — a common malware container.
+    Archive,
+}
+
+impl DownloadKind {
+    /// Stable kebab-case token.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DownloadKind::Executable => "executable",
+            DownloadKind::Script => "script",
+            DownloadKind::Installer => "installer",
+            DownloadKind::Archive => "archive",
+        }
+    }
+}
+
 // TCP flag bit positions (host-readable; matches the on-wire TCP flags byte).
 const TCP_FIN: u8 = 0x01;
 const TCP_SYN: u8 = 0x02;
@@ -289,6 +317,9 @@ pub struct PacketMeta {
     pub http_host: Option<String>,
     /// HTTP request `User-Agent` header (derived metadata); `None` otherwise.
     pub http_ua: Option<String>,
+    /// Notable downloaded-file class from an HTTP response's `Content-Type`/filename; `None` for
+    /// requests, ordinary content, and non-HTTP.
+    pub download: Option<DownloadKind>,
 }
 
 impl PacketMeta {

@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PacketPilot</title>
+    <!-- Resolve the theme before first paint to avoid a flash. Mirrors lib/theme.ts
+         (stored preference → OS preference → dark). Keep the key string in sync. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("packetpilot.theme.v1");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+          var el = document.documentElement;
+          el.dataset.theme = theme;
+          el.classList.toggle("dark", theme === "dark");
+        } catch (e) {}
+      })();
+    </script>
     <!--
       Cockpit type roles. For the air-gapped desktop build, self-host instead:
         npm i @fontsource/space-grotesk @fontsource/inter @fontsource/roboto-mono

@@ -51,6 +51,50 @@
   color-scheme: dark;
 }
 
+/* ----------------------------------------------------------------------------
+   Light theme — a semantic-token override only. Component code references
+   var(--color-*) and is never touched; toggling data-theme="light" on <html>
+   (see lib/theme.ts) re-points every token. Severity & accent values are
+   darkened from their dark-mode hues so each clears WCAG AA (≥4.5:1) on white.
+   ---------------------------------------------------------------------------- */
+[data-theme="light"] {
+  /* Surfaces & structure */
+  --color-bg: #eef2f8;
+  --color-surface: #ffffff;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #f4f7fb;
+  --color-surface-3: #e9eef5;
+  --color-surface-raised: #ffffff;
+  --color-border: #d7e0ea;
+  --color-border-strong: #bcc8d6;
+  --color-grid: #e3e9f1;
+
+  /* Text — 16:1 / 6.8:1 / 4.7:1 on white */
+  --color-text: #0e1b2e;
+  --color-text-dim: #44536b;
+  --color-text-faint: #64748b;
+
+  /* Accents */
+  --color-accent: #0670a8;
+  --color-accent-strong: #045b87;
+  --color-spine-violet: #6135f5;
+
+  /* Severity — darkened so each reads as text on white (dark-mode amber/teal fail) */
+  --color-sev-critical: #e11d48;
+  --color-sev-high: #c2410c;
+  --color-sev-medium: #b45309;
+  --color-sev-low: #0f766e;
+  --color-sev-info: #0670a8;
+  --color-sev-none: #64748b;
+
+  /* Elevation — dark uses near-opaque black; on light that muddies, so soften. */
+  --sh-rest: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px -16px rgba(15, 23, 42, 0.14);
+  --sh-hero: 0 2px 4px rgba(15, 23, 42, 0.08), 0 18px 50px -24px rgba(15, 23, 42, 0.18);
+  --sh-float: 0 16px 48px -24px rgba(15, 23, 42, 0.22), 0 2px 8px -4px rgba(15, 23, 42, 0.12);
+
+  color-scheme: light;
+}
+
 html,
 body,
 #root {

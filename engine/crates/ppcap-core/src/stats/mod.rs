@@ -12,7 +12,7 @@ use std::net::IpAddr;
 use crate::enrich::classify_ip;
 use crate::model::category::Category;
 use crate::model::flow::FlowRecord;
-use crate::model::packet::{PacketMeta, Transport};
+use crate::model::packet::{DownloadKind, PacketMeta, Transport};
 use crate::model::severity::Severity;
 use crate::model::summary::{
     CategoryCount, FingerprintHit, IpThreat, PortCount, ProtoCount, ScoreTerm, SeverityCounts,
@@ -167,6 +167,8 @@ pub struct StatsAccumulator {
     resolved: HashMap<IpAddr, (String, u64)>,
     /// L2 host identity: IP → first MAC seen claiming it via ARP. Bounded by `max_tracked_keys`.
     arp_macs: HashMap<IpAddr, [u8; 6]>,
+    /// Downloads overview: (client, server, file class) → count, from HTTP responses. Bounded.
+    downloads: HashMap<(IpAddr, IpAddr, DownloadKind), u64>,
 }
 
 /// Upper bound on distinct destination ports retained per source for scan detection.
@@ -201,6 +203,7 @@ impl StatsAccumulator {
             per_http_ua: HashMap::new(),
             resolved: HashMap::new(),
             arp_macs: HashMap::new(),
+            downloads: HashMap::new(),
         }
     }
 
@@ -321,6 +324,17 @@ impl StatsAccumulator {
                         }
                     }
                 }
+            }
+        }
+
+        // Downloads overview: a notable file class served over HTTP. The response travels
+        // server -> client, so `src_ip` is the server and `dst_ip` the receiving client. Bounded.
+        if let Some(kind) = p.download {
+            let key = (dst_ip, src_ip, kind);
+            if let Some(count) = self.downloads.get_mut(&key) {
+                *count += 1;
+            } else if self.downloads.len() < self.cfg.max_tracked_keys {
+                self.downloads.insert(key, 1);
             }
         }
     }
@@ -691,6 +705,27 @@ impl StatsAccumulator {
         arp_hosts.sort_by(|a, b| a.ip.cmp(&b.ip));
         arp_hosts.truncate(TOP_K_ARP);
 
+        // Downloads rollup: notable file classes served over HTTP, ranked by count then endpoints.
+        const TOP_K_DOWNLOADS: usize = 64;
+        let mut downloads: Vec<crate::model::summary::DownloadEvent> = self
+            .downloads
+            .iter()
+            .map(|(&(client, server, kind), &count)| crate::model::summary::DownloadEvent {
+                client: client.to_string(),
+                server: server.to_string(),
+                kind: kind.as_str().to_string(),
+                count,
+            })
+            .collect();
+        downloads.sort_by(|a, b| {
+            b.count
+                .cmp(&a.count)
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+                .then(a.kind.cmp(&b.kind))
+        });
+        downloads.truncate(TOP_K_DOWNLOADS);
+
         Summary {
             total_packets: self.total_packets,
             total_bytes: self.total_bytes,
@@ -716,6 +751,7 @@ impl StatsAccumulator {
             user_agents,
             resolved_ips,
             arp_hosts,
+            downloads,
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.
@@ -1099,6 +1135,7 @@ mod tests {
             ja3s: None,
             http_host: None,
             http_ua: None,
+            download: None,
         }
     }
 
@@ -1879,6 +1916,24 @@ mod tests {
         let s = acc.finish();
         let h = s.arp_hosts.iter().find(|h| h.ip == "10.0.0.5").expect("arp host");
         assert_eq!(h.mac, "00:1a:2b:3c:4d:5e");
+    }
+
+    #[test]
+    fn downloads_attribute_server_to_client_by_response_direction() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let server = ip4(93, 184, 216, 34);
+        let client = ip4(10, 0, 0, 9);
+        // An HTTP response (server -> client) carrying an executable download, seen twice.
+        for _ in 0..2 {
+            let mut p = pkt(0, 0, 200, Transport::Tcp, Some(server), Some(client), 80, 51000, 0);
+            p.download = Some(DownloadKind::Executable);
+            acc.observe_packet(&p);
+        }
+        let s = acc.finish();
+        let d = s.downloads.iter().find(|d| d.kind == "executable").expect("download row");
+        assert_eq!(d.client, "10.0.0.9"); // the receiving client, not the server
+        assert_eq!(d.server, "93.184.216.34");
+        assert_eq!(d.count, 2);
     }
 
     #[test]
