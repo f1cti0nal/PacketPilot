@@ -13,6 +13,7 @@ import {
   FileWarning,
   ShieldAlert,
   ShieldOff,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "../lib/cn";
@@ -34,6 +35,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   rule_match: { label: "Signature Match", Icon: Crosshair },
   tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
   weak_tls: { label: "Weak TLS", Icon: ShieldOff },
+  icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -48,6 +50,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   rule_match: "Detection",
   tls_cert_health: "Command & Control",
   weak_tls: "Collection",
+  icmp_tunnel: "Exfiltration",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
