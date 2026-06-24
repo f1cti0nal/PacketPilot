@@ -17,10 +17,10 @@ use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
-    detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
+    detect_cleartext_creds, detect_dga, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
     detect_lateral_movement, detect_pii_exposure, detect_sweeps, detect_tls_cert_health,
     detect_weak_tls, suppress_swept_by_lateral, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
+    CleartextCredsParams, DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
     LateralMovementParams, PiiExposureParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
@@ -76,6 +76,8 @@ pub struct PipelineConfig {
     pub weak_tls: WeakTlsParams,
     /// ICMP tunneling (covert-channel) detector tuning.
     pub icmp_tunnel: IcmpTunnelParams,
+    /// DGA (domain-generation-algorithm) detector tuning.
+    pub dga: DgaParams,
 }
 
 impl Default for PipelineConfig {
@@ -106,6 +108,7 @@ impl Default for PipelineConfig {
             tls_cert_health: TlsCertHealthParams::default(),
             weak_tls: WeakTlsParams::default(),
             icmp_tunnel: IcmpTunnelParams::default(),
+            dga: DgaParams::default(),
         }
     }
 }
@@ -381,6 +384,7 @@ pub fn run_source_visiting(
     findings.extend(detect_tls_cert_health(&tracker, &cfg.tls_cert_health));
     findings.extend(detect_weak_tls(&tracker, &cfg.weak_tls));
     findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
+    findings.extend(detect_dga(&tracker, &cfg.dga));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

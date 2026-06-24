@@ -439,7 +439,7 @@ fn sigma_level(sev: crate::model::severity::Severity) -> &'static str {
 fn sigma_category(kind: crate::model::finding::FindingKind) -> &'static str {
     use crate::model::finding::FindingKind;
     match kind {
-        FindingKind::DnsTunnel => "dns",
+        FindingKind::DnsTunnel | FindingKind::Dga => "dns",
         FindingKind::CleartextCreds | FindingKind::PiiExposure => "proxy",
         _ => "firewall",
     }

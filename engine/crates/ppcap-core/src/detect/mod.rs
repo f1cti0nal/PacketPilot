@@ -284,6 +284,24 @@ struct DnsStats {
     sample: Option<String>,
 }
 
+/// Per-source DGA statistics: the set of distinct algorithmically-random *registered* domains a
+/// host resolved. DGA malware cycles through many such domains hunting for its live C2 rendezvous,
+/// so the load-bearing signal is the count of *distinct* suspect registered domains — not any single
+/// random-looking name (a lone CDN hash is benign). The set is bounded to cap memory.
+#[derive(Debug, Clone, Default)]
+struct DgaStats {
+    /// Distinct DGA-suspect registered domains seen from this source (bounded by `MAX_DGA_SUSPECT`).
+    suspect: HashSet<String>,
+    /// Total resolvable (>= 2-label) DNS queries from this source, for evidence context.
+    queries: u64,
+    /// One example suspect registered domain for the finding evidence.
+    sample: Option<String>,
+}
+
+/// Cap on distinct suspect domains tracked per source — far above any detection threshold, so the
+/// count is exact in practice while peak memory stays bounded on a pathological capture.
+const MAX_DGA_SUSPECT: usize = 256;
+
 /// Per-`(source, dst)` ICMP echo statistics for covert-channel (tunneling) detection.
 #[derive(Debug, Clone, Default)]
 struct IcmpStats {
@@ -315,6 +333,18 @@ pub struct DnsTunnelCandidate {
     pub queries: u64,
     pub avg_entropy: f64,
     pub max_label_len: u16,
+    pub sample: Option<String>,
+}
+
+/// A source whose DNS resolutions look like domain-generation-algorithm activity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DgaCandidate {
+    pub src: IpAddr,
+    /// Count of distinct algorithmically-random registered domains resolved.
+    pub distinct_domains: u32,
+    /// Total resolvable DNS queries from this source (context for the suspect ratio).
+    pub queries: u64,
+    /// One example suspect registered domain.
     pub sample: Option<String>,
 }
 
@@ -400,6 +430,8 @@ pub struct BehaviorTracker {
     weak_tls: HashMap<(IpAddr, IpAddr, u16), WeakTlsObservation>,
     /// Per-`(source, dst)` ICMP echo statistics for covert-channel detection.
     icmp: HashMap<(IpAddr, IpAddr), IcmpStats>,
+    /// Per-source DGA statistics (distinct algorithmically-random registered domains resolved).
+    dga: HashMap<IpAddr, DgaStats>,
 }
 
 impl BehaviorTracker {
@@ -415,6 +447,7 @@ impl BehaviorTracker {
             tls_certs: HashMap::new(),
             weak_tls: HashMap::new(),
             icmp: HashMap::new(),
+            dga: HashMap::new(),
         }
     }
 
@@ -525,6 +558,24 @@ impl BehaviorTracker {
         }
         if e.sample.is_none() && !qname.is_empty() {
             e.sample = Some(qname.to_string());
+        }
+
+        // DGA: score the *registered* label (not subdomains) so a CDN host like
+        // `d1a2b3.cloudfront.net` — random subdomain, ordinary registered label — is not flagged.
+        // Track distinct suspect registered domains per source; the detector gates on the count.
+        if let Some((reg_domain, reg_label)) = registered_domain(qname) {
+            let track = self.dga.contains_key(&src)
+                || self.dga.len() < self.cfg.max_tracked_keys.max(1);
+            if track {
+                let d = self.dga.entry(src).or_default();
+                d.queries += 1;
+                if is_dga_label(&reg_label) && d.suspect.len() < MAX_DGA_SUSPECT {
+                    if d.sample.is_none() {
+                        d.sample = Some(reg_domain.clone());
+                    }
+                    d.suspect.insert(reg_domain);
+                }
+            }
         }
     }
 
@@ -658,6 +709,29 @@ impl BehaviorTracker {
                 .cmp(&a.queries)
                 .then(a.src.cmp(&b.src))
                 .then(a.resolver.cmp(&b.resolver))
+        });
+        out
+    }
+
+    /// All sources that resolved at least `min_distinct_domains` distinct DGA-suspect registered
+    /// domains — the domain-generation-algorithm C2-rendezvous signature. Returned most-suspect
+    /// first, then by source for determinism.
+    pub fn dga_candidates(&self, min_distinct_domains: u32) -> Vec<DgaCandidate> {
+        let mut out: Vec<DgaCandidate> = self
+            .dga
+            .iter()
+            .filter(|(_, s)| s.suspect.len() as u32 >= min_distinct_domains)
+            .map(|(&src, s)| DgaCandidate {
+                src,
+                distinct_domains: s.suspect.len() as u32,
+                queries: s.queries,
+                sample: s.sample.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.distinct_domains
+                .cmp(&a.distinct_domains)
+                .then(a.src.cmp(&b.src))
         });
         out
     }
@@ -1694,6 +1768,170 @@ pub fn detect_dns_tunnel(tracker: &BehaviorTracker, params: &DnsTunnelParams) ->
     findings
 }
 
+/// Tuning for the DGA (domain-generation-algorithm) detector.
+#[derive(Debug, Clone)]
+pub struct DgaParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum distinct DGA-suspect registered domains from one source to flag it. DGA malware
+    /// cycles through dozens-to-hundreds of generated domains; a healthy floor keeps the occasional
+    /// random-looking SaaS/CDN apex from ever producing a finding.
+    pub min_distinct_domains: u32,
+    /// Sources to never flag — recursive resolvers, NAT/CGNAT gateways and DNS appliances, whose
+    /// apparent source IP aggregates *many* clients' lookups into one bucket and would otherwise
+    /// self-flag from the union of everyone's random-looking apexes. Per-source attribution
+    /// collapses at any capture point upstream of a resolver, so the allowlist — not an
+    /// external/internal gate (internal resolvers are internal) — is the load-bearing FP control.
+    /// Empty by default; populate it per deployment.
+    pub ignore_src: Vec<IpAddr>,
+}
+
+impl Default for DgaParams {
+    fn default() -> Self {
+        DgaParams {
+            enabled: true,
+            min_distinct_domains: 10,
+            ignore_src: Vec::new(),
+        }
+    }
+}
+
+/// Detect domain-generation-algorithm activity: one [`Finding`] per source that resolved many
+/// distinct algorithmically-random *registered* domains — the rendezvous pattern of DGA malware
+/// hunting for its live C2. Distinct from DNS tunneling (which smuggles data in long high-entropy
+/// labels of a *single* domain); here the signal is the *breadth* of random registered domains.
+/// ATT&CK T1568.002. Deterministic order.
+pub fn detect_dga(tracker: &BehaviorTracker, params: &DgaParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.dga_candidates(params.min_distinct_domains) {
+        // A recursive resolver / NAT gateway aggregates many clients' lookups under one source and
+        // would self-flag — let the operator exempt those rather than disable the detector.
+        if params.ignore_src.contains(&c.src) {
+            continue;
+        }
+        // Many distinct random domains is a stronger signal than a few; escalate accordingly.
+        let (severity, score) = if c.distinct_domains >= 25 {
+            (Severity::High, 76)
+        } else {
+            (Severity::Medium, 58)
+        };
+        let mut evidence = vec![
+            format!(
+                "{} distinct algorithmically-random registered domains resolved ({} DNS queries total)",
+                c.distinct_domains, c.queries
+            ),
+            "breadth of random registered domains — DGA C2 rendezvous (not a single tunnel)"
+                .to_string(),
+        ];
+        if let Some(sample) = &c.sample {
+            let shown: String = sample.chars().take(80).collect();
+            evidence.push(format!("example: {shown}"));
+        }
+        findings.push(Finding {
+            kind: FindingKind::Dga,
+            severity,
+            score,
+            title: format!(
+                "DGA activity: {} ({} random domains)",
+                c.src, c.distinct_domains
+            ),
+            src_ip: c.src.to_string(),
+            dst_ip: None,
+            dst_port: Some(53),
+            attack: vec!["T1568.002".to_string()],
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.distinct_domains as u64),
+        });
+    }
+    findings
+}
+
+/// Extract a domain's `(registered_domain, registered_label)` — the registrable name and its
+/// leftmost label — or `None` for inputs that have no such part (single-label names, IP literals,
+/// reverse-DNS `.arpa` lookups). Without a public-suffix list the registered label is approximated
+/// as the second-from-last label, which is correct for ordinary `name.tld` domains; multi-part
+/// public suffixes (`.co.uk`) are approximated and not a DGA target in practice.
+fn registered_domain(qname: &str) -> Option<(String, String)> {
+    let trimmed = qname.trim().trim_end_matches('.').to_ascii_lowercase();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Reverse-DNS PTR lookups are never DGA.
+    if trimmed.ends_with(".arpa") {
+        return None;
+    }
+    let labels: Vec<&str> = trimmed.split('.').filter(|l| !l.is_empty()).collect();
+    if labels.len() < 2 {
+        return None;
+    }
+    let reg_label = labels[labels.len() - 2];
+    let tld = labels[labels.len() - 1];
+    // An all-numeric "label.tld" is an IP literal fragment, not a domain.
+    if reg_label.bytes().all(|b| b.is_ascii_digit()) && tld.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((format!("{reg_label}.{tld}"), reg_label.to_string()))
+}
+
+/// Heuristic: does a registered label look algorithmically generated? Conservative per-label test —
+/// the detector's reliability comes from requiring *many distinct* such labels per source, so this
+/// only needs to separate "plausibly random" from "obviously wordlike". Signals: a long run of
+/// consonants, a very low vowel ratio, or heavy digit use, on a label of generated length.
+fn is_dga_label(label: &str) -> bool {
+    let n = label.len();
+    if !(8..=40).contains(&n) {
+        return false;
+    }
+    // Punycode (IDNA ASCII-Compatible-Encoding): an `xn--` label is encoded non-Latin text, not
+    // generated randomness. Its encoding artifact is structurally consonant-heavy / vowel-poor, so
+    // scoring it raw flags every IDN domain. Exempt it (decoding is out of scope without an IDNA dep).
+    if label.starts_with("xn--") {
+        return false;
+    }
+    // Domain labels are LDH (letters/digits/hyphen); anything else is not a generated label here.
+    if !label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+        return false;
+    }
+    let letters = label.chars().filter(|c| c.is_ascii_alphabetic()).count();
+    let vowels = label.chars().filter(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u')).count();
+    let digits = label.chars().filter(|c| c.is_ascii_digit()).count();
+    let digit_ratio = digits as f64 / n as f64;
+    let vowel_ratio = if letters > 0 {
+        vowels as f64 / letters as f64
+    } else {
+        1.0
+    };
+
+    let low_vowel = letters >= 6 && vowel_ratio < 0.26;
+    let long_consonant_run = max_consonant_run(label) >= 5;
+    let digit_heavy = digits >= 3 && digit_ratio >= 0.30;
+    low_vowel || long_consonant_run || digit_heavy
+}
+
+/// Longest run of consecutive consonant letters; digits, hyphens and vowels reset the run.
+fn max_consonant_run(label: &str) -> usize {
+    let mut max = 0usize;
+    let mut run = 0usize;
+    for c in label.chars() {
+        let is_consonant =
+            c.is_ascii_alphabetic() && !matches!(c, 'a' | 'e' | 'i' | 'o' | 'u');
+        if is_consonant {
+            run += 1;
+            if run > max {
+                max = run;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    max
+}
+
 /// Shannon entropy (bits per byte) of a string's byte distribution; `0.0` for empty input.
 fn shannon_entropy(s: &str) -> f64 {
     if s.is_empty() {
@@ -2062,6 +2300,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
         FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
         FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
+        FindingKind::Dga => 4,           // command-and-control (C2 domain rendezvous)
     }
 }
 
@@ -2080,6 +2319,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::TlsCertHealth => "Command & Control",
         FindingKind::WeakTls => "Collection",
         FindingKind::IcmpTunnel => "Exfiltration",
+        FindingKind::Dga => "Command & Control",
     }
 }
 
@@ -2098,6 +2338,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::TlsCertHealth => "presented a suspicious TLS certificate",
         FindingKind::WeakTls => "negotiated weak or deprecated TLS",
         FindingKind::IcmpTunnel => "tunneled data over ICMP",
+        FindingKind::Dga => "resolved algorithmically-generated C2 domains",
     }
 }
 
@@ -3292,6 +3533,141 @@ mod tests {
             few.observe_dns_query(ip(10, 0, 0, 5), ip(10, 0, 0, 1), &q);
         }
         assert!(detect_dns_tunnel(&few, &DnsTunnelParams::default()).is_empty());
+    }
+
+    // ── DGA detection ─────────────────────────────────────────────────────────
+
+    /// A 12-char vowel-free pseudo-random label (deterministic per `seed`) — always DGA-suspect.
+    fn dga_label(seed: u64) -> String {
+        const ALPHA: &[u8] = b"bcdfghjklmnpqrstvwxz0123456789";
+        let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x1234_5678;
+        (0..12)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                ALPHA[(x as usize) % ALPHA.len()] as char
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dga_detected_for_many_distinct_random_domains() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let bot = ip(10, 0, 0, 5);
+        let resolver = ip(10, 0, 0, 1);
+        for i in 0..16u64 {
+            let q = format!("{}.com", dga_label(i));
+            t.observe_dns_query(bot, resolver, &q);
+        }
+        let f = detect_dga(&t, &DgaParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::Dga);
+        assert_eq!(f[0].src_ip, "10.0.0.5");
+        assert_eq!(f[0].dst_port, Some(53));
+        assert!(f[0].attack.iter().any(|a| a == "T1568.002"));
+        assert!(f[0].contacts.unwrap() >= 10);
+    }
+
+    #[test]
+    fn dga_not_flagged_below_threshold_or_for_normal_browsing() {
+        // A handful of random domains -> below the distinct-domain floor.
+        let mut few = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..5u64 {
+            let q = format!("{}.com", dga_label(i));
+            few.observe_dns_query(ip(10, 0, 0, 5), ip(10, 0, 0, 1), &q);
+        }
+        assert!(detect_dga(&few, &DgaParams::default()).is_empty());
+
+        // Ordinary, wordlike registered domains -> never suspect, regardless of volume.
+        let mut benign = BehaviorTracker::new(DetectConfig::default());
+        for name in [
+            "google.com",
+            "facebook.com",
+            "amazon.com",
+            "wikipedia.org",
+            "youtube.com",
+            "twitter.com",
+            "github.com",
+            "netflix.com",
+            "reddit.com",
+            "apple.com",
+            "microsoft.com",
+            "cloudflare.com",
+            "linkedin.com",
+            "office.com",
+        ] {
+            for _ in 0..5 {
+                benign.observe_dns_query(ip(10, 0, 0, 6), ip(10, 0, 0, 1), name);
+            }
+        }
+        assert!(detect_dga(&benign, &DgaParams::default()).is_empty());
+    }
+
+    #[test]
+    fn dga_ignores_random_cdn_subdomains() {
+        // Random *subdomains* under one ordinary registered domain (the CDN pattern): the registered
+        // label 'cloudfront' is wordlike, so none are suspect — even across many distinct subdomains.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..40u64 {
+            let q = format!("{}.cloudfront.net", dga_label(i));
+            t.observe_dns_query(ip(10, 0, 0, 5), ip(10, 0, 0, 1), &q);
+        }
+        let f = detect_dga(&t, &DgaParams::default());
+        assert!(f.is_empty(), "CDN subdomains must not flag: {f:?}");
+    }
+
+    #[test]
+    fn dga_ignore_src_exempts_a_resolver_or_gateway() {
+        // A recursive resolver / NAT gateway aggregates many clients' random apexes under one source
+        // and would self-flag. By default it fires (the behavior is real); exempting it via
+        // ignore_src silences the finding without disabling the detector. Keeps the guard non-vacuous.
+        let gw = ip(10, 0, 0, 1);
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for i in 0..16u64 {
+            let q = format!("{}.com", dga_label(i));
+            t.observe_dns_query(gw, gw, &q);
+        }
+        assert_eq!(detect_dga(&t, &DgaParams::default()).len(), 1);
+        let params = DgaParams {
+            ignore_src: vec![gw],
+            ..DgaParams::default()
+        };
+        assert!(detect_dga(&t, &params).is_empty());
+    }
+
+    #[test]
+    fn is_dga_label_separates_random_from_wordlike() {
+        for w in [
+            "google",
+            "cloudfront",
+            "facebook",
+            "wikipedia",
+            "example",
+            "akamaihd",
+            "microsoft",
+            "xn--80akhbyknj4f", // punycode (IDN) — encoding artifact, not generated randomness
+        ] {
+            assert!(!is_dga_label(w), "{w} should not be DGA");
+        }
+        assert!(is_dga_label("kq3v9z2xph7w")); // vowel-free + digit-heavy
+        assert!(is_dga_label("xkcdwbjmqrtz")); // long consonant run / no vowels
+        assert!(!is_dga_label("abc")); // too short
+    }
+
+    #[test]
+    fn registered_domain_extracts_or_skips() {
+        assert_eq!(
+            registered_domain("www.example.com"),
+            Some(("example.com".into(), "example".into()))
+        );
+        assert_eq!(
+            registered_domain("EXAMPLE.COM."),
+            Some(("example.com".into(), "example".into()))
+        );
+        assert_eq!(registered_domain("localhost"), None); // single label
+        assert_eq!(registered_domain("5.0.168.192.in-addr.arpa"), None); // PTR
+        assert_eq!(registered_domain(""), None);
     }
 
     // ── fold_rule_findings ────────────────────────────────────────────────────
