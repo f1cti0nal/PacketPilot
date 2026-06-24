@@ -165,7 +165,8 @@ export type FindingKind =
   | "data_exfil"
   | "dns_tunnel"
   | "rule_match"
-  | "tls_cert_health";
+  | "tls_cert_health"
+  | "weak_tls";
 
 /**
  * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a

@@ -18,10 +18,10 @@ use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_dns_tunnel, detect_exfil, detect_lateral_movement,
-    detect_pii_exposure, detect_sweeps, detect_tls_cert_health, suppress_swept_by_lateral,
-    BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams, DetectConfig,
-    DnsTunnelParams, ExfilParams, LateralMovementParams, PiiExposureParams, SweepParams,
-    TlsCertHealthParams,
+    detect_pii_exposure, detect_sweeps, detect_tls_cert_health, detect_weak_tls,
+    suppress_swept_by_lateral, BeaconParams, BehaviorTracker, BruteForceParams,
+    CleartextCredsParams, DetectConfig, DnsTunnelParams, ExfilParams, LateralMovementParams,
+    PiiExposureParams, SweepParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -71,6 +71,8 @@ pub struct PipelineConfig {
     pub dns_tunnel: DnsTunnelParams,
     /// TLS server-certificate-health-detector tuning.
     pub tls_cert_health: TlsCertHealthParams,
+    /// Weak / deprecated TLS detector tuning.
+    pub weak_tls: WeakTlsParams,
 }
 
 impl Default for PipelineConfig {
@@ -99,6 +101,7 @@ impl Default for PipelineConfig {
             lateral: LateralMovementParams::default(),
             dns_tunnel: DnsTunnelParams::default(),
             tls_cert_health: TlsCertHealthParams::default(),
+            weak_tls: WeakTlsParams::default(),
         }
     }
 }
@@ -321,8 +324,10 @@ pub fn run_source_visiting(
     // Cross-flow behavioral detection runs once, after every flow's contact has been folded in.
     // Its findings uplift the implicated hosts' per-IP threat cards *before* the summary sorts
     // and truncates them, so a beaconing host/C2 surfaces in the Top Threats panel.
-    // Fold every completed server-certificate observation into the tracker before detection runs.
-    for obs in cert_reasm.into_observations() {
+    // Fold every completed server-certificate + weak-TLS observation into the tracker before
+    // detection runs.
+    let tls_results = cert_reasm.into_results();
+    for obs in tls_results.certs {
         tracker.observe_tls_cert(
             obs.client,
             obs.server,
@@ -330,6 +335,16 @@ pub fn run_source_visiting(
             obs.issues,
             obs.subject_cn,
             obs.sni,
+        );
+    }
+    for obs in tls_results.weak_tls {
+        tracker.observe_weak_tls(
+            obs.client,
+            obs.server,
+            obs.server_port,
+            obs.version,
+            obs.cipher,
+            obs.reasons,
         );
     }
     let lateral = detect_lateral_movement(&tracker, &cfg.lateral);
@@ -345,6 +360,7 @@ pub fn run_source_visiting(
     findings.extend(lateral);
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     findings.extend(detect_tls_cert_health(&tracker, &cfg.tls_cert_health));
+    findings.extend(detect_weak_tls(&tracker, &cfg.weak_tls));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

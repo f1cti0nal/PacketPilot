@@ -127,7 +127,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
 use crate::model::packet::{CredScheme, PiiKind};
-use crate::tls::CertIssue;
+use crate::tls::{CertIssue, WeakTlsReason};
 
 /// Identity of a directed "destination contact channel": one source reaching one
 /// `(dst_ip, dst_port)` service. Beaconing periodicity is measured per channel because each
@@ -314,6 +314,25 @@ pub struct TlsCertCandidate {
     pub sni: Option<String>,
 }
 
+/// The weak / deprecated TLS a server negotiated on a `(client -> server:port)` flow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WeakTlsObservation {
+    version: u16,
+    cipher: u16,
+    reasons: Vec<WeakTlsReason>,
+}
+
+/// A `(client, server, server_port)` flow that negotiated weak or deprecated TLS.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WeakTlsCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub version: u16,
+    pub cipher: u16,
+    pub reasons: Vec<WeakTlsReason>,
+}
+
 /// Tuning for the behavioral tracker. Both caps keep memory bounded on adversarial captures.
 #[derive(Debug, Clone)]
 pub struct DetectConfig {
@@ -354,6 +373,8 @@ pub struct BehaviorTracker {
     pii: HashMap<(IpAddr, IpAddr, u16), (PiiKind, u64)>,
     /// Per-`(client, server, server_port)` TLS server-certificate health observations.
     tls_certs: HashMap<(IpAddr, IpAddr, u16), TlsCertObservation>,
+    /// Per-`(client, server, server_port)` weak / deprecated TLS observations.
+    weak_tls: HashMap<(IpAddr, IpAddr, u16), WeakTlsObservation>,
 }
 
 impl BehaviorTracker {
@@ -367,6 +388,7 @@ impl BehaviorTracker {
             creds: HashMap::new(),
             pii: HashMap::new(),
             tls_certs: HashMap::new(),
+            weak_tls: HashMap::new(),
         }
     }
 
@@ -425,6 +447,34 @@ impl BehaviorTracker {
             issues,
             subject_cn,
             sni,
+        });
+    }
+
+    /// Fold one weak / deprecated TLS observation: `client` reached `server:port` and the server
+    /// negotiated weak TLS (`version`, `cipher`, `reasons`). Keeps the first observation per
+    /// channel. Bounded: a brand-new channel at capacity is dropped.
+    pub fn observe_weak_tls(
+        &mut self,
+        client: IpAddr,
+        server: IpAddr,
+        server_port: u16,
+        version: u16,
+        cipher: u16,
+        reasons: Vec<WeakTlsReason>,
+    ) {
+        if reasons.is_empty() {
+            return;
+        }
+        let key = (client, server, server_port);
+        if !self.weak_tls.contains_key(&key)
+            && self.weak_tls.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        self.weak_tls.entry(key).or_insert(WeakTlsObservation {
+            version,
+            cipher,
+            reasons,
         });
     }
 
@@ -746,11 +796,42 @@ impl BehaviorTracker {
         });
         out
     }
+
+    /// All `(client, server, server_port)` flows that negotiated weak / deprecated TLS. Returned
+    /// worst (highest single-reason severity, then most reasons) first, then by channel.
+    pub fn weak_tls_candidates(&self) -> Vec<WeakTlsCandidate> {
+        let mut out: Vec<WeakTlsCandidate> = self
+            .weak_tls
+            .iter()
+            .map(|(&(client, server, server_port), obs)| WeakTlsCandidate {
+                client,
+                server,
+                server_port,
+                version: obs.version,
+                cipher: obs.cipher,
+                reasons: obs.reasons.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            worst_reason_rank(&b.reasons)
+                .cmp(&worst_reason_rank(&a.reasons))
+                .then(b.reasons.len().cmp(&a.reasons.len()))
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+                .then(a.server_port.cmp(&b.server_port))
+        });
+        out
+    }
 }
 
 /// The seriousness of the worst single issue in a set (0 if empty).
 fn worst_issue_rank(issues: &[CertIssue]) -> u8 {
     issues.iter().map(|i| i.severity_rank()).max().unwrap_or(0)
+}
+
+/// The seriousness of the worst single weak-TLS reason in a set (0 if empty).
+fn worst_reason_rank(reasons: &[WeakTlsReason]) -> u8 {
+    reasons.iter().map(|r| r.severity_rank()).max().unwrap_or(0)
 }
 
 use crate::enrich::classify_ip;
@@ -1657,6 +1738,71 @@ pub fn detect_tls_cert_health(
     findings
 }
 
+/// Tuning for the weak / deprecated TLS detector.
+#[derive(Debug, Clone)]
+pub struct WeakTlsParams {
+    /// Master switch.
+    pub enabled: bool,
+}
+
+impl Default for WeakTlsParams {
+    fn default() -> Self {
+        WeakTlsParams { enabled: true }
+    }
+}
+
+/// Detect weak / deprecated TLS negotiated by a server (SSLv3 / TLS 1.0-1.1, or a NULL / anon /
+/// EXPORT / RC4 / DES / 3DES cipher suite), read from the cleartext ServerHello. One [`Finding`]
+/// per `(client, server, server_port)` flow, attributed to the client so it correlates with any
+/// beacon / exfil to the same destination. Severity tracks the worst single reason (NULL/anon/
+/// EXPORT/SSLv3 = High, RC4/DES = Medium, 3DES/TLS1.0-1.1 = Low). ATT&CK T1040 (the weak channel
+/// is interceptable). Deterministic order.
+pub fn detect_weak_tls(tracker: &BehaviorTracker, params: &WeakTlsParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.weak_tls_candidates() {
+        let severity = match worst_reason_rank(&c.reasons) {
+            3 => Severity::High,
+            2 => Severity::Medium,
+            _ => Severity::Low,
+        };
+        let score = match severity {
+            Severity::High => 64,
+            Severity::Medium => 44,
+            _ => 28,
+        };
+        let summary: Vec<&str> = c.reasons.iter().map(|r| r.kind_str()).collect();
+        let mut evidence: Vec<String> = c.reasons.iter().map(|r| r.evidence()).collect();
+        evidence.push(
+            "weak or deprecated TLS leaves the session interceptable — require TLS 1.2+ with a strong cipher"
+                .to_string(),
+        );
+        findings.push(Finding {
+            kind: FindingKind::WeakTls,
+            severity,
+            score,
+            title: format!(
+                "Weak TLS: {} -> {}:{} ({})",
+                c.client,
+                c.server,
+                c.server_port,
+                summary.join(", ")
+            ),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: Some(c.server_port),
+            attack: vec!["T1040".to_string()],
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+        });
+    }
+    findings
+}
+
 /// Correlate behavioral findings into per-host incidents, ordered along the kill chain
 /// (discovery -> command-and-control -> exfiltration). A host exhibiting two or more distinct
 /// stages is escalated one severity band — a multi-stage chain is a confirmed incident.
@@ -1768,6 +1914,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::DnsTunnel => 5,       // exfiltration / C2 over DNS
         FindingKind::RuleMatch => 4,       // imported signature — treat as C2-stage by default
         FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
+        FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
     }
 }
 
@@ -1784,6 +1931,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::DnsTunnel => "Exfiltration",
         FindingKind::RuleMatch => "Signature Match",
         FindingKind::TlsCertHealth => "Command & Control",
+        FindingKind::WeakTls => "Collection",
     }
 }
 
@@ -1800,6 +1948,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::DnsTunnel => "tunneled data over DNS",
         FindingKind::RuleMatch => "triggered a signature rule",
         FindingKind::TlsCertHealth => "presented a suspicious TLS certificate",
+        FindingKind::WeakTls => "negotiated weak or deprecated TLS",
     }
 }
 
@@ -3140,5 +3289,55 @@ mod tests {
         let mut t3 = BehaviorTracker::new(DetectConfig::default());
         t3.observe_tls_cert(client, server, 443, vec![], None, None);
         assert!(detect_tls_cert_health(&t3, &TlsCertHealthParams::default()).is_empty());
+    }
+
+    #[test]
+    fn weak_tls_flags_severity_by_worst_reason() {
+        let client = ip(10, 0, 0, 5);
+        let server = ip(203, 0, 113, 9);
+
+        // SSL 3.0 + a NULL cipher -> two High reasons -> High finding, ATT&CK T1040.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_weak_tls(
+            client,
+            server,
+            443,
+            0x0300,
+            0x0001,
+            vec![
+                WeakTlsReason::DeprecatedVersion { version: 0x0300 },
+                WeakTlsReason::WeakCipher {
+                    cipher: 0x0001,
+                    name: "TLS_RSA_WITH_NULL_MD5",
+                    rank: 3,
+                },
+            ],
+        );
+        let f = detect_weak_tls(&t, &WeakTlsParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::WeakTls);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.5");
+        assert_eq!(f[0].dst_ip.as_deref(), Some("203.0.113.9"));
+        assert!(f[0].attack.iter().any(|a| a == "T1040"));
+
+        // TLS 1.0 alone -> Low.
+        let mut t2 = BehaviorTracker::new(DetectConfig::default());
+        t2.observe_weak_tls(
+            client,
+            server,
+            443,
+            0x0301,
+            0x002F,
+            vec![WeakTlsReason::DeprecatedVersion { version: 0x0301 }],
+        );
+        let f2 = detect_weak_tls(&t2, &WeakTlsParams::default());
+        assert_eq!(f2[0].severity, Severity::Low);
+
+        // Disabled -> nothing; empty reasons never recorded.
+        assert!(detect_weak_tls(&t, &WeakTlsParams { enabled: false }).is_empty());
+        let mut t3 = BehaviorTracker::new(DetectConfig::default());
+        t3.observe_weak_tls(client, server, 443, 0x0303, 0x009C, vec![]);
+        assert!(detect_weak_tls(&t3, &WeakTlsParams::default()).is_empty());
     }
 }

@@ -58,7 +58,7 @@ pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, Sk
 pub use detect::{
     fold_rule_findings, BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams,
     DetectConfig, DnsTunnelParams, ExfilParams, LateralMovementParams, PiiExposureParams,
-    SweepParams, TlsCertHealthParams,
+    SweepParams, TlsCertHealthParams, WeakTlsParams,
 };
 pub use enrich::{
     apply_domain_reputation, apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher,
