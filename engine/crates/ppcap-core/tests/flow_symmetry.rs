@@ -106,6 +106,8 @@ fn observe_folds_fwd_and_rev() {
         cleartext_cred: None,
         pii: None,
         icmp_type: None,
+        tls_version: None,
+        tls_cipher: None,
     };
     let mut rev = fwd.clone();
     rev.ts_ns = 900;

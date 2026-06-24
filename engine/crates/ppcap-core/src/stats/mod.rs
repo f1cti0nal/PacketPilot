@@ -970,6 +970,8 @@ mod tests {
             cleartext_cred: None,
             pii: None,
             icmp_type: None,
+            tls_version: None,
+            tls_cipher: None,
         }
     }
 

@@ -103,6 +103,8 @@ struct Builders {
     sni: StringBuilder,
     ja3: StringBuilder,
     ja4: StringBuilder,
+    tls_version: StringBuilder,
+    tls_cipher: StringBuilder,
     severity: StringBuilder,
     threat_score: UInt16Builder,
     ioc: BooleanBuilder,
@@ -132,6 +134,8 @@ impl Builders {
             sni: StringBuilder::new(),
             ja3: StringBuilder::new(),
             ja4: StringBuilder::new(),
+            tls_version: StringBuilder::new(),
+            tls_cipher: StringBuilder::new(),
             severity: StringBuilder::new(),
             threat_score: UInt16Builder::new(),
             ioc: BooleanBuilder::new(),
@@ -166,6 +170,8 @@ impl Builders {
             Arc::new(self.sni.finish()),
             Arc::new(self.ja3.finish()),
             Arc::new(self.ja4.finish()),
+            Arc::new(self.tls_version.finish()),
+            Arc::new(self.tls_cipher.finish()),
             Arc::new(self.severity.finish()),
             Arc::new(self.threat_score.finish()),
             Arc::new(self.ioc.finish()),
@@ -206,6 +212,8 @@ impl FlowParquetWriter {
             "category",
             "app_proto_src",
             "sni",
+            "tls_version",
+            "tls_cipher",
             "severity",
         ];
 
@@ -304,6 +312,15 @@ impl FlowParquetWriter {
         match &rec.ja4 {
             Some(v) if !v.is_empty() => b.ja4.append_value(v),
             _ => b.ja4.append_null(),
+        }
+        // tls_version / tls_cipher: present only for observed server ServerHellos; NULL otherwise.
+        match &rec.tls_version {
+            Some(v) if !v.is_empty() => b.tls_version.append_value(v),
+            _ => b.tls_version.append_null(),
+        }
+        match &rec.tls_cipher {
+            Some(v) if !v.is_empty() => b.tls_cipher.append_value(v),
+            _ => b.tls_cipher.append_null(),
         }
         // Phase-2 verdict columns (never NULL).
         b.severity.append_value(rec.severity.as_str());
@@ -463,6 +480,8 @@ mod tests {
             b.sni.append_null();
             b.ja3.append_null();
             b.ja4.append_null();
+            b.tls_version.append_null();
+            b.tls_cipher.append_null();
             b.severity.append_value("info");
             b.threat_score.append_value(0);
             b.ioc.append_value(false);
@@ -470,7 +489,7 @@ mod tests {
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 24);
+        assert_eq!(batch.num_columns(), 26);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }
