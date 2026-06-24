@@ -17,6 +17,7 @@ import { ProtocolMix } from "../cockpit/ProtocolMix";
 import { TopTalkersCard } from "../cockpit/TopTalkersCard";
 import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
 import { AiSummaryCard } from "../cockpit/AiSummaryCard";
+import { ThreatGraph } from "../cockpit/ThreatGraph";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
 import { SignatureMatchesPanel } from "./triage/SignatureMatchesPanel";
@@ -141,6 +142,9 @@ export function Dashboard({
             {carveNotice}
           </p>
         )}
+
+        {/* Threat relationship graph — spatial map of who is doing what to whom */}
+        <ThreatGraph findings={s.findings ?? []} threats={s.ip_threats ?? []} onJump={toFlowsIp} />
 
         {/* Zone 3 — activity heatmap ribbon */}
         <ActivityHeatmap
