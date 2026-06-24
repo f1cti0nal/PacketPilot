@@ -167,6 +167,8 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           " " +
           (r.hassh ?? "") +
           " " +
+          (r.hasshServer ?? "") +
+          " " +
           r.protoLabel +
           " " +
           r.severity +
