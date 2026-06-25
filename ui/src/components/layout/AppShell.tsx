@@ -14,6 +14,7 @@ import { ThreatRail } from "../../cockpit/ThreatRail";
 import { CommandPalette } from "../../cockpit/CommandPalette";
 import type { PaletteAction } from "../../cockpit/CommandPalette";
 import { useIsMobile, BottomTabBar, MobileThreatDrawer } from "./MobileNav";
+import { ShortcutsOverlay } from "../../cockpit/ShortcutsOverlay";
 
 // The shell derives the capture filename from the App-owned summary state and
 // provides a self-contained "load capture" affordance (drag-drop / file picker)
@@ -79,6 +80,15 @@ export interface AppShellProps {
   children: ReactNode;
 }
 
+/** True when focus is in a text-entry control, so global single-key shortcuts must stay inert. */
+function isEditableTarget(el: Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable) return true;
+  const role = el.getAttribute("role");
+  return role === "textbox" || role === "searchbox" || role === "combobox" || role === "spinbutton";
+}
+
 export function AppShell({
   activeTab,
   onTabChange,
@@ -121,6 +131,18 @@ export function AppShell({
   // Mobile-first shell: under `md` the rail becomes a drawer and tabs move to a bottom bar.
   const isMobile = useIsMobile();
   const [threatDrawerOpen, setThreatDrawerOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  const tabs = useMemo(
+    () => [
+      { id: "dashboard" as const, label: "Dashboard" },
+      { id: "flows" as const, label: "Flows" },
+      { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
+      ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
+    ],
+    [recentCount, compareActive],
+  );
+
   // Never strand an open drawer on the desktop layout (e.g. on rotate/resize).
   useEffect(() => {
     if (!isMobile) setThreatDrawerOpen(false);
@@ -146,6 +168,32 @@ export function AppShell({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [paletteOpen, loadDialogOpen, onPaletteOpenChange]);
+
+  // `?` opens the shortcut help; digit keys jump between tabs. Both are inert while the
+  // user is typing or any modal dialog (palette, drawer, settings, consents…) is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditableTarget(document.activeElement)) return;
+      // Inert while a modal is up: gate on the state we own (synchronous, no render race)
+      // plus a DOM check for App-level dialogs (settings, consents) AppShell doesn't track.
+      if (paletteOpen || loadDialogOpen || shortcutsOpen || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      // `?` matches the character (layout-robust via e.key); the ⌘K palette also offers a
+      // "Keyboard shortcuts" action as a pointer / layout-independent fallback.
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      const idx = ["1", "2", "3", "4"].indexOf(e.key);
+      if (idx >= 0 && idx < tabs.length) {
+        e.preventDefault();
+        onTabChange(tabs[idx].id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paletteOpen, loadDialogOpen, shortcutsOpen, onTabChange, tabs]);
 
   const runExport = useCallback(
     async (fn?: () => Promise<ExportResult | undefined>) => {
@@ -187,12 +235,6 @@ export function AppShell({
     return null;
   }, [summary]);
 
-  const tabs = [
-    { id: "dashboard" as const, label: "Dashboard" },
-    { id: "flows" as const, label: "Flows" },
-    { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
-    ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
-  ];
   const captureStatus =
     summary.status === "ready" ? "ready" :
     summary.status === "loading" ? "loading" :
@@ -205,6 +247,7 @@ export function AppShell({
     { id: "go-compare", label: "Compare captures", hint: "view", run: () => onTabChange("recent") },
     { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
     { id: "toggle-rail", label: collapsed ? "Expand sidebar" : "Collapse sidebar", hint: "action", run: onToggleCollapse },
+    { id: "shortcuts", label: "Keyboard shortcuts", hint: "help", run: () => setShortcutsOpen(true) },
     ...(onLoadRules ? [
       { id: "load-rules", label: "Load detection rules…", hint: "action", run: onLoadRules },
     ] : []),
@@ -281,6 +324,11 @@ export function AppShell({
         actions={paletteActions}
         threats={threats}
         onSelectHost={onSelectThreat}
+      />
+      <ShortcutsOverlay
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+        tabs={tabs}
       />
     </div>
   );

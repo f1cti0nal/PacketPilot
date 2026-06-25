@@ -141,4 +141,47 @@ describe("AppShell", () => {
       window.matchMedia = real;
     }
   });
+
+  it("pressing ? opens the keyboard shortcuts overlay", () => {
+    render(<AppShell {...minimalProps()} />);
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+  });
+
+  it("digit keys jump to the matching tab", () => {
+    const onTabChange = vi.fn();
+    render(<AppShell {...minimalProps({ onTabChange })} />);
+    fireEvent.keyDown(window, { key: "2" });
+    expect(onTabChange).toHaveBeenCalledWith("flows");
+  });
+
+  it("shortcut keys are inert while the command palette is open", () => {
+    const onTabChange = vi.fn();
+    render(<AppShell {...minimalProps({ paletteOpen: true, onTabChange })} />);
+    fireEvent.keyDown(window, { key: "2" });
+    fireEvent.keyDown(window, { key: "?" });
+    expect(onTabChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
+  it("digit keys are inert while the shortcuts overlay is open", () => {
+    const onTabChange = vi.fn();
+    render(<AppShell {...minimalProps({ onTabChange })} />);
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "2" });
+    expect(onTabChange).not.toHaveBeenCalled();
+  });
+
+  it("digit keys are inert while a text field is focused", () => {
+    const onTabChange = vi.fn();
+    render(<AppShell {...minimalProps({ onTabChange })} />);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(window, { key: "2" });
+    expect(onTabChange).not.toHaveBeenCalled();
+    input.remove();
+  });
 });

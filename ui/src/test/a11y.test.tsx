@@ -11,6 +11,7 @@ import { ReputationConsent } from "../cockpit/ReputationConsent";
 import { SettingsDialog } from "../cockpit/SettingsDialog";
 import { AiChatPanel } from "../cockpit/AiChatPanel";
 import { ThreatRail } from "../cockpit/ThreatRail";
+import { ShortcutsOverlay } from "../cockpit/ShortcutsOverlay";
 
 const noop = () => {};
 const threats = makeOutput().summary.ip_threats ?? [];
@@ -69,6 +70,17 @@ describe("accessibility (axe)", () => {
   it("ThreatRail has no violations", async () => {
     const { container } = render(
       <ThreatRail threats={threats} collapsed={false} activeIp={threats[0]?.ip ?? null} onSelect={noop} />,
+    );
+    await expectNoA11yViolations(container);
+  });
+
+  it("ShortcutsOverlay has no violations", async () => {
+    const { container } = render(
+      <ShortcutsOverlay
+        open
+        onClose={noop}
+        tabs={[{ id: "dashboard", label: "Dashboard" }, { id: "flows", label: "Flows" }]}
+      />,
     );
     await expectNoA11yViolations(container);
   });
