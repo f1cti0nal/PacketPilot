@@ -174,6 +174,15 @@ describe("AppShell", () => {
     expect(onTabChange).not.toHaveBeenCalled();
   });
 
+  it("Escape closes the shortcuts overlay even when focus is outside it", () => {
+    render(<AppShell {...minimalProps()} />);
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    // Window-level Escape (focus not inside the dialog) still dismisses it.
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
   it("digit keys are inert while a text field is focused", () => {
     const onTabChange = vi.fn();
     render(<AppShell {...minimalProps({ onTabChange })} />);

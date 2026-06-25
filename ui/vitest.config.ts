@@ -4,6 +4,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   test: {
+    // Unit tests live under src/; e2e/ is Playwright's (its specs import @playwright/test).
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
