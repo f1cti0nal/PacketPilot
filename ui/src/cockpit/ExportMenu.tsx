@@ -43,11 +43,12 @@ export function ExportMenu({
         Export
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
+        <div role="menu" aria-label="Export formats" className="absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
           {actions.map((a) => (
             <button
               key={a.id}
               type="button"
+              role="menuitem"
               onClick={() => { setOpen(false); a.run(); }}
               className="block w-full px-3 py-1.5 text-left text-xs text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-accent)]"
             >

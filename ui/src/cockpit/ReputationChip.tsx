@@ -21,6 +21,7 @@ export function ReputationChip({ reputation }: { reputation: ReputationVerdict[]
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        aria-label={`Reputation ${worst.status} from ${worst.source}; show per-provider details`}
         className="t-tag inline-flex items-center gap-1"
         title={reputation.map((vd) => `${vd.source}: ${vd.status}`).join(" · ")}
       >

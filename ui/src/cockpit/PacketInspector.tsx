@@ -4,6 +4,7 @@ import { X, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { humanBytes, humanNumber } from "../lib/format";
 import { hexLines } from "../lib/hexdump";
+import { FOCUSABLE } from "../lib/useDialogA11y";
 import type { FlowPackets, FlowRow } from "../types";
 
 const ROW_H = 28;
@@ -15,11 +16,23 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
   useEffect(() => { setSel(0); }, [packets]);
   const closeRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Tab" && sectionRef.current) {
+        const f = sectionRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
+        if (f.length > 0) {
+          const first = f[0];
+          const last = f[f.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); prev?.focus?.(); };
   }, [onClose]);
@@ -31,7 +44,7 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
   return (
     <div role="dialog" aria-modal="true" aria-label={`Packets for ${flow.srcIp}:${flow.srcPort} to ${flow.dstIp}:${flow.dstPort}`} className="fixed inset-0 z-50 flex items-stretch justify-end">
       <button aria-hidden type="button" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <section className="glass-band relative flex h-full w-full max-w-[860px] flex-col border-l border-[var(--color-border)]">
+      <section ref={sectionRef} className="glass-band relative flex h-full w-full max-w-[860px] flex-col border-l border-[var(--color-border)]">
         <header className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="font-mono-num truncate text-[13px] text-[var(--color-text)]">{flow.srcIp}:{flow.srcPort} → {flow.dstIp}:{flow.dstPort}</div>

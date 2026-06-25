@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useDialogA11y } from "../lib/useDialogA11y";
 import { isTauri, repEnabled, setRepEnabled, domainEnabled, setDomainEnabled, getProxyUrl, setProxyUrl, getKey, setKey, type Provider } from "../lib/reputation/settings";
 import {
   AI_PRESETS,
@@ -13,6 +14,7 @@ import {
 const PROVIDERS: Provider[] = ["abuseipdb", "greynoise", "virustotal"];
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
+  const { ref, onKeyDown } = useDialogA11y(onClose);
   const [enabled, setEnabled] = useState(repEnabled());
   const [domainEnabledState, setDomainEnabledState] = useState(domainEnabled());
   const [proxy, setProxy] = useState(getProxyUrl());
@@ -84,7 +86,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div role="dialog" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[28rem] max-h-[90vh] overflow-y-auto rounded-lg bg-[var(--color-surface)] p-5 text-[var(--color-text)]">
         {/* Reputation section */}
         <h2 className="text-sm font-semibold">Online reputation</h2>

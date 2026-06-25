@@ -24,7 +24,7 @@ describe("CommandBar", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
-  it("active tab has aria-pressed true", () => {
+  it("active tab is marked with aria-current=page", () => {
     render(
       <CommandBar
         {...defaultProps}
@@ -36,9 +36,9 @@ describe("CommandBar", () => {
       />,
     );
     const dashBtn = screen.getByRole("button", { name: "Dashboard" });
-    expect(dashBtn).toHaveAttribute("aria-pressed", "true");
+    expect(dashBtn).toHaveAttribute("aria-current", "page");
     const flowsBtn = screen.getByRole("button", { name: "Flows" });
-    expect(flowsBtn).toHaveAttribute("aria-pressed", "false");
+    expect(flowsBtn).not.toHaveAttribute("aria-current");
   });
 
   it("clicking a tab calls onTab", async () => {
