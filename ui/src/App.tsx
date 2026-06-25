@@ -669,7 +669,7 @@ export function App() {
         />
       ) : summary.status === "idle" ? (
         IS_TAURI ? (
-          <EmptyState title="No capture loaded" />
+          <EmptyState title="No capture loaded" onLoad={handleRequestLoad} />
         ) : (
           <LoadingState label="Loading summary…" />
         )
