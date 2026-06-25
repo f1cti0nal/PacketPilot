@@ -232,6 +232,17 @@ body {
 @keyframes blip-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Universal safety net: neutralizes every animation/transition (Tailwind animate-spin
+     loaders, hover/state transitions, and any future or engine-added motion). The curated
+     resets below still win by specificity to leave specific elements in their final state. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   .glow-critical { animation: none; }
   .radar-sweep { animation: none !important; }
   .kill-spine-fill { animation: none !important; transform: none !important; }
