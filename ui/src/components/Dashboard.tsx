@@ -116,7 +116,7 @@ export function Dashboard({
 
   return (
     <div className="app-bg min-h-full">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-3 p-4 sm:p-5">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-[var(--density-gap)] p-4 sm:p-5">
         {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
         <KpiCluster output={output} />
         <AiSummaryCard output={output} captureId={captureKey(output)} />
@@ -133,7 +133,7 @@ export function Dashboard({
         {secondary.length > 0 && (
           <div>
             <SectionLabel className="mb-2">Other incidents · {secondary.length}</SectionLabel>
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-[var(--density-gap)] xl:grid-cols-2">
               {secondary.map((inc, i) => (
                 <IncidentHero
                   key={`${inc.host}-${i}`}
@@ -171,7 +171,7 @@ export function Dashboard({
         />
 
         {/* Zones 4 & 5 — category / integrity / protocol / talkers */}
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+        <div className="grid grid-cols-1 gap-[var(--density-gap)] lg:grid-cols-12">
           <div className="lg:col-span-7">
             <CategoryMatrix breakdown={s.category_breakdown} onJump={toFlowsCat} />
           </div>
@@ -244,7 +244,7 @@ function ThreatWatchlist({
         </span>
       }
     >
-      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-[var(--density-gap-sm)] md:grid-cols-2 xl:grid-cols-3">
         {top.map((t) => {
           const color = sevColor(t.severity);
           return (
@@ -253,7 +253,7 @@ function ThreatWatchlist({
                 type="button"
                 onClick={() => onSelect(t.ip)}
                 aria-label={`${t.ip}, ${t.severity}, score ${t.score} of 100${t.ioc ? ", on an indicator feed" : ""}`}
-                className="flex w-full flex-col gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 text-left transition-colors hover:border-[var(--color-border-strong)]"
+                className="flex w-full flex-col gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-[var(--density-pad)] text-left transition-colors hover:border-[var(--color-border-strong)]"
                 style={{ borderLeftColor: color, borderLeftWidth: 2 }}
               >
                 <div className="flex items-center gap-2">

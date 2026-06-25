@@ -18,6 +18,7 @@ import type { TabId } from "../types";
 import { ExportMenu } from "./ExportMenu";
 import type { ExportAction } from "./ExportMenu";
 import { ThemeToggle } from "./ThemeToggle";
+import { DensityToggle } from "./DensityToggle";
 
 const DEFAULT_TABS: ReadonlyArray<{ id: TabId; label: string; badge?: number }> = [
   { id: "dashboard", label: "Dashboard" },
@@ -174,6 +175,7 @@ export function CommandBar({
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
         </button>
+        <DensityToggle />
         <ThemeToggle />
         {onOpenSettings && (
           <button
