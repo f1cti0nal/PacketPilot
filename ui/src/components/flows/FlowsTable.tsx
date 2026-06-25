@@ -357,6 +357,7 @@ export function FlowsTable({
         ref={scrollRef}
         className="min-h-0 flex-1 overflow-auto"
         role="grid"
+        tabIndex={0}
         aria-rowcount={tableRows.length}
       >
         <div style={{ width: totalWidth, minWidth: "100%" }}>
