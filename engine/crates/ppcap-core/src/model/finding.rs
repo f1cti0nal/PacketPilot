@@ -50,6 +50,9 @@ pub enum FindingKind {
     SynFlood,
     /// Known attack-tool / scanner identified by its HTTP User-Agent (sqlmap, nikto, nmap, …).
     SuspiciousUa,
+    /// File-type masquerade: an executable body served over HTTP behind a benign `Content-Type`
+    /// (e.g. an `.exe` delivered as `image/jpeg`) — malware-delivery evasion (T1036).
+    DisguisedDownload,
 }
 
 impl FindingKind {
@@ -73,6 +76,7 @@ impl FindingKind {
             FindingKind::ArpSpoof => "arp_spoof",
             FindingKind::SynFlood => "syn_flood",
             FindingKind::SuspiciousUa => "suspicious_ua",
+            FindingKind::DisguisedDownload => "disguised_download",
         }
     }
 }

@@ -78,6 +78,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         http_host: None,
         http_ua: None,
         download: None,
+        download_disguised: false,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -256,9 +257,13 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         meta.hassh = crate::ssh::sniff_client_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
         meta.hassh_server =
             crate::ssh::sniff_server_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
-        // Downloaded-file class from an HTTP response's Content-Type / filename (header-only peek;
-        // no body bytes are read). `None` for requests, ordinary content, and non-HTTP.
-        meta.download = sniff_http_download(payload);
+        // Downloaded-file class from an HTTP response: response-body magic bytes (content-based)
+        // where present, else the Content-Type / filename. Also flags a file-type masquerade (an
+        // executable body served behind a benign Content-Type). `None`/false for requests, ordinary
+        // content, and non-HTTP.
+        let (dl_kind, dl_disguised) = sniff_http_download(payload);
+        meta.download = dl_kind;
+        meta.download_disguised = dl_disguised;
     }
 
     Ok(())
@@ -808,11 +813,11 @@ fn http_header_value(buf: &[u8], name: &[u8]) -> Option<String> {
 /// Classify a downloaded-file class from an HTTP **response**'s `Content-Type` / `Content-Disposition`
 /// headers (header-only peek; the body is never read). `None` for requests, non-HTTP, and ordinary
 /// content. Only the *class* is derived — no filename or body bytes are retained. Never panics.
-fn sniff_http_download(payload: &[u8]) -> Option<DownloadKind> {
+fn sniff_http_download(payload: &[u8]) -> (Option<DownloadKind>, bool) {
     // Only an HTTP *response* status line ("HTTP/1.1 200 OK") declares a served content type. A
     // request line ("GET /x HTTP/1.1") merely *contains* "HTTP/" later, so the prefix check excludes it.
     if !starts_with_ci(payload, b"HTTP/") {
-        return None;
+        return (None, false);
     }
     let scan = &payload[..payload.len().min(1024)];
     let ctype = http_header_value(scan, b"content-type:")
@@ -821,7 +826,96 @@ fn sniff_http_download(payload: &[u8]) -> Option<DownloadKind> {
     let ext = http_header_value(scan, b"content-disposition:")
         .and_then(|cd| cdisp_filename_ext(&cd))
         .unwrap_or_default();
-    classify_download(&ctype, &ext)
+    let header_kind = classify_download(&ctype, &ext);
+    // True content type from the body's leading magic bytes — defeats a spoofed Content-Type.
+    let magic_kind = http_body_magic(scan);
+    // A real native executable can never legitimately carry a document/media/page Content-Type;
+    // such a mismatch is a deliberate file-type masquerade (T1036).
+    let disguised =
+        matches!(magic_kind, Some(DownloadKind::Executable)) && is_benign_content_type(&ctype);
+    // Content (true magic) takes precedence over the server's declaration.
+    (magic_kind.or(header_kind), disguised)
+}
+
+/// Identify a notable file class from the leading magic bytes of an HTTP **response body** (the bytes
+/// after the header/body CRLF separator within the bounded peek). Content-based — defeats a spoofed
+/// `Content-Type`. `None` when the body is absent from the peek or matches no signature. Only the
+/// *class* is derived; no body bytes are retained. Never panics.
+fn http_body_magic(scan: &[u8]) -> Option<DownloadKind> {
+    let sep = find_ci(scan, b"\r\n\r\n")?;
+    let body = scan.get(sep + 4..)?;
+    if body.len() < 2 {
+        return None;
+    }
+    // Native executables. ELF / Mach-O magics contain non-ASCII bytes (inherently binary). The PE
+    // "MZ" magic is two *printable* letters, so additionally require the body to actually look binary
+    // — a text file that merely starts with "MZ" is not an executable (avoids a masquerade false
+    // positive on text/plain content).
+    if body.starts_with(b"\x7fELF") {
+        return Some(DownloadKind::Executable); // ELF
+    }
+    if body.starts_with(&[0xFE, 0xED, 0xFA, 0xCE])
+        || body.starts_with(&[0xFE, 0xED, 0xFA, 0xCF])
+        || body.starts_with(&[0xCE, 0xFA, 0xED, 0xFE])
+        || body.starts_with(&[0xCF, 0xFA, 0xED, 0xFE])
+    {
+        return Some(DownloadKind::Executable); // Mach-O (thin)
+    }
+    if body.starts_with(b"MZ") && looks_binary(body) {
+        return Some(DownloadKind::Executable); // PE/DOS
+    }
+    // Scripts (a Unix shebang; Windows scripts are plain text with no magic).
+    if body.starts_with(b"#!") {
+        return Some(DownloadKind::Script);
+    }
+    // Installers / OS packages.
+    if body.starts_with(b"MSCF") || body.starts_with(b"!<arch>") {
+        return Some(DownloadKind::Installer); // Windows CAB, ar/.deb
+    }
+    // Archives (a common malware container).
+    if body.starts_with(b"PK\x03\x04")
+        || body.starts_with(b"PK\x05\x06")
+        || body.starts_with(b"Rar!\x1a\x07")
+        || body.starts_with(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C])
+        || body.starts_with(&[0x1F, 0x8B])
+        || body.starts_with(&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00])
+        || body.starts_with(b"BZh")
+    {
+        return Some(DownloadKind::Archive); // ZIP(+jar/apk/office), RAR, 7z, gzip, xz, bzip2
+    }
+    None
+}
+
+/// True if the leading bytes contain a control byte (other than tab/CR/LF) — i.e. the content is
+/// binary, not text. Disambiguates the printable "MZ" PE magic from text that merely starts with
+/// "MZ". Keyed on *control* bytes only, NOT high bytes (`>= 0x7f`): a UTF-8 text body legitimately
+/// carries high bytes, whereas a real PE's DOS header is full of `0x00`s — so this stays precise
+/// (no false executable on accented UTF-8 text) without missing real PEs.
+fn looks_binary(body: &[u8]) -> bool {
+    body.iter()
+        .take(16)
+        .any(|&b| b < 0x09 || (0x0e..0x20).contains(&b))
+}
+
+/// True when a `Content-Type` (lowercased) is a specifically benign document / media / page type that
+/// a native executable could never legitimately be — the contradiction that marks a masquerade.
+/// Generic `application/octet-stream` / `application/x-*` and an absent type are NOT benign here
+/// (an unlabeled binary download is ordinary, not a disguise).
+fn is_benign_content_type(ctype: &str) -> bool {
+    const BENIGN: &[&str] = &[
+        "text/html",
+        "text/plain",
+        "text/css",
+        "text/javascript",
+        "image/",
+        "audio/",
+        "video/",
+        "font/",
+        "application/json",
+        "application/xml",
+        "application/xhtml",
+    ];
+    BENIGN.iter().any(|b| ctype.contains(b))
 }
 
 /// Extract a lowercase file extension (sans dot) from a `Content-Disposition` value's `filename=`
@@ -1224,6 +1318,7 @@ mod tests {
             http_host: None,
             http_ua: None,
             download: None,
+            download_disguised: false,
         }
     }
 
@@ -1838,23 +1933,60 @@ mod tests {
     fn sniff_http_download_classifies_notable_responses() {
         // Executable by Content-Type.
         let exe = b"HTTP/1.1 200 OK\r\nContent-Type: application/x-msdownload\r\n\r\nMZ\x90\x00";
-        assert_eq!(sniff_http_download(exe), Some(DownloadKind::Executable));
+        assert_eq!(sniff_http_download(exe).0, Some(DownloadKind::Executable));
         // Script by Content-Disposition filename (the type is generic octet-stream).
         let ps1 = b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"payload.ps1\"\r\n\r\n";
-        assert_eq!(sniff_http_download(ps1), Some(DownloadKind::Script));
+        assert_eq!(sniff_http_download(ps1).0, Some(DownloadKind::Script));
         // Installer + archive by extension.
         let msi = b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=setup.msi\r\n\r\n";
-        assert_eq!(sniff_http_download(msi), Some(DownloadKind::Installer));
+        assert_eq!(sniff_http_download(msi).0, Some(DownloadKind::Installer));
         let zip = b"HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\n\r\n";
-        assert_eq!(sniff_http_download(zip), Some(DownloadKind::Archive));
+        assert_eq!(sniff_http_download(zip).0, Some(DownloadKind::Archive));
         // Ordinary content -> None; a REQUEST (not a response) -> None.
         let html = b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<html>";
-        assert_eq!(sniff_http_download(html), None);
+        assert_eq!(sniff_http_download(html).0, None);
         let req = b"GET /app.json HTTP/1.1\r\nHost: x\r\n\r\n";
-        assert_eq!(sniff_http_download(req), None);
+        assert_eq!(sniff_http_download(req).0, None);
         // A `.json` filename must NOT be misread as a `.js` script (precise extension match).
         let json = b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=data.json\r\n\r\n";
-        assert_eq!(sniff_http_download(json), None);
+        assert_eq!(sniff_http_download(json).0, None);
+    }
+
+    #[test]
+    fn sniff_http_download_detects_magic_and_masquerade() {
+        // Body magic overrides a spoofed Content-Type: a PE ("MZ") served as image/jpeg is an
+        // executable AND a masquerade (T1036).
+        let disguised = b"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\n\r\nMZ\x90\x00\x03";
+        let (kind, masq) = sniff_http_download(disguised);
+        assert_eq!(kind, Some(DownloadKind::Executable));
+        assert!(masq);
+        // ELF served as text/html — also a masquerade.
+        let elf = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\x7fELF\x02\x01";
+        assert!(sniff_http_download(elf).1);
+        // A real executable served as the generic octet-stream is NOT a masquerade (ordinary binary).
+        let plain = b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\r\nMZ\x90\x00";
+        let (k2, m2) = sniff_http_download(plain);
+        assert_eq!(k2, Some(DownloadKind::Executable));
+        assert!(!m2);
+        // A genuine JPEG (its own magic) served as image/jpeg — not executable, not a masquerade.
+        let jpeg = b"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\n\r\n\xFF\xD8\xFF\xE0";
+        let (k3, m3) = sniff_http_download(jpeg);
+        assert_eq!(k3, None);
+        assert!(!m3);
+        // A ZIP body is classified as an archive (content-based) even with no Content-Type.
+        let zipbody = b"HTTP/1.1 200 OK\r\n\r\nPK\x03\x04rest";
+        assert_eq!(sniff_http_download(zipbody).0, Some(DownloadKind::Archive));
+        // A text file that merely STARTS with "MZ" (all printable) is NOT an executable / masquerade.
+        let mztext = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nMZ is the DOS magic prefix.";
+        let (k4, m4) = sniff_http_download(mztext);
+        assert_eq!(k4, None);
+        assert!(!m4);
+        // UTF-8 text starting "MZ" with a high (non-ASCII) byte is still text, not a binary PE: the
+        // binary check keys on control bytes, not high bytes (no false executable / masquerade).
+        let mzutf8 = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nMZ\xc3\xa9 caf\xc3\xa9 notes";
+        let (k5, m5) = sniff_http_download(mzutf8);
+        assert_eq!(k5, None);
+        assert!(!m5);
     }
 
     #[test]

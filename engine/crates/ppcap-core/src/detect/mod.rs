@@ -126,7 +126,7 @@ impl StreamStats {
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use crate::model::packet::{CredScheme, PiiKind};
+use crate::model::packet::{CredScheme, DownloadKind, PiiKind};
 use crate::tls::{CertIssue, WeakTlsReason};
 
 /// Identity of a directed "destination contact channel": one source reaching one
@@ -276,6 +276,18 @@ pub struct ToolUaCandidate {
     pub hits: u64,
     /// One example User-Agent string.
     pub sample: String,
+}
+
+/// A `(client, server)` pair where the client downloaded a disguised executable (an executable body
+/// served behind a benign `Content-Type`) — a file-type masquerade candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisguisedDownloadCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    /// The true (magic-derived) file class — always [`DownloadKind::Executable`] for now.
+    pub kind: DownloadKind,
+    /// Number of disguised responses on this channel.
+    pub hits: u64,
 }
 
 /// A `(target, port)` service hit by many half-open connections — a SYN-flood / TCP-DoS candidate.
@@ -500,6 +512,17 @@ pub struct BehaviorTracker {
     syn_flood: HashMap<(IpAddr, u16), SynFloodStat>,
     /// Per-source attack-tool identified by its HTTP User-Agent. Bounded by `max_tracked_keys`.
     tool_ua: HashMap<IpAddr, ToolUaStat>,
+    /// Per-`(client, server)` count of disguised executable downloads (an executable body served
+    /// behind a benign `Content-Type`). Bounded by `max_tracked_keys`.
+    disguised_dl: HashMap<(IpAddr, IpAddr), DisguisedDlStat>,
+}
+
+/// Per-`(client, server)` disguised-download observation: the true (magic-derived) file class and how
+/// many such masquerading responses were seen.
+#[derive(Debug, Clone)]
+struct DisguisedDlStat {
+    kind: DownloadKind,
+    hits: u64,
 }
 
 /// Per-source attack-tool User-Agent observation: the matched tool, how many requests carried it,
@@ -573,6 +596,7 @@ impl BehaviorTracker {
             arp: HashMap::new(),
             syn_flood: HashMap::new(),
             tool_ua: HashMap::new(),
+            disguised_dl: HashMap::new(),
         }
     }
 
@@ -964,6 +988,40 @@ impl BehaviorTracker {
             })
             .collect();
         out.sort_by(|a, b| b.hits.cmp(&a.hits).then(a.src.cmp(&b.src)));
+        out
+    }
+
+    /// Fold one disguised executable download: the `client` received an executable body (`kind`) from
+    /// `server` behind a benign `Content-Type`. Counts masquerading responses per channel. Bounded: a
+    /// brand-new channel at capacity is dropped.
+    pub fn observe_disguised_download(&mut self, client: IpAddr, server: IpAddr, kind: DownloadKind) {
+        let key = (client, server);
+        if let Some(stat) = self.disguised_dl.get_mut(&key) {
+            stat.hits = stat.hits.saturating_add(1);
+        } else if self.disguised_dl.len() < self.cfg.max_tracked_keys.max(1) {
+            self.disguised_dl.insert(key, DisguisedDlStat { kind, hits: 1 });
+        }
+    }
+
+    /// All `(client, server)` channels that delivered a disguised executable. Returned most-active
+    /// first, then by endpoints for determinism.
+    pub fn disguised_download_candidates(&self) -> Vec<DisguisedDownloadCandidate> {
+        let mut out: Vec<DisguisedDownloadCandidate> = self
+            .disguised_dl
+            .iter()
+            .map(|(&(client, server), s)| DisguisedDownloadCandidate {
+                client,
+                server,
+                kind: s.kind,
+                hits: s.hits,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.hits
+                .cmp(&a.hits)
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+        });
         out
     }
 
@@ -1840,6 +1898,58 @@ pub fn detect_suspicious_ua(tracker: &BehaviorTracker, params: &SuspiciousUaPara
                     c.hits, c.tool
                 ),
                 format!("User-Agent: {shown}"),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.hits),
+        });
+    }
+    findings
+}
+
+/// Tuning for the disguised-download (file-type masquerade) detector.
+#[derive(Debug, Clone)]
+pub struct DisguisedDownloadParams {
+    /// Master switch.
+    pub enabled: bool,
+}
+
+impl Default for DisguisedDownloadParams {
+    fn default() -> Self {
+        DisguisedDownloadParams { enabled: true }
+    }
+}
+
+/// Detect file-type masquerades: one [`Finding`] per `(client, server)` that delivered an executable
+/// body over HTTP behind a benign `Content-Type` (e.g. an `.exe` served as `image/jpeg`) — a strong,
+/// low-false-positive malware-delivery signal. High severity, ATT&CK T1036 (Masquerading) + T1105
+/// (Ingress Tool Transfer). Deterministic order.
+pub fn detect_disguised_download(
+    tracker: &BehaviorTracker,
+    params: &DisguisedDownloadParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.disguised_download_candidates() {
+        findings.push(Finding {
+            kind: FindingKind::DisguisedDownload,
+            severity: Severity::High,
+            score: 70,
+            title: format!("Disguised {} download by {}", c.kind.as_str(), c.client),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: None,
+            attack: vec!["T1036".to_string(), "T1105".to_string()],
+            evidence: vec![
+                format!(
+                    "{} response(s) from {} carried {} content behind a benign Content-Type",
+                    c.hits,
+                    c.server,
+                    c.kind.as_str()
+                ),
+                "the file's magic bytes contradict the server's declared type — a deliberate masquerade".to_string(),
             ],
             interval_ns: None,
             jitter_cv: None,
@@ -2832,6 +2942,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::ArpSpoof => 3,      // collection (adversary-in-the-middle positioning)
         FindingKind::SynFlood => 6,      // impact (service denial)
         FindingKind::SuspiciousUa => 0,  // discovery (active scanning with a known tool)
+        FindingKind::DisguisedDownload => 4, // command-and-control (malware payload delivery)
     }
 }
 
@@ -2855,6 +2966,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::ArpSpoof => "Collection",
         FindingKind::SynFlood => "Impact",
         FindingKind::SuspiciousUa => "Discovery",
+        FindingKind::DisguisedDownload => "Command & Control",
     }
 }
 
@@ -2878,6 +2990,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::ArpSpoof => "poisoned ARP caches",
         FindingKind::SynFlood => "flooded a service with half-open connections",
         FindingKind::SuspiciousUa => "used a known attack tool",
+        FindingKind::DisguisedDownload => "downloaded a disguised executable",
     }
 }
 
@@ -3357,6 +3470,31 @@ mod tests {
         // tool tokens are listed (no bare "hydra", which is a real product/word).
         assert_eq!(match_tool_ua("Hydra-Livecoding/1.4 (https://hydra.ojack.xyz)"), None);
         assert_eq!(match_tool_ua("MyApp/2.0 (hydration-service)"), None);
+    }
+
+    // ── disguised download (file-type masquerade) ────────────────────────────────
+
+    #[test]
+    fn detect_disguised_download_flags_masquerading_executables() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let client = ip(10, 0, 0, 9);
+        let server = ip(93, 184, 216, 34);
+        // Two executable bodies served disguised from the same server to the same client.
+        t.observe_disguised_download(client, server, DownloadKind::Executable);
+        t.observe_disguised_download(client, server, DownloadKind::Executable);
+        // An unrelated benign channel is not observed (the decode gate never calls observe for it).
+
+        let f = detect_disguised_download(&t, &DisguisedDownloadParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::DisguisedDownload);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.9"); // the receiving client
+        assert_eq!(f[0].dst_ip.as_deref(), Some("93.184.216.34"));
+        assert!(f[0].attack.iter().any(|a| a == "T1036"));
+        assert_eq!(f[0].contacts, Some(2));
+        // The disabled switch suppresses it.
+        let off = DisguisedDownloadParams { enabled: false };
+        assert!(detect_disguised_download(&t, &off).is_empty());
     }
 
     #[test]

@@ -17,13 +17,14 @@ use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
-    detect_cleartext_creds, detect_dga, detect_dns_tunnel, detect_exfil, detect_icmp_tunnel,
-    detect_arp_spoof, detect_lateral_movement, detect_pii_exposure, detect_port_scan,
-    detect_suspicious_ua, detect_sweeps, detect_syn_flood, detect_tls_cert_health, detect_weak_tls,
-    suppress_swept_by_lateral, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
-    LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams,
-    SynFloodParams, TlsCertHealthParams, WeakTlsParams,
+    detect_cleartext_creds, detect_dga, detect_disguised_download, detect_dns_tunnel, detect_exfil,
+    detect_icmp_tunnel, detect_arp_spoof, detect_lateral_movement, detect_pii_exposure,
+    detect_port_scan, detect_suspicious_ua, detect_sweeps, detect_syn_flood, detect_tls_cert_health,
+    detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams, BehaviorTracker,
+    BruteForceParams, CleartextCredsParams, DetectConfig, DgaParams, DisguisedDownloadParams,
+    DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams, PiiExposureParams,
+    PortScanParams, SuspiciousUaParams, SweepParams, SynFloodParams, TlsCertHealthParams,
+    WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -88,6 +89,8 @@ pub struct PipelineConfig {
     pub syn_flood: SynFloodParams,
     /// Suspicious-User-Agent (attack-tool) detector tuning.
     pub suspicious_ua: SuspiciousUaParams,
+    /// Disguised-download (file-type masquerade) detector tuning.
+    pub disguised_download: DisguisedDownloadParams,
 }
 
 impl Default for PipelineConfig {
@@ -123,6 +126,7 @@ impl Default for PipelineConfig {
             arp_spoof: ArpSpoofParams::default(),
             syn_flood: SynFloodParams::default(),
             suspicious_ua: SuspiciousUaParams::default(),
+            disguised_download: DisguisedDownloadParams::default(),
         }
     }
 }
@@ -318,6 +322,15 @@ pub fn run_source_visiting(
                 if let (Some(ua), Some(src)) = (&meta.http_ua, meta.src_ip) {
                     tracker.observe_user_agent(src, ua);
                 }
+                // Disguised download: an executable body served behind a benign Content-Type. The
+                // response travels server -> client, so dst_ip is the receiving client.
+                if meta.download_disguised {
+                    if let (Some(kind), Some(server), Some(client)) =
+                        (meta.download, meta.src_ip, meta.dst_ip)
+                    {
+                        tracker.observe_disguised_download(client, server, kind);
+                    }
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -416,6 +429,7 @@ pub fn run_source_visiting(
     findings.extend(detect_arp_spoof(&tracker, &cfg.arp_spoof));
     findings.extend(detect_syn_flood(&tracker, &cfg.syn_flood));
     findings.extend(detect_suspicious_ua(&tracker, &cfg.suspicious_ua));
+    findings.extend(detect_disguised_download(&tracker, &cfg.disguised_download));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

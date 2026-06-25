@@ -12,6 +12,7 @@ import {
   Unlock,
   Crosshair,
   FileWarning,
+  VenetianMask,
   ScanSearch,
   ShieldAlert,
   ShieldOff,
@@ -46,6 +47,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   arp_spoof: { label: "ARP Spoofing", Icon: Split },
   syn_flood: { label: "SYN Flood", Icon: Waves },
   suspicious_ua: { label: "Attack Tool", Icon: Bug },
+  disguised_download: { label: "Disguised Download", Icon: VenetianMask },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -66,6 +68,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   arp_spoof: "Collection",
   syn_flood: "Impact",
   suspicious_ua: "Discovery",
+  disguised_download: "Command & Control",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
@@ -80,6 +83,7 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   syn_flood: "half-open conns",
   suspicious_ua: "requests",
   cleartext_creds: "exposures",
+  disguised_download: "downloads",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */

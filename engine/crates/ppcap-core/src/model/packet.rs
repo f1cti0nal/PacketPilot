@@ -317,9 +317,13 @@ pub struct PacketMeta {
     pub http_host: Option<String>,
     /// HTTP request `User-Agent` header (derived metadata); `None` otherwise.
     pub http_ua: Option<String>,
-    /// Notable downloaded-file class from an HTTP response's `Content-Type`/filename; `None` for
-    /// requests, ordinary content, and non-HTTP.
+    /// Notable downloaded-file class from an HTTP response. Content-based (response-body magic bytes)
+    /// where available, else the declared `Content-Type`/filename; `None` for requests, ordinary
+    /// content, and non-HTTP.
     pub download: Option<DownloadKind>,
+    /// True when the response body's magic bytes are a native **executable** but the declared
+    /// `Content-Type` is a benign document/media/page type — a deliberate file-type masquerade (T1036).
+    pub download_disguised: bool,
 }
 
 impl PacketMeta {

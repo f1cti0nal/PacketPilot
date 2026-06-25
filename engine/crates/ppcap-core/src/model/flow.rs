@@ -391,6 +391,7 @@ mod tests {
             http_host: None,
             http_ua: None,
             download: None,
+            download_disguised: false,
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
@@ -454,6 +455,7 @@ mod tests {
             http_host: None,
             http_ua: None,
             download: None,
+            download_disguised: false,
         };
 
         let mut p1 = base.clone();

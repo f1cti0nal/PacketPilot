@@ -18,6 +18,7 @@ import {
   Shuffle,
   Siren,
   Unlock,
+  VenetianMask,
   Waves,
   Waypoints,
   type LucideIcon,
@@ -53,6 +54,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   arp_spoof: { label: "ARP Spoofing", Icon: Split },
   syn_flood: { label: "SYN Flood", Icon: Waves },
   suspicious_ua: { label: "Attack Tool", Icon: Bug },
+  disguised_download: { label: "Disguised Download", Icon: VenetianMask },
 };
 
 /** Worst-first ordering. */

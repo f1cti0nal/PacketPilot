@@ -58,9 +58,9 @@ pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::{
     fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, DetectConfig, DgaParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
-    LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams,
-    SynFloodParams, TlsCertHealthParams, WeakTlsParams,
+    CleartextCredsParams, DetectConfig, DgaParams, DisguisedDownloadParams, DnsTunnelParams,
+    ExfilParams, IcmpTunnelParams, LateralMovementParams, PiiExposureParams, PortScanParams,
+    SuspiciousUaParams, SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 pub use enrich::{
     apply_domain_reputation, apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher,

@@ -1136,6 +1136,7 @@ mod tests {
             http_host: None,
             http_ua: None,
             download: None,
+            download_disguised: false,
         }
     }
 
