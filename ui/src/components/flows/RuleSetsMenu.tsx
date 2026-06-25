@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listRuleSets, removeRuleSet, type RuleSet } from "../../lib/ruleSets";
+import { useMenuKeyboard } from "../../lib/useMenuKeyboard";
 
 export interface RuleSetsMenuProps {
   onLoadFile: () => void;
@@ -16,6 +17,9 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
   const [open, setOpen] = useState(false);
   const [sets, setSets] = useState<RuleSet[]>(listRuleSets);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const onMenuKeyDown = useMenuKeyboard(menuRef, open, () => setOpen(false), triggerRef);
 
   useEffect(() => {
     if (!open) return;
@@ -29,6 +33,7 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
   return (
     <div ref={ref} className="relative inline-flex">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
@@ -39,11 +44,12 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
       </button>
 
       {open && (
-        <div role="menu" aria-label="Rule sets" className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
+        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Rule sets" className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
           {/* Load .rules file row */}
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             disabled={disabled}
             title={disabled ? "Available for captures analyzed from a pcap" : undefined}
             onClick={() => { setOpen(false); onLoadFile(); }}
@@ -70,6 +76,7 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
                   <button
                     type="button"
                     role="menuitem"
+                    tabIndex={-1}
                     disabled={disabled}
                     title={disabled ? "Available for captures analyzed from a pcap" : undefined}
                     onClick={() => { setOpen(false); onApply(rs); }}
@@ -80,6 +87,7 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
                   <button
                     type="button"
                     role="menuitem"
+                    tabIndex={-1}
                     onClick={() => setSets(removeRuleSet(rs.id))}
                     aria-label={`Delete rule set ${rs.name}`}
                     className="shrink-0 p-1 text-[var(--color-text-faint)] hover:text-[var(--color-text)]"

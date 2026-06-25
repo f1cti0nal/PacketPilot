@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FileDown, Loader2 } from "lucide-react";
+import { useMenuKeyboard } from "../lib/useMenuKeyboard";
 
 export interface ExportAction {
   id: string;
@@ -19,6 +20,9 @@ export function ExportMenu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const onMenuKeyDown = useMenuKeyboard(menuRef, open, () => setOpen(false), triggerRef);
 
   useEffect(() => {
     if (!open) return;
@@ -32,6 +36,7 @@ export function ExportMenu({
   return (
     <div ref={ref} className="relative inline-flex">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={disabled || busy}
@@ -43,12 +48,13 @@ export function ExportMenu({
         Export
       </button>
       {open && (
-        <div role="menu" aria-label="Export formats" className="absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
+        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Export formats" className="absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
           {actions.map((a) => (
             <button
               key={a.id}
               type="button"
               role="menuitem"
+              tabIndex={-1}
               onClick={() => { setOpen(false); a.run(); }}
               className="block w-full px-3 py-1.5 text-left text-xs text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-accent)]"
             >
