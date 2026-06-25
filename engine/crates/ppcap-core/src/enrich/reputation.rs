@@ -330,6 +330,7 @@ mod apply_tests {
             resolved_ips: Vec::new(),
             arp_hosts: Vec::new(),
             downloads: Vec::new(),
+            encrypted_dns: Vec::new(),
             findings,
             incidents: vec![],
         }

@@ -210,6 +210,15 @@ pub struct DownloadEvent {
     pub count: u64,
 }
 
+/// One encrypted-DNS rollup row: a client host resolving via DoH/DoT, the resolver it used (a DoH
+/// hostname or a `<ip> (DoT)` label), and the flow count — the resolution passive DNS can't observe.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EncryptedDnsHost {
+    pub host: String,
+    pub resolver: String,
+    pub flows: u64,
+}
+
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Summary {
@@ -275,6 +284,10 @@ pub struct Summary {
     /// keeps older summaries readable.
     #[serde(default)]
     pub downloads: Vec<DownloadEvent>,
+    /// Encrypted DNS (DoH/DoT): client hosts whose DNS resolution is hidden from passive DNS.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub encrypted_dns: Vec<EncryptedDnsHost>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -320,6 +333,7 @@ impl Summary {
             resolved_ips: Vec::new(),
             arp_hosts: Vec::new(),
             downloads: Vec::new(),
+            encrypted_dns: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
         }

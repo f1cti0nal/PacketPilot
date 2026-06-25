@@ -102,6 +102,8 @@ export interface Summary {
   arp_hosts?: ArpHost[];
   /** Downloads overview: notable file classes served over HTTP; absent in older summaries. */
   downloads?: DownloadEvent[];
+  /** Encrypted DNS (DoH/DoT): hosts whose DNS is hidden from passive DNS; absent in older summaries. */
+  encrypted_dns?: EncryptedDnsHost[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -187,6 +189,13 @@ export interface ResolvedDomain {
 export interface ArpHost {
   ip: string;
   mac: string;
+}
+
+/** One encrypted-DNS row: a client host resolving via DoH/DoT, the resolver, and flow count. */
+export interface EncryptedDnsHost {
+  host: string;
+  resolver: string;
+  flows: number;
 }
 
 /** One downloads-overview row: a client that received a notable file class over HTTP from a server. */

@@ -169,6 +169,9 @@ pub struct StatsAccumulator {
     arp_macs: HashMap<IpAddr, [u8; 6]>,
     /// Downloads overview: (client, server, file class) → count, from HTTP responses. Bounded.
     downloads: HashMap<(IpAddr, IpAddr, DownloadKind), u64>,
+    /// Encrypted DNS (DoH/DoT): (client host, resolver label) → flow count — the resolution passive
+    /// DNS can't see. Bounded by `max_tracked_keys`.
+    encrypted_dns: HashMap<(IpAddr, String), u64>,
 }
 
 /// Upper bound on distinct destination ports retained per source for scan detection.
@@ -203,6 +206,7 @@ impl StatsAccumulator {
             per_http_ua: HashMap::new(),
             resolved: HashMap::new(),
             arp_macs: HashMap::new(),
+            encrypted_dns: HashMap::new(),
             downloads: HashMap::new(),
         }
     }
@@ -421,6 +425,14 @@ impl StatsAccumulator {
         // SNI domain rollup (traffic-ranked; bounded by max_tracked_keys, like per_ip_threat).
         if let Some(raw) = f.sni.as_deref() {
             let host = raw.trim().to_ascii_lowercase();
+            // Encrypted DNS (DoH): a TLS flow whose SNI is a known DoH resolver (server on :443). The
+            // client is the other endpoint — the host whose DNS is invisible to passive DNS. Checked
+            // before the `per_domain` entry moves `host`.
+            if is_doh_endpoint(&host) {
+                if let Some(client) = client_endpoint(&f.key, 443) {
+                    self.bump_encrypted_dns(client, &host);
+                }
+            }
             if valid_domain(&host)
                 && (self.per_domain.contains_key(&host)
                     || self.per_domain.len() < self.cfg.max_tracked_keys)
@@ -430,6 +442,16 @@ impl StatsAccumulator {
                 e.bytes += f.total_bytes();
             }
         }
+        // Encrypted DNS (DoT): a flow to the IANA DNS-over-TLS port (853). Attributed to the client.
+        if f.key.lo_port == DOT_PORT || f.key.hi_port == DOT_PORT {
+            if let Some(client) = client_endpoint(&f.key, DOT_PORT) {
+                let resolver = match client_endpoint_peer(&f.key, DOT_PORT) {
+                    Some(server) => format!("{server} (DoT)"),
+                    None => "DNS-over-TLS".to_string(),
+                };
+                self.bump_encrypted_dns(client, &resolver);
+            }
+        }
 
         // HTTP Host / User-Agent rollups (flow-count-ranked; bounded the same way).
         if let Some(host) = f.http_host.as_deref() {
@@ -437,6 +459,17 @@ impl StatsAccumulator {
         }
         if let Some(ua) = f.http_ua.as_deref() {
             bump_string_capped(&mut self.per_http_ua, ua, self.cfg.max_tracked_keys);
+        }
+    }
+
+    /// Record one encrypted-DNS (DoH/DoT) flow for `client` via `resolver`, bounded by
+    /// `max_tracked_keys`.
+    fn bump_encrypted_dns(&mut self, client: IpAddr, resolver: &str) {
+        let key = (client, resolver.to_string());
+        if self.encrypted_dns.contains_key(&key)
+            || self.encrypted_dns.len() < self.cfg.max_tracked_keys
+        {
+            *self.encrypted_dns.entry(key).or_insert(0) += 1;
         }
     }
 
@@ -726,6 +759,25 @@ impl StatsAccumulator {
         });
         downloads.truncate(TOP_K_DOWNLOADS);
 
+        // Encrypted-DNS rollup: hosts resolving via DoH/DoT, ranked by flow count then endpoints.
+        const TOP_K_ENCRYPTED_DNS: usize = 64;
+        let mut encrypted_dns: Vec<crate::model::summary::EncryptedDnsHost> = self
+            .encrypted_dns
+            .iter()
+            .map(|((host, resolver), &flows)| crate::model::summary::EncryptedDnsHost {
+                host: host.to_string(),
+                resolver: resolver.clone(),
+                flows,
+            })
+            .collect();
+        encrypted_dns.sort_by(|a, b| {
+            b.flows
+                .cmp(&a.flows)
+                .then(a.host.cmp(&b.host))
+                .then(a.resolver.cmp(&b.resolver))
+        });
+        encrypted_dns.truncate(TOP_K_ENCRYPTED_DNS);
+
         Summary {
             total_packets: self.total_packets,
             total_bytes: self.total_bytes,
@@ -752,6 +804,7 @@ impl StatsAccumulator {
             resolved_ips,
             arp_hosts,
             downloads,
+            encrypted_dns,
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.
@@ -1060,6 +1113,69 @@ fn bump_string_capped(map: &mut HashMap<String, u64>, key: &str, cap: usize) {
         *c += 1;
     } else if map.len() < cap.max(1) {
         map.insert(key.to_string(), 1);
+    }
+}
+
+/// IANA DNS-over-TLS port.
+const DOT_PORT: u16 = 853;
+
+/// Known public DNS-over-HTTPS resolver hostnames (the SNI a DoH client presents). Exact-match
+/// (lowercased) — a curated, high-confidence set of the common providers; not exhaustive.
+const DOH_ENDPOINTS: &[&str] = &[
+    "cloudflare-dns.com",
+    "mozilla.cloudflare-dns.com",
+    "chrome.cloudflare-dns.com",
+    "security.cloudflare-dns.com",
+    "family.cloudflare-dns.com",
+    "one.one.one.one",
+    "dns.google",
+    "dns.google.com",
+    "dns.quad9.net",
+    "dns9.quad9.net",
+    "dns10.quad9.net",
+    "dns11.quad9.net",
+    "doh.opendns.com",
+    "dns.nextdns.io",
+    "doh.cleanbrowsing.org",
+    "dns.adguard.com",
+    "dns-family.adguard.com",
+    "dns-unfiltered.adguard.com",
+    "doh.dns.sb",
+    "doh.pub",
+    "dns.alidns.com",
+    "doh.libredns.gr",
+];
+
+/// True if `host` (already lowercased/trimmed) is a known DoH resolver, by exact match or as a
+/// proper subdomain (e.g. a per-account `<id>.dns.nextdns.io`). The dot boundary avoids
+/// `evil-dns.google`-style suffix spoofing.
+fn is_doh_endpoint(host: &str) -> bool {
+    DOH_ENDPOINTS
+        .iter()
+        .any(|&e| host == e || host.ends_with(&format!(".{e}")))
+}
+
+/// The client endpoint of a flow whose server listens on `server_port` (the other endpoint is the
+/// server). `None` when neither side uses that port (the role is then ambiguous).
+fn client_endpoint(key: &crate::model::flow::FlowKey, server_port: u16) -> Option<IpAddr> {
+    if key.lo_port == server_port {
+        Some(key.hi_ip)
+    } else if key.hi_port == server_port {
+        Some(key.lo_ip)
+    } else {
+        None
+    }
+}
+
+/// The server endpoint of a flow whose server listens on `server_port` (mirror of
+/// [`client_endpoint`]).
+fn client_endpoint_peer(key: &crate::model::flow::FlowKey, server_port: u16) -> Option<IpAddr> {
+    if key.lo_port == server_port {
+        Some(key.lo_ip)
+    } else if key.hi_port == server_port {
+        Some(key.hi_ip)
+    } else {
+        None
     }
 }
 
@@ -1936,6 +2052,46 @@ mod tests {
         assert_eq!(d.client, "10.0.0.9"); // the receiving client, not the server
         assert_eq!(d.server, "93.184.216.34");
         assert_eq!(d.count, 2);
+    }
+
+    #[test]
+    fn encrypted_dns_records_doh_by_sni_and_dot_by_port() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let sc = ScoredFlow {
+            severity: Severity::Info,
+            score: 0,
+            evidence: vec![],
+            attack: vec![],
+            terms: vec![],
+        };
+        // DoH: a TLS flow whose SNI is a known resolver (server on :443) — client = 10.0.0.9.
+        let (k1, _d1) =
+            FlowKey::normalized(ip4(10, 0, 0, 9), 54321, ip4(1, 1, 1, 1), 443, Transport::Tcp);
+        let mut f1 = FlowRecord::new(k1, 0);
+        f1.sni = Some("cloudflare-dns.com".to_string());
+        acc.observe_scored_flow(&f1, &sc);
+        // DoT: a flow to :853 — client = 10.0.0.8, resolver labelled with the server IP.
+        let (k2, _d2) =
+            FlowKey::normalized(ip4(10, 0, 0, 8), 40000, ip4(9, 9, 9, 9), 853, Transport::Tcp);
+        let f2 = FlowRecord::new(k2, 0);
+        acc.observe_scored_flow(&f2, &sc);
+        // An ordinary HTTPS flow (non-DoH SNI) must NOT be recorded.
+        let (k3, _d3) =
+            FlowKey::normalized(ip4(10, 0, 0, 7), 33333, ip4(93, 184, 216, 34), 443, Transport::Tcp);
+        let mut f3 = FlowRecord::new(k3, 0);
+        f3.sni = Some("example.com".to_string());
+        acc.observe_scored_flow(&f3, &sc);
+
+        let s = acc.finish();
+        assert!(s
+            .encrypted_dns
+            .iter()
+            .any(|e| e.host == "10.0.0.9" && e.resolver == "cloudflare-dns.com"));
+        assert!(s
+            .encrypted_dns
+            .iter()
+            .any(|e| e.host == "10.0.0.8" && e.resolver.contains("(DoT)")));
+        assert!(!s.encrypted_dns.iter().any(|e| e.host == "10.0.0.7"));
     }
 
     #[test]
