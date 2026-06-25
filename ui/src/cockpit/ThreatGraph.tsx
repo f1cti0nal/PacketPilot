@@ -46,7 +46,7 @@ export function ThreatGraph({
       <svg
         viewBox={`0 0 ${model.width} ${model.height}`}
         className="mx-auto block w-full max-w-[480px]"
-        role="img"
+        role="group"
         aria-label="Host relationship graph"
       >
         <g>
