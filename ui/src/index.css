@@ -37,6 +37,12 @@
   --color-sev-info: #38bdf8;
   --color-sev-none: #64748b;
 
+  /* Density — spacing only (text never changes). Comfortable is the breathable
+     default; [data-density="compact"] tightens whitespace for power analysts. */
+  --density-gap: 0.75rem;
+  --density-gap-sm: 0.5rem;
+  --density-pad: 0.625rem;
+
   /* Radius scale */
   --r-card: 12px;
   --r-tile: 8px;
@@ -49,6 +55,14 @@
   --sh-float: 0 16px 48px -24px rgba(0, 0, 0, 0.7), 0 2px 8px -4px rgba(0, 0, 0, 0.5);
 
   color-scheme: dark;
+}
+
+/* Compact density — reduces dashboard whitespace only; text is untouched. Set
+   via data-density on <html> (see lib/density.ts). Comfortable = the :root values. */
+[data-density="compact"] {
+  --density-gap: 0.5rem;
+  --density-gap-sm: 0.375rem;
+  --density-pad: 0.4375rem;
 }
 
 /* ----------------------------------------------------------------------------

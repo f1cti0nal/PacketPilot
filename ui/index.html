@@ -20,6 +20,8 @@
           var el = document.documentElement;
           el.dataset.theme = theme;
           el.classList.toggle("dark", theme === "dark");
+          var density = localStorage.getItem("packetpilot.density.v1");
+          el.dataset.density = density === "compact" ? "compact" : "comfortable";
         } catch (e) {}
       })();
     </script>
