@@ -174,6 +174,13 @@ export function AppShell({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Escape closes the shortcuts overlay regardless of focus position — when it is opened
+      // by keyboard ("?") focus may not have moved into the dialog yet, so its own Escape
+      // handler (which needs focus inside) can't be relied on.
+      if (e.key === "Escape") {
+        if (shortcutsOpen) setShortcutsOpen(false);
+        return;
+      }
       if (isEditableTarget(document.activeElement)) return;
       // Inert while a modal is up: gate on the state we own (synchronous, no render race)
       // plus a DOM check for App-level dialogs (settings, consents) AppShell doesn't track.

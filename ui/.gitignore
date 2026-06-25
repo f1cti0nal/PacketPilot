@@ -15,5 +15,11 @@ public/test/
 
 # Vitest coverage report (regenerable via npm run test:coverage)
 coverage
+
+# Playwright E2E artifacts (regenerable via npm run e2e)
+test-results
+playwright-report
+blob-report
+playwright/.cache
 # Editor launch/scratch config
 .claude
