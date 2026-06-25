@@ -12,6 +12,8 @@ import { SettingsDialog } from "../cockpit/SettingsDialog";
 import { AiChatPanel } from "../cockpit/AiChatPanel";
 import { ThreatRail } from "../cockpit/ThreatRail";
 import { ShortcutsOverlay } from "../cockpit/ShortcutsOverlay";
+import { EmptyState } from "../components/state/EmptyState";
+import { ErrorState } from "../components/state/ErrorState";
 
 const noop = () => {};
 const threats = makeOutput().summary.ip_threats ?? [];
@@ -82,6 +84,16 @@ describe("accessibility (axe)", () => {
         tabs={[{ id: "dashboard", label: "Dashboard" }, { id: "flows", label: "Flows" }]}
       />,
     );
+    await expectNoA11yViolations(container);
+  });
+
+  it("EmptyState (with CTA) has no violations", async () => {
+    const { container } = render(<EmptyState title="No capture loaded" onLoad={noop} />);
+    await expectNoA11yViolations(container);
+  });
+
+  it("ErrorState (with retry) has no violations", async () => {
+    const { container } = render(<ErrorState message="Failed to load" onRetry={noop} />);
     await expectNoA11yViolations(container);
   });
 });
