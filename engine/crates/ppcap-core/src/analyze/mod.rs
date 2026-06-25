@@ -17,14 +17,14 @@ use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
-    detect_cleartext_creds, detect_dga, detect_disguised_download, detect_dns_tunnel, detect_exfil,
-    detect_icmp_tunnel, detect_arp_spoof, detect_lateral_movement, detect_pii_exposure,
-    detect_port_scan, detect_suspicious_ua, detect_sweeps, detect_syn_flood, detect_tls_cert_health,
-    detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams, BehaviorTracker,
-    BruteForceParams, CleartextCredsParams, DetectConfig, DgaParams, DisguisedDownloadParams,
-    DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams, PiiExposureParams,
-    PortScanParams, SuspiciousUaParams, SweepParams, SynFloodParams, TlsCertHealthParams,
-    WeakTlsParams,
+    detect_cleartext_creds, detect_cryptomining, detect_dga, detect_disguised_download,
+    detect_dns_tunnel, detect_exfil, detect_icmp_tunnel, detect_arp_spoof, detect_lateral_movement,
+    detect_pii_exposure, detect_port_scan, detect_suspicious_ua, detect_sweeps, detect_syn_flood,
+    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams,
+    BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams, DetectConfig,
+    DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
+    LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams,
+    SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -91,6 +91,8 @@ pub struct PipelineConfig {
     pub suspicious_ua: SuspiciousUaParams,
     /// Disguised-download (file-type masquerade) detector tuning.
     pub disguised_download: DisguisedDownloadParams,
+    /// Cryptomining (Stratum) detector tuning.
+    pub cryptomining: CryptominingParams,
 }
 
 impl Default for PipelineConfig {
@@ -127,6 +129,7 @@ impl Default for PipelineConfig {
             syn_flood: SynFloodParams::default(),
             suspicious_ua: SuspiciousUaParams::default(),
             disguised_download: DisguisedDownloadParams::default(),
+            cryptomining: CryptominingParams::default(),
         }
     }
 }
@@ -331,6 +334,12 @@ pub fn run_source_visiting(
                         tracker.observe_disguised_download(client, server, kind);
                     }
                 }
+                // Cleartext Stratum (mining): the role + src/dst resolve miner vs pool in the tracker.
+                if let (Some(role), Some(src), Some(dst)) =
+                    (meta.stratum, meta.src_ip, meta.dst_ip)
+                {
+                    tracker.observe_stratum(role, src, dst);
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a single malformed/truncated packet is counted, not fatal.
@@ -430,6 +439,7 @@ pub fn run_source_visiting(
     findings.extend(detect_syn_flood(&tracker, &cfg.syn_flood));
     findings.extend(detect_suspicious_ua(&tracker, &cfg.suspicious_ua));
     findings.extend(detect_disguised_download(&tracker, &cfg.disguised_download));
+    findings.extend(detect_cryptomining(&tracker, &cfg.cryptomining));
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.

@@ -17,6 +17,7 @@ import {
   ShieldOff,
   Shuffle,
   Siren,
+  Pickaxe,
   Unlock,
   VenetianMask,
   Waves,
@@ -55,6 +56,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   syn_flood: { label: "SYN Flood", Icon: Waves },
   suspicious_ua: { label: "Attack Tool", Icon: Bug },
   disguised_download: { label: "Disguised Download", Icon: VenetianMask },
+  cryptomining: { label: "Cryptomining", Icon: Pickaxe },
 };
 
 /** Worst-first ordering. */

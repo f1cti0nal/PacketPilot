@@ -34,7 +34,8 @@
 
 use crate::error::PpError;
 use crate::model::packet::{
-    AppProto, ArpClaim, CredScheme, DownloadKind, PacketMeta, PiiKind, Protocol, Transport,
+    AppProto, ArpClaim, CredScheme, DownloadKind, PacketMeta, PiiKind, Protocol, StratumRole,
+    Transport,
 };
 use crate::reader::{LinkType, RawFrame};
 use crate::Result;
@@ -79,6 +80,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         http_ua: None,
         download: None,
         download_disguised: false,
+        stratum: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -264,6 +266,9 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         let (dl_kind, dl_disguised) = sniff_http_download(payload);
         meta.download = dl_kind;
         meta.download_disguised = dl_disguised;
+        // Cleartext Stratum (mining) JSON-RPC method → the cryptomining signal (T1496). Records only
+        // which party sent it (miner vs pool); no payload retained.
+        meta.stratum = sniff_stratum(meta.transport, payload);
     }
 
     Ok(())
@@ -918,6 +923,30 @@ fn is_benign_content_type(ctype: &str) -> bool {
     BENIGN.iter().any(|b| ctype.contains(b))
 }
 
+/// Detect a cleartext **Stratum** (mining) JSON-RPC message by its method name, returning which party
+/// sent it (miner vs pool) for attribution. The method tokens (`mining.subscribe`/`mining.notify`/…)
+/// are mining-specific, so a match is a strong, low-false-positive signal. TCP-only; bounded scan;
+/// payload-free (only the role is derived, never the payload). `None` for non-Stratum. Never panics.
+fn sniff_stratum(transport: Transport, payload: &[u8]) -> Option<StratumRole> {
+    if transport != Transport::Tcp || payload.is_empty() {
+        return None;
+    }
+    let scan = &payload[..payload.len().min(512)];
+    // Miner -> pool methods.
+    if find_ci(scan, b"mining.subscribe").is_some()
+        || find_ci(scan, b"mining.authorize").is_some()
+        || find_ci(scan, b"mining.submit").is_some()
+    {
+        return Some(StratumRole::Miner);
+    }
+    // Pool -> miner methods (only a real pool sends these).
+    if find_ci(scan, b"mining.notify").is_some() || find_ci(scan, b"mining.set_difficulty").is_some()
+    {
+        return Some(StratumRole::Pool);
+    }
+    None
+}
+
 /// Extract a lowercase file extension (sans dot) from a `Content-Disposition` value's `filename=`
 /// parameter, e.g. `attachment; filename="setup.exe"` -> `"exe"`. `None` when absent or extensionless.
 fn cdisp_filename_ext(cdisp: &str) -> Option<String> {
@@ -1319,6 +1348,7 @@ mod tests {
             http_ua: None,
             download: None,
             download_disguised: false,
+            stratum: None,
         }
     }
 
@@ -1987,6 +2017,22 @@ mod tests {
         let (k5, m5) = sniff_http_download(mzutf8);
         assert_eq!(k5, None);
         assert!(!m5);
+    }
+
+    #[test]
+    fn sniff_stratum_classifies_mining_methods_by_role() {
+        // Miner -> pool methods.
+        let sub = br#"{"id":1,"method":"mining.subscribe","params":["xmrig/6.0"]}"#;
+        assert_eq!(sniff_stratum(Transport::Tcp, sub), Some(StratumRole::Miner));
+        let auth = br#"{"id":2,"method":"mining.authorize","params":["wallet","x"]}"#;
+        assert_eq!(sniff_stratum(Transport::Tcp, auth), Some(StratumRole::Miner));
+        // Pool -> miner methods.
+        let notify = br#"{"id":null,"method":"mining.notify","params":["job",[]]}"#;
+        assert_eq!(sniff_stratum(Transport::Tcp, notify), Some(StratumRole::Pool));
+        // Non-Stratum payloads and non-TCP are ignored.
+        assert_eq!(sniff_stratum(Transport::Tcp, b"GET / HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(sniff_stratum(Transport::Udp, sub), None);
+        assert_eq!(sniff_stratum(Transport::Tcp, b""), None);
     }
 
     #[test]

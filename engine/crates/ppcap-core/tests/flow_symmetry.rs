@@ -117,6 +117,7 @@ fn observe_folds_fwd_and_rev() {
         http_ua: None,
         download: None,
         download_disguised: false,
+        stratum: None,
     };
     let mut rev = fwd.clone();
     rev.ts_ns = 900;

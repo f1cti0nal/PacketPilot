@@ -454,6 +454,7 @@ mod tests {
             http_ua: None,
             download: None,
             download_disguised: false,
+            stratum: None,
         }
     }
 

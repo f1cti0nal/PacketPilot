@@ -126,7 +126,7 @@ impl StreamStats {
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use crate::model::packet::{CredScheme, DownloadKind, PiiKind};
+use crate::model::packet::{CredScheme, DownloadKind, PiiKind, StratumRole};
 use crate::tls::{CertIssue, WeakTlsReason};
 
 /// Identity of a directed "destination contact channel": one source reaching one
@@ -288,6 +288,17 @@ pub struct DisguisedDownloadCandidate {
     pub kind: DownloadKind,
     /// Number of disguised responses on this channel.
     pub hits: u64,
+}
+
+/// A `(miner, pool)` channel running the cleartext Stratum mining protocol — a cryptomining candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CryptominingCandidate {
+    /// The mining host (the Stratum client).
+    pub miner: IpAddr,
+    /// The mining pool (the Stratum server).
+    pub pool: IpAddr,
+    /// Total Stratum messages observed on this channel.
+    pub messages: u64,
 }
 
 /// A `(target, port)` service hit by many half-open connections — a SYN-flood / TCP-DoS candidate.
@@ -515,6 +526,18 @@ pub struct BehaviorTracker {
     /// Per-`(client, server)` count of disguised executable downloads (an executable body served
     /// behind a benign `Content-Type`). Bounded by `max_tracked_keys`.
     disguised_dl: HashMap<(IpAddr, IpAddr), DisguisedDlStat>,
+    /// Per-`(miner, pool)` cleartext Stratum (mining) message tallies. Bounded by `max_tracked_keys`.
+    mining: HashMap<(IpAddr, IpAddr), StratumStat>,
+}
+
+/// Per-`(miner, pool)` Stratum statistics: how many miner-side and pool-side messages were seen. A
+/// pool-side message (only a real pool sends `mining.notify`) is the strong confirmation of mining.
+#[derive(Debug, Clone, Default)]
+struct StratumStat {
+    /// Miner→pool messages (subscribe / authorize / submit).
+    miner_msgs: u64,
+    /// Pool→miner messages (notify / set_difficulty) — only a real pool sends these.
+    pool_msgs: u64,
 }
 
 /// Per-`(client, server)` disguised-download observation: the true (magic-derived) file class and how
@@ -597,6 +620,7 @@ impl BehaviorTracker {
             syn_flood: HashMap::new(),
             tool_ua: HashMap::new(),
             disguised_dl: HashMap::new(),
+            mining: HashMap::new(),
         }
     }
 
@@ -1021,6 +1045,52 @@ impl BehaviorTracker {
                 .cmp(&a.hits)
                 .then(a.client.cmp(&b.client))
                 .then(a.server.cmp(&b.server))
+        });
+        out
+    }
+
+    /// Fold one cleartext Stratum message. `role` says who sent it (miner vs pool); together with the
+    /// packet's `src`/`dst` it resolves the miner and pool, keyed identically for both directions so
+    /// the two halves of one channel merge. Bounded: a brand-new channel at capacity is dropped.
+    pub fn observe_stratum(&mut self, role: StratumRole, src: IpAddr, dst: IpAddr) {
+        let (miner, pool) = match role {
+            StratumRole::Miner => (src, dst),
+            StratumRole::Pool => (dst, src),
+        };
+        let key = (miner, pool);
+        let at_cap = !self.mining.contains_key(&key) && self.mining.len() >= self.cfg.max_tracked_keys.max(1);
+        if at_cap {
+            return;
+        }
+        let stat = self.mining.entry(key).or_default();
+        match role {
+            StratumRole::Miner => stat.miner_msgs = stat.miner_msgs.saturating_add(1),
+            StratumRole::Pool => stat.pool_msgs = stat.pool_msgs.saturating_add(1),
+        }
+    }
+
+    /// All `(miner, pool)` channels confirmed as cryptomining: a **real pool engaged** —
+    /// `pool_msgs > 0`, i.e. a `mining.notify` / `mining.set_difficulty` that only an actual pool
+    /// sends to a subscribed miner. Requiring the pool response (rather than miner-side messages
+    /// alone) both filters scanner/probe traffic that merely emits Stratum tokens and *guarantees*
+    /// the attribution — the pool is definitively the notify sender, the miner its peer. Returned
+    /// most-active first, then by endpoints for determinism.
+    pub fn cryptomining_candidates(&self) -> Vec<CryptominingCandidate> {
+        let mut out: Vec<CryptominingCandidate> = self
+            .mining
+            .iter()
+            .filter(|(_, s)| s.pool_msgs > 0)
+            .map(|(&(miner, pool), s)| CryptominingCandidate {
+                miner,
+                pool,
+                messages: s.miner_msgs.saturating_add(s.pool_msgs),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.messages
+                .cmp(&a.messages)
+                .then(a.miner.cmp(&b.miner))
+                .then(a.pool.cmp(&b.pool))
         });
         out
     }
@@ -1954,6 +2024,52 @@ pub fn detect_disguised_download(
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.hits),
+        });
+    }
+    findings
+}
+
+/// Tuning for the cryptomining (Stratum) detector.
+#[derive(Debug, Clone)]
+pub struct CryptominingParams {
+    /// Master switch.
+    pub enabled: bool,
+}
+
+impl Default for CryptominingParams {
+    fn default() -> Self {
+        CryptominingParams { enabled: true }
+    }
+}
+
+/// Detect cryptomining: one [`Finding`] per `(miner, pool)` channel running the cleartext Stratum
+/// protocol (confirmed by a real pool response or sustained miner activity). High severity, ATT&CK
+/// T1496 (Resource Hijacking). Deterministic order.
+pub fn detect_cryptomining(tracker: &BehaviorTracker, params: &CryptominingParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.cryptomining_candidates() {
+        findings.push(Finding {
+            kind: FindingKind::Cryptomining,
+            severity: Severity::High,
+            score: 62,
+            title: format!("Cryptomining: {} to pool {}", c.miner, c.pool),
+            src_ip: c.miner.to_string(),
+            dst_ip: Some(c.pool.to_string()),
+            dst_port: None,
+            attack: vec!["T1496".to_string()],
+            evidence: vec![
+                format!(
+                    "{} cleartext Stratum mining message(s) exchanged with pool {}",
+                    c.messages, c.pool
+                ),
+                "the Stratum JSON-RPC methods (mining.subscribe / mining.notify) identify a mining channel".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.messages),
         });
     }
     findings
@@ -2943,6 +3059,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::SynFlood => 6,      // impact (service denial)
         FindingKind::SuspiciousUa => 0,  // discovery (active scanning with a known tool)
         FindingKind::DisguisedDownload => 4, // command-and-control (malware payload delivery)
+        FindingKind::Cryptomining => 6,  // impact (resource hijacking)
     }
 }
 
@@ -2967,6 +3084,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::SynFlood => "Impact",
         FindingKind::SuspiciousUa => "Discovery",
         FindingKind::DisguisedDownload => "Command & Control",
+        FindingKind::Cryptomining => "Impact",
     }
 }
 
@@ -2991,6 +3109,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::SynFlood => "flooded a service with half-open connections",
         FindingKind::SuspiciousUa => "used a known attack tool",
         FindingKind::DisguisedDownload => "downloaded a disguised executable",
+        FindingKind::Cryptomining => "mined cryptocurrency to a pool",
     }
 }
 
@@ -3495,6 +3614,48 @@ mod tests {
         // The disabled switch suppresses it.
         let off = DisguisedDownloadParams { enabled: false };
         assert!(detect_disguised_download(&t, &off).is_empty());
+    }
+
+    // ── cryptomining (Stratum) ───────────────────────────────────────────────────
+
+    #[test]
+    fn detect_cryptomining_flags_confirmed_stratum_channels() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let miner = ip(10, 0, 0, 9);
+        let pool = ip(203, 0, 113, 7);
+        // Miner subscribes/authorizes; the pool responds with notify (confirming a real pool). Note
+        // the pool-side message arrives src=pool,dst=miner — keyed to the SAME (miner,pool) channel.
+        t.observe_stratum(StratumRole::Miner, miner, pool);
+        t.observe_stratum(StratumRole::Miner, miner, pool);
+        t.observe_stratum(StratumRole::Pool, pool, miner);
+
+        let f = detect_cryptomining(&t, &CryptominingParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::Cryptomining);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].src_ip, "10.0.0.9"); // the miner
+        assert_eq!(f[0].dst_ip.as_deref(), Some("203.0.113.7")); // the pool
+        assert!(f[0].attack.iter().any(|a| a == "T1496"));
+        assert_eq!(f[0].contacts, Some(3));
+    }
+
+    #[test]
+    fn cryptomining_not_flagged_without_pool_confirmation() {
+        // Miner-side messages with NO pool response — a scanner/probe emitting Stratum tokens, or a
+        // one-sided capture. Without a real pool's mining.notify the channel is unconfirmed (and the
+        // attribution unverifiable), so it must NOT raise a High finding — even at volume.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let scanner = ip(10, 0, 0, 9);
+        let victim = ip(1, 2, 3, 4);
+        for _ in 0..5 {
+            t.observe_stratum(StratumRole::Miner, scanner, victim);
+        }
+        assert!(detect_cryptomining(&t, &CryptominingParams::default()).is_empty());
+        // The disabled switch suppresses confirmed channels too.
+        let mut t2 = BehaviorTracker::new(DetectConfig::default());
+        t2.observe_stratum(StratumRole::Pool, ip(203, 0, 113, 7), ip(10, 0, 0, 9));
+        let off = CryptominingParams { enabled: false };
+        assert!(detect_cryptomining(&t2, &off).is_empty());
     }
 
     #[test]

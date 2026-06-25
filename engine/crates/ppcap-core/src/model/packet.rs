@@ -226,6 +226,18 @@ impl DownloadKind {
     }
 }
 
+/// Which party sent a recognised cleartext Stratum (mining) JSON-RPC message — used to attribute the
+/// miner (the client) vs the pool (the server) in a cryptomining channel. Derived metadata only — no
+/// payload is retained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StratumRole {
+    /// A miner→pool method (`mining.subscribe` / `mining.authorize` / `mining.submit`); sender = miner.
+    Miner,
+    /// A pool→miner method (`mining.notify` / `mining.set_difficulty`); sender = pool.
+    Pool,
+}
+
 // TCP flag bit positions (host-readable; matches the on-wire TCP flags byte).
 const TCP_FIN: u8 = 0x01;
 const TCP_SYN: u8 = 0x02;
@@ -324,6 +336,9 @@ pub struct PacketMeta {
     /// True when the response body's magic bytes are a native **executable** but the declared
     /// `Content-Type` is a benign document/media/page type — a deliberate file-type masquerade (T1036).
     pub download_disguised: bool,
+    /// Set when a cleartext Stratum (mining) JSON-RPC message is seen, recording which party sent it
+    /// (miner vs pool); `None` otherwise. The cryptomining signal (T1496).
+    pub stratum: Option<StratumRole>,
 }
 
 impl PacketMeta {

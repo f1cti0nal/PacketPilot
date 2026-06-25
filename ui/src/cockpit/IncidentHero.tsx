@@ -12,6 +12,7 @@ import {
   Unlock,
   Crosshair,
   FileWarning,
+  Pickaxe,
   VenetianMask,
   ScanSearch,
   ShieldAlert,
@@ -48,6 +49,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   syn_flood: { label: "SYN Flood", Icon: Waves },
   suspicious_ua: { label: "Attack Tool", Icon: Bug },
   disguised_download: { label: "Disguised Download", Icon: VenetianMask },
+  cryptomining: { label: "Cryptomining", Icon: Pickaxe },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -69,6 +71,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   syn_flood: "Impact",
   suspicious_ua: "Discovery",
   disguised_download: "Command & Control",
+  cryptomining: "Impact",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
@@ -84,6 +87,7 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   suspicious_ua: "requests",
   cleartext_creds: "exposures",
   disguised_download: "downloads",
+  cryptomining: "messages",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */

@@ -53,6 +53,9 @@ pub enum FindingKind {
     /// File-type masquerade: an executable body served over HTTP behind a benign `Content-Type`
     /// (e.g. an `.exe` delivered as `image/jpeg`) — malware-delivery evasion (T1036).
     DisguisedDownload,
+    /// Cryptomining: a host running the cleartext Stratum mining protocol to a pool — resource
+    /// hijacking / cryptojacking (T1496).
+    Cryptomining,
 }
 
 impl FindingKind {
@@ -77,6 +80,7 @@ impl FindingKind {
             FindingKind::SynFlood => "syn_flood",
             FindingKind::SuspiciousUa => "suspicious_ua",
             FindingKind::DisguisedDownload => "disguised_download",
+            FindingKind::Cryptomining => "cryptomining",
         }
     }
 }

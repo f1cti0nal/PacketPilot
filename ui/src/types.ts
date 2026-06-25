@@ -217,7 +217,8 @@ export type FindingKind =
   | "arp_spoof"
   | "syn_flood"
   | "suspicious_ua"
-  | "disguised_download";
+  | "disguised_download"
+  | "cryptomining";
 
 /**
  * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a
