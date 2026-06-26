@@ -3,13 +3,13 @@
   "engine_version": "0.1.0",
   "source_path": "C:\\Users\\ravid\\AppData\\Local\\Temp\\claude\\D--Project-PacketPilot\\37aed9ff-79af-47b8-b907-2d3ab56523e1\\scratchpad\\sample.pcap",
   "source_sha256": null,
-  "source_bytes": 4625148,
+  "source_bytes": 4952158,
   "link_type": "EN10MB",
   "summary": {
     "total_packets": 39999,
-    "total_bytes": 3985086,
-    "captured_bytes": 3985086,
-    "total_flows": 39997,
+    "total_bytes": 4312096,
+    "captured_bytes": 4312096,
+    "total_flows": 39388,
     "decode_errors": 1,
     "non_ip_frames": 1,
     "proto": {
@@ -31,302 +31,302 @@
       {
         "ip": "10.0.0.10",
         "pkts": 1342,
-        "bytes": 133872,
-        "flows": 1342
+        "bytes": 160799,
+        "flows": 1288
       },
       {
         "ip": "10.0.12.10",
         "pkts": 1320,
-        "bytes": 132654,
-        "flows": 1320
-      },
-      {
-        "ip": "10.0.31.10",
-        "pkts": 1310,
-        "bytes": 132539,
-        "flows": 1310
-      },
-      {
-        "ip": "10.0.26.10",
-        "pkts": 1317,
-        "bytes": 131404,
-        "flows": 1317
-      },
-      {
-        "ip": "10.0.51.10",
-        "pkts": 1310,
-        "bytes": 130137,
-        "flows": 1310
-      },
-      {
-        "ip": "10.0.38.10",
-        "pkts": 1294,
-        "bytes": 130096,
-        "flows": 1294
-      },
-      {
-        "ip": "10.0.54.10",
-        "pkts": 1293,
-        "bytes": 129289,
-        "flows": 1293
-      },
-      {
-        "ip": "10.0.7.10",
-        "pkts": 1273,
-        "bytes": 129186,
-        "flows": 1273
+        "bytes": 157524,
+        "flows": 1271
       },
       {
         "ip": "10.0.36.10",
         "pkts": 1288,
-        "bytes": 128909,
-        "flows": 1288
-      },
-      {
-        "ip": "10.0.50.10",
-        "pkts": 1283,
-        "bytes": 128475,
-        "flows": 1283
-      },
-      {
-        "ip": "10.0.3.10",
-        "pkts": 1293,
-        "bytes": 128334,
-        "flows": 1293
-      },
-      {
-        "ip": "10.0.18.10",
-        "pkts": 1281,
-        "bytes": 128260,
-        "flows": 1281
-      },
-      {
-        "ip": "10.0.49.10",
-        "pkts": 1284,
-        "bytes": 127840,
-        "flows": 1284
-      },
-      {
-        "ip": "10.0.24.10",
-        "pkts": 1272,
-        "bytes": 127185,
-        "flows": 1272
-      },
-      {
-        "ip": "10.0.1.10",
-        "pkts": 1290,
-        "bytes": 127015,
-        "flows": 1290
-      },
-      {
-        "ip": "10.0.59.10",
-        "pkts": 1276,
-        "bytes": 126831,
-        "flows": 1276
-      },
-      {
-        "ip": "10.0.13.10",
-        "pkts": 1281,
-        "bytes": 126792,
-        "flows": 1281
-      },
-      {
-        "ip": "10.0.8.10",
-        "pkts": 1271,
-        "bytes": 126635,
-        "flows": 1271
-      },
-      {
-        "ip": "10.0.60.10",
-        "pkts": 1279,
-        "bytes": 126104,
-        "flows": 1278
-      },
-      {
-        "ip": "10.0.27.10",
-        "pkts": 1278,
-        "bytes": 125791,
-        "flows": 1278
-      },
-      {
-        "ip": "10.0.33.10",
-        "pkts": 1243,
-        "bytes": 125779,
-        "flows": 1243
+        "bytes": 154885,
+        "flows": 1240
       },
       {
         "ip": "10.0.28.10",
         "pkts": 1270,
-        "bytes": 125636,
-        "flows": 1270
-      },
-      {
-        "ip": "10.0.48.10",
-        "pkts": 1246,
-        "bytes": 125558,
-        "flows": 1246
-      },
-      {
-        "ip": "10.0.35.10",
-        "pkts": 1259,
-        "bytes": 125530,
-        "flows": 1259
+        "bytes": 153846,
+        "flows": 1220
       },
       {
         "ip": "10.0.4.10",
         "pkts": 1267,
-        "bytes": 125509,
-        "flows": 1267
+        "bytes": 152524,
+        "flows": 1215
       },
       {
-        "ip": "10.0.46.10",
-        "pkts": 1258,
-        "bytes": 125301,
-        "flows": 1258
+        "ip": "10.0.8.10",
+        "pkts": 1271,
+        "bytes": 151891,
+        "flows": 1224
       },
       {
-        "ip": "10.0.9.10",
-        "pkts": 1253,
-        "bytes": 125294,
-        "flows": 1253
+        "ip": "10.0.48.10",
+        "pkts": 1246,
+        "bytes": 151546,
+        "flows": 1196
       },
       {
-        "ip": "10.0.15.10",
-        "pkts": 1242,
-        "bytes": 125187,
-        "flows": 1242
+        "ip": "10.0.24.10",
+        "pkts": 1272,
+        "bytes": 150527,
+        "flows": 1231
       },
       {
-        "ip": "10.0.21.10",
-        "pkts": 1261,
-        "bytes": 125164,
-        "flows": 1261
-      },
-      {
-        "ip": "10.0.40.10",
-        "pkts": 1249,
-        "bytes": 124967,
-        "flows": 1249
-      },
-      {
-        "ip": "10.0.62.10",
-        "pkts": 1238,
-        "bytes": 124454,
-        "flows": 1238
+        "ip": "10.0.60.10",
+        "pkts": 1279,
+        "bytes": 150016,
+        "flows": 1237
       },
       {
         "ip": "10.0.16.10",
         "pkts": 1245,
-        "bytes": 124319,
-        "flows": 1245
+        "bytes": 148636,
+        "flows": 1197
       },
       {
-        "ip": "10.0.17.10",
-        "pkts": 1242,
-        "bytes": 123794,
-        "flows": 1242
+        "ip": "10.0.56.10",
+        "pkts": 1216,
+        "bytes": 148212,
+        "flows": 1172
       },
       {
-        "ip": "10.0.43.10",
-        "pkts": 1241,
-        "bytes": 123711,
-        "flows": 1241
+        "ip": "10.0.40.10",
+        "pkts": 1249,
+        "bytes": 147848,
+        "flows": 1212
       },
       {
-        "ip": "10.0.42.10",
-        "pkts": 1244,
-        "bytes": 123702,
-        "flows": 1244
+        "ip": "10.0.44.10",
+        "pkts": 1188,
+        "bytes": 146664,
+        "flows": 1133
       },
       {
-        "ip": "10.0.63.10",
-        "pkts": 1231,
-        "bytes": 123636,
-        "flows": 1231
+        "ip": "10.0.52.10",
+        "pkts": 1212,
+        "bytes": 146314,
+        "flows": 1164
       },
       {
-        "ip": "10.0.6.10",
-        "pkts": 1224,
-        "bytes": 123550,
-        "flows": 1224
+        "ip": "10.0.32.10",
+        "pkts": 1230,
+        "bytes": 144809,
+        "flows": 1189
       },
       {
-        "ip": "10.0.61.10",
-        "pkts": 1251,
-        "bytes": 123282,
-        "flows": 1251
+        "ip": "10.0.20.10",
+        "pkts": 1190,
+        "bytes": 141630,
+        "flows": 1145
+      },
+      {
+        "ip": "10.0.26.10",
+        "pkts": 1317,
+        "bytes": 137162,
+        "flows": 1306
+      },
+      {
+        "ip": "10.0.31.10",
+        "pkts": 1310,
+        "bytes": 136125,
+        "flows": 1308
+      },
+      {
+        "ip": "10.0.3.10",
+        "pkts": 1293,
+        "bytes": 135788,
+        "flows": 1275
+      },
+      {
+        "ip": "10.0.51.10",
+        "pkts": 1310,
+        "bytes": 135651,
+        "flows": 1300
+      },
+      {
+        "ip": "10.0.38.10",
+        "pkts": 1294,
+        "bytes": 134651,
+        "flows": 1288
+      },
+      {
+        "ip": "10.0.54.10",
+        "pkts": 1293,
+        "bytes": 134347,
+        "flows": 1282
+      },
+      {
+        "ip": "10.0.18.10",
+        "pkts": 1281,
+        "bytes": 133552,
+        "flows": 1272
+      },
+      {
+        "ip": "10.0.49.10",
+        "pkts": 1284,
+        "bytes": 133338,
+        "flows": 1274
+      },
+      {
+        "ip": "10.0.13.10",
+        "pkts": 1281,
+        "bytes": 133251,
+        "flows": 1268
+      },
+      {
+        "ip": "10.0.50.10",
+        "pkts": 1283,
+        "bytes": 132806,
+        "flows": 1276
+      },
+      {
+        "ip": "10.0.7.10",
+        "pkts": 1273,
+        "bytes": 132779,
+        "flows": 1270
+      },
+      {
+        "ip": "10.0.27.10",
+        "pkts": 1278,
+        "bytes": 132013,
+        "flows": 1264
+      },
+      {
+        "ip": "10.0.59.10",
+        "pkts": 1276,
+        "bytes": 131635,
+        "flows": 1269
       },
       {
         "ip": "10.0.53.10",
         "pkts": 1240,
-        "bytes": 123231,
-        "flows": 1240
+        "bytes": 131411,
+        "flows": 1219
+      },
+      {
+        "ip": "10.0.1.10",
+        "pkts": 1290,
+        "bytes": 131324,
+        "flows": 1284
+      },
+      {
+        "ip": "10.0.33.10",
+        "pkts": 1243,
+        "bytes": 130562,
+        "flows": 1235
+      },
+      {
+        "ip": "10.0.42.10",
+        "pkts": 1244,
+        "bytes": 130415,
+        "flows": 1231
+      },
+      {
+        "ip": "10.0.63.10",
+        "pkts": 1231,
+        "bytes": 130115,
+        "flows": 1216
+      },
+      {
+        "ip": "10.0.6.10",
+        "pkts": 1224,
+        "bytes": 130052,
+        "flows": 1212
       },
       {
         "ip": "10.0.57.10",
         "pkts": 1242,
-        "bytes": 123112,
-        "flows": 1242
+        "bytes": 129827,
+        "flows": 1227
       },
       {
-        "ip": "10.0.30.10",
-        "pkts": 1235,
-        "bytes": 123074,
+        "ip": "10.0.21.10",
+        "pkts": 1261,
+        "bytes": 129709,
+        "flows": 1251
+      },
+      {
+        "ip": "10.0.35.10",
+        "pkts": 1259,
+        "bytes": 129365,
+        "flows": 1254
+      },
+      {
+        "ip": "10.0.15.10",
+        "pkts": 1242,
+        "bytes": 129267,
+        "flows": 1234
+      },
+      {
+        "ip": "10.0.62.10",
+        "pkts": 1238,
+        "bytes": 129267,
+        "flows": 1232
+      },
+      {
+        "ip": "10.0.9.10",
+        "pkts": 1253,
+        "bytes": 128874,
+        "flows": 1247
+      },
+      {
+        "ip": "10.0.29.10",
+        "pkts": 1240,
+        "bytes": 128818,
+        "flows": 1225
+      },
+      {
+        "ip": "10.0.61.10",
+        "pkts": 1251,
+        "bytes": 128790,
+        "flows": 1240
+      },
+      {
+        "ip": "10.0.43.10",
+        "pkts": 1241,
+        "bytes": 128766,
+        "flows": 1233
+      },
+      {
+        "ip": "10.0.39.10",
+        "pkts": 1222,
+        "bytes": 128751,
+        "flows": 1210
+      },
+      {
+        "ip": "10.0.46.10",
+        "pkts": 1258,
+        "bytes": 128666,
+        "flows": 1252
+      },
+      {
+        "ip": "10.0.14.10",
+        "pkts": 1234,
+        "bytes": 128489,
+        "flows": 1221
+      },
+      {
+        "ip": "10.0.17.10",
+        "pkts": 1242,
+        "bytes": 128341,
         "flows": 1235
       },
       {
         "ip": "10.0.34.10",
         "pkts": 1252,
-        "bytes": 123025,
-        "flows": 1252
+        "bytes": 127827,
+        "flows": 1245
       },
       {
-        "ip": "10.0.39.10",
+        "ip": "10.0.41.10",
         "pkts": 1222,
-        "bytes": 122979,
-        "flows": 1222
-      },
-      {
-        "ip": "10.0.14.10",
-        "pkts": 1234,
-        "bytes": 122738,
-        "flows": 1234
-      },
-      {
-        "ip": "10.0.56.10",
-        "pkts": 1216,
-        "bytes": 122705,
-        "flows": 1216
-      },
-      {
-        "ip": "10.0.32.10",
-        "pkts": 1230,
-        "bytes": 122414,
-        "flows": 1230
-      },
-      {
-        "ip": "10.0.29.10",
-        "pkts": 1240,
-        "bytes": 122344,
-        "flows": 1240
-      },
-      {
-        "ip": "10.0.47.10",
-        "pkts": 1203,
-        "bytes": 122328,
-        "flows": 1203
-      },
-      {
-        "ip": "10.0.37.10",
-        "pkts": 1243,
-        "bytes": 122226,
-        "flows": 1243
-      },
-      {
-        "ip": "10.0.58.10",
-        "pkts": 1224,
-        "bytes": 122224,
-        "flows": 1224
+        "bytes": 127827,
+        "flows": 1207
       }
     ],
     "protocol_hierarchy": [
@@ -341,14 +341,14 @@
         "bytes": 1113520
       },
       {
+        "path": "ip.udp.other",
+        "pkts": 5714,
+        "bytes": 749846
+      },
+      {
         "path": "ip.udp.dns",
         "pkts": 8163,
         "bytes": 612225
-      },
-      {
-        "path": "ip.udp.other",
-        "pkts": 5714,
-        "bytes": 422836
       },
       {
         "path": "ip.tcp.other",
@@ -376,10 +376,10 @@
         "bytes": 612225
       },
       {
-        "port": 8652,
+        "port": 67,
         "transport": "UDP",
-        "pkts": 4,
-        "bytes": 296
+        "pkts": 1364,
+        "bytes": 427946
       },
       {
         "port": 44750,
@@ -389,12 +389,6 @@
       },
       {
         "port": 5642,
-        "transport": "UDP",
-        "pkts": 3,
-        "bytes": 222
-      },
-      {
-        "port": 7921,
         "transport": "UDP",
         "pkts": 3,
         "bytes": 222
@@ -413,18 +407,6 @@
       },
       {
         "port": 15748,
-        "transport": "UDP",
-        "pkts": 3,
-        "bytes": 222
-      },
-      {
-        "port": 15968,
-        "transport": "UDP",
-        "pkts": 3,
-        "bytes": 222
-      },
-      {
-        "port": 20513,
         "transport": "UDP",
         "pkts": 3,
         "bytes": 222
@@ -455,30 +437,6 @@
       },
       {
         "port": 33668,
-        "transport": "UDP",
-        "pkts": 3,
-        "bytes": 222
-      },
-      {
-        "port": 34795,
-        "transport": "UDP",
-        "pkts": 3,
-        "bytes": 222
-      },
-      {
-        "port": 36548,
-        "transport": "UDP",
-        "pkts": 3,
-        "bytes": 222
-      },
-      {
-        "port": 37043,
-        "transport": "UDP",
-        "pkts": 3,
-        "bytes": 222
-      },
-      {
-        "port": 39941,
         "transport": "UDP",
         "pkts": 3,
         "bytes": 222
@@ -580,19 +538,7 @@
         "bytes": 148
       },
       {
-        "port": 1337,
-        "transport": "UDP",
-        "pkts": 2,
-        "bytes": 148
-      },
-      {
         "port": 1552,
-        "transport": "UDP",
-        "pkts": 2,
-        "bytes": 148
-      },
-      {
-        "port": 1555,
         "transport": "UDP",
         "pkts": 2,
         "bytes": 148
@@ -604,37 +550,7 @@
         "bytes": 148
       },
       {
-        "port": 1737,
-        "transport": "UDP",
-        "pkts": 2,
-        "bytes": 148
-      },
-      {
-        "port": 1755,
-        "transport": "UDP",
-        "pkts": 2,
-        "bytes": 148
-      },
-      {
         "port": 1877,
-        "transport": "UDP",
-        "pkts": 2,
-        "bytes": 148
-      },
-      {
-        "port": 2142,
-        "transport": "UDP",
-        "pkts": 2,
-        "bytes": 148
-      },
-      {
-        "port": 2305,
-        "transport": "UDP",
-        "pkts": 2,
-        "bytes": 148
-      },
-      {
-        "port": 2406,
         "transport": "UDP",
         "pkts": 2,
         "bytes": 148
@@ -656,208 +572,292 @@
         "transport": "UDP",
         "pkts": 2,
         "bytes": 148
+      },
+      {
+        "port": 2983,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 3029,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 3512,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 3880,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 3881,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 4029,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 4064,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 4418,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 4487,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 4736,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 4848,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 5138,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 5278,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 5535,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
       }
     ],
     "time_histogram": [
       {
         "epoch_sec": 1700000000,
         "pkts": 1009,
-        "bytes": 98744
+        "bytes": 106912
       },
       {
         "epoch_sec": 1700000001,
         "pkts": 1006,
-        "bytes": 99848
+        "bytes": 108002
       },
       {
         "epoch_sec": 1700000002,
         "pkts": 1000,
-        "bytes": 98664
+        "bytes": 107304
       },
       {
         "epoch_sec": 1700000003,
         "pkts": 987,
-        "bytes": 98818
+        "bytes": 107190
       },
       {
         "epoch_sec": 1700000004,
         "pkts": 994,
-        "bytes": 100451
+        "bytes": 106471
       },
       {
         "epoch_sec": 1700000005,
         "pkts": 993,
-        "bytes": 98196
+        "bytes": 107297
       },
       {
         "epoch_sec": 1700000006,
         "pkts": 1013,
-        "bytes": 101426
+        "bytes": 110781
       },
       {
         "epoch_sec": 1700000007,
         "pkts": 979,
-        "bytes": 96337
+        "bytes": 102597
       },
       {
         "epoch_sec": 1700000008,
         "pkts": 997,
-        "bytes": 98089
+        "bytes": 105751
       },
       {
         "epoch_sec": 1700000009,
         "pkts": 999,
-        "bytes": 98235
+        "bytes": 108294
       },
       {
         "epoch_sec": 1700000010,
         "pkts": 994,
-        "bytes": 99498
+        "bytes": 108115
       },
       {
         "epoch_sec": 1700000011,
         "pkts": 1003,
-        "bytes": 101289
+        "bytes": 109930
       },
       {
         "epoch_sec": 1700000012,
         "pkts": 996,
-        "bytes": 100414
+        "bytes": 107849
       },
       {
         "epoch_sec": 1700000013,
         "pkts": 1002,
-        "bytes": 100267
+        "bytes": 107940
       },
       {
         "epoch_sec": 1700000014,
         "pkts": 1003,
-        "bytes": 99566
+        "bytes": 108415
       },
       {
         "epoch_sec": 1700000015,
         "pkts": 1012,
-        "bytes": 100871
+        "bytes": 109083
       },
       {
         "epoch_sec": 1700000016,
         "pkts": 1001,
-        "bytes": 99558
+        "bytes": 108662
       },
       {
         "epoch_sec": 1700000017,
         "pkts": 1007,
-        "bytes": 99846
+        "bytes": 108245
       },
       {
         "epoch_sec": 1700000018,
         "pkts": 990,
-        "bytes": 97859
+        "bytes": 106002
       },
       {
         "epoch_sec": 1700000019,
         "pkts": 992,
-        "bytes": 99939
+        "bytes": 106646
       },
       {
         "epoch_sec": 1700000020,
         "pkts": 1009,
-        "bytes": 99505
+        "bytes": 106446
       },
       {
         "epoch_sec": 1700000021,
         "pkts": 998,
-        "bytes": 98480
+        "bytes": 107365
       },
       {
         "epoch_sec": 1700000022,
         "pkts": 996,
-        "bytes": 97831
+        "bytes": 107663
       },
       {
         "epoch_sec": 1700000023,
         "pkts": 1015,
-        "bytes": 102633
+        "bytes": 109575
       },
       {
         "epoch_sec": 1700000024,
         "pkts": 998,
-        "bytes": 100122
+        "bytes": 108968
       },
       {
         "epoch_sec": 1700000025,
         "pkts": 1016,
-        "bytes": 100278
+        "bytes": 107716
       },
       {
         "epoch_sec": 1700000026,
         "pkts": 986,
-        "bytes": 98859
+        "bytes": 106766
       },
       {
         "epoch_sec": 1700000027,
         "pkts": 997,
-        "bytes": 98657
+        "bytes": 106087
       },
       {
         "epoch_sec": 1700000028,
         "pkts": 1006,
-        "bytes": 99396
+        "bytes": 108503
       },
       {
         "epoch_sec": 1700000029,
         "pkts": 1001,
-        "bytes": 102203
+        "bytes": 109419
       },
       {
         "epoch_sec": 1700000030,
         "pkts": 1005,
-        "bytes": 98633
+        "bytes": 108940
       },
       {
         "epoch_sec": 1700000031,
         "pkts": 997,
-        "bytes": 100861
+        "bytes": 108284
       },
       {
         "epoch_sec": 1700000032,
         "pkts": 1003,
-        "bytes": 100178
+        "bytes": 109538
       },
       {
         "epoch_sec": 1700000033,
         "pkts": 996,
-        "bytes": 98459
+        "bytes": 106114
       },
       {
         "epoch_sec": 1700000034,
         "pkts": 1015,
-        "bytes": 101848
+        "bytes": 110509
       },
       {
         "epoch_sec": 1700000035,
         "pkts": 1001,
-        "bytes": 100724
+        "bytes": 108140
       },
       {
         "epoch_sec": 1700000036,
         "pkts": 1006,
-        "bytes": 98744
+        "bytes": 106398
       },
       {
         "epoch_sec": 1700000037,
         "pkts": 994,
-        "bytes": 100193
+        "bytes": 107621
       },
       {
         "epoch_sec": 1700000038,
         "pkts": 995,
-        "bytes": 99681
+        "bytes": 108786
       },
       {
         "epoch_sec": 1700000039,
         "pkts": 988,
-        "bytes": 99886
+        "bytes": 107772
       }
     ],
     "time_bucket_secs": 1,
@@ -872,7 +872,7 @@
         "label": "64–127",
         "min": 64,
         "max": 127,
-        "pkts": 22857
+        "pkts": 21493
       },
       {
         "label": "128–255",
@@ -884,7 +884,7 @@
         "label": "256–511",
         "min": 256,
         "max": 511,
-        "pkts": 0
+        "pkts": 1364
       },
       {
         "label": "512–1023",
@@ -944,9 +944,9 @@
       },
       {
         "category": "voip",
-        "flows": 2342,
-        "pkts": 2342,
-        "bytes": 173308
+        "flows": 1774,
+        "pkts": 1774,
+        "bytes": 131276
       },
       {
         "category": "iot-ot",
@@ -962,9 +962,9 @@
       },
       {
         "category": "scan",
-        "flows": 9084,
-        "pkts": 9084,
-        "bytes": 557956
+        "flows": 9043,
+        "pkts": 9652,
+        "bytes": 926998
       },
       {
         "category": "c2",
@@ -987,10 +987,10 @@
     ],
     "severity_counts": {
       "critical": 0,
-      "high": 5051,
+      "high": 4985,
       "medium": 0,
-      "low": 8504,
-      "info": 26442
+      "low": 8481,
+      "info": 25922
     },
     "ip_threats": [
       {
@@ -998,8 +998,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 68,
-        "flows": 1342,
-        "bytes": 133872,
+        "flows": 1288,
+        "bytes": 160799,
         "ioc": true,
         "tags": [
           "internal",
@@ -1035,53 +1035,12 @@
         ]
       },
       {
-        "ip": "10.0.36.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 68,
-        "flows": 1288,
-        "bytes": 128909,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046",
-          "T1499.001"
-        ],
-        "evidence": [
-          "204 half-open connections from 62 sources to 10.0.36.10:443",
-          "many sources, never-completed handshakes — distributed TCP DoS"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
         "ip": "10.0.50.10",
         "ip_class": "private",
         "severity": "high",
         "score": 68,
-        "flows": 1283,
-        "bytes": 128475,
+        "flows": 1276,
+        "bytes": 132806,
         "ioc": true,
         "tags": [
           "internal",
@@ -1117,12 +1076,53 @@
         ]
       },
       {
+        "ip": "10.0.36.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 68,
+        "flows": 1240,
+        "bytes": 154885,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046",
+          "T1499.001"
+        ],
+        "evidence": [
+          "204 half-open connections from 62 sources to 10.0.36.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
         "ip": "10.0.19.10",
         "ip_class": "private",
         "severity": "high",
         "score": 68,
-        "flows": 1219,
-        "bytes": 121045,
+        "flows": 1214,
+        "bytes": 124885,
         "ioc": true,
         "tags": [
           "internal",
@@ -1162,8 +1162,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 68,
-        "flows": 1216,
-        "bytes": 122705,
+        "flows": 1172,
+        "bytes": 148212,
         "ioc": true,
         "tags": [
           "internal",
@@ -1202,9 +1202,529 @@
         "ip": "10.0.12.10",
         "ip_class": "private",
         "severity": "high",
+        "score": 65,
+        "flows": 1271,
+        "bytes": 157524,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "44 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.60.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1237,
+        "bytes": 150016,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "46 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.24.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1231,
+        "bytes": 150527,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "48 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.8.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1224,
+        "bytes": 151891,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "48 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.28.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1220,
+        "bytes": 153846,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "53 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.4.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1215,
+        "bytes": 152524,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "50 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.40.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1212,
+        "bytes": 147848,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "47 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.16.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1197,
+        "bytes": 148636,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "42 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.48.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1196,
+        "bytes": 151546,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "48 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.32.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1189,
+        "bytes": 144809,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "43 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.52.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1164,
+        "bytes": 146314,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "50 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.20.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1145,
+        "bytes": 141630,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "40 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.44.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 65,
+        "flows": 1133,
+        "bytes": 146664,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "51 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.31.10",
+        "ip_class": "private",
+        "severity": "high",
         "score": 63,
-        "flows": 1320,
-        "bytes": 132654,
+        "flows": 1308,
+        "bytes": 136125,
         "ioc": true,
         "tags": [
           "internal",
@@ -1247,8 +1767,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1317,
-        "bytes": 131404,
+        "flows": 1306,
+        "bytes": 137162,
         "ioc": true,
         "tags": [
           "internal",
@@ -1287,56 +1807,12 @@
         ]
       },
       {
-        "ip": "10.0.31.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1310,
-        "bytes": 132539,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category scan (+25)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
         "ip": "10.0.51.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1310,
-        "bytes": 130137,
+        "flows": 1300,
+        "bytes": 135651,
         "ioc": true,
         "tags": [
           "internal",
@@ -1379,8 +1855,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1294,
-        "bytes": 130096,
+        "flows": 1288,
+        "bytes": 134651,
         "ioc": true,
         "tags": [
           "internal",
@@ -1419,56 +1895,12 @@
         ]
       },
       {
-        "ip": "10.0.3.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1293,
-        "bytes": 128334,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category scan (+25)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
         "ip": "10.0.54.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1293,
-        "bytes": 129289,
+        "flows": 1282,
+        "bytes": 134347,
         "ioc": true,
         "tags": [
           "internal",
@@ -1507,144 +1939,56 @@
         ]
       },
       {
+        "ip": "10.0.3.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1275,
+        "bytes": 135788,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
         "ip": "10.0.49.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1284,
-        "bytes": 127840,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category dns (+3)",
-          "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.13.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1281,
-        "bytes": 126792,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category dns (+3)",
-          "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.60.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1278,
-        "bytes": 126104,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category dns (+3)",
-          "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.59.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1276,
-        "bytes": 126831,
+        "flows": 1274,
+        "bytes": 133338,
         "ioc": true,
         "tags": [
           "internal",
@@ -1687,8 +2031,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1273,
-        "bytes": 129186,
+        "flows": 1270,
+        "bytes": 132779,
         "ioc": true,
         "tags": [
           "internal",
@@ -1727,12 +2071,12 @@
         ]
       },
       {
-        "ip": "10.0.24.10",
+        "ip": "10.0.59.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1272,
-        "bytes": 127185,
+        "flows": 1269,
+        "bytes": 131635,
         "ioc": true,
         "tags": [
           "internal",
@@ -1746,95 +2090,7 @@
           "ioc: endpoint ip on threat feed (+35)",
           "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "category scan (+25)",
-          "behavior: scan-shaped probe (+10)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.8.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1271,
-        "bytes": 126635,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.28.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1270,
-        "bytes": 125636,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category voip (+3)",
+          "category dns (+3)",
           "clamp: raw -7 -> 0"
         ],
         "reputation": [],
@@ -1859,12 +2115,12 @@
         ]
       },
       {
-        "ip": "10.0.4.10",
+        "ip": "10.0.13.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1267,
-        "bytes": 125509,
+        "flows": 1268,
+        "bytes": 133251,
         "ioc": true,
         "tags": [
           "internal",
@@ -1878,52 +2134,8 @@
           "ioc: endpoint ip on threat feed (+35)",
           "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "floor: ioc match forces High (>= 60)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.21.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1261,
-        "bytes": 125164,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category scan (+25)"
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
         ],
         "reputation": [],
         "fingerprints": [],
@@ -1951,8 +2163,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1259,
-        "bytes": 125530,
+        "flows": 1254,
+        "bytes": 129365,
         "ioc": true,
         "tags": [
           "internal",
@@ -1995,8 +2207,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1258,
-        "bytes": 125301,
+        "flows": 1252,
+        "bytes": 128666,
         "ioc": true,
         "tags": [
           "internal",
@@ -2035,12 +2247,56 @@
         ]
       },
       {
+        "ip": "10.0.21.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1251,
+        "bytes": 129709,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
         "ip": "10.0.9.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1253,
-        "bytes": 125294,
+        "flows": 1247,
+        "bytes": 128874,
         "ioc": true,
         "tags": [
           "internal",
@@ -2083,8 +2339,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1252,
-        "bytes": 123025,
+        "flows": 1245,
+        "bytes": 127827,
         "ioc": true,
         "tags": [
           "internal",
@@ -2127,8 +2383,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1251,
-        "bytes": 123282,
+        "flows": 1240,
+        "bytes": 128790,
         "ioc": true,
         "tags": [
           "internal",
@@ -2144,314 +2400,6 @@
           "all-internal peers (-10)",
           "category dns (+3)",
           "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.40.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1249,
-        "bytes": 124967,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category voip (+3)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.48.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1246,
-        "bytes": 125558,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category dns (+3)",
-          "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.16.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1245,
-        "bytes": 124319,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "floor: ioc match forces High (>= 60)",
-          "category scan (+25)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.42.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1244,
-        "bytes": 123702,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.33.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1243,
-        "bytes": 125779,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category scan (+25)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.37.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1243,
-        "bytes": 122226,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "floor: ioc match forces High (>= 60)",
-          "category voip (+3)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.15.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1242,
-        "bytes": 125187,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category scan (+25)"
         ],
         "reputation": [],
         "fingerprints": [],
@@ -2479,8 +2427,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1242,
-        "bytes": 123794,
+        "flows": 1235,
+        "bytes": 128341,
         "ioc": true,
         "tags": [
           "internal",
@@ -2519,12 +2467,12 @@
         ]
       },
       {
-        "ip": "10.0.57.10",
+        "ip": "10.0.33.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1242,
-        "bytes": 123112,
+        "flows": 1235,
+        "bytes": 130562,
         "ioc": true,
         "tags": [
           "internal",
@@ -2538,8 +2486,52 @@
           "ioc: endpoint ip on threat feed (+35)",
           "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "category dns (+3)",
-          "clamp: raw -7 -> 0"
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.15.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1234,
+        "bytes": 129267,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
         ],
         "reputation": [],
         "fingerprints": [],
@@ -2567,8 +2559,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1241,
-        "bytes": 123711,
+        "flows": 1233,
+        "bytes": 128766,
         "ioc": true,
         "tags": [
           "internal",
@@ -2584,94 +2576,6 @@
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
           "category dns (+3)"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.29.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1240,
-        "bytes": 122344,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category dns (+3)",
-          "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.53.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1240,
-        "bytes": 123231,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category voip (+3)",
-          "clamp: raw -7 -> 0"
         ],
         "reputation": [],
         "fingerprints": [],
@@ -2699,8 +2603,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1238,
-        "bytes": 124454,
+        "flows": 1232,
+        "bytes": 129267,
         "ioc": true,
         "tags": [
           "internal",
@@ -2739,12 +2643,144 @@
         ]
       },
       {
-        "ip": "10.0.25.10",
+        "ip": "10.0.37.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1236,
-        "bytes": 121553,
+        "flows": 1231,
+        "bytes": 127273,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "floor: ioc match forces High (>= 60)",
+          "category voip (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.42.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1231,
+        "bytes": 130415,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.30.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1230,
+        "bytes": 126923,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.57.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1227,
+        "bytes": 129827,
         "ioc": true,
         "tags": [
           "internal",
@@ -2783,12 +2819,12 @@
         ]
       },
       {
-        "ip": "10.0.30.10",
+        "ip": "10.0.25.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1235,
-        "bytes": 123074,
+        "flows": 1225,
+        "bytes": 126819,
         "ioc": true,
         "tags": [
           "internal",
@@ -2802,7 +2838,51 @@
           "ioc: endpoint ip on threat feed (+35)",
           "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "category voip (+3)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.29.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1225,
+        "bytes": 128818,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
           "clamp: raw -7 -> 0"
         ],
         "reputation": [],
@@ -2831,8 +2911,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1234,
-        "bytes": 122738,
+        "flows": 1221,
+        "bytes": 128489,
         "ioc": true,
         "tags": [
           "internal",
@@ -2875,8 +2955,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1231,
-        "bytes": 121692,
+        "flows": 1221,
+        "bytes": 127213,
         "ioc": true,
         "tags": [
           "internal",
@@ -2915,12 +2995,12 @@
         ]
       },
       {
-        "ip": "10.0.63.10",
+        "ip": "10.0.53.10",
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1231,
-        "bytes": 123636,
+        "flows": 1219,
+        "bytes": 131411,
         "ioc": true,
         "tags": [
           "internal",
@@ -2934,52 +3014,8 @@
           "ioc: endpoint ip on threat feed (+35)",
           "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "category scan (+25)",
+          "category voip (+3)",
           "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.32.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1230,
-        "bytes": 122414,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
         ],
         "reputation": [],
         "fingerprints": [],
@@ -3007,8 +3043,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1229,
-        "bytes": 121366,
+        "flows": 1217,
+        "bytes": 127346,
         "ioc": true,
         "tags": [
           "internal",
@@ -3051,8 +3087,8 @@
         "ip_class": "private",
         "severity": "high",
         "score": 63,
-        "flows": 1224,
-        "bytes": 122224,
+        "flows": 1217,
+        "bytes": 127017,
         "ioc": true,
         "tags": [
           "internal",
@@ -3068,94 +3104,6 @@
           "all-internal peers (-10)",
           "category voip (+3)",
           "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.6.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1224,
-        "bytes": 123550,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "floor: ioc match forces High (>= 60)",
-          "clamp: raw -7 -> 0"
-        ],
-        "reputation": [],
-        "fingerprints": [],
-        "score_terms": [
-          {
-            "label": "category web",
-            "points": 3
-          },
-          {
-            "label": "ioc: endpoint ip on threat feed",
-            "points": 35
-          },
-          {
-            "label": "ioc: sni on threat feed",
-            "points": 35
-          },
-          {
-            "label": "all-internal peers",
-            "points": -10
-          }
-        ]
-      },
-      {
-        "ip": "10.0.10.10",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 63,
-        "flows": 1223,
-        "bytes": 121916,
-        "ioc": true,
-        "tags": [
-          "internal",
-          "ioc"
-        ],
-        "attack": [
-          "T1046"
-        ],
-        "evidence": [
-          "category web (+3)",
-          "ioc: endpoint ip on threat feed (+35)",
-          "ioc: sni on threat feed (+35)",
-          "all-internal peers (-10)",
-          "category scan (+25)",
-          "behavior: scan-shaped probe (+10)"
         ],
         "reputation": [],
         "fingerprints": [],
@@ -3248,10 +3196,396 @@
         "mac": "02:00:00:00:00:0e"
       }
     ],
+    "dhcp_hosts": [
+      {
+        "mac": "02:00:00:00:00:00",
+        "hostname": "DESKTOP-7K2L9F",
+        "vendor_class": "MSFT 5.0"
+      },
+      {
+        "mac": "02:00:00:00:00:04",
+        "hostname": "Johns-MacBook-Pro",
+        "vendor_class": "darwin-dhcp"
+      },
+      {
+        "mac": "02:00:00:00:00:08",
+        "hostname": "pixel-7",
+        "vendor_class": "android-dhcp-14"
+      },
+      {
+        "mac": "02:00:00:00:00:0c",
+        "hostname": "rpi-sensor-03",
+        "vendor_class": "udhcp 1.36"
+      },
+      {
+        "mac": "02:00:00:00:00:10",
+        "hostname": "DESKTOP-7K2L9F",
+        "vendor_class": "MSFT 5.0"
+      },
+      {
+        "mac": "02:00:00:00:00:14",
+        "hostname": "Johns-MacBook-Pro",
+        "vendor_class": "darwin-dhcp"
+      },
+      {
+        "mac": "02:00:00:00:00:18",
+        "hostname": "pixel-7",
+        "vendor_class": "android-dhcp-14"
+      },
+      {
+        "mac": "02:00:00:00:00:1c",
+        "hostname": "rpi-sensor-03",
+        "vendor_class": "udhcp 1.36"
+      },
+      {
+        "mac": "02:00:00:00:00:20",
+        "hostname": "DESKTOP-7K2L9F",
+        "vendor_class": "MSFT 5.0"
+      },
+      {
+        "mac": "02:00:00:00:00:24",
+        "hostname": "Johns-MacBook-Pro",
+        "vendor_class": "darwin-dhcp"
+      },
+      {
+        "mac": "02:00:00:00:00:28",
+        "hostname": "pixel-7",
+        "vendor_class": "android-dhcp-14"
+      },
+      {
+        "mac": "02:00:00:00:00:2c",
+        "hostname": "rpi-sensor-03",
+        "vendor_class": "udhcp 1.36"
+      },
+      {
+        "mac": "02:00:00:00:00:30",
+        "hostname": "DESKTOP-7K2L9F",
+        "vendor_class": "MSFT 5.0"
+      },
+      {
+        "mac": "02:00:00:00:00:34",
+        "hostname": "Johns-MacBook-Pro",
+        "vendor_class": "darwin-dhcp"
+      },
+      {
+        "mac": "02:00:00:00:00:38",
+        "hostname": "pixel-7",
+        "vendor_class": "android-dhcp-14"
+      },
+      {
+        "mac": "02:00:00:00:00:3c",
+        "hostname": "rpi-sensor-03",
+        "vendor_class": "udhcp 1.36"
+      }
+    ],
     "downloads": [],
     "encrypted_dns": [],
     "carved_files": [],
     "findings": [
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.28.10 probed 53 hosts on port 67",
+        "src_ip": "10.0.28.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "53 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.44.10 probed 51 hosts on port 67",
+        "src_ip": "10.0.44.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "51 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.56.10 probed 51 hosts on port 67",
+        "src_ip": "10.0.56.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "51 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.4.10 probed 50 hosts on port 67",
+        "src_ip": "10.0.4.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "50 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.52.10 probed 50 hosts on port 67",
+        "src_ip": "10.0.52.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "50 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.8.10 probed 48 hosts on port 67",
+        "src_ip": "10.0.8.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "48 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.24.10 probed 48 hosts on port 67",
+        "src_ip": "10.0.24.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "48 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.48.10 probed 48 hosts on port 67",
+        "src_ip": "10.0.48.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "48 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.40.10 probed 47 hosts on port 67",
+        "src_ip": "10.0.40.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "47 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.60.10 probed 46 hosts on port 67",
+        "src_ip": "10.0.60.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "46 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.0.10 probed 45 hosts on port 67",
+        "src_ip": "10.0.0.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "45 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.36.10 probed 45 hosts on port 67",
+        "src_ip": "10.0.36.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "45 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.12.10 probed 44 hosts on port 67",
+        "src_ip": "10.0.12.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "44 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.32.10 probed 43 hosts on port 67",
+        "src_ip": "10.0.32.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "43 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.16.10 probed 42 hosts on port 67",
+        "src_ip": "10.0.16.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "42 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
+      {
+        "kind": "host_sweep",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.20.10 probed 40 hosts on port 67",
+        "src_ip": "10.0.20.10",
+        "dst_ip": null,
+        "dst_port": 67,
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "40 distinct destination hosts contacted on port 67",
+          "horizontal scan / remote-system discovery"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": null
+      },
       {
         "kind": "syn_flood",
         "severity": "high",
@@ -3351,17 +3685,38 @@
     "incidents": [
       {
         "host": "10.0.0.10",
-        "severity": "high",
-        "score": 68,
-        "title": "SYN flood: 10.0.0.10:443 hit by 221 half-open connections",
-        "narrative": "SYN flood: 10.0.0.10:443 hit by 221 half-open connections",
+        "severity": "critical",
+        "score": 83,
+        "title": "Multi-stage incident on 10.0.0.10",
+        "narrative": "10.0.0.10 swept the network, then flooded a service with half-open connections.",
         "stages": [
+          "Discovery",
           "Impact"
         ],
         "attack": [
+          "T1046",
           "T1499.001"
         ],
         "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.0.10 probed 45 hosts on port 67",
+            "src_ip": "10.0.0.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "45 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          },
           {
             "kind": "syn_flood",
             "severity": "high",
@@ -3380,6 +3735,116 @@
             "interval_ns": null,
             "jitter_cv": null,
             "contacts": 221
+          }
+        ]
+      },
+      {
+        "host": "10.0.36.10",
+        "severity": "critical",
+        "score": 83,
+        "title": "Multi-stage incident on 10.0.36.10",
+        "narrative": "10.0.36.10 swept the network, then flooded a service with half-open connections.",
+        "stages": [
+          "Discovery",
+          "Impact"
+        ],
+        "attack": [
+          "T1046",
+          "T1499.001"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.36.10 probed 45 hosts on port 67",
+            "src_ip": "10.0.36.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "45 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          },
+          {
+            "kind": "syn_flood",
+            "severity": "high",
+            "score": 68,
+            "title": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
+            "src_ip": "10.0.36.10",
+            "dst_ip": null,
+            "dst_port": 443,
+            "attack": [
+              "T1499.001"
+            ],
+            "evidence": [
+              "204 half-open connections from 62 sources to 10.0.36.10:443",
+              "many sources, never-completed handshakes — distributed TCP DoS"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": 204
+          }
+        ]
+      },
+      {
+        "host": "10.0.56.10",
+        "severity": "critical",
+        "score": 83,
+        "title": "Multi-stage incident on 10.0.56.10",
+        "narrative": "10.0.56.10 swept the network, then flooded a service with half-open connections.",
+        "stages": [
+          "Discovery",
+          "Impact"
+        ],
+        "attack": [
+          "T1046",
+          "T1499.001"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.56.10 probed 51 hosts on port 67",
+            "src_ip": "10.0.56.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "51 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          },
+          {
+            "kind": "syn_flood",
+            "severity": "high",
+            "score": 68,
+            "title": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
+            "src_ip": "10.0.56.10",
+            "dst_ip": null,
+            "dst_port": 443,
+            "attack": [
+              "T1499.001"
+            ],
+            "evidence": [
+              "205 half-open connections from 62 sources to 10.0.56.10:443",
+              "many sources, never-completed handshakes — distributed TCP DoS"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": 205
           }
         ]
       },
@@ -3418,40 +3883,6 @@
         ]
       },
       {
-        "host": "10.0.36.10",
-        "severity": "high",
-        "score": 68,
-        "title": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
-        "narrative": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
-        "stages": [
-          "Impact"
-        ],
-        "attack": [
-          "T1499.001"
-        ],
-        "findings": [
-          {
-            "kind": "syn_flood",
-            "severity": "high",
-            "score": 68,
-            "title": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
-            "src_ip": "10.0.36.10",
-            "dst_ip": null,
-            "dst_port": 443,
-            "attack": [
-              "T1499.001"
-            ],
-            "evidence": [
-              "204 half-open connections from 62 sources to 10.0.36.10:443",
-              "many sources, never-completed handshakes — distributed TCP DoS"
-            ],
-            "interval_ns": null,
-            "jitter_cv": null,
-            "contacts": 204
-          }
-        ]
-      },
-      {
         "host": "10.0.50.10",
         "severity": "high",
         "score": 68,
@@ -3486,41 +3917,449 @@
         ]
       },
       {
-        "host": "10.0.56.10",
+        "host": "10.0.12.10",
         "severity": "high",
-        "score": 68,
-        "title": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
-        "narrative": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
+        "score": 65,
+        "title": "Host sweep: 10.0.12.10 probed 44 hosts on port 67",
+        "narrative": "Host sweep: 10.0.12.10 probed 44 hosts on port 67",
         "stages": [
-          "Impact"
+          "Discovery"
         ],
         "attack": [
-          "T1499.001"
+          "T1046"
         ],
         "findings": [
           {
-            "kind": "syn_flood",
+            "kind": "host_sweep",
             "severity": "high",
-            "score": 68,
-            "title": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
-            "src_ip": "10.0.56.10",
+            "score": 65,
+            "title": "Host sweep: 10.0.12.10 probed 44 hosts on port 67",
+            "src_ip": "10.0.12.10",
             "dst_ip": null,
-            "dst_port": 443,
+            "dst_port": 67,
             "attack": [
-              "T1499.001"
+              "T1046"
             ],
             "evidence": [
-              "205 half-open connections from 62 sources to 10.0.56.10:443",
-              "many sources, never-completed handshakes — distributed TCP DoS"
+              "44 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 205
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.16.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.16.10 probed 42 hosts on port 67",
+        "narrative": "Host sweep: 10.0.16.10 probed 42 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.16.10 probed 42 hosts on port 67",
+            "src_ip": "10.0.16.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "42 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.20.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.20.10 probed 40 hosts on port 67",
+        "narrative": "Host sweep: 10.0.20.10 probed 40 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.20.10 probed 40 hosts on port 67",
+            "src_ip": "10.0.20.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "40 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.24.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.24.10 probed 48 hosts on port 67",
+        "narrative": "Host sweep: 10.0.24.10 probed 48 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.24.10 probed 48 hosts on port 67",
+            "src_ip": "10.0.24.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "48 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.28.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.28.10 probed 53 hosts on port 67",
+        "narrative": "Host sweep: 10.0.28.10 probed 53 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.28.10 probed 53 hosts on port 67",
+            "src_ip": "10.0.28.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "53 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.32.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.32.10 probed 43 hosts on port 67",
+        "narrative": "Host sweep: 10.0.32.10 probed 43 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.32.10 probed 43 hosts on port 67",
+            "src_ip": "10.0.32.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "43 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.4.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.4.10 probed 50 hosts on port 67",
+        "narrative": "Host sweep: 10.0.4.10 probed 50 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.4.10 probed 50 hosts on port 67",
+            "src_ip": "10.0.4.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "50 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.40.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.40.10 probed 47 hosts on port 67",
+        "narrative": "Host sweep: 10.0.40.10 probed 47 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.40.10 probed 47 hosts on port 67",
+            "src_ip": "10.0.40.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "47 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.44.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.44.10 probed 51 hosts on port 67",
+        "narrative": "Host sweep: 10.0.44.10 probed 51 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.44.10 probed 51 hosts on port 67",
+            "src_ip": "10.0.44.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "51 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.48.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.48.10 probed 48 hosts on port 67",
+        "narrative": "Host sweep: 10.0.48.10 probed 48 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.48.10 probed 48 hosts on port 67",
+            "src_ip": "10.0.48.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "48 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.52.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.52.10 probed 50 hosts on port 67",
+        "narrative": "Host sweep: 10.0.52.10 probed 50 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.52.10 probed 50 hosts on port 67",
+            "src_ip": "10.0.52.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "50 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.60.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.60.10 probed 46 hosts on port 67",
+        "narrative": "Host sweep: 10.0.60.10 probed 46 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.60.10 probed 46 hosts on port 67",
+            "src_ip": "10.0.60.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "46 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
+          }
+        ]
+      },
+      {
+        "host": "10.0.8.10",
+        "severity": "high",
+        "score": 65,
+        "title": "Host sweep: 10.0.8.10 probed 48 hosts on port 67",
+        "narrative": "Host sweep: 10.0.8.10 probed 48 hosts on port 67",
+        "stages": [
+          "Discovery"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "findings": [
+          {
+            "kind": "host_sweep",
+            "severity": "high",
+            "score": 65,
+            "title": "Host sweep: 10.0.8.10 probed 48 hosts on port 67",
+            "src_ip": "10.0.8.10",
+            "dst_ip": null,
+            "dst_port": 67,
+            "attack": [
+              "T1046"
+            ],
+            "evidence": [
+              "48 distinct destination hosts contacted on port 67",
+              "horizontal scan / remote-system discovery"
+            ],
+            "interval_ns": null,
+            "jitter_cv": null,
+            "contacts": null
           }
         ]
       }
     ]
   },
   "flows_parquet_path": "D:\\Project\\PacketPilot\\ui\\public\\sample\\flows.parquet",
-  "elapsed_ms": 313
+  "elapsed_ms": 254
 }

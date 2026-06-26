@@ -331,6 +331,7 @@ mod apply_tests {
             user_agents: Vec::new(),
             resolved_ips: Vec::new(),
             arp_hosts: Vec::new(),
+            dhcp_hosts: Vec::new(),
             downloads: Vec::new(),
             encrypted_dns: Vec::new(),
             carved_files: Vec::new(),

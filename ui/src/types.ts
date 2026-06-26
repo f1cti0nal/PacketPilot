@@ -118,6 +118,8 @@ export interface Summary {
   resolved_ips?: ResolvedDomain[];
   /** L2 host identity: IP → MAC bindings observed via ARP; absent in older summaries. */
   arp_hosts?: ArpHost[];
+  /** DHCP passive identity: client MAC → hostname / vendor class; absent in older summaries. */
+  dhcp_hosts?: DhcpHost[];
   /** Downloads overview: notable file classes served over HTTP; absent in older summaries. */
   downloads?: DownloadEvent[];
   /** Encrypted DNS (DoH/DoT): hosts whose DNS is hidden from passive DNS; absent in older summaries. */
@@ -209,6 +211,13 @@ export interface ResolvedDomain {
 export interface ArpHost {
   ip: string;
   mac: string;
+}
+
+/** DHCP passive identity: a client MAC and its self-reported hostname / vendor class. */
+export interface DhcpHost {
+  mac: string;
+  hostname?: string | null;
+  vendor_class?: string | null;
 }
 
 /** One encrypted-DNS row: a client host resolving via DoH/DoT, the resolver, and flow count. */

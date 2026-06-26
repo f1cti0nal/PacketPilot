@@ -209,7 +209,7 @@ export function Dashboard({
         <DnsResolutionsCard resolved={s.resolved_ips ?? []} />
         <EncryptedDnsCard hosts={s.encrypted_dns ?? []} />
         <CarvedFilesCard files={s.carved_files ?? []} />
-        <LocalHostsCard hosts={s.arp_hosts ?? []} />
+        <LocalHostsCard arp={s.arp_hosts ?? []} dhcp={s.dhcp_hosts ?? []} />
         <DownloadsCard downloads={s.downloads ?? []} />
       </div>
 

@@ -220,6 +220,18 @@ pub struct ArpHost {
     pub mac: String,
 }
 
+/// One DHCP passive-identity row: a client MAC and its self-reported hostname (DHCP option 12)
+/// and/or vendor-class identifier (option 60). Joins the [`ArpHost`] IP↔MAC map (by `mac`) into a
+/// full IP↔MAC↔hostname↔device picture. Derived metadata only.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DhcpHost {
+    pub mac: String,
+    #[serde(default)]
+    pub hostname: Option<String>,
+    #[serde(default)]
+    pub vendor_class: Option<String>,
+}
+
 /// One downloads-overview row: a client that received a notable file class (executable / script /
 /// installer / archive) over HTTP from a server, with how many such responses were seen. Inferred
 /// from the response `Content-Type`/filename — no body bytes are retained.
@@ -322,6 +334,10 @@ pub struct Summary {
     /// summaries readable.
     #[serde(default)]
     pub arp_hosts: Vec<ArpHost>,
+    /// DHCP passive identity: client MAC → hostname / vendor class. `#[serde(default)]` keeps older
+    /// summaries readable.
+    #[serde(default)]
+    pub dhcp_hosts: Vec<DhcpHost>,
     /// Downloads overview: notable file classes served over HTTP, per client/server. `#[serde(default)]`
     /// keeps older summaries readable.
     #[serde(default)]
@@ -380,6 +396,7 @@ impl Summary {
             user_agents: Vec::new(),
             resolved_ips: Vec::new(),
             arp_hosts: Vec::new(),
+            dhcp_hosts: Vec::new(),
             downloads: Vec::new(),
             encrypted_dns: Vec::new(),
             carved_files: Vec::new(),

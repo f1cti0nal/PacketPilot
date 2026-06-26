@@ -455,6 +455,7 @@ mod tests {
             download: None,
             download_disguised: false,
             stratum: None,
+            dhcp: None,
         }
     }
 

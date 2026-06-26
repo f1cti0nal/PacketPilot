@@ -237,6 +237,29 @@ pub fn http_request_payload(host: &str, path: &str) -> Vec<u8> {
     s.into_bytes()
 }
 
+/// A BOOTP/DHCP REQUEST payload carrying the client `chaddr` MAC plus a hostname (option 12) and
+/// vendor-class identifier (option 60) — the passive-identity signals. 236-byte BOOTP header +
+/// magic cookie + options, terminated by END. Sent client→server (UDP 68→67).
+pub fn dhcp_request_payload(client_mac: [u8; 6], hostname: &str, vendor: &str) -> Vec<u8> {
+    let mut v = vec![0u8; 236]; // zeroed BOOTP fixed header
+    v[0] = 1; // op: BOOTREQUEST
+    v[1] = 1; // htype: Ethernet
+    v[2] = 6; // hlen
+    v[28..34].copy_from_slice(&client_mac); // chaddr
+    v.extend_from_slice(&[0x63, 0x82, 0x53, 0x63]); // DHCP magic cookie
+    v.extend_from_slice(&[53, 1, 3]); // option 53: DHCP message type = REQUEST
+    let hn = hostname.as_bytes();
+    v.push(12); // option 12: host name
+    v.push(hn.len().min(63) as u8);
+    v.extend_from_slice(&hn[..hn.len().min(63)]);
+    let vc = vendor.as_bytes();
+    v.push(60); // option 60: vendor class identifier
+    v.push(vc.len().min(63) as u8);
+    v.extend_from_slice(&vc[..vc.len().min(63)]);
+    v.push(0xff); // END
+    v
+}
+
 /// An HTTP GET request carrying an `Authorization: Basic` header (the base64 of `user:pass`) — a
 /// cleartext credential exposure for the sniffer to flag. The token is opaque to the sniffer,
 /// which only recognizes the scheme, never the credential.

@@ -425,11 +425,24 @@ impl SynthGen {
                 self.ip_udp_frame(a, b, client_ip, server_ip, client_port, 53, &payload)
             }
             FrameKind::OtherUdp => {
-                // A small generic UDP datagram to an assorted high port.
+                // Draw the generic high port unconditionally so the RNG sequence (and thus every
+                // downstream packet) is identical whether or not this frame becomes DHCP.
                 let dport = 1024 + (self.rng.below(40000) as u16);
-                let payload = [0xABu8; 32];
-                self.record_flow(client_ip, server_ip, client_port, dport, IP_PROTO_UDP);
-                self.ip_udp_frame(a, b, client_ip, server_ip, client_port, dport, &payload)
+                // A deterministic fraction of other-UDP frames are DHCP REQUESTs (still UDP, so the
+                // other_udp budget — and every proto-count invariant — is unchanged). This gives the
+                // synthetic LAN passive host identity (hostname + vendor class) keyed by client MAC.
+                if a % 4 == 0 {
+                    let (hostname, vendor) = dhcp_identity(a);
+                    let payload = frames::dhcp_request_payload(mac_for(a), hostname, vendor);
+                    // DHCP client → server: UDP 68 → 67.
+                    self.record_flow(client_ip, server_ip, 68, 67, IP_PROTO_UDP);
+                    self.ip_udp_frame(a, b, client_ip, server_ip, 68, 67, &payload)
+                } else {
+                    // A small generic UDP datagram to an assorted high port.
+                    let payload = [0xABu8; 32];
+                    self.record_flow(client_ip, server_ip, client_port, dport, IP_PROTO_UDP);
+                    self.ip_udp_frame(a, b, client_ip, server_ip, client_port, dport, &payload)
+                }
             }
             FrameKind::Http => {
                 let payload = frames::http_request_payload("example.com", "/index.html");
@@ -1091,6 +1104,20 @@ fn host_ip(idx: u16) -> Ipv4Addr {
 /// Deterministic per-host MAC: 02:00:00:00:HH:LL (locally administered).
 fn mac_for(idx: u16) -> [u8; 6] {
     [0x02, 0x00, 0x00, 0x00, (idx >> 8) as u8, (idx & 0xFF) as u8]
+}
+
+/// Deterministic DHCP `(hostname, vendor-class)` identity for a host index — a small spread of
+/// realistic OS/device families so the synthetic capture exercises the passive-identity rollup.
+fn dhcp_identity(idx: u16) -> (&'static str, &'static str) {
+    const IDS: [(&str, &str); 4] = [
+        ("DESKTOP-7K2L9F", "MSFT 5.0"),       // Windows
+        ("Johns-MacBook-Pro", "darwin-dhcp"), // macOS
+        ("pixel-7", "android-dhcp-14"),       // Android
+        ("rpi-sensor-03", "udhcp 1.36"),      // Linux/IoT
+    ];
+    // DHCP clients are picked on a stride (every 4th host), so index by idx/4 to cycle through all
+    // families rather than always landing on the first.
+    IDS[(idx as usize / 4) % IDS.len()]
 }
 
 #[cfg(test)]

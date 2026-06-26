@@ -34,8 +34,8 @@
 
 use crate::error::PpError;
 use crate::model::packet::{
-    AppProto, ArpClaim, CredScheme, DownloadKind, PacketMeta, PiiKind, Protocol, StratumRole,
-    Transport,
+    AppProto, ArpClaim, CredScheme, DhcpInfo, DownloadKind, PacketMeta, PiiKind, Protocol,
+    StratumRole, Transport,
 };
 use crate::reader::{LinkType, RawFrame};
 use crate::Result;
@@ -81,6 +81,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         download: None,
         download_disguised: false,
         stratum: None,
+        dhcp: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -270,6 +271,9 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         // Cleartext Stratum (mining) JSON-RPC method → the cryptomining signal (T1496). Records only
         // which party sent it (miner vs pool); no payload retained.
         meta.stratum = sniff_stratum(meta.transport, payload);
+        // Passive host identity from DHCP (client MAC + hostname / vendor class), UDP 67/68 only.
+        // Derived metadata; the option values are bounded/sanitized at parse time.
+        meta.dhcp = sniff_dhcp(meta.transport, meta.src_port, meta.dst_port, payload);
     }
 
     Ok(())
@@ -949,6 +953,93 @@ fn sniff_stratum(transport: Transport, payload: &[u8]) -> Option<StratumRole> {
     None
 }
 
+/// Bounded, sanitized ASCII string from a DHCP option value: printable ASCII only, NUL-trimmed,
+/// length-capped. Returns `None` for empty / non-printable values so junk never enters identity.
+fn dhcp_string(v: &[u8]) -> Option<String> {
+    const MAX_DHCP_STR: usize = 64;
+    // Vendors sometimes NUL-terminate; stop at the first NUL.
+    let end = v.iter().position(|&b| b == 0).unwrap_or(v.len());
+    let v = &v[..end];
+    if v.is_empty() || !v.iter().all(|&b| (0x20..=0x7e).contains(&b)) {
+        return None;
+    }
+    Some(v.iter().take(MAX_DHCP_STR).map(|&b| b as char).collect())
+}
+
+/// Passive host identity from a DHCP/BOOTP message (UDP 67/68): the client `chaddr` MAC plus its
+/// self-reported hostname (option 12) and vendor-class identifier (option 60). Payload-free beyond
+/// those derived fields; bounded and panic-safe on truncated/malformed options. `None` unless the
+/// packet is a well-formed Ethernet DHCP message carrying at least one identity-bearing option.
+fn sniff_dhcp(
+    transport: Transport,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) -> Option<DhcpInfo> {
+    if transport != Transport::Udp {
+        return None;
+    }
+    // DHCP/BOOTP rides UDP 67 (server) and 68 (client), in either direction.
+    if !matches!(
+        (src_port, dst_port),
+        (67, 68) | (68, 67) | (67, 67) | (68, 68)
+    ) {
+        return None;
+    }
+    // BOOTP fixed header is 236 bytes; the 4-byte DHCP magic cookie follows. Need 240+ to have any
+    // options at all.
+    if payload.len() < 240 {
+        return None;
+    }
+    // op = 1 (BOOTREQUEST) / 2 (BOOTREPLY); htype = 1 (Ethernet); hlen = 6.
+    if !matches!(payload[0], 1 | 2) || payload[1] != 1 || payload[2] != 6 {
+        return None;
+    }
+    // Magic cookie 99.130.83.99 anchors the option block (and confirms DHCP vs bare BOOTP).
+    if payload[236..240] != [0x63, 0x82, 0x53, 0x63] {
+        return None;
+    }
+    // chaddr starts at offset 28; the first `hlen` (6) bytes are the client MAC.
+    let mut client_mac = [0u8; 6];
+    client_mac.copy_from_slice(&payload[28..34]);
+
+    let mut hostname = None;
+    let mut vendor_class = None;
+    let mut off = 240;
+    while off < payload.len() {
+        let code = payload[off];
+        if code == 0xff {
+            break; // END
+        }
+        if code == 0x00 {
+            off += 1; // PAD
+            continue;
+        }
+        // Need a length byte and the full value, else the options are truncated — stop.
+        let Some(&len) = payload.get(off + 1) else {
+            break;
+        };
+        let vstart = off + 2;
+        let Some(val) = payload.get(vstart..vstart + len as usize) else {
+            break;
+        };
+        match code {
+            12 => hostname = dhcp_string(val),
+            60 => vendor_class = dhcp_string(val),
+            _ => {}
+        }
+        off = vstart + len as usize;
+    }
+    if hostname.is_none() && vendor_class.is_none() {
+        return None; // nothing identity-bearing
+    }
+    Some(DhcpInfo {
+        client_mac,
+        hostname,
+        vendor_class,
+    })
+}
+
 /// Extract a lowercase file extension (sans dot) from a `Content-Disposition` value's `filename=`
 /// parameter, e.g. `attachment; filename="setup.exe"` -> `"exe"`. `None` when absent or extensionless.
 fn cdisp_filename_ext(cdisp: &str) -> Option<String> {
@@ -1351,6 +1442,7 @@ mod tests {
             download: None,
             download_disguised: false,
             stratum: None,
+            dhcp: None,
         }
     }
 
@@ -2054,6 +2146,46 @@ mod tests {
         );
         assert_eq!(sniff_stratum(Transport::Udp, sub), None);
         assert_eq!(sniff_stratum(Transport::Tcp, b""), None);
+    }
+
+    #[test]
+    fn sniff_dhcp_extracts_mac_hostname_and_vendor() {
+        let mac = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
+        let p = crate::gen::frames::dhcp_request_payload(mac, "DESKTOP-ABC", "MSFT 5.0");
+        // Client -> server: UDP 68 -> 67.
+        let d = sniff_dhcp(Transport::Udp, 68, 67, &p).expect("dhcp");
+        assert_eq!(d.client_mac, mac);
+        assert_eq!(d.hostname.as_deref(), Some("DESKTOP-ABC"));
+        assert_eq!(d.vendor_class.as_deref(), Some("MSFT 5.0"));
+    }
+
+    #[test]
+    fn sniff_dhcp_rejects_non_dhcp_and_malformed() {
+        let mac = [0u8; 6];
+        let p = crate::gen::frames::dhcp_request_payload(mac, "h", "v");
+        // Wrong transport / wrong ports.
+        assert!(sniff_dhcp(Transport::Tcp, 68, 67, &p).is_none());
+        assert!(sniff_dhcp(Transport::Udp, 1234, 5678, &p).is_none());
+        // Too short to hold the BOOTP header + cookie.
+        assert!(sniff_dhcp(Transport::Udp, 68, 67, &p[..200]).is_none());
+        // Bad magic cookie (corrupt byte 236) -> not DHCP.
+        let mut bad = p.clone();
+        bad[236] = 0x00;
+        assert!(sniff_dhcp(Transport::Udp, 68, 67, &bad).is_none());
+        // A DHCP packet with no identity-bearing options yields None (option block = just END).
+        let mut bare = vec![0u8; 236];
+        bare[0] = 1;
+        bare[1] = 1;
+        bare[2] = 6;
+        bare.extend_from_slice(&[0x63, 0x82, 0x53, 0x63, 0xff]);
+        assert!(sniff_dhcp(Transport::Udp, 68, 67, &bare).is_none());
+        // A truncated option length (claims 99 bytes but the value is absent) must not panic.
+        let mut trunc = vec![0u8; 236];
+        trunc[0] = 1;
+        trunc[1] = 1;
+        trunc[2] = 6;
+        trunc.extend_from_slice(&[0x63, 0x82, 0x53, 0x63, 12, 99, b'x']);
+        assert!(sniff_dhcp(Transport::Udp, 68, 67, &trunc).is_none());
     }
 
     #[test]

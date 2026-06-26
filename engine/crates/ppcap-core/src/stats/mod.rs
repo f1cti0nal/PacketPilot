@@ -167,6 +167,9 @@ pub struct StatsAccumulator {
     resolved: HashMap<IpAddr, (String, u64)>,
     /// L2 host identity: IP → first MAC seen claiming it via ARP. Bounded by `max_tracked_keys`.
     arp_macs: HashMap<IpAddr, [u8; 6]>,
+    /// DHCP passive identity: client MAC → (hostname, vendor class); first non-empty value per MAC
+    /// wins. Keyed by MAC so it joins `arp_macs`. Bounded by `max_tracked_keys`.
+    dhcp: HashMap<[u8; 6], (Option<String>, Option<String>)>,
     /// Downloads overview: (client, server, file class) → count, from HTTP responses. Bounded.
     downloads: HashMap<(IpAddr, IpAddr, DownloadKind), u64>,
     /// Encrypted DNS (DoH/DoT): (client host, resolver label) → flow count — the resolution passive
@@ -237,6 +240,7 @@ impl StatsAccumulator {
             per_http_ua: HashMap::new(),
             resolved: HashMap::new(),
             arp_macs: HashMap::new(),
+            dhcp: HashMap::new(),
             encrypted_dns: HashMap::new(),
             downloads: HashMap::new(),
             size_buckets: [0; SIZE_BUCKETS.len()],
@@ -292,6 +296,22 @@ impl StatsAccumulator {
             let ip = IpAddr::V4(claim.sender_ip);
             if !self.arp_macs.contains_key(&ip) && self.arp_macs.len() < self.cfg.max_tracked_keys {
                 self.arp_macs.insert(ip, claim.sender_mac);
+            }
+        }
+
+        // DHCP passive identity: bind the client MAC to its hostname / vendor class (first non-empty
+        // value per MAC wins). Recorded here, before the IP short-circuit, since the binding is by
+        // MAC (a DHCP DISCOVER has src 0.0.0.0). Bounded by `max_tracked_keys`.
+        if let Some(d) = &p.dhcp {
+            if self.dhcp.contains_key(&d.client_mac) || self.dhcp.len() < self.cfg.max_tracked_keys
+            {
+                let entry = self.dhcp.entry(d.client_mac).or_default();
+                if entry.0.is_none() {
+                    entry.0 = d.hostname.clone();
+                }
+                if entry.1.is_none() {
+                    entry.1 = d.vendor_class.clone();
+                }
             }
         }
 
@@ -782,6 +802,22 @@ impl StatsAccumulator {
         arp_hosts.sort_by(|a, b| a.ip.cmp(&b.ip));
         arp_hosts.truncate(TOP_K_ARP);
 
+        // DHCP passive-identity rollup: client MAC → hostname / vendor class, ordered by MAC. Top-N.
+        const TOP_K_DHCP: usize = 64;
+        let mut dhcp_hosts: Vec<crate::model::summary::DhcpHost> = self
+            .dhcp
+            .iter()
+            .map(
+                |(mac, (hostname, vendor))| crate::model::summary::DhcpHost {
+                    mac: format_mac(mac),
+                    hostname: hostname.clone(),
+                    vendor_class: vendor.clone(),
+                },
+            )
+            .collect();
+        dhcp_hosts.sort_by(|a, b| a.mac.cmp(&b.mac));
+        dhcp_hosts.truncate(TOP_K_DHCP);
+
         // Downloads rollup: notable file classes served over HTTP, ranked by count then endpoints.
         const TOP_K_DOWNLOADS: usize = 64;
         let mut downloads: Vec<crate::model::summary::DownloadEvent> = self
@@ -881,6 +917,7 @@ impl StatsAccumulator {
             user_agents,
             resolved_ips,
             arp_hosts,
+            dhcp_hosts,
             downloads,
             encrypted_dns,
             // Populated by the analyze pass from the HTTP file carver (post-`finish`).
@@ -1334,6 +1371,7 @@ mod tests {
             download: None,
             download_disguised: false,
             stratum: None,
+            dhcp: None,
         }
     }
 
@@ -2187,6 +2225,48 @@ mod tests {
             .find(|h| h.ip == "10.0.0.5")
             .expect("arp host");
         assert_eq!(h.mac, "00:1a:2b:3c:4d:5e");
+    }
+
+    #[test]
+    fn dhcp_hosts_record_mac_to_hostname_and_vendor() {
+        use crate::model::packet::DhcpInfo;
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let mac = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
+        // A DHCP REQUEST (UDP 68->67) carrying hostname + vendor for this client MAC.
+        let mut p = pkt(
+            0,
+            0,
+            300,
+            Transport::Udp,
+            Some(ip4(0, 0, 0, 0)),
+            Some(ip4(255, 255, 255, 255)),
+            68,
+            67,
+            0,
+        );
+        p.dhcp = Some(DhcpInfo {
+            client_mac: mac,
+            hostname: Some("DESKTOP-ABC".to_string()),
+            vendor_class: Some("MSFT 5.0".to_string()),
+        });
+        acc.observe_packet(&p);
+        // A later packet with only a hostname must NOT clobber the established vendor (first wins).
+        let mut p2 = p.clone();
+        p2.dhcp = Some(DhcpInfo {
+            client_mac: mac,
+            hostname: Some("DESKTOP-XYZ".to_string()),
+            vendor_class: None,
+        });
+        acc.observe_packet(&p2);
+
+        let s = acc.finish();
+        let h = s
+            .dhcp_hosts
+            .iter()
+            .find(|h| h.mac == "02:11:22:33:44:55")
+            .expect("dhcp host");
+        assert_eq!(h.hostname.as_deref(), Some("DESKTOP-ABC")); // first hostname wins
+        assert_eq!(h.vendor_class.as_deref(), Some("MSFT 5.0"));
     }
 
     #[test]

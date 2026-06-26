@@ -254,6 +254,20 @@ pub struct ArpClaim {
     pub sender_mac: [u8; 6],
 }
 
+/// Passive host identity extracted from a DHCP/BOOTP message: the client's `chaddr` MAC plus its
+/// self-reported hostname (option 12) and/or vendor-class identifier (option 60). Keyed by MAC so
+/// it joins the ARP IP↔MAC map into a full IP↔MAC↔hostname↔device picture. Derived metadata only —
+/// no frame bytes are retained, and the option values are bounded/sanitized at parse time.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DhcpInfo {
+    /// The client hardware address (`chaddr`, first 6 bytes for Ethernet).
+    pub client_mac: [u8; 6],
+    /// DHCP option 12 (host name); `None` if absent.
+    pub hostname: Option<String>,
+    /// DHCP option 60 (vendor class identifier, e.g. "MSFT 5.0", "android-dhcp-14"); `None` if absent.
+    pub vendor_class: Option<String>,
+}
+
 /// One decoded packet's metadata. No payload retained (bounded memory).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PacketMeta {
@@ -339,6 +353,9 @@ pub struct PacketMeta {
     /// Set when a cleartext Stratum (mining) JSON-RPC message is seen, recording which party sent it
     /// (miner vs pool); `None` otherwise. The cryptomining signal (T1496).
     pub stratum: Option<StratumRole>,
+    /// Passive host identity from a DHCP message (client MAC + hostname/vendor class); `None` for
+    /// non-DHCP packets. Folded into the per-MAC identity rollup, then dropped.
+    pub dhcp: Option<DhcpInfo>,
 }
 
 impl PacketMeta {
