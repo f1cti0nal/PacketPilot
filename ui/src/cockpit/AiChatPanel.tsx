@@ -4,6 +4,7 @@ import type { AiMessage } from "../lib/ai/client";
 import { getAiConfig, getAiEnabled, aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
 import { askChat } from "../lib/ai/run";
 import { aiNeedsRelay } from "../lib/ai/loopback";
+import { Markdown } from "../lib/markdown";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import { AiConsent } from "./AiConsent";
 
@@ -88,10 +89,12 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
           {msgs.map((m, i) => (
             <div key={i} className={m.role === "user" ? "text-[var(--color-text)]" : "text-[var(--color-text-faint)]"}>
               <span className="t-tag uppercase">{m.role}</span>
-              <pre className="whitespace-pre-wrap break-words">{m.content}</pre>
+              {m.role === "assistant"
+                ? <Markdown text={m.content} />
+                : <pre className="whitespace-pre-wrap break-words">{m.content}</pre>}
             </div>
           ))}
-          {streaming && <pre className="whitespace-pre-wrap break-words text-[var(--color-text-faint)]">{streaming}</pre>}
+          {streaming && <div className="text-[var(--color-text-faint)]"><Markdown text={streaming} /></div>}
         </div>
         {needsRelay && (
           <p className="mx-3 mb-1 rounded border border-[var(--color-sev-medium)] p-2 text-[0.7rem] text-[var(--color-text-dim)]">

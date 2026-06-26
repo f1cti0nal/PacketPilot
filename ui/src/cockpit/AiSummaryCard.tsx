@@ -4,6 +4,7 @@ import { getAiEnabled, aiConsentGiven, giveAiConsent, getAiConfig } from "../lib
 import { getAiSummary, putAiSummary } from "../lib/ai/cache";
 import { generateSummary } from "../lib/ai/run";
 import { aiNeedsRelay } from "../lib/ai/loopback";
+import { Markdown } from "../lib/markdown";
 import { AiConsent } from "./AiConsent";
 
 type State = { status: "idle" | "loading" | "ready" | "error"; text: string; error?: string };
@@ -85,7 +86,9 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
         )}
         {st.error && <p role="alert" className="mt-2 text-xs text-[var(--color-sev-critical)]">{st.error}</p>}
         {st.text && (
-          <pre aria-live="polite" aria-busy={st.status === "loading"} className="mt-2 whitespace-pre-wrap break-words text-xs text-[var(--color-text)]">{st.text}</pre>
+          <div aria-live="polite" aria-busy={st.status === "loading"} className="mt-2 text-xs text-[var(--color-text)]">
+            <Markdown text={st.text} />
+          </div>
         )}
       </section>
       {showConsent && (
