@@ -118,12 +118,24 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
         </div>
       )}
 
-      {/* Tags */}
+      {/* Tags. A `cloud:<provider>` tag is offline hosting attribution — render it as a small
+          outlined provenance chip ("☁ AWS") to distinguish it from the plain public/internal/ioc
+          tags. */}
       {threat.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {threat.tags.map((t) => (
-            <span key={t} className="t-tag text-[var(--color-text-dim)]">{t}</span>
-          ))}
+          {threat.tags.map((t) =>
+            t.startsWith("cloud:") ? (
+              <span
+                key={t}
+                className="t-tag rounded border border-[var(--color-border)] px-1 text-[var(--color-text-dim)]"
+                title="Offline cloud/hosting attribution (coarse hint)"
+              >
+                ☁ {t.slice("cloud:".length)}
+              </span>
+            ) : (
+              <span key={t} className="t-tag text-[var(--color-text-dim)]">{t}</span>
+            ),
+          )}
         </div>
       )}
 

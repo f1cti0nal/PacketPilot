@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::IpAddr;
 
-use crate::enrich::classify_ip;
+use crate::enrich::{classify_ip, cloud_provider};
 use crate::model::category::Category;
 use crate::model::flow::FlowRecord;
 use crate::model::packet::{DownloadKind, PacketMeta, Transport};
@@ -702,6 +702,11 @@ impl StatsAccumulator {
                 .to_string()];
                 if s.ioc {
                     tags.push("ioc".to_string());
+                }
+                // Coarse offline cloud/hosting attribution for public IPs — a triage hint
+                // ("external IP hosted at AWS/Azure/Cloudflare/…"); see `enrich::cloud_provider`.
+                if let Some(provider) = cloud_provider(*ip) {
+                    tags.push(format!("cloud:{provider}"));
                 }
                 IpThreat {
                     ip: ip.to_string(),

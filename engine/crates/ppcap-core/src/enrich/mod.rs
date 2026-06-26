@@ -127,6 +127,54 @@ fn classify_v6(a: Ipv6Addr) -> IpClass {
     IpClass::Public
 }
 
+/// Best-effort **offline** cloud / hosting / CDN provider for a public IPv4, from a small curated
+/// table of large, stable, well-known blocks. This is a coarse triage *hint* — "this external IP is
+/// hosted at AWS / Azure / Cloudflare / …" — not an authoritative ASN/geo lookup (the opt-in online
+/// reputation connectors do that, with live data). Returns `None` for non-public IPs, IPv6, and any
+/// space not in the table. First match wins, so the table order is deterministic.
+pub fn cloud_provider(ip: IpAddr) -> Option<&'static str> {
+    let IpAddr::V4(v4) = ip else {
+        return None; // IPv6 cloud space is large and volatile; left to the online connectors.
+    };
+    if !matches!(classify_v4(v4), IpClass::Public) {
+        return None;
+    }
+    let a = u32::from(v4);
+    // (network, prefix-len, provider). Coarse, well-known blocks; approximate by design.
+    const BLOCKS: &[(u32, u8, &str)] = &[
+        (u32::from_be_bytes([8, 8, 8, 0]), 24, "Google"),
+        (u32::from_be_bytes([8, 8, 4, 0]), 24, "Google"),
+        (u32::from_be_bytes([34, 64, 0, 0]), 10, "Google Cloud"),
+        (u32::from_be_bytes([35, 184, 0, 0]), 13, "Google Cloud"),
+        (u32::from_be_bytes([142, 250, 0, 0]), 15, "Google"),
+        (u32::from_be_bytes([1, 1, 1, 0]), 24, "Cloudflare"),
+        (u32::from_be_bytes([104, 16, 0, 0]), 13, "Cloudflare"),
+        (u32::from_be_bytes([172, 64, 0, 0]), 13, "Cloudflare"),
+        (u32::from_be_bytes([3, 0, 0, 0]), 9, "AWS"),
+        (u32::from_be_bytes([52, 0, 0, 0]), 11, "AWS"),
+        (u32::from_be_bytes([54, 224, 0, 0]), 12, "AWS"),
+        (u32::from_be_bytes([13, 32, 0, 0]), 15, "AWS CloudFront"),
+        (u32::from_be_bytes([20, 0, 0, 0]), 8, "Microsoft Azure"),
+        (u32::from_be_bytes([13, 64, 0, 0]), 11, "Microsoft Azure"),
+        (u32::from_be_bytes([40, 64, 0, 0]), 10, "Microsoft Azure"),
+        (u32::from_be_bytes([23, 32, 0, 0]), 11, "Akamai"),
+        (u32::from_be_bytes([104, 64, 0, 0]), 10, "Akamai"),
+        (u32::from_be_bytes([151, 101, 0, 0]), 16, "Fastly"),
+        (u32::from_be_bytes([159, 65, 0, 0]), 16, "DigitalOcean"),
+        (u32::from_be_bytes([167, 99, 0, 0]), 16, "DigitalOcean"),
+        (u32::from_be_bytes([5, 9, 0, 0]), 16, "Hetzner"),
+        (u32::from_be_bytes([51, 68, 0, 0]), 14, "OVH"),
+    ];
+    for &(net, len, name) in BLOCKS {
+        // len is 8..=24 here, so the shift is always well-defined.
+        let mask = u32::MAX << (32 - len);
+        if (a & mask) == (net & mask) {
+            return Some(name);
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------------------
 // Threat feed: local JSON IOC store.
 // ---------------------------------------------------------------------------------------
@@ -666,6 +714,24 @@ mod tests {
         assert_eq!(classify_ip(ip("240.0.0.1")), IpClass::Reserved);
         assert_eq!(classify_ip(ip("255.255.255.255")), IpClass::Reserved);
         assert_eq!(classify_ip(ip("8.8.8.8")), IpClass::Public);
+    }
+
+    #[test]
+    fn cloud_provider_tags_known_blocks_only() {
+        // Well-known public blocks resolve to their provider.
+        assert_eq!(cloud_provider(ip("8.8.8.8")), Some("Google"));
+        assert_eq!(cloud_provider(ip("1.1.1.1")), Some("Cloudflare"));
+        assert_eq!(cloud_provider(ip("52.10.20.30")), Some("AWS"));
+        assert_eq!(cloud_provider(ip("20.112.52.29")), Some("Microsoft Azure"));
+        assert_eq!(cloud_provider(ip("151.101.1.69")), Some("Fastly"));
+        // Private / reserved / documentation IPs are never tagged.
+        assert_eq!(cloud_provider(ip("10.0.0.5")), None);
+        assert_eq!(cloud_provider(ip("192.168.1.1")), None);
+        assert_eq!(cloud_provider(ip("203.0.113.5")), None);
+        // A genuinely public IP outside the table is not guessed (Quad9 is not in our blocks).
+        assert_eq!(cloud_provider(ip("9.9.9.9")), None);
+        // IPv6 is left to the online connectors.
+        assert_eq!(cloud_provider(ip("2606:4700::1")), None);
     }
 
     #[test]

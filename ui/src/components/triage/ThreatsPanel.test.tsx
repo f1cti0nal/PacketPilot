@@ -39,6 +39,13 @@ describe("ThreatsPanel reputation transparency", () => {
     expect(tagTexts).toContain("public");
   });
 
+  it("renders a cloud-attribution tag as a distinct provenance chip", () => {
+    render(<ThreatsPanel threats={[makeThreat({ tags: ["public", "cloud:AWS"] })]} />);
+    // The `cloud:` prefix is stripped and shown with a ☁ marker; the raw "cloud:AWS" is not shown.
+    expect(screen.getByText("☁ AWS")).toBeInTheDocument();
+    expect(screen.queryByText("cloud:AWS")).not.toBeInTheDocument();
+  });
+
   it("renders grouped evidence via EvidenceList", () => {
     render(<ThreatsPanel threats={[threat]} />);
     // EvidenceList groups by prefix: the item text after "reputation:" is rendered
