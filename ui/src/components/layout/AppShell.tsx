@@ -304,7 +304,11 @@ export function AppShell({
             onSelect={onSelectThreat}
           />
         )}
-        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
+        {/* overflow-x-hidden clips sub-pixel rounding overflow (e.g. the heatmap's
+            many flex-1 gap-px cells at the ~768px boundary) so the shell never grows
+            a horizontal scrollbar; views that need real horizontal scroll (FlowsTable)
+            carry their own overflow-auto container. */}
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
       </div>
       {isMobile && (
         <BottomTabBar
