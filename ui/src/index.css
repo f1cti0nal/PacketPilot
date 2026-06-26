@@ -22,7 +22,7 @@
   /* Text */
   --color-text: #e6edf6;
   --color-text-dim: #94a3b8;
-  --color-text-faint: #5b6b80;
+  --color-text-faint: #8b98ad; /* WCAG AA (≥4.5:1) on the surface ramp; was #5b6b80 (3.4:1) */
 
   /* Accents — glow language */
   --color-accent: #38bdf8;
@@ -83,10 +83,10 @@
   --color-border-strong: #bcc8d6;
   --color-grid: #e3e9f1;
 
-  /* Text — 16:1 / 6.8:1 / 4.7:1 on white */
+  /* Text — AA on white + the tinted surface ramp */
   --color-text: #0e1b2e;
   --color-text-dim: #44536b;
-  --color-text-faint: #64748b;
+  --color-text-faint: #586678; /* darkened from #64748b (3.2:1 on tinted surfaces) for AA */
 
   /* Accents */
   --color-accent: #0670a8;
