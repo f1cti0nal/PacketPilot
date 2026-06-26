@@ -5,7 +5,19 @@ import { SUMMARY_SYSTEM, CHAT_SYSTEM } from "./prompts";
 import { chatCompletion, type AiMessage } from "./client";
 import { proxyTransport, directTransport, type StreamTransport, type LlmRequest } from "./transport";
 import { getProxyUrl } from "./settings";
+import { isLoopbackUrl } from "./loopback";
 import { SseAccumulator } from "./sse";
+
+/** A relay must be an absolute http(s) URL — a scheme-less value (e.g. "relay") resolves relative
+ * to the app origin, so `fetch` would POST the summary + API key there instead of to the relay. */
+function isAbsoluteHttpUrl(s: string): boolean {
+  try {
+    const p = new URL(s).protocol;
+    return p === "http:" || p === "https:";
+  } catch {
+    return false;
+  }
+}
 
 /** Desktop transport: stream the upstream POST through the Tauri `ai_chat_stream` command via a Channel. */
 export function tauriTransport(): StreamTransport {
@@ -20,19 +32,18 @@ export function tauriTransport(): StreamTransport {
 /** Pick the transport for the current surface + config. Desktop → Tauri; browser → relay, or direct to localhost. */
 export function pickTransport(config: AiConfig): StreamTransport {
   if (isTauri()) return tauriTransport();
-  const proxy = getProxyUrl();
-  if (proxy) return proxyTransport(proxy);
-  // Direct (relay-free) egress is allowed ONLY to genuine loopback. Match the exact
-  // hostname, not a prefix — an unanchored test let `http://localhost.evil.com` /
-  // `http://127.0.0.1.attacker.io` pass and exfiltrate the capture context + API key.
-  let isLocal = false;
-  try {
-    const host = new URL(config.baseUrl).hostname.toLowerCase();
-    isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
-  } catch {
-    isLocal = false; // unparseable URL → not local
+  const proxy = getProxyUrl(); // trimmed; "" when unset or whitespace-only
+  if (proxy) {
+    // A configured-but-malformed relay must FAIL LOUDLY, never silently degrade to an
+    // origin-relative POST that would leak the summary + API key.
+    if (!isAbsoluteHttpUrl(proxy)) {
+      throw new Error("The AI relay URL in Settings is not a valid http(s) URL.");
+    }
+    return proxyTransport(proxy);
   }
-  if (isLocal) return directTransport();
+  // Direct (relay-free) egress is allowed ONLY to genuine loopback (exact-hostname check; see
+  // isLoopbackUrl — a prefix match would let localhost.evil.com exfiltrate the context + key).
+  if (isLoopbackUrl(config.baseUrl)) return directTransport();
   throw new Error("Browser AI needs a relay URL (Settings) for non-local endpoints.");
 }
 

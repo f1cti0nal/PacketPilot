@@ -10,6 +10,7 @@ import {
   getProxyUrl as getAiProxyUrl,
   setProxyUrl as setAiProxyUrl,
 } from "../lib/ai/settings";
+import { isLoopbackUrl } from "../lib/ai/loopback";
 
 const PROVIDERS: Provider[] = ["abuseipdb", "greynoise", "virustotal"];
 
@@ -155,7 +156,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           />
         </label>
         {!isTauri() && (
-          <label className="mt-3 block text-xs">Proxy URL (browser only)
+          <label className="mt-3 block text-xs">Proxy URL (required in the browser for cloud providers)
             <input
               className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs"
               value={aiProxy}
@@ -163,6 +164,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               placeholder="https://your-relay.example/ai-relay"
               aria-label="Proxy URL"
             />
+            {aiEnabled && aiProxy.trim() === "" && !isLoopbackUrl(aiBaseUrl) && (
+              <span className="mt-1 block text-[0.7rem] text-[var(--color-text-dim)]">
+                ⚠ A browser can't reach a cloud provider directly (CORS + your key would be exposed).
+                Set a relay here, or pick the Ollama (local) preset, or use the desktop app.
+              </span>
+            )}
           </label>
         )}
 

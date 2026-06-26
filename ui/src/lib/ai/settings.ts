@@ -15,8 +15,11 @@ export function getAiBaseUrl(): string { return localStorage.getItem("pp.ai.base
 export function setAiBaseUrl(s: string): void { localStorage.setItem("pp.ai.baseUrl", s); }
 export function getAiModel(): string { return localStorage.getItem("pp.ai.model") ?? AI_PRESETS[0].model; }
 export function setAiModel(s: string): void { localStorage.setItem("pp.ai.model", s); }
-export function getProxyUrl(): string { return localStorage.getItem("pp.ai.proxyUrl") ?? ""; }
-export function setProxyUrl(s: string): void { localStorage.setItem("pp.ai.proxyUrl", s); }
+// Trimmed on read AND write: a whitespace-only value must never count as a configured relay —
+// otherwise `if (proxy)` in pickTransport would take the proxy path and POST the summary + API key
+// to a whitespace URL, which resolves RELATIVE to the app origin (a silent key-leak).
+export function getProxyUrl(): string { return (localStorage.getItem("pp.ai.proxyUrl") ?? "").trim(); }
+export function setProxyUrl(s: string): void { localStorage.setItem("pp.ai.proxyUrl", s.trim()); }
 export function aiConsentGiven(): boolean { return localStorage.getItem("pp.ai.consent") === "1"; }
 export function giveAiConsent(): void { localStorage.setItem("pp.ai.consent", "1"); }
 

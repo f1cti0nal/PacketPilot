@@ -3,6 +3,7 @@ import type { AnalysisOutput } from "../types";
 import type { AiMessage } from "../lib/ai/client";
 import { getAiConfig, getAiEnabled, aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
 import { askChat } from "../lib/ai/run";
+import { aiNeedsRelay } from "../lib/ai/loopback";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import { AiConsent } from "./AiConsent";
 
@@ -11,6 +12,7 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [showConsent, setShowConsent] = useState(false);
   // The question to send once consent is granted (mirrors AiSummaryCard's pendingRun).
   const pendingQ = useRef<string | null>(null);
@@ -24,12 +26,15 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
     setMsgs(history);
     setBusy(true);
     setStreaming("");
+    setError(null);
     try {
       let acc = "";
       const full = await askChat(output, msgs, q, getAiConfig(), (t) => { acc += t; setStreaming(acc); });
       setMsgs([...history, { role: "assistant", content: full }]);
     } catch (e) {
-      setMsgs([...history, { role: "assistant", content: `AI request failed: ${e instanceof Error ? e.message : String(e)}` }]);
+      // Surface failures as a real alert (not a faint assistant bubble that assistive tech / a
+      // scanning user might miss).
+      setError(`AI request failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
       setStreaming("");
@@ -42,10 +47,11 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
     const q = input.trim();
     if (!q || busy) return;
     if (!getAiEnabled()) {
-      setMsgs((m) => [...m, { role: "assistant", content: "AI is off — enable it in Settings." }]);
+      setError("AI is off — enable it in Settings.");
       setInput("");
       return;
     }
+    setError(null);
     setInput("");
     if (!aiConsentGiven()) {
       pendingQ.current = q;
@@ -69,6 +75,7 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
   }
 
   const cfg = getAiConfig();
+  const needsRelay = getAiEnabled() && aiNeedsRelay(cfg.baseUrl);
 
   return (
     <>
@@ -86,6 +93,15 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
           ))}
           {streaming && <pre className="whitespace-pre-wrap break-words text-[var(--color-text-faint)]">{streaming}</pre>}
         </div>
+        {needsRelay && (
+          <p className="mx-3 mb-1 rounded border border-[var(--color-sev-medium)] p-2 text-[0.7rem] text-[var(--color-text-dim)]">
+            ⚠ This cloud endpoint needs a <b>relay URL</b> in the browser — set a Proxy URL in Settings,
+            use a localhost model (Ollama), or the desktop app.
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="mx-3 mb-1 text-xs text-[var(--color-sev-critical)]">{error}</p>
+        )}
         <div className="flex gap-2 border-t border-[var(--color-border,#222)] p-3">
           <input className="flex-1 rounded bg-[var(--color-bg)] p-1 text-xs" value={input}
             aria-label="Ask a question about this capture"

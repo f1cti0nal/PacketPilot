@@ -17,6 +17,21 @@ describe("AiConsent", () => {
     expect(screen.getByText(/stays on this device/i)).toBeInTheDocument();
   });
 
+  it("does NOT show the local note for a spoofed-localhost host", () => {
+    render(<AiConsent baseUrl="http://localhost.evil.com/v1" model="m" onProceed={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByText(/stays on this device/i)).toBeNull();
+    // …and it warns that this cloud endpoint needs a relay in the browser.
+    expect(screen.getByText(/needs a/i)).toBeInTheDocument();
+  });
+
+  it("warns a cloud endpoint needs a relay; a localhost endpoint does not", () => {
+    const { unmount } = render(<AiConsent baseUrl="https://api.anthropic.com/v1" model="m" onProceed={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByText(/relay URL/i)).toBeInTheDocument();
+    unmount();
+    render(<AiConsent baseUrl="http://localhost:11434/v1" model="m" onProceed={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByText(/relay URL/i)).toBeNull();
+  });
+
   it("calls onCancel when Cancel is clicked", async () => {
     const u = userEvent.setup();
     const onCancel = vi.fn();

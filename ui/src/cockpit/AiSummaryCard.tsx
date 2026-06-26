@@ -3,6 +3,7 @@ import type { AnalysisOutput } from "../types";
 import { getAiEnabled, aiConsentGiven, giveAiConsent, getAiConfig } from "../lib/ai/settings";
 import { getAiSummary, putAiSummary } from "../lib/ai/cache";
 import { generateSummary } from "../lib/ai/run";
+import { aiNeedsRelay } from "../lib/ai/loopback";
 import { AiConsent } from "./AiConsent";
 
 type State = { status: "idle" | "loading" | "ready" | "error"; text: string; error?: string };
@@ -64,6 +65,8 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
   }
 
   const cfg = getAiConfig();
+  // Browser + cloud endpoint + no relay → Generate will fail at egress; warn up front.
+  const needsRelay = getAiEnabled() && aiNeedsRelay(cfg.baseUrl);
 
   return (
     <>
@@ -74,7 +77,13 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
             {st.status === "ready" ? "Regenerate" : st.status === "loading" ? "Generating…" : "Generate"}
           </button>
         </div>
-        {st.error && <p role="alert" className="mt-2 text-xs text-[var(--color-critical,#ef4444)]">{st.error}</p>}
+        {needsRelay && (
+          <p className="mt-2 rounded border border-[var(--color-sev-medium)] p-2 text-xs text-[var(--color-text-dim)]">
+            ⚠ This cloud endpoint needs a <b>relay URL</b> in the browser — set a Proxy URL in Settings,
+            switch to a localhost model (Ollama), or use the desktop app.
+          </p>
+        )}
+        {st.error && <p role="alert" className="mt-2 text-xs text-[var(--color-sev-critical)]">{st.error}</p>}
         {st.text && (
           <pre aria-live="polite" aria-busy={st.status === "loading"} className="mt-2 whitespace-pre-wrap break-words text-xs text-[var(--color-text)]">{st.text}</pre>
         )}

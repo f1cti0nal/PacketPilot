@@ -113,6 +113,18 @@ describe("pickTransport", () => {
     expect(() => pickTransport({ ...cfg, baseUrl: "https://api.openai.com/v1" })).toThrow(/relay/i);
   });
 
+  it("REJECTS a malformed (non-absolute) relay URL instead of POSTing to the app origin", async () => {
+    isTauriMock.mockReturnValue(false);
+    // A scheme-less value would resolve relative to the page origin in fetch() → key/summary leak.
+    for (const bad of ["relay", "/ai-relay", "ftp://relay.example"]) {
+      getProxyUrlMock.mockReturnValue(bad);
+      const { pickTransport } = await import("./run");
+      expect(() => pickTransport({ ...cfg, baseUrl: "https://api.openai.com/v1" }), bad).toThrow(
+        /valid http/i,
+      );
+    }
+  });
+
   it("REJECTS spoofed-localhost hosts (exact-hostname gate, not a prefix)", async () => {
     isTauriMock.mockReturnValue(false);
     getProxyUrlMock.mockReturnValue("");
