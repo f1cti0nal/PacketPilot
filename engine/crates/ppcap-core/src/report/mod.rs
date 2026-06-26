@@ -303,8 +303,8 @@ pub fn render_html(
     if let Some(ai) = ai_summary {
         writeln!(
             s,
-            "<section class=\"card\"><h2>AI Analyst Summary</h2><pre class=\"ai-summary\">{}</pre></section>",
-            esc(ai)
+            "<section class=\"card\"><h2>AI Analyst Summary</h2><div class=\"ai-summary\">{}</div></section>",
+            ai_summary_html(ai)
         )
         .ok();
     }
@@ -344,6 +344,149 @@ fn esc(raw: &str) -> String {
         }
     }
     o
+}
+
+// ── AI-summary Markdown → safe HTML ──────────────────────────────────────────────
+// The LLM emits a markdown subset (the prompt says "use short paragraphs and bullets"); render it
+// to formatted HTML rather than dumping raw markers into a <pre>. ALL text is HTML-escaped first
+// (no model HTML is ever emitted), mirroring the in-app renderer (ui/src/lib/markdown.tsx).
+
+/// `#{1,6} ` heading → its text, else `None`.
+fn md_heading(line: &str) -> Option<&str> {
+    let hashes = line.bytes().take_while(|&b| b == b'#').count();
+    if (1..=6).contains(&hashes) {
+        if let Some(stripped) = line.get(hashes..).and_then(|r| r.strip_prefix(' ')) {
+            return Some(stripped.trim_start());
+        }
+    }
+    None
+}
+
+/// A list item: `(ordered, item_text)`. Unordered `- / * / +`, ordered `N. / N)`.
+fn md_list_item(line: &str) -> Option<(bool, String)> {
+    for p in ["- ", "* ", "+ "] {
+        if let Some(rest) = line.strip_prefix(p) {
+            return Some((false, rest.trim_start().to_string()));
+        }
+    }
+    let digits = line.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digits > 0 {
+        if let Some(rest) = line.get(digits..) {
+            if let Some(r) = rest.strip_prefix(". ").or_else(|| rest.strip_prefix(") ")) {
+                return Some((true, r.trim_start().to_string()));
+            }
+        }
+    }
+    None
+}
+
+/// Wrap `marker … marker` spans with `open … close`; unmatched / empty markers stay literal. When
+/// `tight`, the inner text must not start/end with whitespace (so "5 * 3 * 2" is not emphasised).
+fn md_wrap(text: &str, marker: &str, open: &str, close: &str, tight: bool) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find(marker) {
+        let before = &rest[..i];
+        let after = &rest[i + marker.len()..];
+        match after.find(marker) {
+            Some(j) => {
+                let inner = &after[..j];
+                let tight_ok = !tight
+                    || (!inner.starts_with(char::is_whitespace)
+                        && !inner.ends_with(char::is_whitespace));
+                if inner.is_empty() || !tight_ok {
+                    out.push_str(before);
+                    out.push_str(marker);
+                    rest = after;
+                } else {
+                    out.push_str(before);
+                    out.push_str(open);
+                    out.push_str(inner);
+                    out.push_str(close);
+                    rest = &after[j + marker.len()..];
+                }
+            }
+            None => {
+                out.push_str(before);
+                out.push_str(marker);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Inline markdown on one (HTML-escaped) line: code, then bold, then italic (precedence order).
+fn md_inline(raw: &str) -> String {
+    let e = esc(raw);
+    let c = md_wrap(&e, "`", "<code>", "</code>", false);
+    let b = md_wrap(&c, "**", "<strong>", "</strong>", false);
+    let b = md_wrap(&b, "__", "<strong>", "</strong>", false);
+    let i = md_wrap(&b, "*", "<em>", "</em>", true);
+    md_wrap(&i, "_", "<em>", "</em>", true)
+}
+
+fn md_flush_para(out: &mut String, para: &mut Vec<String>) {
+    if !para.is_empty() {
+        out.push_str("<p>");
+        out.push_str(&md_inline(&para.join(" ")));
+        out.push_str("</p>");
+        para.clear();
+    }
+}
+
+fn md_flush_list(out: &mut String, list: &mut Option<(bool, Vec<String>)>) {
+    if let Some((ordered, items)) = list.take() {
+        out.push_str(if ordered { "<ol>" } else { "<ul>" });
+        for it in &items {
+            out.push_str("<li>");
+            out.push_str(&md_inline(it));
+            out.push_str("</li>");
+        }
+        out.push_str(if ordered { "</ol>" } else { "</ul>" });
+    }
+}
+
+/// Render the LLM AI-summary markdown subset (headings, bold, italic, inline code, lists,
+/// paragraphs) to safe, escaped HTML.
+fn ai_summary_html(text: &str) -> String {
+    let normalized = text.replace("\r\n", "\n");
+    let mut out = String::new();
+    let mut para: Vec<String> = Vec::new();
+    let mut list: Option<(bool, Vec<String>)> = None;
+    for raw in normalized.split('\n') {
+        let line = raw.trim();
+        if line.is_empty() {
+            md_flush_para(&mut out, &mut para);
+            md_flush_list(&mut out, &mut list);
+            continue;
+        }
+        if let Some(h) = md_heading(line) {
+            md_flush_para(&mut out, &mut para);
+            md_flush_list(&mut out, &mut list);
+            out.push_str("<p class=\"ai-h\">");
+            out.push_str(&md_inline(h));
+            out.push_str("</p>");
+            continue;
+        }
+        if let Some((ordered, item)) = md_list_item(line) {
+            md_flush_para(&mut out, &mut para);
+            match list {
+                Some((o, ref mut items)) if o == ordered => items.push(item),
+                _ => {
+                    md_flush_list(&mut out, &mut list);
+                    list = Some((ordered, vec![item]));
+                }
+            }
+            continue;
+        }
+        md_flush_list(&mut out, &mut list);
+        para.push(line.to_string());
+    }
+    md_flush_para(&mut out, &mut para);
+    md_flush_list(&mut out, &mut list);
+    out
 }
 
 // ---------------------------------------------------------------------------------------
@@ -920,7 +1063,12 @@ th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;le
 .kv dt{color:var(--muted)} .kv dd{margin:0}
 .muted{color:var(--muted)} footer{color:var(--muted);font-size:12px;margin-top:24px}
 svg{display:block;max-width:100%;height:auto}
-.ai-summary{white-space:pre-wrap;word-break:break-word;font-family:inherit;}
+.ai-summary{word-break:break-word;}
+.ai-summary p{margin:.35em 0;}
+.ai-summary .ai-h{font-weight:600;margin:.6em 0 .2em;}
+.ai-summary ul,.ai-summary ol{margin:.35em 0 .35em 1.3em;padding:0;}
+.ai-summary li{margin:.15em 0;}
+.ai-summary code{background:rgba(127,127,127,.18);padding:0 .25em;border-radius:3px;}
 
 @media print{
   :root{ --bg:#ffffff; --surface:#ffffff; --surface-2:#f6f7f9; --text:#0b1220;
@@ -1019,6 +1167,36 @@ mod tests {
         assert!(html.contains("AI Analyst Summary"));
         assert!(html.contains("Risk is HIGH &lt;script&gt;")); // escaped, not raw
         assert!(!html.contains("<script>x</script>"));
+    }
+
+    #[test]
+    fn ai_summary_markdown_is_rendered_not_raw() {
+        let out = crate::model::output::AnalysisOutput::default();
+        let md = "## Executive summary\n\nRisk is **elevated** — a host *beaconing* to `1.2.3.4`.\n\n- isolate the host\n- block the C2\n\n1. first\n2. second";
+        let html = render_html(&out, 0, Some(md));
+        // Markdown is rendered to HTML, not dumped raw.
+        assert!(html.contains("<strong>elevated</strong>"));
+        assert!(html.contains("<em>beaconing</em>"));
+        assert!(html.contains("<code>1.2.3.4</code>"));
+        assert!(html.contains("<li>isolate the host</li>"));
+        assert!(html.contains("<ol>") && html.contains("<li>first</li>"));
+        assert!(html.contains("Executive summary"));
+        // No raw markdown markers survive into the report body.
+        assert!(!html.contains("**elevated**"));
+        assert!(!html.contains("## Executive"));
+    }
+
+    #[test]
+    fn ai_summary_md_helpers_are_xss_safe_and_degrade() {
+        // Inline HTML is escaped even inside emphasis.
+        assert_eq!(
+            md_inline("**<b>hi</b>**"),
+            "<strong>&lt;b&gt;hi&lt;/b&gt;</strong>"
+        );
+        // Unclosed marker stays literal (mid-stream / malformed).
+        assert_eq!(md_inline("risk is **high"), "risk is **high");
+        // Spaced single stars are not emphasis (tight rule).
+        assert_eq!(md_inline("5 * 3 * 2"), "5 * 3 * 2");
     }
 
     #[test]
