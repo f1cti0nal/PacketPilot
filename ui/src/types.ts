@@ -104,6 +104,8 @@ export interface Summary {
   downloads?: DownloadEvent[];
   /** Encrypted DNS (DoH/DoT): hosts whose DNS is hidden from passive DNS; absent in older summaries. */
   encrypted_dns?: EncryptedDnsHost[];
+  /** Carved HTTP downloads with their SHA-256 (IOC) + known-bad flag; absent in older summaries. */
+  carved_files?: CarvedFile[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -198,6 +200,15 @@ export interface EncryptedDnsHost {
   flows: number;
 }
 
+/** One carved HTTP download: client, server, the body's SHA-256 (IOC), size, and known-bad flag. */
+export interface CarvedFile {
+  client: string;
+  server: string;
+  sha256: string;
+  size: number;
+  known_bad: boolean;
+}
+
 /** One downloads-overview row: a client that received a notable file class over HTTP from a server. */
 export interface DownloadEvent {
   client: string;
@@ -227,7 +238,8 @@ export type FindingKind =
   | "syn_flood"
   | "suspicious_ua"
   | "disguised_download"
-  | "cryptomining";
+  | "cryptomining"
+  | "malware_download";
 
 /**
  * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a

@@ -33,6 +33,7 @@
 //! 5. Time unit is `i64` nanoseconds since the Unix epoch, end to end.
 
 pub mod analyze;
+pub(crate) mod carve;
 pub mod classify;
 pub mod columnar;
 pub mod decode;

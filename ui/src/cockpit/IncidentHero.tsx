@@ -50,6 +50,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   suspicious_ua: { label: "Attack Tool", Icon: Bug },
   disguised_download: { label: "Disguised Download", Icon: VenetianMask },
   cryptomining: { label: "Cryptomining", Icon: Pickaxe },
+  malware_download: { label: "Malware Download", Icon: FileWarning },
 };
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -72,6 +73,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   suspicious_ua: "Discovery",
   disguised_download: "Command & Control",
   cryptomining: "Impact",
+  malware_download: "Command & Control",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
@@ -88,6 +90,7 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   cleartext_creds: "exposures",
   disguised_download: "downloads",
   cryptomining: "messages",
+  malware_download: "files",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */

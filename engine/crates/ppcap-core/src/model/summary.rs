@@ -219,6 +219,18 @@ pub struct EncryptedDnsHost {
     pub flows: u64,
 }
 
+/// One carved file: a cleartext HTTP download reassembled and hashed in-stream. The SHA-256 is a
+/// ready IOC for external lookup; `known_bad` flags a match against the embedded known-bad set. No
+/// file bytes are retained — only the hash and size.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CarvedFile {
+    pub client: String,
+    pub server: String,
+    pub sha256: String,
+    pub size: u64,
+    pub known_bad: bool,
+}
+
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Summary {
@@ -288,6 +300,10 @@ pub struct Summary {
     /// `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub encrypted_dns: Vec<EncryptedDnsHost>,
+    /// Carved HTTP file downloads with their SHA-256 (IOC) + known-bad flag. `#[serde(default)]`
+    /// keeps older summaries readable.
+    #[serde(default)]
+    pub carved_files: Vec<CarvedFile>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -334,6 +350,7 @@ impl Summary {
             arp_hosts: Vec::new(),
             downloads: Vec::new(),
             encrypted_dns: Vec::new(),
+            carved_files: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
         }

@@ -18,6 +18,7 @@ import {
   Shuffle,
   Siren,
   Pickaxe,
+  FileWarning,
   Unlock,
   VenetianMask,
   Waves,
@@ -57,6 +58,7 @@ const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
   suspicious_ua: { label: "Attack Tool", Icon: Bug },
   disguised_download: { label: "Disguised Download", Icon: VenetianMask },
   cryptomining: { label: "Cryptomining", Icon: Pickaxe },
+  malware_download: { label: "Malware Download", Icon: FileWarning },
 };
 
 /** Worst-first ordering. */

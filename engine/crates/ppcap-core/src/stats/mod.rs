@@ -805,6 +805,8 @@ impl StatsAccumulator {
             arp_hosts,
             downloads,
             encrypted_dns,
+            // Populated by the analyze pass from the HTTP file carver (post-`finish`).
+            carved_files: Vec::new(),
             // Behavioral findings + their per-host correlation are produced by the `detect`
             // stage from the cross-flow tracker, not by this accumulator; the orchestrator fills
             // them in post-`finish`.

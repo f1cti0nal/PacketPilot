@@ -23,6 +23,7 @@ import { TopPortsCard } from "../cockpit/TopPortsCard";
 import { HttpOverviewCard } from "../cockpit/HttpOverviewCard";
 import { DnsResolutionsCard } from "../cockpit/DnsResolutionsCard";
 import { EncryptedDnsCard } from "../cockpit/EncryptedDnsCard";
+import { CarvedFilesCard } from "../cockpit/CarvedFilesCard";
 import { LocalHostsCard } from "../cockpit/LocalHostsCard";
 import { DownloadsCard } from "../cockpit/DownloadsCard";
 import { TriageBadge } from "../cockpit/TriageAnnotation";
@@ -200,6 +201,7 @@ export function Dashboard({
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
         <DnsResolutionsCard resolved={s.resolved_ips ?? []} />
         <EncryptedDnsCard hosts={s.encrypted_dns ?? []} />
+        <CarvedFilesCard files={s.carved_files ?? []} />
         <LocalHostsCard hosts={s.arp_hosts ?? []} />
         <DownloadsCard downloads={s.downloads ?? []} />
       </div>

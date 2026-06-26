@@ -222,6 +222,9 @@ pub fn run_source_visiting(
     // Bounded server-TLS-handshake reassembler: reads the cleartext server Certificate (TLS ≤ 1.2)
     // out of band from the same packets, for the certificate-health detector. Drained at EOF.
     let mut cert_reasm = TlsCertReassembler::new();
+    // Bounded HTTP file carver: reassembles cleartext download bodies in TCP order and streams them
+    // through SHA-256 (no body buffering), for file-hash IOC surfacing + known-bad detection.
+    let mut body_carver = crate::carve::HttpBodyCarver::new();
     let mut writer: Option<FlowParquetWriter> = match &cfg.flows_parquet {
         Some(p) => Some(FlowParquetWriter::create(p, cfg.writer.clone())?),
         None => None,
@@ -255,6 +258,7 @@ pub fn run_source_visiting(
                 // raw server payload bytes, which `PacketMeta` does not retain).
                 if let Ok(ref meta) = decode_result {
                     cert_reasm.observe(meta, &frame);
+                    body_carver.observe(meta, &frame);
                 }
                 (frame_bytes, decode_result)
             }
@@ -440,10 +444,36 @@ pub fn run_source_visiting(
     findings.extend(detect_suspicious_ua(&tracker, &cfg.suspicious_ua));
     findings.extend(detect_disguised_download(&tracker, &cfg.disguised_download));
     findings.extend(detect_cryptomining(&tracker, &cfg.cryptomining));
+    // Carved HTTP files: surface each download's SHA-256 (IOC) and raise a finding for any whose
+    // hash is in the embedded known-bad set.
+    let carved = body_carver.into_results();
+    for c in carved.iter().filter(|c| c.known_bad) {
+        findings.push(malware_download_finding(c));
+    }
+    // Surface the carved-file IOC list, known-bad first then largest, capped for the summary/UI.
+    const TOP_K_CARVED: usize = 128;
+    let mut carved_files: Vec<crate::model::summary::CarvedFile> = carved
+        .iter()
+        .map(|c| crate::model::summary::CarvedFile {
+            client: c.client.to_string(),
+            server: c.server.to_string(),
+            sha256: crate::analyze::hex_of(&c.sha256),
+            size: c.size,
+            known_bad: c.known_bad,
+        })
+        .collect();
+    carved_files.sort_by(|a, b| {
+        b.known_bad
+            .cmp(&a.known_bad)
+            .then(b.size.cmp(&a.size))
+            .then(a.sha256.cmp(&b.sha256))
+    });
+    carved_files.truncate(TOP_K_CARVED);
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
     let mut summary = stats.finish();
+    summary.carved_files = carved_files;
     // Correlate the findings into per-host incidents (the "is this a real incident" view).
     summary.incidents = correlate_incidents(&findings);
     summary.findings = findings;
@@ -641,10 +671,9 @@ pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
     h.finalize_bytes()
 }
 
-/// One-shot SHA-256 hex of a byte slice (reuses the vendored streaming `Sha256`).
-pub(crate) fn sha256_hex(data: &[u8]) -> String {
-    let bytes = sha256(data);
-    let mut hex = String::with_capacity(64);
+/// Lowercase hex encoding of a byte slice.
+pub(crate) fn hex_of(bytes: &[u8]) -> String {
+    let mut hex = String::with_capacity(bytes.len() * 2);
     for byte in bytes.iter() {
         hex.push(char::from_digit((byte >> 4) as u32, 16).unwrap());
         hex.push(char::from_digit((byte & 0x0f) as u32, 16).unwrap());
@@ -652,8 +681,37 @@ pub(crate) fn sha256_hex(data: &[u8]) -> String {
     hex
 }
 
+/// One-shot SHA-256 hex of a byte slice (reuses the vendored streaming `Sha256`).
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
+    hex_of(&sha256(data))
+}
+
+/// Build a Critical malware-download finding (T1105) from a carved file whose SHA-256 matched the
+/// embedded known-bad set. Attributed to the downloading client (the at-risk host).
+fn malware_download_finding(c: &crate::carve::CarveObservation) -> crate::model::finding::Finding {
+    use crate::model::finding::{Finding, FindingKind};
+    use crate::model::severity::Severity;
+    Finding {
+        kind: FindingKind::MalwareDownload,
+        severity: Severity::Critical,
+        score: 95,
+        title: format!("Known-malicious file downloaded ({} bytes)", c.size),
+        src_ip: c.client.to_string(),
+        dst_ip: Some(c.server.to_string()),
+        dst_port: None,
+        attack: vec!["T1105".to_string()],
+        evidence: vec![
+            format!("sha256 {} matched the known-bad set (+50)", hex_of(&c.sha256)),
+            format!("carved {}-byte cleartext HTTP download", c.size),
+        ],
+        interval_ns: None,
+        jitter_cv: None,
+        contacts: None,
+    }
+}
+
 /// Minimal streaming SHA-256 (FIPS 180-4). No external dependencies; constant memory.
-struct Sha256 {
+pub(crate) struct Sha256 {
     state: [u32; 8],
     /// Partial block buffer (0..64 bytes pending).
     block: [u8; 64],
@@ -676,7 +734,7 @@ impl Sha256 {
         0xc67178f2,
     ];
 
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Sha256 {
             state: [
                 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
@@ -688,7 +746,7 @@ impl Sha256 {
         }
     }
 
-    fn update(&mut self, mut data: &[u8]) {
+    pub(crate) fn update(&mut self, mut data: &[u8]) {
         self.total_len = self.total_len.wrapping_add(data.len() as u64);
 
         // Top off any partial block first.
@@ -720,7 +778,7 @@ impl Sha256 {
         }
     }
 
-    fn finalize_bytes(mut self) -> [u8; 32] {
+    pub(crate) fn finalize_bytes(mut self) -> [u8; 32] {
         let bit_len = self.total_len.wrapping_mul(8);
 
         // Append 0x80 then zero-pad to a 56-byte boundary, then the 64-bit length.

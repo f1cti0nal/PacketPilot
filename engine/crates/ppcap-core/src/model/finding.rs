@@ -56,6 +56,9 @@ pub enum FindingKind {
     /// Cryptomining: a host running the cleartext Stratum mining protocol to a pool — resource
     /// hijacking / cryptojacking (T1496).
     Cryptomining,
+    /// A file downloaded over cleartext HTTP whose carved SHA-256 matched a known-bad hash set —
+    /// confirmed malware delivery (T1105).
+    MalwareDownload,
 }
 
 impl FindingKind {
@@ -81,6 +84,7 @@ impl FindingKind {
             FindingKind::SuspiciousUa => "suspicious_ua",
             FindingKind::DisguisedDownload => "disguised_download",
             FindingKind::Cryptomining => "cryptomining",
+            FindingKind::MalwareDownload => "malware_download",
         }
     }
 }

@@ -540,3 +540,52 @@ fn pipeline_parquet_has_payload_src_and_sni() {
         );
     }
 }
+
+#[test]
+fn carves_eicar_download_hash_and_raises_malware_finding() {
+    use ppcap_core::analyze::{self, PipelineConfig};
+    use ppcap_core::model::finding::FindingKind;
+
+    // A cleartext HTTP response (server -> client) delivering the EICAR test file in one segment.
+    let eicar = br#"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"#;
+    let mut resp =
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 68\r\n\r\n"
+            .to_vec();
+    resp.extend_from_slice(eicar);
+    let frame = eth_wrap(&ipv4_tcp(SRV, CLI, 80, 49152, TCP_PSH | TCP_ACK, &resp));
+
+    let dir = tempfile::tempdir().unwrap();
+    let pcap = dir.path().join("eicar.pcap");
+    write_pcap(&pcap, &[frame]);
+
+    let cfg = PipelineConfig {
+        classify: ClassifyConfig {
+            detect_scans: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let out = analyze::run(&pcap, &cfg, |_, _, _| {}).expect("analyze the EICAR capture");
+
+    // The body is carved and surfaced with its SHA-256 + known-bad flag.
+    let cf = out
+        .summary
+        .carved_files
+        .iter()
+        .find(|c| c.size == 68)
+        .expect("the 68-byte download is carved");
+    assert_eq!(
+        cf.sha256,
+        "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+    );
+    assert!(cf.known_bad, "EICAR's hash is in the known-bad set");
+    assert_eq!(cf.client, CLI.to_string());
+    assert_eq!(cf.server, SRV.to_string());
+
+    // ...and a Critical malware-download finding is raised, attributed to the downloading client.
+    assert!(
+        out.summary.findings.iter().any(|f| f.kind == FindingKind::MalwareDownload
+            && f.src_ip == CLI.to_string()),
+        "a MalwareDownload finding attributed to the client"
+    );
+}
