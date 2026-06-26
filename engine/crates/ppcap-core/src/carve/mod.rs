@@ -58,7 +58,9 @@ const KNOWN_BAD_HEX: &[&str] = &[
 
 /// True if `hash` is in the embedded known-bad set.
 fn known_bad(hash: &[u8; 32]) -> bool {
-    KNOWN_BAD_HEX.iter().any(|h| hex32(h).as_ref() == Some(hash))
+    KNOWN_BAD_HEX
+        .iter()
+        .any(|h| hex32(h).as_ref() == Some(hash))
 }
 
 /// Parse a 64-char hex string into 32 bytes (`None` if malformed).
@@ -247,7 +249,8 @@ impl HttpBodyCarver {
                 self.evict_stale(meta.ts_ns);
             }
             if self.states.len() < MAX_FLOWS {
-                self.states.insert(key, CarveState::new(src, dst, seq, meta.ts_ns));
+                self.states
+                    .insert(key, CarveState::new(src, dst, seq, meta.ts_ns));
             }
         }
         let done = if let Some(st) = self.states.get_mut(&key) {
@@ -324,7 +327,10 @@ fn header_line<'a>(head: &'a [u8], name: &[u8]) -> Option<&'a [u8]> {
         if line.len() >= name.len() && line[..name.len()].eq_ignore_ascii_case(name) {
             let val = &line[name.len()..];
             // Trim leading/trailing ASCII whitespace.
-            let start = val.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(val.len());
+            let start = val
+                .iter()
+                .position(|b| !b.is_ascii_whitespace())
+                .unwrap_or(val.len());
             let endrel = val[start..]
                 .iter()
                 .rposition(|b| !b.is_ascii_whitespace())
@@ -403,8 +409,13 @@ mod tests {
         let head = b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nhello ";
         let rest = b"world";
         let mut st = state();
-        assert!(st.feed(1000, head).is_none(), "incomplete body must not carve");
-        let obs = st.feed(1000 + head.len() as u32, rest).expect("carved on completion");
+        assert!(
+            st.feed(1000, head).is_none(),
+            "incomplete body must not carve"
+        );
+        let obs = st
+            .feed(1000 + head.len() as u32, rest)
+            .expect("carved on completion");
         assert_eq!(hex_of(&obs.sha256), sha256_hex(b"hello world"));
     }
 
@@ -465,7 +476,14 @@ mod tests {
 
     /// Build an Ethernet/IPv4/TCP frame with an explicit sequence number (the gen builder uses a
     /// fixed seq, so we patch it; decode does not validate the L4 checksum).
-    fn seg(src: std::net::Ipv4Addr, dst: std::net::Ipv4Addr, sp: u16, dp: u16, seq: u32, payload: &[u8]) -> Vec<u8> {
+    fn seg(
+        src: std::net::Ipv4Addr,
+        dst: std::net::Ipv4Addr,
+        sp: u16,
+        dp: u16,
+        seq: u32,
+        payload: &[u8],
+    ) -> Vec<u8> {
         use crate::gen::frames::{
             build_ethernet, build_ipv4, build_tcp, ETHERTYPE_IPV4, IP_PROTO_TCP, TCP_ACK, TCP_PSH,
         };
@@ -509,17 +527,31 @@ mod tests {
         resp.extend_from_slice(&real_body);
 
         let f1 = seg(srv4(), cli4(), 80, 49152, 1000, &resp[..split]);
-        let f2 = seg(srv4(), cli4(), 80, 49152, 1000 + split as u32, &resp[split..]);
+        let f2 = seg(
+            srv4(),
+            cli4(),
+            80,
+            49152,
+            1000 + split as u32,
+            &resp[split..],
+        );
 
         let mut carver = HttpBodyCarver::new();
         feed_frame(&mut carver, &f1, 1, 0);
         feed_frame(&mut carver, &f2, 2, 1);
         let obs = carver.into_results();
 
-        assert_eq!(obs.len(), 1, "one carve (the real file), not the interior nested response");
+        assert_eq!(
+            obs.len(),
+            1,
+            "one carve (the real file), not the interior nested response"
+        );
         assert_eq!(obs[0].size, clen as u64);
         assert_eq!(hex_of(&obs[0].sha256), sha256_hex(&real_body));
-        assert!(obs.iter().all(|o| o.size != 2), "the interior 'XY' must not be carved");
+        assert!(
+            obs.iter().all(|o| o.size != 2),
+            "the interior 'XY' must not be carved"
+        );
     }
 
     #[test]
@@ -532,7 +564,10 @@ mod tests {
 
         let mut carver = HttpBodyCarver::new();
         feed_frame(&mut carver, &f, 1, 0);
-        assert!(carver.states.is_empty(), "completed carve's slot is reclaimed");
+        assert!(
+            carver.states.is_empty(),
+            "completed carve's slot is reclaimed"
+        );
         assert_eq!(carver.observations.len(), 1, "the download was carved");
     }
 }

@@ -1,3 +1,6 @@
 
 # SDD scratch ledger (not versioned)
 .superpowers/
+
+# Vite / Vitest local cache
+.vite/

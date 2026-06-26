@@ -584,8 +584,10 @@ fn carves_eicar_download_hash_and_raises_malware_finding() {
 
     // ...and a Critical malware-download finding is raised, attributed to the downloading client.
     assert!(
-        out.summary.findings.iter().any(|f| f.kind == FindingKind::MalwareDownload
-            && f.src_ip == CLI.to_string()),
+        out.summary
+            .findings
+            .iter()
+            .any(|f| f.kind == FindingKind::MalwareDownload && f.src_ip == CLI.to_string()),
         "a MalwareDownload finding attributed to the client"
     );
 }

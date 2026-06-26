@@ -16,15 +16,15 @@ use std::time::Instant;
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
-    contact_from_flow, correlate_incidents, detect_beacons, detect_brute_force,
+    contact_from_flow, correlate_incidents, detect_arp_spoof, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_cryptomining, detect_dga, detect_disguised_download,
-    detect_dns_tunnel, detect_exfil, detect_icmp_tunnel, detect_arp_spoof, detect_lateral_movement,
+    detect_dns_tunnel, detect_exfil, detect_icmp_tunnel, detect_lateral_movement,
     detect_pii_exposure, detect_port_scan, detect_suspicious_ua, detect_sweeps, detect_syn_flood,
-    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams,
-    BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams, DetectConfig,
-    DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
-    LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams,
-    SynFloodParams, TlsCertHealthParams, WeakTlsParams,
+    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams,
+    BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams,
+    DetectConfig, DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams,
+    IcmpTunnelParams, LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams,
+    SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -319,10 +319,7 @@ pub fn run_source_visiting(
                 // ARP spoofing: fold each ARP sender's IP->MAC claim. One IP claimed by multiple
                 // MACs is cache poisoning (adversary-in-the-middle on the local segment).
                 if let Some(claim) = meta.arp {
-                    tracker.observe_arp(
-                        std::net::IpAddr::V4(claim.sender_ip),
-                        claim.sender_mac,
-                    );
+                    tracker.observe_arp(std::net::IpAddr::V4(claim.sender_ip), claim.sender_mac);
                 }
                 // Attack-tool User-Agent: fold each HTTP request's UA; the tracker keeps only the
                 // ones that match a known tool signature (the derived label, never raw payload).
@@ -339,8 +336,7 @@ pub fn run_source_visiting(
                     }
                 }
                 // Cleartext Stratum (mining): the role + src/dst resolve miner vs pool in the tracker.
-                if let (Some(role), Some(src), Some(dst)) =
-                    (meta.stratum, meta.src_ip, meta.dst_ip)
+                if let (Some(role), Some(src), Some(dst)) = (meta.stratum, meta.src_ip, meta.dst_ip)
                 {
                     tracker.observe_stratum(role, src, dst);
                 }
@@ -701,7 +697,10 @@ fn malware_download_finding(c: &crate::carve::CarveObservation) -> crate::model:
         dst_port: None,
         attack: vec!["T1105".to_string()],
         evidence: vec![
-            format!("sha256 {} matched the known-bad set (+50)", hex_of(&c.sha256)),
+            format!(
+                "sha256 {} matched the known-bad set (+50)",
+                hex_of(&c.sha256)
+            ),
             format!("carved {}-byte cleartext HTTP download", c.size),
         ],
         interval_ns: None,

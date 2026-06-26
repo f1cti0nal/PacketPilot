@@ -108,7 +108,9 @@ fn parse_kexinit(payload: &[u8]) -> Option<KexInit> {
     if msg.first().copied()? != SSH_MSG_KEXINIT {
         return None;
     }
-    let mut r = NameListReader { buf: msg.get(17..)? };
+    let mut r = NameListReader {
+        buf: msg.get(17..)?,
+    };
     let kex = r.next()?; // kex_algorithms
     let _host_key = r.next()?; // server_host_key_algorithms
     let enc_c2s = r.next()?; // encryption_algorithms_client_to_server
@@ -117,8 +119,8 @@ fn parse_kexinit(payload: &[u8]) -> Option<KexInit> {
     let mac_s2c = r.next()?; // mac_algorithms_server_to_client
     let comp_c2s = r.next()?; // compression_algorithms_client_to_server
     let comp_s2c = r.next()?; // compression_algorithms_server_to_client
-    // SSH algorithm lists are ASCII; a non-empty ASCII kex list is a strong SSH-ness gate that
-    // keeps a structurally-coincidental non-SSH payload from producing a bogus fingerprint.
+                              // SSH algorithm lists are ASCII; a non-empty ASCII kex list is a strong SSH-ness gate that
+                              // keeps a structurally-coincidental non-SSH payload from producing a bogus fingerprint.
     if kex.is_empty() || !kex.is_ascii() || !enc_c2s.is_ascii() {
         return None;
     }
@@ -199,9 +201,8 @@ mod tests {
         let pkt = kexinit_packet(&LISTS);
         // Client -> server: dst_port (22) < src_port (54321).
         let fp = sniff_client_hassh(Transport::Tcp, 54321, 22, &pkt).expect("client hassh");
-        let expected = md5_hex(
-            format!("{};{};{};{}", LISTS[0], LISTS[2], LISTS[4], LISTS[6]).as_bytes(),
-        );
+        let expected =
+            md5_hex(format!("{};{};{};{}", LISTS[0], LISTS[2], LISTS[4], LISTS[6]).as_bytes());
         assert_eq!(fp, expected);
         assert_eq!(fp.len(), 32);
     }
@@ -229,9 +230,16 @@ mod tests {
         // SSH is TCP-only: a structurally-valid KEXINIT over UDP/SCTP must not fingerprint.
         assert!(sniff_client_hassh(Transport::Udp, 54321, 22, &pkt).is_none());
         assert!(sniff_client_hassh(Transport::Sctp, 54321, 22, &pkt).is_none());
-        assert!(sniff_client_hassh(Transport::Tcp, 54321, 80, b"GET / HTTP/1.1\r\nHost: x\r\n\r\n").is_none());
+        assert!(sniff_client_hassh(
+            Transport::Tcp,
+            54321,
+            80,
+            b"GET / HTTP/1.1\r\nHost: x\r\n\r\n"
+        )
+        .is_none());
         assert!(sniff_client_hassh(Transport::Tcp, 54321, 22, b"").is_none());
-        assert!(sniff_client_hassh(Transport::Tcp, 54321, 22, &[0u8; 8]).is_none()); // msg type 0
+        assert!(sniff_client_hassh(Transport::Tcp, 54321, 22, &[0u8; 8]).is_none());
+        // msg type 0
     }
 
     #[test]

@@ -49,9 +49,9 @@ pub fn flow_arrow_schema() -> Arc<Schema> {
         Field::new("ja3s", DataType::Utf8, true), // 26 TLS JA3S server fingerprint (MD5); NULL if none
         Field::new("http_host", DataType::Utf8, true), // 27 HTTP request Host header; NULL if none
         Field::new("http_ua", DataType::Utf8, true), // 28 HTTP request User-Agent header; NULL if none
-        Field::new("severity", DataType::Utf8, false),  // 29 lowercase token, never NULL ("info")
+        Field::new("severity", DataType::Utf8, false), // 29 lowercase token, never NULL ("info")
         Field::new("threat_score", DataType::UInt16, false), // 30 0..=100
-        Field::new("ioc", DataType::Boolean, false),    // 31 any feed match on this flow
+        Field::new("ioc", DataType::Boolean, false), // 31 any feed match on this flow
     ]))
 }
 

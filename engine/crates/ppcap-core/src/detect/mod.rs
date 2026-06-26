@@ -768,8 +768,8 @@ impl BehaviorTracker {
         // `d1a2b3.cloudfront.net` — random subdomain, ordinary registered label — is not flagged.
         // Track distinct suspect registered domains per source; the detector gates on the count.
         if let Some((reg_domain, reg_label)) = registered_domain(qname) {
-            let track = self.dga.contains_key(&src)
-                || self.dga.len() < self.cfg.max_tracked_keys.max(1);
+            let track =
+                self.dga.contains_key(&src) || self.dga.len() < self.cfg.max_tracked_keys.max(1);
             if track {
                 let d = self.dga.entry(src).or_default();
                 d.queries += 1;
@@ -850,8 +850,7 @@ impl BehaviorTracker {
         // while a busy legit client to one host (passive-FTP data ports, health checks, mesh calls)
         // completes real sessions with bytes in both directions. Without this gate, a busy FTP
         // client looks identical to a scanner; the port count alone cannot separate them.
-        let completed_session =
-            bytes_out >= SCAN_SESSION_BYTES && bytes_in >= SCAN_SESSION_BYTES;
+        let completed_session = bytes_out >= SCAN_SESSION_BYTES && bytes_in >= SCAN_SESSION_BYTES;
         if !completed_session {
             let pkey = (src, dst);
             if let Some(set) = self.port_scan.get_mut(&pkey) {
@@ -1018,12 +1017,18 @@ impl BehaviorTracker {
     /// Fold one disguised executable download: the `client` received an executable body (`kind`) from
     /// `server` behind a benign `Content-Type`. Counts masquerading responses per channel. Bounded: a
     /// brand-new channel at capacity is dropped.
-    pub fn observe_disguised_download(&mut self, client: IpAddr, server: IpAddr, kind: DownloadKind) {
+    pub fn observe_disguised_download(
+        &mut self,
+        client: IpAddr,
+        server: IpAddr,
+        kind: DownloadKind,
+    ) {
         let key = (client, server);
         if let Some(stat) = self.disguised_dl.get_mut(&key) {
             stat.hits = stat.hits.saturating_add(1);
         } else if self.disguised_dl.len() < self.cfg.max_tracked_keys.max(1) {
-            self.disguised_dl.insert(key, DisguisedDlStat { kind, hits: 1 });
+            self.disguised_dl
+                .insert(key, DisguisedDlStat { kind, hits: 1 });
         }
     }
 
@@ -1058,7 +1063,8 @@ impl BehaviorTracker {
             StratumRole::Pool => (dst, src),
         };
         let key = (miner, pool);
-        let at_cap = !self.mining.contains_key(&key) && self.mining.len() >= self.cfg.max_tracked_keys.max(1);
+        let at_cap = !self.mining.contains_key(&key)
+            && self.mining.len() >= self.cfg.max_tracked_keys.max(1);
         if at_cap {
             return;
         }
@@ -1781,10 +1787,7 @@ pub fn detect_port_scan(tracker: &BehaviorTracker, params: &PortScanParams) -> V
             kind: FindingKind::PortScan,
             severity: Severity::High,
             score: 64,
-            title: format!(
-                "Port scan: {} probed {} ports on {}",
-                c.src, c.ports, c.dst
-            ),
+            title: format!("Port scan: {} probed {} ports on {}", c.src, c.ports, c.dst),
             src_ip: c.src.to_string(),
             dst_ip: Some(c.dst.to_string()),
             dst_port: None,
@@ -1946,7 +1949,10 @@ impl Default for SuspiciousUaParams {
 /// Detect attack tools / scanners from the behavioral tracker: one [`Finding`] per source that sent
 /// an HTTP request with a known attack-tool [`User-Agent`](TOOL_USER_AGENTS) (sqlmap, Nikto, Nmap NSE,
 /// masscan, …). High severity, ATT&CK T1595 (Active Scanning). Deterministic order.
-pub fn detect_suspicious_ua(tracker: &BehaviorTracker, params: &SuspiciousUaParams) -> Vec<Finding> {
+pub fn detect_suspicious_ua(
+    tracker: &BehaviorTracker,
+    params: &SuspiciousUaParams,
+) -> Vec<Finding> {
     if !params.enabled {
         return Vec::new();
     }
@@ -2647,11 +2653,17 @@ fn is_dga_label(label: &str) -> bool {
         return false;
     }
     // Domain labels are LDH (letters/digits/hyphen); anything else is not a generated label here.
-    if !label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+    if !label
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
         return false;
     }
     let letters = label.chars().filter(|c| c.is_ascii_alphabetic()).count();
-    let vowels = label.chars().filter(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u')).count();
+    let vowels = label
+        .chars()
+        .filter(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'))
+        .count();
     let digits = label.chars().filter(|c| c.is_ascii_digit()).count();
     let digit_ratio = digits as f64 / n as f64;
     let vowel_ratio = if letters > 0 {
@@ -2671,8 +2683,7 @@ fn max_consonant_run(label: &str) -> usize {
     let mut max = 0usize;
     let mut run = 0usize;
     for c in label.chars() {
-        let is_consonant =
-            c.is_ascii_alphabetic() && !matches!(c, 'a' | 'e' | 'i' | 'o' | 'u');
+        let is_consonant = c.is_ascii_alphabetic() && !matches!(c, 'a' | 'e' | 'i' | 'o' | 'u');
         if is_consonant {
             run += 1;
             if run > max {
@@ -3041,15 +3052,15 @@ pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
 /// Kill-chain stage of a finding kind (lower = earlier in the chain).
 fn stage_ordinal(kind: FindingKind) -> u8 {
     match kind {
-        FindingKind::HostSweep => 0,       // discovery
-        FindingKind::CleartextCreds => 1,  // credential access (exposure)
-        FindingKind::BruteForce => 1,      // credential access
-        FindingKind::LateralMovement => 2, // lateral movement
-        FindingKind::PiiExposure => 3,     // collection (data at risk on the wire)
-        FindingKind::Beacon => 4,          // command-and-control
-        FindingKind::DataExfil => 5,       // exfiltration
-        FindingKind::DnsTunnel => 5,       // exfiltration / C2 over DNS
-        FindingKind::RuleMatch => 4,       // imported signature — treat as C2-stage by default
+        FindingKind::HostSweep => 0,         // discovery
+        FindingKind::CleartextCreds => 1,    // credential access (exposure)
+        FindingKind::BruteForce => 1,        // credential access
+        FindingKind::LateralMovement => 2,   // lateral movement
+        FindingKind::PiiExposure => 3,       // collection (data at risk on the wire)
+        FindingKind::Beacon => 4,            // command-and-control
+        FindingKind::DataExfil => 5,         // exfiltration
+        FindingKind::DnsTunnel => 5,         // exfiltration / C2 over DNS
+        FindingKind::RuleMatch => 4,         // imported signature — treat as C2-stage by default
         FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
         FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
         FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
@@ -3497,7 +3508,10 @@ mod tests {
         let mut churn = BehaviorTracker::new(DetectConfig::default());
         churn.observe_arp(vip, [0, 0, 0, 0, 0, 1]);
         churn.observe_arp(vip, [0, 0, 0, 0, 0, 2]);
-        assert_eq!(detect_arp_spoof(&churn, &ArpSpoofParams::default()).len(), 1);
+        assert_eq!(
+            detect_arp_spoof(&churn, &ArpSpoofParams::default()).len(),
+            1
+        );
         let params = ArpSpoofParams {
             ignore_ips: vec![vip],
             ..ArpSpoofParams::default()
@@ -3566,7 +3580,10 @@ mod tests {
         t.observe_user_agent(attacker, "sqlmap/1.7.2#stable (https://sqlmap.org)");
         t.observe_user_agent(ip(10, 0, 0, 5), "Mozilla/5.00 (Nikto/2.5.0)");
         // A benign browser UA is ignored.
-        t.observe_user_agent(ip(10, 0, 0, 6), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120");
+        t.observe_user_agent(
+            ip(10, 0, 0, 6),
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120",
+        );
 
         let f = detect_suspicious_ua(&t, &SuspiciousUaParams::default());
         assert_eq!(f.len(), 2, "findings: {f:?}");
@@ -3583,14 +3600,20 @@ mod tests {
     #[test]
     fn match_tool_ua_is_case_insensitive_and_ignores_dual_use_clients() {
         assert_eq!(match_tool_ua("SQLMAP/1.0"), Some("sqlmap"));
-        assert_eq!(match_tool_ua("() { :; }; /bin/bash"), Some("Shellshock probe"));
+        assert_eq!(
+            match_tool_ua("() { :; }; /bin/bash"),
+            Some("Shellshock probe")
+        );
         // Dual-use clients are NOT flagged (too noisy to be an indicator on their own).
         assert_eq!(match_tool_ua("curl/8.4.0"), None);
         assert_eq!(match_tool_ua("python-requests/2.31"), None);
         assert_eq!(match_tool_ua("Mozilla/5.0 Chrome/120"), None);
         // Ordinary words / product names that collide with a tool name are NOT flagged: only coined
         // tool tokens are listed (no bare "hydra", which is a real product/word).
-        assert_eq!(match_tool_ua("Hydra-Livecoding/1.4 (https://hydra.ojack.xyz)"), None);
+        assert_eq!(
+            match_tool_ua("Hydra-Livecoding/1.4 (https://hydra.ojack.xyz)"),
+            None
+        );
         assert_eq!(match_tool_ua("MyApp/2.0 (hydration-service)"), None);
     }
 

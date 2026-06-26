@@ -1301,7 +1301,10 @@ mod tests {
             cipher: 0x1301,                  // 4865
             ext_types: vec![0x002b, 0x0033], // 43-51
         };
-        assert_eq!(ja3s_hash(&sh), crate::fingerprint::md5_hex(b"771,4865,43-51"));
+        assert_eq!(
+            ja3s_hash(&sh),
+            crate::fingerprint::md5_hex(b"771,4865,43-51")
+        );
         // No extensions -> a trailing empty field.
         let bare = ServerHello {
             version: 0x0303,

@@ -716,11 +716,13 @@ impl StatsAccumulator {
         let mut resolved_ips: Vec<crate::model::summary::ResolvedDomain> = self
             .resolved
             .iter()
-            .map(|(ip, (domain, count))| crate::model::summary::ResolvedDomain {
-                ip: ip.to_string(),
-                domain: domain.clone(),
-                resolutions: *count,
-            })
+            .map(
+                |(ip, (domain, count))| crate::model::summary::ResolvedDomain {
+                    ip: ip.to_string(),
+                    domain: domain.clone(),
+                    resolutions: *count,
+                },
+            )
             .collect();
         resolved_ips.sort_by(|a, b| b.resolutions.cmp(&a.resolutions).then(a.ip.cmp(&b.ip)));
         resolved_ips.truncate(TOP_K_RESOLVED);
@@ -743,12 +745,14 @@ impl StatsAccumulator {
         let mut downloads: Vec<crate::model::summary::DownloadEvent> = self
             .downloads
             .iter()
-            .map(|(&(client, server, kind), &count)| crate::model::summary::DownloadEvent {
-                client: client.to_string(),
-                server: server.to_string(),
-                kind: kind.as_str().to_string(),
-                count,
-            })
+            .map(
+                |(&(client, server, kind), &count)| crate::model::summary::DownloadEvent {
+                    client: client.to_string(),
+                    server: server.to_string(),
+                    kind: kind.as_str().to_string(),
+                    count,
+                },
+            )
             .collect();
         downloads.sort_by(|a, b| {
             b.count
@@ -764,11 +768,13 @@ impl StatsAccumulator {
         let mut encrypted_dns: Vec<crate::model::summary::EncryptedDnsHost> = self
             .encrypted_dns
             .iter()
-            .map(|((host, resolver), &flows)| crate::model::summary::EncryptedDnsHost {
-                host: host.to_string(),
-                resolver: resolver.clone(),
-                flows,
-            })
+            .map(
+                |((host, resolver), &flows)| crate::model::summary::EncryptedDnsHost {
+                    host: host.to_string(),
+                    resolver: resolver.clone(),
+                    flows,
+                },
+            )
             .collect();
         encrypted_dns.sort_by(|a, b| {
             b.flows
@@ -1969,7 +1975,14 @@ mod tests {
             terms: vec![],
         };
         let make = |host: Option<&str>, ua: Option<&str>| {
-            let mut f = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 100);
+            let mut f = flow(
+                Transport::Tcp,
+                ip4(10, 0, 0, 1),
+                ip4(10, 0, 0, 2),
+                Category::Web,
+                1,
+                100,
+            );
             f.http_host = host.map(|s| s.to_string());
             f.http_ua = ua.map(|s| s.to_string());
             f
@@ -1994,7 +2007,17 @@ mod tests {
         let mut acc = StatsAccumulator::new(StatsConfig::default());
         // A DNS response (src_port 53) resolving evil.example -> 93.184.216.34, seen twice.
         let mut resp = |domain: &str, ips: &[IpAddr]| {
-            let mut p = pkt(0, 0, 100, Transport::Udp, Some(ip4(10, 0, 0, 1)), Some(ip4(8, 8, 8, 8)), 53, 40000, 0);
+            let mut p = pkt(
+                0,
+                0,
+                100,
+                Transport::Udp,
+                Some(ip4(10, 0, 0, 1)),
+                Some(ip4(8, 8, 8, 8)),
+                53,
+                40000,
+                0,
+            );
             p.dns_qname = Some(domain.to_string());
             p.dns_answers = ips.to_vec();
             acc.observe_packet(&p);
@@ -2010,7 +2033,10 @@ mod tests {
         assert_eq!(s.resolved_ips[0].ip, "93.184.216.34"); // most resolutions first
         assert_eq!(s.resolved_ips[0].domain, "evil.example");
         assert_eq!(s.resolved_ips[0].resolutions, 2);
-        assert!(s.resolved_ips.iter().any(|r| r.ip == "1.1.1.1" && r.domain == "good.example"));
+        assert!(s
+            .resolved_ips
+            .iter()
+            .any(|r| r.ip == "1.1.1.1" && r.domain == "good.example"));
     }
 
     #[test]
@@ -2034,7 +2060,11 @@ mod tests {
         acc.observe_packet(&p2);
 
         let s = acc.finish();
-        let h = s.arp_hosts.iter().find(|h| h.ip == "10.0.0.5").expect("arp host");
+        let h = s
+            .arp_hosts
+            .iter()
+            .find(|h| h.ip == "10.0.0.5")
+            .expect("arp host");
         assert_eq!(h.mac, "00:1a:2b:3c:4d:5e");
     }
 
@@ -2045,12 +2075,26 @@ mod tests {
         let client = ip4(10, 0, 0, 9);
         // An HTTP response (server -> client) carrying an executable download, seen twice.
         for _ in 0..2 {
-            let mut p = pkt(0, 0, 200, Transport::Tcp, Some(server), Some(client), 80, 51000, 0);
+            let mut p = pkt(
+                0,
+                0,
+                200,
+                Transport::Tcp,
+                Some(server),
+                Some(client),
+                80,
+                51000,
+                0,
+            );
             p.download = Some(DownloadKind::Executable);
             acc.observe_packet(&p);
         }
         let s = acc.finish();
-        let d = s.downloads.iter().find(|d| d.kind == "executable").expect("download row");
+        let d = s
+            .downloads
+            .iter()
+            .find(|d| d.kind == "executable")
+            .expect("download row");
         assert_eq!(d.client, "10.0.0.9"); // the receiving client, not the server
         assert_eq!(d.server, "93.184.216.34");
         assert_eq!(d.count, 2);
@@ -2067,19 +2111,34 @@ mod tests {
             terms: vec![],
         };
         // DoH: a TLS flow whose SNI is a known resolver (server on :443) — client = 10.0.0.9.
-        let (k1, _d1) =
-            FlowKey::normalized(ip4(10, 0, 0, 9), 54321, ip4(1, 1, 1, 1), 443, Transport::Tcp);
+        let (k1, _d1) = FlowKey::normalized(
+            ip4(10, 0, 0, 9),
+            54321,
+            ip4(1, 1, 1, 1),
+            443,
+            Transport::Tcp,
+        );
         let mut f1 = FlowRecord::new(k1, 0);
         f1.sni = Some("cloudflare-dns.com".to_string());
         acc.observe_scored_flow(&f1, &sc);
         // DoT: a flow to :853 — client = 10.0.0.8, resolver labelled with the server IP.
-        let (k2, _d2) =
-            FlowKey::normalized(ip4(10, 0, 0, 8), 40000, ip4(9, 9, 9, 9), 853, Transport::Tcp);
+        let (k2, _d2) = FlowKey::normalized(
+            ip4(10, 0, 0, 8),
+            40000,
+            ip4(9, 9, 9, 9),
+            853,
+            Transport::Tcp,
+        );
         let f2 = FlowRecord::new(k2, 0);
         acc.observe_scored_flow(&f2, &sc);
         // An ordinary HTTPS flow (non-DoH SNI) must NOT be recorded.
-        let (k3, _d3) =
-            FlowKey::normalized(ip4(10, 0, 0, 7), 33333, ip4(93, 184, 216, 34), 443, Transport::Tcp);
+        let (k3, _d3) = FlowKey::normalized(
+            ip4(10, 0, 0, 7),
+            33333,
+            ip4(93, 184, 216, 34),
+            443,
+            Transport::Tcp,
+        );
         let mut f3 = FlowRecord::new(k3, 0);
         f3.sni = Some("example.com".to_string());
         acc.observe_scored_flow(&f3, &sc);

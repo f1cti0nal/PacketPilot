@@ -256,7 +256,8 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
         // SSH fingerprints (HASSH / HASSHServer): the algorithm name-lists of a KEXINIT, MD5-
         // fingerprinted (the SSH analogue of JA3 / JA3S). TCP-only; payload-free; each is set only on
         // its own side's KEXINIT (client vs server, oriented by port).
-        meta.hassh = crate::ssh::sniff_client_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
+        meta.hassh =
+            crate::ssh::sniff_client_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
         meta.hassh_server =
             crate::ssh::sniff_server_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
         // Downloaded-file class from an HTTP response: response-body magic bytes (content-based)
@@ -530,11 +531,11 @@ fn sniff_dns_answers(payload: &[u8]) -> Vec<std::net::IpAddr> {
         return out;
     }
     let mut off = 12usize; // after the header
-    // Real responses echo the question(s) (qdcount is virtually always 1). A pathological qdcount
-    // would leave `off` mid-question after a *truncated* skip, letting an attacker lay out the
-    // unskipped question bytes so the answer loop misreads them as a fake A/AAAA RR — injecting an
-    // attacker-chosen IP paired with the genuine question name. So bail entirely above a small bound
-    // rather than truncate-and-desync; the bound also keeps the loop cheap.
+                           // Real responses echo the question(s) (qdcount is virtually always 1). A pathological qdcount
+                           // would leave `off` mid-question after a *truncated* skip, letting an attacker lay out the
+                           // unskipped question bytes so the answer loop misreads them as a fake A/AAAA RR — injecting an
+                           // attacker-chosen IP paired with the genuine question name. So bail entirely above a small bound
+                           // rather than truncate-and-desync; the bound also keeps the loop cheap.
     const MAX_DNS_QUESTIONS: usize = 8;
     if qd > MAX_DNS_QUESTIONS {
         return out;
@@ -940,7 +941,8 @@ fn sniff_stratum(transport: Transport, payload: &[u8]) -> Option<StratumRole> {
         return Some(StratumRole::Miner);
     }
     // Pool -> miner methods (only a real pool sends these).
-    if find_ci(scan, b"mining.notify").is_some() || find_ci(scan, b"mining.set_difficulty").is_some()
+    if find_ci(scan, b"mining.notify").is_some()
+        || find_ci(scan, b"mining.set_difficulty").is_some()
     {
         return Some(StratumRole::Pool);
     }
@@ -1905,7 +1907,10 @@ mod tests {
 
         let ips = sniff_dns_answers(&p);
         assert_eq!(ips.len(), 2);
-        assert_eq!(ips[0], std::net::IpAddr::V4(std::net::Ipv4Addr::new(93, 184, 216, 34)));
+        assert_eq!(
+            ips[0],
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(93, 184, 216, 34))
+        );
         assert!(matches!(ips[1], std::net::IpAddr::V6(_)));
         // A query (an=0) yields no answers.
         let q = crate::gen::frames::dns_query_payload("example.com", 1);
@@ -1935,7 +1940,8 @@ mod tests {
 
     #[test]
     fn http_header_value_extracts_and_bounds() {
-        let req = b"GET /p HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/8.0\r\nAccept: */*\r\n\r\n";
+        let req =
+            b"GET /p HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/8.0\r\nAccept: */*\r\n\r\n";
         assert_eq!(
             http_header_value(req, b"host:"),
             Some("example.com".to_string())
@@ -1950,7 +1956,10 @@ mod tests {
             Some("x.test".to_string())
         );
         // Absent / empty -> None; the request line is never matched.
-        assert_eq!(http_header_value(b"GET / HTTP/1.1\r\nHost:\r\n\r\n", b"host:"), None);
+        assert_eq!(
+            http_header_value(b"GET / HTTP/1.1\r\nHost:\r\n\r\n", b"host:"),
+            None
+        );
         assert_eq!(http_header_value(b"GET / HTTP/1.1\r\n\r\n", b"host:"), None);
         // A header-looking line in the BODY (after the blank line) is not scanned.
         assert_eq!(
@@ -1978,7 +1987,8 @@ mod tests {
         let req = b"GET /app.json HTTP/1.1\r\nHost: x\r\n\r\n";
         assert_eq!(sniff_http_download(req).0, None);
         // A `.json` filename must NOT be misread as a `.js` script (precise extension match).
-        let json = b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=data.json\r\n\r\n";
+        let json =
+            b"HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=data.json\r\n\r\n";
         assert_eq!(sniff_http_download(json).0, None);
     }
 
@@ -2007,13 +2017,15 @@ mod tests {
         let zipbody = b"HTTP/1.1 200 OK\r\n\r\nPK\x03\x04rest";
         assert_eq!(sniff_http_download(zipbody).0, Some(DownloadKind::Archive));
         // A text file that merely STARTS with "MZ" (all printable) is NOT an executable / masquerade.
-        let mztext = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nMZ is the DOS magic prefix.";
+        let mztext =
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nMZ is the DOS magic prefix.";
         let (k4, m4) = sniff_http_download(mztext);
         assert_eq!(k4, None);
         assert!(!m4);
         // UTF-8 text starting "MZ" with a high (non-ASCII) byte is still text, not a binary PE: the
         // binary check keys on control bytes, not high bytes (no false executable / masquerade).
-        let mzutf8 = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nMZ\xc3\xa9 caf\xc3\xa9 notes";
+        let mzutf8 =
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nMZ\xc3\xa9 caf\xc3\xa9 notes";
         let (k5, m5) = sniff_http_download(mzutf8);
         assert_eq!(k5, None);
         assert!(!m5);
@@ -2025,12 +2037,21 @@ mod tests {
         let sub = br#"{"id":1,"method":"mining.subscribe","params":["xmrig/6.0"]}"#;
         assert_eq!(sniff_stratum(Transport::Tcp, sub), Some(StratumRole::Miner));
         let auth = br#"{"id":2,"method":"mining.authorize","params":["wallet","x"]}"#;
-        assert_eq!(sniff_stratum(Transport::Tcp, auth), Some(StratumRole::Miner));
+        assert_eq!(
+            sniff_stratum(Transport::Tcp, auth),
+            Some(StratumRole::Miner)
+        );
         // Pool -> miner methods.
         let notify = br#"{"id":null,"method":"mining.notify","params":["job",[]]}"#;
-        assert_eq!(sniff_stratum(Transport::Tcp, notify), Some(StratumRole::Pool));
+        assert_eq!(
+            sniff_stratum(Transport::Tcp, notify),
+            Some(StratumRole::Pool)
+        );
         // Non-Stratum payloads and non-TCP are ignored.
-        assert_eq!(sniff_stratum(Transport::Tcp, b"GET / HTTP/1.1\r\n\r\n"), None);
+        assert_eq!(
+            sniff_stratum(Transport::Tcp, b"GET / HTTP/1.1\r\n\r\n"),
+            None
+        );
         assert_eq!(sniff_stratum(Transport::Udp, sub), None);
         assert_eq!(sniff_stratum(Transport::Tcp, b""), None);
     }
