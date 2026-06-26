@@ -336,7 +336,10 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
         </div>
 
         {selected && (
-          <aside className="min-h-0 w-[22rem] shrink-0 overflow-auto">
+          // Mobile: full-screen overlay (an inline 352px column would crush the
+          // flows table to a sliver and overflow the narrowest phones). Desktop:
+          // the inline side-by-side detail column.
+          <aside className="fixed inset-0 z-40 min-h-0 w-full overflow-auto bg-[var(--color-bg)] md:static md:z-auto md:w-[22rem] md:shrink-0 md:bg-transparent">
             <FlowDetail
               flow={selected}
               onClose={() => setSelected(null)}

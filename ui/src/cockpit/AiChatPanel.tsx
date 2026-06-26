@@ -1,23 +1,25 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AnalysisOutput } from "../types";
 import type { AiMessage } from "../lib/ai/client";
-import { getAiConfig } from "../lib/ai/settings";
+import { getAiConfig, getAiEnabled, aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
 import { askChat } from "../lib/ai/run";
 import { useDialogA11y } from "../lib/useDialogA11y";
+import { AiConsent } from "./AiConsent";
 
 export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose: () => void; output: AnalysisOutput }) {
   const [msgs, setMsgs] = useState<AiMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState("");
+  const [showConsent, setShowConsent] = useState(false);
+  // The question to send once consent is granted (mirrors AiSummaryCard's pendingRun).
+  const pendingQ = useRef<string | null>(null);
   const { ref, onKeyDown } = useDialogA11y(onClose);
 
   if (!open) return null;
 
-  async function send() {
-    const q = input.trim();
-    if (!q || busy) return;
-    setInput("");
+  // Performs the actual egress — only ever called once enabled + consent are satisfied.
+  async function runSend(q: string) {
     const history = [...msgs, { role: "user" as const, content: q }];
     setMsgs(history);
     setBusy(true);
@@ -34,28 +36,72 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
     }
   }
 
+  // Gate every send behind the same enabled + consent boundary AiSummaryCard enforces —
+  // the chat path must never ship the analysis summary to a remote model without consent.
+  function send() {
+    const q = input.trim();
+    if (!q || busy) return;
+    if (!getAiEnabled()) {
+      setMsgs((m) => [...m, { role: "assistant", content: "AI is off — enable it in Settings." }]);
+      setInput("");
+      return;
+    }
+    setInput("");
+    if (!aiConsentGiven()) {
+      pendingQ.current = q;
+      setShowConsent(true);
+      return;
+    }
+    void runSend(q);
+  }
+
+  function handleConsentProceed() {
+    giveAiConsent();
+    setShowConsent(false);
+    const q = pendingQ.current;
+    pendingQ.current = null;
+    if (q) void runSend(q);
+  }
+
+  function handleConsentCancel() {
+    setShowConsent(false);
+    pendingQ.current = null;
+  }
+
+  const cfg = getAiConfig();
+
   return (
-    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="AI chat" className="fixed inset-y-0 right-0 z-50 flex w-[28rem] flex-col bg-[var(--color-surface)] shadow-xl">
-      <div className="flex items-center justify-between border-b border-[var(--color-border,#222)] p-3">
-        <h2 className="text-sm font-semibold">Ask about this capture</h2>
-        <button type="button" className="t-tag" onClick={onClose}>Close</button>
+    <>
+      <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="AI chat" className="fixed inset-y-0 right-0 z-50 flex w-[28rem] max-w-full flex-col bg-[var(--color-surface)] shadow-xl">
+        <div className="flex items-center justify-between border-b border-[var(--color-border,#222)] p-3">
+          <h2 className="text-sm font-semibold">Ask about this capture</h2>
+          <button type="button" className="t-tag" onClick={onClose}>Close</button>
+        </div>
+        <div role="log" aria-live="polite" aria-label="Conversation" className="flex-1 space-y-2 overflow-auto p-3 text-xs">
+          {msgs.map((m, i) => (
+            <div key={i} className={m.role === "user" ? "text-[var(--color-text)]" : "text-[var(--color-text-faint)]"}>
+              <span className="t-tag uppercase">{m.role}</span>
+              <pre className="whitespace-pre-wrap break-words">{m.content}</pre>
+            </div>
+          ))}
+          {streaming && <pre className="whitespace-pre-wrap break-words text-[var(--color-text-faint)]">{streaming}</pre>}
+        </div>
+        <div className="flex gap-2 border-t border-[var(--color-border,#222)] p-3">
+          <input className="flex-1 rounded bg-[var(--color-bg)] p-1 text-xs" value={input}
+            aria-label="Ask a question about this capture"
+            onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+            placeholder="e.g. which host exfiltrated data?" />
+          <button type="button" className="t-tag font-semibold" onClick={() => send()} disabled={busy}>Send</button>
+        </div>
       </div>
-      <div role="log" aria-live="polite" aria-label="Conversation" className="flex-1 space-y-2 overflow-auto p-3 text-xs">
-        {msgs.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "text-[var(--color-text)]" : "text-[var(--color-text-faint)]"}>
-            <span className="t-tag uppercase">{m.role}</span>
-            <pre className="whitespace-pre-wrap break-words">{m.content}</pre>
-          </div>
-        ))}
-        {streaming && <pre className="whitespace-pre-wrap break-words text-[var(--color-text-faint)]">{streaming}</pre>}
-      </div>
-      <div className="flex gap-2 border-t border-[var(--color-border,#222)] p-3">
-        <input className="flex-1 rounded bg-[var(--color-bg)] p-1 text-xs" value={input}
-          aria-label="Ask a question about this capture"
-          onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void send(); }}
-          placeholder="e.g. which host exfiltrated data?" />
-        <button type="button" className="t-tag font-semibold" onClick={() => void send()} disabled={busy}>Send</button>
-      </div>
-    </div>
+      {showConsent && (
+        <AiConsent
+          baseUrl={cfg.baseUrl}
+          model={cfg.model}
+          onProceed={handleConsentProceed}
+          onCancel={handleConsentCancel}
+        />
+      )}
+    </>
   );
 }
