@@ -39,7 +39,14 @@ export function isCaptureFile(name: string): boolean {
 
 let initPromise: Promise<unknown> | null = null;
 function ensureWasm(): Promise<unknown> {
-  if (!initPromise) initPromise = initWasm();
+  // Reset the cache on failure so a transient init error (.wasm 404, CDN hiccup, OOM)
+  // doesn't permanently wedge analysis for the session — a retry re-initializes.
+  if (!initPromise) {
+    initPromise = initWasm().catch((e) => {
+      initPromise = null;
+      throw e;
+    });
+  }
   return initPromise;
 }
 

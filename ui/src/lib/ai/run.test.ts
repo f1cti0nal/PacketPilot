@@ -113,6 +113,30 @@ describe("pickTransport", () => {
     expect(() => pickTransport({ ...cfg, baseUrl: "https://api.openai.com/v1" })).toThrow(/relay/i);
   });
 
+  it("REJECTS spoofed-localhost hosts (exact-hostname gate, not a prefix)", async () => {
+    isTauriMock.mockReturnValue(false);
+    getProxyUrlMock.mockReturnValue("");
+    const { pickTransport } = await import("./run");
+    for (const url of [
+      "http://localhost.evil.com/v1",
+      "http://127.0.0.1.attacker.io/v1",
+      "https://localhostx.example.com/v1",
+      "http://notlocalhost/v1",
+    ]) {
+      // A spoofed host must fall through to the relay-required throw, NOT directTransport
+      // (which would POST the capture context + Authorization header to the attacker origin).
+      expect(() => pickTransport({ ...cfg, baseUrl: url }), url).toThrow(/relay/i);
+    }
+  });
+
+  it("still allows genuine 127.0.0.1 / [::1] loopback direct", async () => {
+    isTauriMock.mockReturnValue(false);
+    getProxyUrlMock.mockReturnValue("");
+    const { pickTransport } = await import("./run");
+    expect(() => pickTransport({ ...cfg, baseUrl: "http://127.0.0.1:11434/v1" })).not.toThrow();
+    expect(() => pickTransport({ ...cfg, baseUrl: "http://[::1]:11434/v1" })).not.toThrow();
+  });
+
   it("returns tauriTransport when running in Tauri", async () => {
     isTauriMock.mockReturnValue(true);
     const { pickTransport } = await import("./run");

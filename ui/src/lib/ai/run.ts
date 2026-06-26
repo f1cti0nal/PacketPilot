@@ -22,7 +22,16 @@ export function pickTransport(config: AiConfig): StreamTransport {
   if (isTauri()) return tauriTransport();
   const proxy = getProxyUrl();
   if (proxy) return proxyTransport(proxy);
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(config.baseUrl);
+  // Direct (relay-free) egress is allowed ONLY to genuine loopback. Match the exact
+  // hostname, not a prefix — an unanchored test let `http://localhost.evil.com` /
+  // `http://127.0.0.1.attacker.io` pass and exfiltrate the capture context + API key.
+  let isLocal = false;
+  try {
+    const host = new URL(config.baseUrl).hostname.toLowerCase();
+    isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch {
+    isLocal = false; // unparseable URL → not local
+  }
   if (isLocal) return directTransport();
   throw new Error("Browser AI needs a relay URL (Settings) for non-local endpoints.");
 }

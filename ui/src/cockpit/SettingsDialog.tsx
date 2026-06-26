@@ -86,8 +86,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[28rem] max-h-[90vh] overflow-y-auto rounded-lg bg-[var(--color-surface)] p-5 text-[var(--color-text)]">
+    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-[28rem] max-h-[90vh] overflow-y-auto rounded-lg bg-[var(--color-surface)] p-5 text-[var(--color-text)]">
         {/* Reputation section */}
         <h2 className="text-sm font-semibold">Online reputation</h2>
         <label className="mt-3 flex items-center gap-2 text-xs">

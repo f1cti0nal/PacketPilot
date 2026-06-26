@@ -48,6 +48,24 @@ describe("filterProfiles", () => {
     expect(listProfiles().map((p) => p.name)).toEqual(["keep"]); // unchanged
   });
 
+  it("gives distinct names distinct ids even when they would slug alike", () => {
+    // 'DNS' and 'dns' previously both slugged to id 'fp_dns' → React key dupes + one
+    // delete removing both. Ids are now 1:1 with the unique name.
+    saveProfile("DNS", f());
+    saveProfile("dns", f());
+    const list = listProfiles();
+    expect(list).toHaveLength(2);
+    expect(new Set(list.map((p) => p.id)).size).toBe(2);
+  });
+
+  it("removeProfile deletes exactly one of two slug-colliding names", () => {
+    saveProfile("Web traffic", f());
+    saveProfile("Web/traffic", f());
+    const target = listProfiles().find((p) => p.name === "Web traffic")!;
+    const rest = removeProfile(target.id);
+    expect(rest.map((p) => p.name)).toEqual(["Web/traffic"]);
+  });
+
   it("imports valid entries and skips invalid ones", () => {
     const res = importProfiles(JSON.stringify([
       { id: "a", name: "good", filter: { query: "q", category: "web" } },

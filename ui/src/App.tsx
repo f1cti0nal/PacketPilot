@@ -26,6 +26,7 @@ import { AppShell } from "./components/layout/AppShell";
 import { useTheme } from "./cockpit/ThemeToggle";
 import { LoadingState } from "./components/state/LoadingState";
 import { ErrorState } from "./components/state/ErrorState";
+import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
 import { FlowsView } from "./views/FlowsView";
 import { RecentView } from "./components/recent/RecentView";
@@ -261,10 +262,17 @@ export function App() {
       verdicts: Record<string, import("./types").ReputationVerdict[]>,
       apply: (json: string, v: Record<string, import("./types").ReputationVerdict[]>) => Promise<AnalysisOutput>,
     ): Promise<void> => {
+      const targetKey = repCaptureKey(base);
       const run = repChainRef.current.then(async () => {
-        const latest = summaryDataRef.current;
-        const useBase = latest && repCaptureKey(latest) === repCaptureKey(base) ? latest : base;
-        const enriched = await apply(JSON.stringify(useBase), verdicts);
+        // The user may have switched captures while this pass was queued/awaiting.
+        // Compose onto the live summary ONLY if it is still the same capture; otherwise
+        // drop the pass entirely (neither enrich nor commit) so capture A's late-resolving
+        // lookup can never overwrite capture B's on-screen summary.
+        const before = summaryDataRef.current;
+        if (!before || repCaptureKey(before) !== targetKey) return;
+        const enriched = await apply(JSON.stringify(before), verdicts);
+        const after = summaryDataRef.current;
+        if (!after || repCaptureKey(after) !== targetKey) return;
         summaryDataRef.current = enriched;
         setSummary({ status: "ready", data: enriched });
       });
@@ -649,6 +657,7 @@ export function App() {
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
     >
+      <ErrorBoundary resetKey={`${activeId ?? ""}:${tab}`}>
       {tab === "compare" ? (
         (() => {
           const [olderId, newerId] = compareIds ?? ["", ""];
@@ -691,6 +700,7 @@ export function App() {
           activeSource={activeSource}
         />
       )}
+      </ErrorBoundary>
     </AppShell>
     {consentPrompt && (
       <ReputationConsent

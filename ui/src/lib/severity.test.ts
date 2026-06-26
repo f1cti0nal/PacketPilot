@@ -40,4 +40,14 @@ describe("rollupSeverity", () => {
     expect(result.bySeverity["info"].flows).toBe(100);
     expect(result.total.flows).toBe(108);
   });
+
+  it("does not throw on an uncategorized (none-severity) breakdown row", () => {
+    // severityForCategory('unknown') === 'none', which SEVERITY_ORDER omits — the
+    // accumulator must still have a 'none' bucket or this threw.
+    const breakdown = [{ category: "unknown", flows: 5, pkts: 10, bytes: 100 }];
+    expect(() => rollupSeverity(breakdown)).not.toThrow();
+    const r = rollupSeverity(breakdown);
+    expect(r.bySeverity["none"].flows).toBe(5);
+    expect(r.total.flows).toBe(5);
+  });
 });

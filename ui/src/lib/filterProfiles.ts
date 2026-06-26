@@ -54,7 +54,10 @@ export function saveProfile(name: string, filter: FlowFilter): FilterProfile[] {
   const trimmed = name.trim();
   if (trimmed === "") return listProfiles();
   const list = listProfiles().filter((p) => p.name !== trimmed);
-  list.push({ id: `fp_${trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: trimmed, filter });
+  // id is 1:1 with the (unique) name, NOT a lossy slug — slugging let 'DNS' and 'dns'
+  // collide on one id, so removeProfile deleted both and React keys duplicated. Mirrors
+  // ruleSets.ts (rs_<rawName>).
+  list.push({ id: `fp_${trimmed}`, name: trimmed, filter });
   persist(list);
   return list;
 }

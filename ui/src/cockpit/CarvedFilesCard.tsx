@@ -25,7 +25,7 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
     >
       <ul className="flex flex-col divide-y divide-[var(--color-border)]">
         {rows.slice(0, 12).map((f) => (
-          <li key={`${f.sha256}-${f.client}`} className="flex flex-col gap-0.5 py-1.5 text-xs">
+          <li key={`${f.sha256}-${f.client}-${f.server}`} className="flex flex-col gap-0.5 py-1.5 text-xs">
             <div className="flex items-baseline gap-2">
               <span
                 className="font-mono-num truncate text-[var(--color-text)]"

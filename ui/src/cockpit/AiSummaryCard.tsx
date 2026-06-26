@@ -15,8 +15,13 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
 
   useEffect(() => {
     let on = true;
+    // Reset to idle synchronously so a capture switch never flashes the previous
+    // capture's summary while the (async) cache lookup is in flight.
+    setSt({ status: "idle", text: "" });
     getAiSummary(captureId)
-      .then((c) => { if (on && c) setSt({ status: "ready", text: c.text }); })
+      // On a cache MISS, stay idle for the new capture — do NOT leave the prior
+      // capture's narrative rendered (cross-capture content bleed).
+      .then((c) => { if (on) setSt(c ? { status: "ready", text: c.text } : { status: "idle", text: "" }); })
       .catch(() => { /* best-effort cache load — ignore */ });
     return () => { on = false; };
   }, [captureId]);
@@ -69,8 +74,10 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
             {st.status === "ready" ? "Regenerate" : st.status === "loading" ? "Generating…" : "Generate"}
           </button>
         </div>
-        {st.error && <p className="mt-2 text-xs text-[var(--color-critical,#ef4444)]">{st.error}</p>}
-        {st.text && <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-[var(--color-text)]">{st.text}</pre>}
+        {st.error && <p role="alert" className="mt-2 text-xs text-[var(--color-critical,#ef4444)]">{st.error}</p>}
+        {st.text && (
+          <pre aria-live="polite" aria-busy={st.status === "loading"} className="mt-2 whitespace-pre-wrap break-words text-xs text-[var(--color-text)]">{st.text}</pre>
+        )}
       </section>
       {showConsent && (
         <AiConsent

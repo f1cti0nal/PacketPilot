@@ -27,7 +27,7 @@ export function DnsResolutionsCard({ resolved }: { resolved: ResolvedDomain[] })
             key={`${r.ip}-${r.domain}`}
             className="flex items-baseline gap-2 py-1.5 text-xs"
           >
-            <span className="font-mono-num shrink-0 text-[var(--color-text)]" title={r.ip}>
+            <span className="font-mono-num min-w-0 max-w-[55%] truncate text-[var(--color-text)]" title={r.ip}>
               {r.ip}
             </span>
             <span className="text-[var(--color-text-faint)]">←</span>

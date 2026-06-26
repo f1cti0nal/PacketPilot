@@ -162,12 +162,21 @@ export function CommandBar({
           disabled={!onRequestLoad}
         />
         <ExportMenu actions={exportActions ?? []} disabled={(exportActions?.length ?? 0) === 0} busy={exporting} />
-        {exportHint && (
-          <span className="hidden items-center gap-1 text-xs text-[var(--color-text-dim)] lg:inline-flex">
-            <CheckCircle2 size={12} className="text-[var(--color-accent)]" />
-            {exportHint}
-          </span>
-        )}
+        {/* Always-present polite live region so export success/failure is announced on
+            every viewport (SR-only below lg, visible chip at lg+). Conditionally rendering
+            it would miss the announcement, and `hidden` made a failed export silent. */}
+        <span
+          role="status"
+          aria-live="polite"
+          className="sr-only items-center gap-1 text-xs text-[var(--color-text-dim)] lg:not-sr-only lg:inline-flex"
+        >
+          {exportHint ? (
+            <>
+              <CheckCircle2 size={12} aria-hidden className="hidden text-[var(--color-accent)] lg:inline-block" />
+              {exportHint}
+            </>
+          ) : null}
+        </span>
         <button
           type="button"
           aria-label="Command palette"
