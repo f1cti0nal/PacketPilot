@@ -14,6 +14,15 @@ function quotaUnavailable(source: string, now: number): ReputationVerdict {
   return { source, status: "unavailable", malicious: false, score: null, tags: ["quota"], link: null, fetched_at: now };
 }
 
+/** Only genuinely public domains may be sent to a third-party reputation service —
+ *  the IP path already does this via isPublicIp. Skip single-label hosts and internal/
+ *  reserved TLDs so intranet SNI (vault.internal, printer.lan, gitlab.corp) never leaks. */
+export function isPublicDomain(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  if (!h.includes(".")) return false;
+  return !/\.(local|lan|internal|intranet|corp|home|test|localhost|localdomain)$/.test(h);
+}
+
 /** Domain reputation — VirusTotal only. `hosts` should already be capped/ordered by the caller. */
 export async function lookupDomainReputation(
   http: HttpGet,
@@ -25,6 +34,7 @@ export async function lookupDomainReputation(
   if (!vtKey) return out;
   const budget = makeBudget();
   for (const host of hosts) {
+    if (!isPublicDomain(host)) continue; // never query internal/intranet SNI against VT
     const cached = await getReputation("virustotal", host, now, TTL.virustotal);
     let v: ReputationVerdict;
     if (cached) {

@@ -67,12 +67,15 @@ export async function carveSubPcap(
     return { ok: false, message: `${UNAVAILABLE_MESSAGE}.` };
   }
   if (source.kind === "path" && isTauri()) {
-    const path = await save({
-      defaultPath: name,
-      filters: [{ name: "PCAP", extensions: ["pcap"] }],
-    });
-    if (!path) return { ok: false, message: "" }; // user cancelled
+    // The save() dialog must be inside the try too — a rejected save (IPC/permission
+    // failure) would otherwise escape the documented no-throw contract that callers
+    // (Dashboard carveHost, FlowsView carveFlow) rely on with no .catch.
     try {
+      const path = await save({
+        defaultPath: name,
+        filters: [{ name: "PCAP", extensions: ["pcap"] }],
+      });
+      if (!path) return { ok: false, message: "" }; // user cancelled
       const n = await invoke<number>("carve_pcap_to", { pathIn: source.path, query, pathOut: path });
       return { ok: true, message: `Carved ${n} packets` };
     } catch (e) {

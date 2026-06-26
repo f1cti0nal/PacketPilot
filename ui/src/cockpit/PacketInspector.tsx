@@ -112,7 +112,7 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
 
 function tcpFlagLabel(flags: number): string {
   if (!flags) return "";
-  const names: [number, string][] = [[0x02, "SYN"], [0x10, "ACK"], [0x01, "FIN"], [0x04, "RST"], [0x08, "PSH"], [0x20, "URG"]];
+  const names: [number, string][] = [[0x02, "SYN"], [0x10, "ACK"], [0x01, "FIN"], [0x04, "RST"], [0x08, "PSH"], [0x20, "URG"], [0x40, "ECE"], [0x80, "CWR"]];
   return names.filter(([b]) => flags & b).map(([, n]) => n).join(" ");
 }
 function asciiPreview(bytes: Uint8Array): string {

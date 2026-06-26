@@ -57,8 +57,12 @@ export function rollupSeverity(
     bytes: 0,
     categories: [] as string[],
   });
+  // Include "none": severityForCategory("unknown") returns it, and SEVERITY_ORDER omits
+  // it — indexing the 5-key map with "none" was undefined and threw on uncategorized
+  // traffic. SEVERITY_ORDER is kept for display ordering elsewhere.
+  const ALL_SEVERITIES: Severity[] = [...SEVERITY_ORDER, "none"];
   const bySeverity = Object.fromEntries(
-    SEVERITY_ORDER.map((s) => [s, empty()]),
+    ALL_SEVERITIES.map((s) => [s, empty()]),
   ) as SeverityRollup["bySeverity"];
   const total = { flows: 0, pkts: 0, bytes: 0 };
   for (const e of breakdown) {

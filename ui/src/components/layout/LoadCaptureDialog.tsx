@@ -5,6 +5,7 @@ import { loadFlows } from "../../lib/data";
 import { isCaptureFile } from "../../lib/wasmEngine";
 import { compactNumber, humanBytes } from "../../lib/format";
 import { cn } from "../../lib/cn";
+import { useDialogA11y } from "../../lib/useDialogA11y";
 
 type LoadStatus =
   | { phase: "idle" }
@@ -100,8 +101,12 @@ export function LoadCaptureDialog({
     [handleFiles],
   );
 
+  const { ref: dialogRef, onKeyDown: onDialogKeyDown } = useDialogA11y(onClose);
+
   return (
     <div
+      ref={dialogRef}
+      onKeyDown={onDialogKeyDown}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       role="dialog"
       aria-modal="true"

@@ -1,6 +1,7 @@
 // Zone 2 — the kill-chain incident hero. The single object the eye lands on
 // first. Only the top (critical) incident breathes; secondaries are static.
 import {
+  Activity,
   ArrowUpFromLine,
   Bug,
   ChevronRight,
@@ -217,7 +218,9 @@ export function IncidentHero({
         <SectionLabel className="mb-2">Evidence · {incident.findings.length} findings</SectionLabel>
         <ul className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
           {incident.findings.map((f, i) => {
-            const meta = KIND_META[f.kind];
+            // f.kind is runtime engine/cache JSON, not a typechecked union — an
+            // unmapped kind (version skew) must degrade, not crash the dashboard.
+            const meta = KIND_META[f.kind] ?? { label: f.kind, Icon: Activity };
             const Icon = meta.Icon;
             const fc = sevColor(f.severity);
             return (

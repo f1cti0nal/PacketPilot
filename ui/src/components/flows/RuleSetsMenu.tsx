@@ -23,6 +23,10 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
 
   useEffect(() => {
     if (!open) return;
+    // Re-read on open: a rule set saved by the file-load path (App.loadRules → saveRuleSet)
+    // is written outside this component, so the lazy-initialized list would otherwise be
+    // stale and not show the set the user just loaded until a remount.
+    setSets(listRuleSets());
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
