@@ -126,35 +126,58 @@ The relay opens the upstream request and **pipes the `text/event-stream` back ve
 SSE chunk is forwarded byte-for-byte as the response body. The response `Content-Type` should be
 `text/event-stream`.
 
-**Minimal Node.js reference relay:**
+> ⚠ **CORS preflight is mandatory.** The browser POSTs `application/json`, so it sends an `OPTIONS`
+> preflight first. The relay **must** answer `OPTIONS` with `access-control-allow-origin`,
+> `access-control-allow-methods: POST, OPTIONS`, and **`access-control-allow-headers: content-type`**
+> — otherwise the real POST is never sent and the relay appears to "do nothing". (A relay that only
+> handles POST is the most common broken relay.)
+
+**Ready-to-run reference relays live in [`relay/`](../relay/):** `relay/ai-relay.mjs` (zero-dep
+Node ≥ 18) and `relay/ai-relay.worker.js` (Cloudflare Worker). See [`relay/README.md`](../relay/README.md).
+
+```sh
+node relay/ai-relay.mjs        # → http://localhost:8788
+```
+
+Minimal correct relay (note the `OPTIONS` branch the naive version omits):
 
 ```js
-// ai-relay.mjs  —  node ai-relay.mjs
+// ai-relay.mjs  —  node ai-relay.mjs   (env: PORT, ALLOW_ORIGIN, AI_API_KEY)
 import http from "http";
+const ALLOW = process.env.ALLOW_ORIGIN ?? "*";
+const KEY = process.env.AI_API_KEY ?? "";
 
 http.createServer(async (req, res) => {
+  res.setHeader("access-control-allow-origin", ALLOW);
+  res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+  res.setHeader("access-control-allow-headers", "content-type");
+  if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }  // ← the preflight
   if (req.method !== "POST") { res.writeHead(405); res.end(); return; }
-  const { url, headers, method = "POST", body } = JSON.parse(await readBody(req));
+
+  const { url, headers = {}, method = "POST", body } = JSON.parse(await readBody(req));
+  if (!/^https?:\/\//i.test(url ?? "")) { res.writeHead(400); res.end(); return; }
+  if (KEY) headers.authorization = `Bearer ${KEY}`;             // optional: keep the key off the browser
+
   const upstream = await fetch(url, { method, headers, body });
-  res.writeHead(upstream.ok ? 200 : upstream.status, {
+  res.writeHead(upstream.status, {                              // forward the REAL status (401/429/…)
     "content-type": upstream.headers.get("content-type") ?? "text/event-stream",
-    "transfer-encoding": "chunked",
-    "access-control-allow-origin": "*",
+    "cache-control": "no-cache",
   });
-  for await (const chunk of upstream.body) res.write(chunk);
+  for await (const chunk of upstream.body) res.write(chunk);    // stream verbatim, do not buffer
   res.end();
-}).listen(8788, () => console.log("AI relay on :8788"));
+}).listen(Number(process.env.PORT ?? 8788), () => console.log("AI relay on :8788"));
 
 function readBody(req) {
   return new Promise(r => { let b = ""; req.on("data", c => b += c); req.on("end", () => r(b)); });
 }
 ```
 
-Point **Settings → AI Analyst → Proxy URL** to `http://localhost:8788` (or wherever the relay
-runs).
+Point **Settings → AI Analyst → Proxy URL** to `http://localhost:8788` (or wherever the relay runs).
 
-**Security note:** the user's API key transits their own relay running on their own machine. No
-third party is involved. CLI and Desktop are not browser-sandboxed and do not need a relay.
+**Security note:** the user's API key transits their own relay on their own machine — no third party.
+Set `ALLOW_ORIGIN` to your app's exact origin so other sites can't use your relay, and set
+`AI_API_KEY` to inject the key server-side (then leave the Settings → API Key field blank) so it
+never lives in the browser. CLI and Desktop are not browser-sandboxed and do not need a relay.
 
 ### Local endpoint (no relay needed)
 
