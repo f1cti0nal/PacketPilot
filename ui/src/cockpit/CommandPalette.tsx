@@ -36,6 +36,8 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-opt-${i}`;
 
   // Reset + focus on open; capture opener so we can restore focus on close.
   useEffect(() => {
@@ -127,11 +129,16 @@ export function CommandPalette({
             onChange={(e) => { setQuery(e.target.value); setActive(0); }}
             placeholder="Jump to a host, or run a command…"
             aria-label="Command palette query"
+            role="combobox"
+            aria-expanded={items.length > 0}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={items.length > 0 ? optionId(active) : undefined}
             className="font-mono-num w-full bg-transparent py-3 text-sm text-[var(--color-text)] outline-none placeholder:font-sans placeholder:text-[var(--color-text-faint)]"
           />
           <kbd className="t-tag shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-text-faint)]">ESC</kbd>
         </div>
-        <ul className="max-h-[50vh] overflow-y-auto p-1.5">
+        <ul id={listId} role="listbox" aria-label="Results" className="max-h-[50vh] overflow-y-auto p-1.5">
           {items.length === 0 && threats.length === 0 && query.trim() !== "" && (
             <li className="px-3 py-2 t-label">load a capture to search hosts</li>
           )}
@@ -141,6 +148,7 @@ export function CommandPalette({
           {items.map((it, i) => (
             <PaletteRow
               key={it.kind === "action" ? `a:${it.action.id}` : `h:${it.threat.ip}`}
+              id={optionId(i)}
               item={it}
               active={i === active}
               onMouseEnter={() => setActive(i)}
@@ -153,19 +161,20 @@ export function CommandPalette({
   );
 }
 
-function PaletteRow({ item, active, onMouseEnter, onClick }: { item: Item; active: boolean; onMouseEnter: () => void; onClick: () => void }) {
+function PaletteRow({ id, item, active, onMouseEnter, onClick }: { id: string; item: Item; active: boolean; onMouseEnter: () => void; onClick: () => void }) {
   return (
-    <li>
-      <button
-        type="button"
-        onMouseEnter={onMouseEnter}
-        onClick={onClick}
-        className={
-          "flex w-full items-center gap-2.5 rounded-[var(--r-tile)] px-2.5 py-2 text-left " +
-          (active ? "bg-[var(--color-surface-2)]" : "")
-        }
-      >
-        {item.kind === "action" ? (
+    <li
+      id={id}
+      role="option"
+      aria-selected={active}
+      onMouseEnter={onMouseEnter}
+      onClick={onClick}
+      className={
+        "flex w-full cursor-pointer items-center gap-2.5 rounded-[var(--r-tile)] px-2.5 py-2 text-left " +
+        (active ? "bg-[var(--color-surface-2)]" : "")
+      }
+    >
+      {item.kind === "action" ? (
           <>
             <span className="min-w-0 flex-1 truncate text-sm text-[var(--color-text)]">{item.action.label}</span>
             {item.action.hint && <span className="t-tag text-[var(--color-text-faint)]">{item.action.hint}</span>}
@@ -180,7 +189,6 @@ function PaletteRow({ item, active, onMouseEnter, onClick }: { item: Item; activ
           </>
         )}
         {active && <CornerDownLeft size={13} className="shrink-0 text-[var(--color-text-faint)]" aria-hidden />}
-      </button>
     </li>
   );
 }

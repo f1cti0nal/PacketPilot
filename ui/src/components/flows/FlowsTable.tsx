@@ -398,6 +398,17 @@ export function FlowsTable({
                           ? header.column.getToggleSortingHandler()
                           : undefined
                       }
+                      tabIndex={canSort ? 0 : undefined}
+                      onKeyDown={
+                        canSort
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                header.column.getToggleSortingHandler()?.(e);
+                              }
+                            }
+                          : undefined
+                      }
                     >
                       <span className="truncate">
                         {flexRender(
@@ -428,7 +439,14 @@ export function FlowsTable({
                   role="row"
                   aria-selected={selected}
                   aria-rowindex={vi.index + 1}
+                  tabIndex={0}
                   onClick={() => handleRowClick(flow)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleRowClick(flow);
+                    }
+                  }}
                   style={{ height: ROW_HEIGHT }}
                   className={clsx(
                     "flex cursor-pointer items-center border-b border-border/60 text-sm transition-colors",

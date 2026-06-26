@@ -84,7 +84,7 @@ export function CommandBar({
         >
           <Radar size={17} style={{ color: "var(--color-accent)" }} aria-hidden />
         </span>
-        <span className="font-display text-[15px] font-semibold tracking-tight">PacketPilot</span>
+        <span className="hidden font-display text-[15px] font-semibold tracking-tight sm:inline">PacketPilot</span>
       </div>
 
       {/* Capture identity (center). Deferred to lg: at the 768px md boundary the
@@ -178,7 +178,9 @@ export function CommandBar({
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
         </button>
-        <DensityToggle />
+        {/* Density is a dashboard power-tweak — hide it (and Rules below) on phones
+            so the action cluster fits; both return at md+. */}
+        <span className="hidden md:contents"><DensityToggle /></span>
         <ThemeToggle />
         {onOpenSettings && (
           <button
@@ -200,7 +202,7 @@ export function CommandBar({
             <Sparkles size={14} />
           </button>
         )}
-        {rulesMenu}
+        {rulesMenu && <span className="hidden md:contents">{rulesMenu}</span>}
       </div>
     </header>
   );
