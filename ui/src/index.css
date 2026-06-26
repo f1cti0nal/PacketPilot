@@ -89,16 +89,16 @@
   --color-text-faint: #586678; /* darkened from #64748b (3.2:1 on tinted surfaces) for AA */
 
   /* Accents */
-  --color-accent: #0670a8;
+  --color-accent: #056291; /* darkened from #0670a8 for AA (≥4.5:1) on its own tint */
   --color-accent-strong: #045b87;
   --color-spine-violet: #6135f5;
 
-  /* Severity — darkened so each reads as text on white (dark-mode amber/teal fail) */
-  --color-sev-critical: #e11d48;
-  --color-sev-high: #c2410c;
-  --color-sev-medium: #b45309;
+  /* Severity — darkened so each reads as text (AA ≥4.5:1) on white AND on its own tinted chip */
+  --color-sev-critical: #c5183f; /* was #e11d48 (3.75:1 on tint) */
+  --color-sev-high: #a8380a; /* was #c2410c (4.2:1 on tint) */
+  --color-sev-medium: #94470a; /* was #b45309 (4.14:1 on tint) */
   --color-sev-low: #0f766e;
-  --color-sev-info: #0670a8;
+  --color-sev-info: #056291;
   --color-sev-none: #64748b;
 
   /* Elevation — dark uses near-opaque black; on light that muddies, so soften. */

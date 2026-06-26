@@ -23,6 +23,7 @@ import {
   clearRecent,
 } from "./lib/recent";
 import { AppShell } from "./components/layout/AppShell";
+import { useTheme } from "./cockpit/ThemeToggle";
 import { LoadingState } from "./components/state/LoadingState";
 import { ErrorState } from "./components/state/ErrorState";
 import { Dashboard } from "./components/Dashboard";
@@ -104,6 +105,10 @@ interface ApplyCaptureInput {
 }
 
 export function App() {
+  // Re-render the whole tree on theme toggle so sevColor()'s baked literals refresh: it
+  // resolves a CSS var to a literal hex at render time (for SVG/recharts), so without a
+  // re-render severity colours would stay the previous theme's palette after a toggle.
+  useTheme();
   const [tab, setTab] = useState<TabId>("dashboard");
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
