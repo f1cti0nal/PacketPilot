@@ -5,6 +5,7 @@ import { cn } from "../lib/cn";
 import { humanBytes, humanNumber } from "../lib/format";
 import { hexLines } from "../lib/hexdump";
 import { FOCUSABLE } from "../lib/useDialogA11y";
+import { tcpFlagsLabel } from "../lib/tcpFlags";
 import type { FlowPackets, FlowRow } from "../types";
 
 const ROW_H = 28;
@@ -79,7 +80,7 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
                         {p.direction === "c2s" ? <ArrowRight size={13} className="text-[var(--color-accent)]" /> : <ArrowLeft size={13} className="text-[var(--color-text-faint)]" />}
                       </span>
                       <span className="w-16 shrink-0 tabular-nums">{humanBytes(p.wireLen)}</span>
-                      <span className="w-24 shrink-0 text-[var(--color-text-faint)]">{tcpFlagLabel(p.tcpFlags)}</span>
+                      <span className="w-24 shrink-0 text-[var(--color-text-faint)]">{tcpFlagsLabel(p.tcpFlags)}</span>
                       <span className="w-14 shrink-0 tabular-nums text-[var(--color-text-faint)]">{p.payloadLen}B</span>
                       <span className="min-w-0 flex-1 truncate text-[var(--color-text-faint)]">{asciiPreview(p.payload)}</span>
                     </button>
@@ -108,12 +109,6 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
       </section>
     </div>
   );
-}
-
-function tcpFlagLabel(flags: number): string {
-  if (!flags) return "";
-  const names: [number, string][] = [[0x02, "SYN"], [0x10, "ACK"], [0x01, "FIN"], [0x04, "RST"], [0x08, "PSH"], [0x20, "URG"], [0x40, "ECE"], [0x80, "CWR"]];
-  return names.filter(([b]) => flags & b).map(([, n]) => n).join(" ");
 }
 function asciiPreview(bytes: Uint8Array): string {
   return Array.from(bytes.subarray(0, 32), (b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : ".")).join("");

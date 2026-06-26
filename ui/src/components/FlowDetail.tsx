@@ -26,6 +26,7 @@ import {
 } from "recharts";
 import type { ActiveSource, FlowRow } from "../types";
 import { packetsAvailable } from "../lib/packets";
+import { tcpFlagsLabel } from "../lib/tcpFlags";
 import { cn } from "../lib/cn";
 import {
   humanBytes,
@@ -55,23 +56,6 @@ export interface FlowDetailProps {
   onInspectPackets: () => void;
   /** Invoked when the user requests a carved sub-pcap for the selected flow. */
   onCarvePcap: () => void;
-}
-
-/** Human label for a TCP flags bitmask (bits per RFC 793 + ECN/NS). */
-function tcpFlagsLabel(flags: number): string {
-  if (flags === 0) return "—";
-  const bits: Array<[number, string]> = [
-    [0x01, "FIN"],
-    [0x02, "SYN"],
-    [0x04, "RST"],
-    [0x08, "PSH"],
-    [0x10, "ACK"],
-    [0x20, "URG"],
-    [0x40, "ECE"],
-    [0x80, "CWR"],
-  ];
-  const names = bits.filter(([m]) => (flags & m) !== 0).map(([, n]) => n);
-  return names.length ? names.join(" ") : "—";
 }
 
 /** One labeled key/value row. */

@@ -1,58 +1,13 @@
 // Zone 2 — the kill-chain incident hero. The single object the eye lands on
 // first. Only the top (critical) incident breathes; secondaries are static.
-import {
-  Activity,
-  ArrowUpFromLine,
-  Bug,
-  ChevronRight,
-  Globe,
-  KeyRound,
-  Network,
-  Radio,
-  Radar,
-  Unlock,
-  Crosshair,
-  FileWarning,
-  Pickaxe,
-  VenetianMask,
-  ScanSearch,
-  ShieldAlert,
-  ShieldOff,
-  Shuffle,
-  Split,
-  Waves,
-  Waypoints,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronRight, Crosshair } from "lucide-react";
 import { cn } from "../lib/cn";
 import { durationHumanNs, humanNumber } from "../lib/format";
 import type { Finding, FindingKind, Incident } from "../types";
+import { kindMeta } from "../lib/findingKinds";
 import { sevColor } from "./viz";
 import { SeverityChip, MitreTag, SectionLabel } from "./primitives";
 import { ScoreRing, BeaconRadar, RadarStat } from "./instruments";
-
-const KIND_META: Record<FindingKind, { label: string; Icon: LucideIcon }> = {
-  beacon: { label: "C2 Beacon", Icon: Radio },
-  host_sweep: { label: "Host Sweep", Icon: Radar },
-  brute_force: { label: "Brute Force", Icon: KeyRound },
-  cleartext_creds: { label: "Cleartext Creds", Icon: Unlock },
-  pii_exposure: { label: "PII Exposure", Icon: FileWarning },
-  lateral_movement: { label: "Lateral Movement", Icon: Network },
-  data_exfil: { label: "Data Exfiltration", Icon: ArrowUpFromLine },
-  dns_tunnel: { label: "DNS Tunnel", Icon: Globe },
-  rule_match: { label: "Signature Match", Icon: Crosshair },
-  tls_cert_health: { label: "TLS Cert", Icon: ShieldAlert },
-  weak_tls: { label: "Weak TLS", Icon: ShieldOff },
-  icmp_tunnel: { label: "ICMP Tunnel", Icon: Waypoints },
-  dga: { label: "DGA Domains", Icon: Shuffle },
-  port_scan: { label: "Port Scan", Icon: ScanSearch },
-  arp_spoof: { label: "ARP Spoofing", Icon: Split },
-  syn_flood: { label: "SYN Flood", Icon: Waves },
-  suspicious_ua: { label: "Attack Tool", Icon: Bug },
-  disguised_download: { label: "Disguised Download", Icon: VenetianMask },
-  cryptomining: { label: "Cryptomining", Icon: Pickaxe },
-  malware_download: { label: "Malware Download", Icon: FileWarning },
-};
 
 const KIND_STAGE: Record<FindingKind, string> = {
   host_sweep: "Discovery",
@@ -111,11 +66,19 @@ function stageColor(i: number, n: number): string {
   return `color-mix(in srgb, var(--color-sev-critical) ${Math.round(((t - 0.5) / 0.5) * 100)}%, var(--color-spine-violet))`;
 }
 
-function KillChainStepper({ stages, findings }: { stages: string[]; findings: Finding[] }) {
-  const stageMetric = (stage: string): string => {
-    const f = findings.find((x) => KIND_STAGE[x.kind] === stage);
-    return f ? metric(f) : "";
-  };
+function KillChainStepper({ findings }: { findings: Finding[] }) {
+  // Derive the stages from the findings (engine-ordered by kill-chain stage) via the
+  // single KIND_STAGE map, so each stage's LABEL and its METRIC come from one source and
+  // cannot desync. Previously the engine-authored incident.stages strings were matched
+  // against KIND_STAGE values, and any label drift silently dropped a stage's metric.
+  const steps: { stage: string; metric: string }[] = [];
+  const seen = new Set<string>();
+  for (const f of findings) {
+    const stage = KIND_STAGE[f.kind] ?? "Activity";
+    if (seen.has(stage)) continue;
+    seen.add(stage);
+    steps.push({ stage, metric: metric(f) });
+  }
   return (
     <div className="relative pl-1">
       {/* spine track + charging fill */}
@@ -129,9 +92,8 @@ function KillChainStepper({ stages, findings }: { stages: string[]; findings: Fi
         }}
       />
       <ol className="flex flex-col gap-3">
-        {stages.map((stage, i) => {
-          const color = stageColor(i, stages.length);
-          const m = stageMetric(stage);
+        {steps.map(({ stage, metric: m }, i) => {
+          const color = stageColor(i, steps.length);
           return (
             <li key={stage} className="kill-node relative flex items-start gap-3" style={{ animation: `node-pop 0.4s ease-out ${0.12 + i * 0.16}s both` }}>
               <span className="relative z-10 mt-0.5 h-3 w-3 shrink-0 rounded-full border-2" style={{ borderColor: color, background: "var(--color-bg)", boxShadow: `0 0 8px -1px ${color}` }} />
@@ -195,7 +157,7 @@ export function IncidentHero({
       <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto]">
         <div>
           <SectionLabel className="mb-2.5">Kill chain</SectionLabel>
-          <KillChainStepper stages={incident.stages} findings={incident.findings} />
+          <KillChainStepper findings={incident.findings} />
         </div>
 
         {beacon && (
@@ -218,9 +180,9 @@ export function IncidentHero({
         <SectionLabel className="mb-2">Evidence · {incident.findings.length} findings</SectionLabel>
         <ul className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
           {incident.findings.map((f, i) => {
-            // f.kind is runtime engine/cache JSON, not a typechecked union — an
-            // unmapped kind (version skew) must degrade, not crash the dashboard.
-            const meta = KIND_META[f.kind] ?? { label: f.kind, Icon: Activity };
+            // kindMeta degrades an unmapped (version-skew) kind to a generic chip
+            // instead of crashing the dashboard on a KIND_META[kind].Icon dereference.
+            const meta = kindMeta(f.kind);
             const Icon = meta.Icon;
             const fc = sevColor(f.severity);
             return (

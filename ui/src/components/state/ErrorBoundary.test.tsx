@@ -8,7 +8,9 @@ function Boom({ explode }: { explode: boolean }) {
 }
 
 describe("ErrorBoundary", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("renders children when nothing throws", () => {
     render(
