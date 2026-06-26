@@ -65,6 +65,28 @@ pub struct TimeBucket {
     pub bytes: u64,
 }
 
+/// One packet-size-distribution bucket. `label` is the human-readable wire-length range
+/// (e.g. `"64–127"`); `pkts` counts packets whose `wire_len` fell in `[min, max]` (inclusive).
+/// The top bucket is open-ended (`max == u32::MAX`). Size distribution separates control-plane
+/// chatter (tiny ACK/SYN packets) from near-MTU bulk transfer at a glance.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SizeBucket {
+    pub label: String,
+    pub min: u32,
+    pub max: u32,
+    pub pkts: u64,
+}
+
+/// One TTL-distribution row: a distinct observed IP TTL / IPv6 hop-limit and its packet count.
+/// Initial TTLs cluster by stack (64 = Linux/macOS/BSD, 128 = Windows, 255 = many network
+/// devices); an unexpected value or a wide spread for one host can flag spoofing or an extra
+/// network hop. Rows are ranked by packet count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TtlCount {
+    pub ttl: u8,
+    pub pkts: u64,
+}
+
 /// One category-breakdown row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CategoryCount {
@@ -267,6 +289,14 @@ pub struct Summary {
     /// capture lengthens. `#[serde(default)]` -> 1 keeps older (per-second) summaries readable.
     #[serde(default = "default_time_bucket_secs")]
     pub time_bucket_secs: i64,
+    /// Packet-size distribution across fixed wire-length buckets (all 7 buckets, ascending).
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub size_distribution: Vec<SizeBucket>,
+    /// TTL / hop-limit distribution over IP packets, ranked by packet count (bounded).
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub ttl_distribution: Vec<TtlCount>,
     /// fixed `Category::all()` order, covers all flows.
     pub category_breakdown: Vec<CategoryCount>,
     /// Flow counts per severity band.
@@ -340,6 +370,8 @@ impl Summary {
             port_histogram: Vec::new(),
             time_histogram: Vec::new(),
             time_bucket_secs: 1,
+            size_distribution: Vec::new(),
+            ttl_distribution: Vec::new(),
             category_breakdown: Vec::new(),
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),

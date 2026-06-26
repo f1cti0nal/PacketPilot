@@ -265,6 +265,40 @@ pub fn render_html(
     s.push_str(&timeline_svg(&sum.time_histogram, sum.time_bucket_secs));
     s.push_str("</section>\n");
 
+    // ---- Section 8b: packet size & TTL distribution ----------------------------------
+    if sum.size_distribution.iter().any(|b| b.pkts > 0) || !sum.ttl_distribution.is_empty() {
+        s.push_str("<section class=\"card\"><h2>Packet size &amp; TTL</h2>");
+        if sum.size_distribution.iter().any(|b| b.pkts > 0) {
+            s.push_str(
+                "<table><thead><tr><th>Wire size (bytes)</th><th>Packets</th></tr></thead><tbody>",
+            );
+            for b in &sum.size_distribution {
+                let _ = write!(
+                    s,
+                    "<tr><td>{}</td><td>{}</td></tr>",
+                    b.label,
+                    group_thousands(b.pkts)
+                );
+            }
+            s.push_str("</tbody></table>");
+        }
+        if !sum.ttl_distribution.is_empty() {
+            s.push_str(
+                "<table><thead><tr><th>TTL / hop limit</th><th>Packets</th></tr></thead><tbody>",
+            );
+            for t in &sum.ttl_distribution {
+                let _ = write!(
+                    s,
+                    "<tr><td>{}</td><td>{}</td></tr>",
+                    t.ttl,
+                    group_thousands(t.pkts)
+                );
+            }
+            s.push_str("</tbody></table>");
+        }
+        s.push_str("</section>\n");
+    }
+
     // ---- Section 9: AI analyst summary (optional) ------------------------------------
     if let Some(ai) = ai_summary {
         writeln!(

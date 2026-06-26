@@ -321,6 +321,8 @@ mod apply_tests {
             port_histogram: vec![],
             time_histogram: vec![],
             time_bucket_secs: 1,
+            size_distribution: vec![],
+            ttl_distribution: vec![],
             category_breakdown: vec![],
             severity_counts: SeverityCounts::default(),
             ip_threats: threats,

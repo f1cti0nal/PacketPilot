@@ -92,11 +92,14 @@ function SeverityCell({ flow }: { flow: FlowRow }) {
       </span>
       {flow.ioc && (
         <span
-          className="shrink-0 rounded px-1 py-0.5 text-[0.6rem] font-semibold"
+          // Outlined chip (transparent fill) rather than a same-hue tint: the rose IOC text on a
+          // rose-tinted background only reached 4.39:1 (below WCAG AA 4.5:1); on the row's plain
+          // surface it clears 4.5:1 in both themes. The border keeps the chip affordance.
+          className="shrink-0 rounded border px-1 py-0.5 text-[0.6rem] font-semibold"
           style={{
             color: "var(--color-sev-critical)",
-            backgroundColor:
-              "color-mix(in srgb, var(--color-sev-critical) 16%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--color-sev-critical) 45%, transparent)",
           }}
           title={`IOC — threat score ${flow.threatScore}/100`}
         >

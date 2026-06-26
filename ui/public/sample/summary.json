@@ -1,4165 +1,928 @@
 {
   "schema_version": 1,
   "engine_version": "0.1.0",
-  "source_path": "target/beacon-sample.pcap",
+  "source_path": "C:\\Users\\ravid\\AppData\\Local\\Temp\\claude\\D--Project-PacketPilot\\37aed9ff-79af-47b8-b907-2d3ab56523e1\\scratchpad\\sample.pcap",
   "source_sha256": null,
-  "source_bytes": 6363362,
+  "source_bytes": 4625148,
   "link_type": "EN10MB",
   "summary": {
-    "total_packets": 40000,
-    "total_bytes": 5723338,
-    "captured_bytes": 5723338,
-    "total_flows": 39081,
-    "decode_errors": 0,
-    "non_ip_frames": 0,
+    "total_packets": 39999,
+    "total_bytes": 3985086,
+    "captured_bytes": 3985086,
+    "total_flows": 39997,
+    "decode_errors": 1,
+    "non_ip_frames": 1,
     "proto": {
-      "tcp": 27838,
-      "udp": 12162,
-      "dns": 12162,
-      "http": 11924,
-      "tls": 15834,
-      "other_tcp": 80,
-      "other_udp": 0,
-      "truncated": 0,
-      "non_ipv4": 0
+      "tcp": 26121,
+      "udp": 13877,
+      "dns": 8163,
+      "http": 8980,
+      "tls": 11428,
+      "other_tcp": 5713,
+      "other_udp": 5714,
+      "truncated": 1,
+      "non_ipv4": 1
     },
     "first_ts_ns": 1700000000000000000,
-    "last_ts_ns": 1700089910421043000,
-    "duration_ns": 89910421043000,
-    "unique_hosts": 97,
+    "last_ts_ns": 1700000039976301000,
+    "duration_ns": 39976301000,
+    "unique_hosts": 64,
     "top_talkers": [
       {
-        "ip": "10.13.37.7",
-        "pkts": 4016,
-        "bytes": 1738862,
-        "flows": 3099
-      },
-      {
-        "ip": "185.220.101.5",
-        "pkts": 900,
-        "bytes": 1308600,
-        "flows": 1
-      },
-      {
-        "ip": "45.77.13.37",
-        "pkts": 2998,
-        "bytes": 404730,
-        "flows": 2998
-      },
-      {
-        "ip": "10.0.63.10",
-        "pkts": 1180,
-        "bytes": 132724,
-        "flows": 1180
-      },
-      {
-        "ip": "10.0.49.10",
-        "pkts": 1176,
-        "bytes": 132200,
-        "flows": 1176
-      },
-      {
-        "ip": "10.0.3.10",
-        "pkts": 1188,
-        "bytes": 131586,
-        "flows": 1188
-      },
-      {
-        "ip": "10.0.28.10",
-        "pkts": 1189,
-        "bytes": 130659,
-        "flows": 1189
-      },
-      {
-        "ip": "10.0.24.10",
-        "pkts": 1173,
-        "bytes": 130439,
-        "flows": 1173
-      },
-      {
-        "ip": "10.0.55.10",
-        "pkts": 1158,
-        "bytes": 129700,
-        "flows": 1158
-      },
-      {
-        "ip": "10.0.34.10",
-        "pkts": 1174,
-        "bytes": 128927,
-        "flows": 1174
-      },
-      {
-        "ip": "10.0.61.10",
-        "pkts": 1155,
-        "bytes": 128911,
-        "flows": 1155
-      },
-      {
-        "ip": "10.0.57.10",
-        "pkts": 1152,
-        "bytes": 128417,
-        "flows": 1152
-      },
-      {
-        "ip": "10.0.37.10",
-        "pkts": 1158,
-        "bytes": 128286,
-        "flows": 1158
-      },
-      {
-        "ip": "10.0.48.10",
-        "pkts": 1160,
-        "bytes": 128190,
-        "flows": 1160
-      },
-      {
-        "ip": "10.0.18.10",
-        "pkts": 1164,
-        "bytes": 128175,
-        "flows": 1164
-      },
-      {
-        "ip": "10.0.9.10",
-        "pkts": 1155,
-        "bytes": 128051,
-        "flows": 1154
+        "ip": "10.0.0.10",
+        "pkts": 1342,
+        "bytes": 133872,
+        "flows": 1342
       },
       {
         "ip": "10.0.12.10",
-        "pkts": 1163,
-        "bytes": 127788,
-        "flows": 1163
-      },
-      {
-        "ip": "10.0.30.10",
-        "pkts": 1130,
-        "bytes": 127710,
-        "flows": 1130
-      },
-      {
-        "ip": "10.0.39.10",
-        "pkts": 1158,
-        "bytes": 127363,
-        "flows": 1158
-      },
-      {
-        "ip": "10.0.6.10",
-        "pkts": 1143,
-        "bytes": 127129,
-        "flows": 1143
-      },
-      {
-        "ip": "10.0.19.10",
-        "pkts": 1150,
-        "bytes": 126872,
-        "flows": 1150
+        "pkts": 1320,
+        "bytes": 132654,
+        "flows": 1320
       },
       {
         "ip": "10.0.31.10",
-        "pkts": 1141,
-        "bytes": 126636,
-        "flows": 1141
+        "pkts": 1310,
+        "bytes": 132539,
+        "flows": 1310
       },
       {
-        "ip": "10.0.29.10",
-        "pkts": 1135,
-        "bytes": 126331,
-        "flows": 1135
-      },
-      {
-        "ip": "10.0.15.10",
-        "pkts": 1117,
-        "bytes": 125894,
-        "flows": 1117
-      },
-      {
-        "ip": "10.0.38.10",
-        "pkts": 1135,
-        "bytes": 125765,
-        "flows": 1135
-      },
-      {
-        "ip": "10.0.50.10",
-        "pkts": 1135,
-        "bytes": 125535,
-        "flows": 1135
-      },
-      {
-        "ip": "10.0.27.10",
-        "pkts": 1141,
-        "bytes": 125520,
-        "flows": 1141
-      },
-      {
-        "ip": "10.0.16.10",
-        "pkts": 1128,
-        "bytes": 125455,
-        "flows": 1128
-      },
-      {
-        "ip": "10.0.5.10",
-        "pkts": 1134,
-        "bytes": 125323,
-        "flows": 1134
-      },
-      {
-        "ip": "10.0.44.10",
-        "pkts": 1129,
-        "bytes": 125318,
-        "flows": 1129
-      },
-      {
-        "ip": "10.0.13.10",
-        "pkts": 1142,
-        "bytes": 125129,
-        "flows": 1141
-      },
-      {
-        "ip": "10.0.4.10",
-        "pkts": 1137,
-        "bytes": 124984,
-        "flows": 1137
-      },
-      {
-        "ip": "10.0.17.10",
-        "pkts": 1123,
-        "bytes": 124799,
-        "flows": 1123
-      },
-      {
-        "ip": "10.0.41.10",
-        "pkts": 1116,
-        "bytes": 124674,
-        "flows": 1116
-      },
-      {
-        "ip": "10.0.46.10",
-        "pkts": 1129,
-        "bytes": 124077,
-        "flows": 1129
-      },
-      {
-        "ip": "10.0.11.10",
-        "pkts": 1116,
-        "bytes": 124055,
-        "flows": 1116
+        "ip": "10.0.26.10",
+        "pkts": 1317,
+        "bytes": 131404,
+        "flows": 1317
       },
       {
         "ip": "10.0.51.10",
-        "pkts": 1130,
-        "bytes": 124019,
-        "flows": 1130
+        "pkts": 1310,
+        "bytes": 130137,
+        "flows": 1310
       },
       {
-        "ip": "10.0.45.10",
-        "pkts": 1137,
-        "bytes": 123999,
-        "flows": 1137
+        "ip": "10.0.38.10",
+        "pkts": 1294,
+        "bytes": 130096,
+        "flows": 1294
+      },
+      {
+        "ip": "10.0.54.10",
+        "pkts": 1293,
+        "bytes": 129289,
+        "flows": 1293
+      },
+      {
+        "ip": "10.0.7.10",
+        "pkts": 1273,
+        "bytes": 129186,
+        "flows": 1273
+      },
+      {
+        "ip": "10.0.36.10",
+        "pkts": 1288,
+        "bytes": 128909,
+        "flows": 1288
+      },
+      {
+        "ip": "10.0.50.10",
+        "pkts": 1283,
+        "bytes": 128475,
+        "flows": 1283
+      },
+      {
+        "ip": "10.0.3.10",
+        "pkts": 1293,
+        "bytes": 128334,
+        "flows": 1293
+      },
+      {
+        "ip": "10.0.18.10",
+        "pkts": 1281,
+        "bytes": 128260,
+        "flows": 1281
+      },
+      {
+        "ip": "10.0.49.10",
+        "pkts": 1284,
+        "bytes": 127840,
+        "flows": 1284
+      },
+      {
+        "ip": "10.0.24.10",
+        "pkts": 1272,
+        "bytes": 127185,
+        "flows": 1272
       },
       {
         "ip": "10.0.1.10",
-        "pkts": 1103,
-        "bytes": 123780,
-        "flows": 1103
+        "pkts": 1290,
+        "bytes": 127015,
+        "flows": 1290
+      },
+      {
+        "ip": "10.0.59.10",
+        "pkts": 1276,
+        "bytes": 126831,
+        "flows": 1276
+      },
+      {
+        "ip": "10.0.13.10",
+        "pkts": 1281,
+        "bytes": 126792,
+        "flows": 1281
+      },
+      {
+        "ip": "10.0.8.10",
+        "pkts": 1271,
+        "bytes": 126635,
+        "flows": 1271
       },
       {
         "ip": "10.0.60.10",
-        "pkts": 1130,
-        "bytes": 123719,
-        "flows": 1130
+        "pkts": 1279,
+        "bytes": 126104,
+        "flows": 1278
       },
       {
-        "ip": "10.0.21.10",
-        "pkts": 1125,
-        "bytes": 123677,
-        "flows": 1125
+        "ip": "10.0.27.10",
+        "pkts": 1278,
+        "bytes": 125791,
+        "flows": 1278
       },
       {
         "ip": "10.0.33.10",
-        "pkts": 1105,
-        "bytes": 123279,
-        "flows": 1105
+        "pkts": 1243,
+        "bytes": 125779,
+        "flows": 1243
       },
       {
-        "ip": "10.0.32.10",
-        "pkts": 1120,
-        "bytes": 123184,
-        "flows": 1120
+        "ip": "10.0.28.10",
+        "pkts": 1270,
+        "bytes": 125636,
+        "flows": 1270
       },
       {
-        "ip": "10.0.40.10",
-        "pkts": 1112,
-        "bytes": 123047,
-        "flows": 1112
-      },
-      {
-        "ip": "10.0.10.10",
-        "pkts": 1124,
-        "bytes": 123033,
-        "flows": 1124
-      },
-      {
-        "ip": "10.0.14.10",
-        "pkts": 1111,
-        "bytes": 122709,
-        "flows": 1111
-      },
-      {
-        "ip": "10.0.53.10",
-        "pkts": 1116,
-        "bytes": 122497,
-        "flows": 1116
+        "ip": "10.0.48.10",
+        "pkts": 1246,
+        "bytes": 125558,
+        "flows": 1246
       },
       {
         "ip": "10.0.35.10",
-        "pkts": 1111,
-        "bytes": 122323,
-        "flows": 1111
+        "pkts": 1259,
+        "bytes": 125530,
+        "flows": 1259
+      },
+      {
+        "ip": "10.0.4.10",
+        "pkts": 1267,
+        "bytes": 125509,
+        "flows": 1267
+      },
+      {
+        "ip": "10.0.46.10",
+        "pkts": 1258,
+        "bytes": 125301,
+        "flows": 1258
+      },
+      {
+        "ip": "10.0.9.10",
+        "pkts": 1253,
+        "bytes": 125294,
+        "flows": 1253
+      },
+      {
+        "ip": "10.0.15.10",
+        "pkts": 1242,
+        "bytes": 125187,
+        "flows": 1242
+      },
+      {
+        "ip": "10.0.21.10",
+        "pkts": 1261,
+        "bytes": 125164,
+        "flows": 1261
+      },
+      {
+        "ip": "10.0.40.10",
+        "pkts": 1249,
+        "bytes": 124967,
+        "flows": 1249
+      },
+      {
+        "ip": "10.0.62.10",
+        "pkts": 1238,
+        "bytes": 124454,
+        "flows": 1238
+      },
+      {
+        "ip": "10.0.16.10",
+        "pkts": 1245,
+        "bytes": 124319,
+        "flows": 1245
+      },
+      {
+        "ip": "10.0.17.10",
+        "pkts": 1242,
+        "bytes": 123794,
+        "flows": 1242
       },
       {
         "ip": "10.0.43.10",
-        "pkts": 1094,
-        "bytes": 122318,
-        "flows": 1094
+        "pkts": 1241,
+        "bytes": 123711,
+        "flows": 1241
       },
       {
-        "ip": "10.0.23.10",
-        "pkts": 1108,
-        "bytes": 122250,
-        "flows": 1108
+        "ip": "10.0.42.10",
+        "pkts": 1244,
+        "bytes": 123702,
+        "flows": 1244
+      },
+      {
+        "ip": "10.0.63.10",
+        "pkts": 1231,
+        "bytes": 123636,
+        "flows": 1231
+      },
+      {
+        "ip": "10.0.6.10",
+        "pkts": 1224,
+        "bytes": 123550,
+        "flows": 1224
+      },
+      {
+        "ip": "10.0.61.10",
+        "pkts": 1251,
+        "bytes": 123282,
+        "flows": 1251
+      },
+      {
+        "ip": "10.0.53.10",
+        "pkts": 1240,
+        "bytes": 123231,
+        "flows": 1240
+      },
+      {
+        "ip": "10.0.57.10",
+        "pkts": 1242,
+        "bytes": 123112,
+        "flows": 1242
+      },
+      {
+        "ip": "10.0.30.10",
+        "pkts": 1235,
+        "bytes": 123074,
+        "flows": 1235
+      },
+      {
+        "ip": "10.0.34.10",
+        "pkts": 1252,
+        "bytes": 123025,
+        "flows": 1252
+      },
+      {
+        "ip": "10.0.39.10",
+        "pkts": 1222,
+        "bytes": 122979,
+        "flows": 1222
+      },
+      {
+        "ip": "10.0.14.10",
+        "pkts": 1234,
+        "bytes": 122738,
+        "flows": 1234
+      },
+      {
+        "ip": "10.0.56.10",
+        "pkts": 1216,
+        "bytes": 122705,
+        "flows": 1216
+      },
+      {
+        "ip": "10.0.32.10",
+        "pkts": 1230,
+        "bytes": 122414,
+        "flows": 1230
+      },
+      {
+        "ip": "10.0.29.10",
+        "pkts": 1240,
+        "bytes": 122344,
+        "flows": 1240
+      },
+      {
+        "ip": "10.0.47.10",
+        "pkts": 1203,
+        "bytes": 122328,
+        "flows": 1203
+      },
+      {
+        "ip": "10.0.37.10",
+        "pkts": 1243,
+        "bytes": 122226,
+        "flows": 1243
+      },
+      {
+        "ip": "10.0.58.10",
+        "pkts": 1224,
+        "bytes": 122224,
+        "flows": 1224
       }
     ],
     "protocol_hierarchy": [
       {
         "path": "ip.tcp.https",
-        "pkts": 15834,
-        "bytes": 3309288
+        "pkts": 11428,
+        "bytes": 1527961
       },
       {
         "path": "ip.tcp.http",
-        "pkts": 11924,
-        "bytes": 1479225
+        "pkts": 8980,
+        "bytes": 1113520
       },
       {
         "path": "ip.udp.dns",
-        "pkts": 12162,
-        "bytes": 913670
+        "pkts": 8163,
+        "bytes": 612225
+      },
+      {
+        "path": "ip.udp.other",
+        "pkts": 5714,
+        "bytes": 422836
       },
       {
         "path": "ip.tcp.other",
-        "pkts": 80,
-        "bytes": 21155
+        "pkts": 5713,
+        "bytes": 308502
       }
     ],
     "port_histogram": [
       {
         "port": 443,
         "transport": "TCP",
-        "pkts": 15834,
-        "bytes": 3309288
-      },
-      {
-        "port": 53,
-        "transport": "UDP",
-        "pkts": 12162,
-        "bytes": 913670
+        "pkts": 11428,
+        "bytes": 1527961
       },
       {
         "port": 80,
         "transport": "TCP",
-        "pkts": 11924,
-        "bytes": 1479225
+        "pkts": 8980,
+        "bytes": 1113520
       },
       {
-        "port": 22,
-        "transport": "TCP",
-        "pkts": 30,
-        "bytes": 1620
+        "port": 53,
+        "transport": "UDP",
+        "pkts": 8163,
+        "bytes": 612225
       },
       {
-        "port": 3389,
-        "transport": "TCP",
-        "pkts": 24,
-        "bytes": 18096
+        "port": 8652,
+        "transport": "UDP",
+        "pkts": 4,
+        "bytes": 296
       },
       {
-        "port": 445,
+        "port": 44750,
         "transport": "TCP",
-        "pkts": 24,
-        "bytes": 1296
+        "pkts": 4,
+        "bytes": 216
       },
       {
-        "port": 21,
+        "port": 5642,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 7921,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 9638,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 14592,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 15748,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 15968,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 20513,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 21255,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 23363,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 25371,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 26296,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 33668,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 34795,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 36548,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 37043,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 39941,
+        "transport": "UDP",
+        "pkts": 3,
+        "bytes": 222
+      },
+      {
+        "port": 28028,
         "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 29353,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 30934,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 37148,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 41569,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 44575,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 46581,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 49163,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 50030,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 50244,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 50595,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 50994,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 52592,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 54198,
+        "transport": "TCP",
+        "pkts": 3,
+        "bytes": 162
+      },
+      {
+        "port": 1080,
+        "transport": "UDP",
         "pkts": 2,
-        "bytes": 143
+        "bytes": 148
+      },
+      {
+        "port": 1152,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 1337,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 1552,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 1555,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 1559,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 1737,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 1755,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 1877,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 2142,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 2305,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 2406,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 2691,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 2699,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
+      },
+      {
+        "port": 2863,
+        "transport": "UDP",
+        "pkts": 2,
+        "bytes": 148
       }
     ],
     "time_histogram": [
       {
-        "epoch_sec": 1699999920,
-        "pkts": 1047,
-        "bytes": 1338111
+        "epoch_sec": 1700000000,
+        "pkts": 1009,
+        "bytes": 98744
       },
       {
-        "epoch_sec": 1700000040,
-        "pkts": 52,
-        "bytes": 5718
+        "epoch_sec": 1700000001,
+        "pkts": 1006,
+        "bytes": 99848
       },
       {
-        "epoch_sec": 1700000160,
-        "pkts": 51,
-        "bytes": 5863
+        "epoch_sec": 1700000002,
+        "pkts": 1000,
+        "bytes": 98664
       },
       {
-        "epoch_sec": 1700000280,
-        "pkts": 50,
-        "bytes": 5344
+        "epoch_sec": 1700000003,
+        "pkts": 987,
+        "bytes": 98818
       },
       {
-        "epoch_sec": 1700000400,
-        "pkts": 55,
-        "bytes": 6292
+        "epoch_sec": 1700000004,
+        "pkts": 994,
+        "bytes": 100451
       },
       {
-        "epoch_sec": 1700000520,
-        "pkts": 51,
-        "bytes": 5417
+        "epoch_sec": 1700000005,
+        "pkts": 993,
+        "bytes": 98196
       },
       {
-        "epoch_sec": 1700000640,
-        "pkts": 47,
-        "bytes": 5300
+        "epoch_sec": 1700000006,
+        "pkts": 1013,
+        "bytes": 101426
       },
       {
-        "epoch_sec": 1700000760,
-        "pkts": 51,
-        "bytes": 5712
+        "epoch_sec": 1700000007,
+        "pkts": 979,
+        "bytes": 96337
       },
       {
-        "epoch_sec": 1700000880,
-        "pkts": 50,
-        "bytes": 5658
+        "epoch_sec": 1700000008,
+        "pkts": 997,
+        "bytes": 98089
       },
       {
-        "epoch_sec": 1700001000,
-        "pkts": 58,
-        "bytes": 6628
+        "epoch_sec": 1700000009,
+        "pkts": 999,
+        "bytes": 98235
       },
       {
-        "epoch_sec": 1700001120,
-        "pkts": 52,
-        "bytes": 5760
+        "epoch_sec": 1700000010,
+        "pkts": 994,
+        "bytes": 99498
       },
       {
-        "epoch_sec": 1700001240,
-        "pkts": 51,
-        "bytes": 5754
+        "epoch_sec": 1700000011,
+        "pkts": 1003,
+        "bytes": 101289
       },
       {
-        "epoch_sec": 1700001360,
-        "pkts": 52,
-        "bytes": 5820
+        "epoch_sec": 1700000012,
+        "pkts": 996,
+        "bytes": 100414
       },
       {
-        "epoch_sec": 1700001480,
-        "pkts": 52,
-        "bytes": 5808
+        "epoch_sec": 1700000013,
+        "pkts": 1002,
+        "bytes": 100267
       },
       {
-        "epoch_sec": 1700001600,
-        "pkts": 52,
-        "bytes": 5752
+        "epoch_sec": 1700000014,
+        "pkts": 1003,
+        "bytes": 99566
       },
       {
-        "epoch_sec": 1700001720,
-        "pkts": 54,
-        "bytes": 6213
+        "epoch_sec": 1700000015,
+        "pkts": 1012,
+        "bytes": 100871
       },
       {
-        "epoch_sec": 1700001840,
-        "pkts": 50,
-        "bytes": 5452
+        "epoch_sec": 1700000016,
+        "pkts": 1001,
+        "bytes": 99558
       },
       {
-        "epoch_sec": 1700001960,
-        "pkts": 50,
-        "bytes": 5441
+        "epoch_sec": 1700000017,
+        "pkts": 1007,
+        "bytes": 99846
       },
       {
-        "epoch_sec": 1700002080,
-        "pkts": 48,
-        "bytes": 5463
+        "epoch_sec": 1700000018,
+        "pkts": 990,
+        "bytes": 97859
       },
       {
-        "epoch_sec": 1700002200,
-        "pkts": 51,
-        "bytes": 6022
+        "epoch_sec": 1700000019,
+        "pkts": 992,
+        "bytes": 99939
       },
       {
-        "epoch_sec": 1700002320,
-        "pkts": 51,
-        "bytes": 5880
+        "epoch_sec": 1700000020,
+        "pkts": 1009,
+        "bytes": 99505
       },
       {
-        "epoch_sec": 1700002440,
-        "pkts": 49,
-        "bytes": 5741
+        "epoch_sec": 1700000021,
+        "pkts": 998,
+        "bytes": 98480
       },
       {
-        "epoch_sec": 1700002560,
-        "pkts": 52,
-        "bytes": 5992
+        "epoch_sec": 1700000022,
+        "pkts": 996,
+        "bytes": 97831
       },
       {
-        "epoch_sec": 1700002680,
-        "pkts": 53,
-        "bytes": 6168
+        "epoch_sec": 1700000023,
+        "pkts": 1015,
+        "bytes": 102633
       },
       {
-        "epoch_sec": 1700002800,
-        "pkts": 53,
-        "bytes": 6180
+        "epoch_sec": 1700000024,
+        "pkts": 998,
+        "bytes": 100122
       },
       {
-        "epoch_sec": 1700002920,
-        "pkts": 51,
-        "bytes": 5323
+        "epoch_sec": 1700000025,
+        "pkts": 1016,
+        "bytes": 100278
       },
       {
-        "epoch_sec": 1700003040,
-        "pkts": 52,
-        "bytes": 5957
+        "epoch_sec": 1700000026,
+        "pkts": 986,
+        "bytes": 98859
       },
       {
-        "epoch_sec": 1700003160,
-        "pkts": 52,
-        "bytes": 5753
+        "epoch_sec": 1700000027,
+        "pkts": 997,
+        "bytes": 98657
       },
       {
-        "epoch_sec": 1700003280,
-        "pkts": 51,
-        "bytes": 5760
+        "epoch_sec": 1700000028,
+        "pkts": 1006,
+        "bytes": 99396
       },
       {
-        "epoch_sec": 1700003400,
-        "pkts": 56,
-        "bytes": 6183
+        "epoch_sec": 1700000029,
+        "pkts": 1001,
+        "bytes": 102203
       },
       {
-        "epoch_sec": 1700003520,
-        "pkts": 54,
-        "bytes": 5899
+        "epoch_sec": 1700000030,
+        "pkts": 1005,
+        "bytes": 98633
       },
       {
-        "epoch_sec": 1700003640,
-        "pkts": 55,
-        "bytes": 6154
+        "epoch_sec": 1700000031,
+        "pkts": 997,
+        "bytes": 100861
       },
       {
-        "epoch_sec": 1700003760,
-        "pkts": 51,
-        "bytes": 5654
+        "epoch_sec": 1700000032,
+        "pkts": 1003,
+        "bytes": 100178
       },
       {
-        "epoch_sec": 1700003880,
-        "pkts": 54,
-        "bytes": 6273
+        "epoch_sec": 1700000033,
+        "pkts": 996,
+        "bytes": 98459
       },
       {
-        "epoch_sec": 1700004000,
-        "pkts": 55,
-        "bytes": 6259
+        "epoch_sec": 1700000034,
+        "pkts": 1015,
+        "bytes": 101848
       },
       {
-        "epoch_sec": 1700004120,
-        "pkts": 50,
-        "bytes": 5822
+        "epoch_sec": 1700000035,
+        "pkts": 1001,
+        "bytes": 100724
       },
       {
-        "epoch_sec": 1700004240,
-        "pkts": 51,
-        "bytes": 5821
+        "epoch_sec": 1700000036,
+        "pkts": 1006,
+        "bytes": 98744
       },
       {
-        "epoch_sec": 1700004360,
-        "pkts": 53,
-        "bytes": 6029
+        "epoch_sec": 1700000037,
+        "pkts": 994,
+        "bytes": 100193
       },
       {
-        "epoch_sec": 1700004480,
-        "pkts": 51,
-        "bytes": 5576
+        "epoch_sec": 1700000038,
+        "pkts": 995,
+        "bytes": 99681
       },
       {
-        "epoch_sec": 1700004600,
-        "pkts": 52,
-        "bytes": 5715
-      },
-      {
-        "epoch_sec": 1700004720,
-        "pkts": 54,
-        "bytes": 5953
-      },
-      {
-        "epoch_sec": 1700004840,
-        "pkts": 51,
-        "bytes": 5966
-      },
-      {
-        "epoch_sec": 1700004960,
-        "pkts": 51,
-        "bytes": 5675
-      },
-      {
-        "epoch_sec": 1700005080,
-        "pkts": 52,
-        "bytes": 5786
-      },
-      {
-        "epoch_sec": 1700005200,
-        "pkts": 54,
-        "bytes": 6122
-      },
-      {
-        "epoch_sec": 1700005320,
-        "pkts": 49,
-        "bytes": 5392
-      },
-      {
-        "epoch_sec": 1700005440,
-        "pkts": 53,
-        "bytes": 5768
-      },
-      {
-        "epoch_sec": 1700005560,
-        "pkts": 54,
-        "bytes": 6568
-      },
-      {
-        "epoch_sec": 1700005680,
-        "pkts": 48,
-        "bytes": 5196
-      },
-      {
-        "epoch_sec": 1700005800,
-        "pkts": 50,
-        "bytes": 5733
-      },
-      {
-        "epoch_sec": 1700005920,
-        "pkts": 48,
-        "bytes": 5393
-      },
-      {
-        "epoch_sec": 1700006040,
-        "pkts": 52,
-        "bytes": 5526
-      },
-      {
-        "epoch_sec": 1700006160,
-        "pkts": 46,
-        "bytes": 5241
-      },
-      {
-        "epoch_sec": 1700006280,
-        "pkts": 51,
-        "bytes": 5721
-      },
-      {
-        "epoch_sec": 1700006400,
-        "pkts": 53,
-        "bytes": 5952
-      },
-      {
-        "epoch_sec": 1700006520,
-        "pkts": 52,
-        "bytes": 5914
-      },
-      {
-        "epoch_sec": 1700006640,
-        "pkts": 52,
-        "bytes": 6142
-      },
-      {
-        "epoch_sec": 1700006760,
-        "pkts": 51,
-        "bytes": 5507
-      },
-      {
-        "epoch_sec": 1700006880,
-        "pkts": 58,
-        "bytes": 6631
-      },
-      {
-        "epoch_sec": 1700007000,
-        "pkts": 53,
-        "bytes": 5707
-      },
-      {
-        "epoch_sec": 1700007120,
-        "pkts": 54,
-        "bytes": 6101
-      },
-      {
-        "epoch_sec": 1700007240,
-        "pkts": 55,
-        "bytes": 5866
-      },
-      {
-        "epoch_sec": 1700007360,
-        "pkts": 52,
-        "bytes": 5741
-      },
-      {
-        "epoch_sec": 1700007480,
-        "pkts": 53,
-        "bytes": 6002
-      },
-      {
-        "epoch_sec": 1700007600,
-        "pkts": 52,
-        "bytes": 5726
-      },
-      {
-        "epoch_sec": 1700007720,
-        "pkts": 54,
-        "bytes": 6220
-      },
-      {
-        "epoch_sec": 1700007840,
-        "pkts": 51,
-        "bytes": 5509
-      },
-      {
-        "epoch_sec": 1700007960,
-        "pkts": 53,
-        "bytes": 5849
-      },
-      {
-        "epoch_sec": 1700008080,
-        "pkts": 55,
-        "bytes": 6177
-      },
-      {
-        "epoch_sec": 1700008200,
-        "pkts": 51,
-        "bytes": 5823
-      },
-      {
-        "epoch_sec": 1700008320,
-        "pkts": 50,
-        "bytes": 5617
-      },
-      {
-        "epoch_sec": 1700008440,
-        "pkts": 52,
-        "bytes": 5734
-      },
-      {
-        "epoch_sec": 1700008560,
-        "pkts": 51,
-        "bytes": 5717
-      },
-      {
-        "epoch_sec": 1700008680,
-        "pkts": 50,
-        "bytes": 5503
-      },
-      {
-        "epoch_sec": 1700008800,
-        "pkts": 52,
-        "bytes": 5877
-      },
-      {
-        "epoch_sec": 1700008920,
-        "pkts": 55,
-        "bytes": 6382
-      },
-      {
-        "epoch_sec": 1700009040,
-        "pkts": 51,
-        "bytes": 5871
-      },
-      {
-        "epoch_sec": 1700009160,
-        "pkts": 56,
-        "bytes": 6200
-      },
-      {
-        "epoch_sec": 1700009280,
-        "pkts": 52,
-        "bytes": 5644
-      },
-      {
-        "epoch_sec": 1700009400,
-        "pkts": 46,
-        "bytes": 5571
-      },
-      {
-        "epoch_sec": 1700009520,
-        "pkts": 50,
-        "bytes": 5579
-      },
-      {
-        "epoch_sec": 1700009640,
-        "pkts": 50,
-        "bytes": 5624
-      },
-      {
-        "epoch_sec": 1700009760,
-        "pkts": 53,
-        "bytes": 5712
-      },
-      {
-        "epoch_sec": 1700009880,
-        "pkts": 54,
-        "bytes": 6111
-      },
-      {
-        "epoch_sec": 1700010000,
-        "pkts": 52,
-        "bytes": 5683
-      },
-      {
-        "epoch_sec": 1700010120,
-        "pkts": 54,
-        "bytes": 5990
-      },
-      {
-        "epoch_sec": 1700010240,
-        "pkts": 51,
-        "bytes": 5898
-      },
-      {
-        "epoch_sec": 1700010360,
-        "pkts": 50,
-        "bytes": 5765
-      },
-      {
-        "epoch_sec": 1700010480,
-        "pkts": 51,
-        "bytes": 6110
-      },
-      {
-        "epoch_sec": 1700010600,
-        "pkts": 51,
-        "bytes": 5763
-      },
-      {
-        "epoch_sec": 1700010720,
-        "pkts": 50,
-        "bytes": 5405
-      },
-      {
-        "epoch_sec": 1700010840,
-        "pkts": 52,
-        "bytes": 5897
-      },
-      {
-        "epoch_sec": 1700010960,
-        "pkts": 53,
-        "bytes": 6038
-      },
-      {
-        "epoch_sec": 1700011080,
-        "pkts": 52,
-        "bytes": 5892
-      },
-      {
-        "epoch_sec": 1700011200,
-        "pkts": 51,
-        "bytes": 5771
-      },
-      {
-        "epoch_sec": 1700011320,
-        "pkts": 53,
-        "bytes": 6124
-      },
-      {
-        "epoch_sec": 1700011440,
-        "pkts": 55,
-        "bytes": 6101
-      },
-      {
-        "epoch_sec": 1700011560,
-        "pkts": 53,
-        "bytes": 6263
-      },
-      {
-        "epoch_sec": 1700011680,
-        "pkts": 53,
-        "bytes": 5881
-      },
-      {
-        "epoch_sec": 1700011800,
-        "pkts": 52,
-        "bytes": 6203
-      },
-      {
-        "epoch_sec": 1700011920,
-        "pkts": 52,
-        "bytes": 6000
-      },
-      {
-        "epoch_sec": 1700012040,
-        "pkts": 54,
-        "bytes": 6124
-      },
-      {
-        "epoch_sec": 1700012160,
-        "pkts": 50,
-        "bytes": 5484
-      },
-      {
-        "epoch_sec": 1700012280,
-        "pkts": 56,
-        "bytes": 6269
-      },
-      {
-        "epoch_sec": 1700012400,
-        "pkts": 57,
-        "bytes": 6413
-      },
-      {
-        "epoch_sec": 1700012520,
-        "pkts": 51,
-        "bytes": 5590
-      },
-      {
-        "epoch_sec": 1700012640,
-        "pkts": 52,
-        "bytes": 5636
-      },
-      {
-        "epoch_sec": 1700012760,
-        "pkts": 55,
-        "bytes": 6446
-      },
-      {
-        "epoch_sec": 1700012880,
-        "pkts": 51,
-        "bytes": 5806
-      },
-      {
-        "epoch_sec": 1700013000,
-        "pkts": 54,
-        "bytes": 6087
-      },
-      {
-        "epoch_sec": 1700013120,
-        "pkts": 52,
-        "bytes": 5927
-      },
-      {
-        "epoch_sec": 1700013240,
-        "pkts": 51,
-        "bytes": 5751
-      },
-      {
-        "epoch_sec": 1700013360,
-        "pkts": 54,
-        "bytes": 6322
-      },
-      {
-        "epoch_sec": 1700013480,
-        "pkts": 48,
-        "bytes": 5706
-      },
-      {
-        "epoch_sec": 1700013600,
-        "pkts": 52,
-        "bytes": 5567
-      },
-      {
-        "epoch_sec": 1700013720,
-        "pkts": 52,
-        "bytes": 5869
-      },
-      {
-        "epoch_sec": 1700013840,
-        "pkts": 51,
-        "bytes": 5525
-      },
-      {
-        "epoch_sec": 1700013960,
-        "pkts": 53,
-        "bytes": 5946
-      },
-      {
-        "epoch_sec": 1700014080,
-        "pkts": 56,
-        "bytes": 6404
-      },
-      {
-        "epoch_sec": 1700014200,
-        "pkts": 52,
-        "bytes": 5707
-      },
-      {
-        "epoch_sec": 1700014320,
-        "pkts": 57,
-        "bytes": 6594
-      },
-      {
-        "epoch_sec": 1700014440,
-        "pkts": 52,
-        "bytes": 5888
-      },
-      {
-        "epoch_sec": 1700014560,
-        "pkts": 52,
-        "bytes": 5818
-      },
-      {
-        "epoch_sec": 1700014680,
-        "pkts": 48,
-        "bytes": 5480
-      },
-      {
-        "epoch_sec": 1700014800,
-        "pkts": 50,
-        "bytes": 5191
-      },
-      {
-        "epoch_sec": 1700014920,
-        "pkts": 55,
-        "bytes": 5861
-      },
-      {
-        "epoch_sec": 1700015040,
-        "pkts": 51,
-        "bytes": 5535
-      },
-      {
-        "epoch_sec": 1700015160,
-        "pkts": 51,
-        "bytes": 6121
-      },
-      {
-        "epoch_sec": 1700015280,
-        "pkts": 49,
-        "bytes": 5450
-      },
-      {
-        "epoch_sec": 1700015400,
-        "pkts": 52,
-        "bytes": 5842
-      },
-      {
-        "epoch_sec": 1700015520,
-        "pkts": 54,
-        "bytes": 6137
-      },
-      {
-        "epoch_sec": 1700015640,
-        "pkts": 52,
-        "bytes": 5926
-      },
-      {
-        "epoch_sec": 1700015760,
-        "pkts": 55,
-        "bytes": 6200
-      },
-      {
-        "epoch_sec": 1700015880,
-        "pkts": 52,
-        "bytes": 5924
-      },
-      {
-        "epoch_sec": 1700016000,
-        "pkts": 53,
-        "bytes": 5825
-      },
-      {
-        "epoch_sec": 1700016120,
-        "pkts": 53,
-        "bytes": 5935
-      },
-      {
-        "epoch_sec": 1700016240,
-        "pkts": 49,
-        "bytes": 5652
-      },
-      {
-        "epoch_sec": 1700016360,
-        "pkts": 51,
-        "bytes": 5833
-      },
-      {
-        "epoch_sec": 1700016480,
-        "pkts": 52,
-        "bytes": 5857
-      },
-      {
-        "epoch_sec": 1700016600,
-        "pkts": 52,
-        "bytes": 5662
-      },
-      {
-        "epoch_sec": 1700016720,
-        "pkts": 52,
-        "bytes": 5826
-      },
-      {
-        "epoch_sec": 1700016840,
-        "pkts": 49,
-        "bytes": 5416
-      },
-      {
-        "epoch_sec": 1700016960,
-        "pkts": 54,
-        "bytes": 5844
-      },
-      {
-        "epoch_sec": 1700017080,
-        "pkts": 52,
-        "bytes": 5943
-      },
-      {
-        "epoch_sec": 1700017200,
-        "pkts": 56,
-        "bytes": 6339
-      },
-      {
-        "epoch_sec": 1700017320,
-        "pkts": 49,
-        "bytes": 5594
-      },
-      {
-        "epoch_sec": 1700017440,
-        "pkts": 52,
-        "bytes": 6026
-      },
-      {
-        "epoch_sec": 1700017560,
-        "pkts": 51,
-        "bytes": 5681
-      },
-      {
-        "epoch_sec": 1700017680,
-        "pkts": 51,
-        "bytes": 5748
-      },
-      {
-        "epoch_sec": 1700017800,
-        "pkts": 53,
-        "bytes": 5964
-      },
-      {
-        "epoch_sec": 1700017920,
-        "pkts": 55,
-        "bytes": 6205
-      },
-      {
-        "epoch_sec": 1700018040,
-        "pkts": 56,
-        "bytes": 5976
-      },
-      {
-        "epoch_sec": 1700018160,
-        "pkts": 50,
-        "bytes": 5883
-      },
-      {
-        "epoch_sec": 1700018280,
-        "pkts": 53,
-        "bytes": 5777
-      },
-      {
-        "epoch_sec": 1700018400,
-        "pkts": 51,
-        "bytes": 5495
-      },
-      {
-        "epoch_sec": 1700018520,
-        "pkts": 53,
-        "bytes": 6048
-      },
-      {
-        "epoch_sec": 1700018640,
-        "pkts": 51,
-        "bytes": 5506
-      },
-      {
-        "epoch_sec": 1700018760,
-        "pkts": 53,
-        "bytes": 5899
-      },
-      {
-        "epoch_sec": 1700018880,
-        "pkts": 50,
-        "bytes": 5583
-      },
-      {
-        "epoch_sec": 1700019000,
-        "pkts": 51,
-        "bytes": 5751
-      },
-      {
-        "epoch_sec": 1700019120,
-        "pkts": 49,
-        "bytes": 5603
-      },
-      {
-        "epoch_sec": 1700019240,
-        "pkts": 50,
-        "bytes": 5675
-      },
-      {
-        "epoch_sec": 1700019360,
-        "pkts": 50,
-        "bytes": 5647
-      },
-      {
-        "epoch_sec": 1700019480,
-        "pkts": 54,
-        "bytes": 6237
-      },
-      {
-        "epoch_sec": 1700019600,
-        "pkts": 52,
-        "bytes": 5829
-      },
-      {
-        "epoch_sec": 1700019720,
-        "pkts": 50,
-        "bytes": 5575
-      },
-      {
-        "epoch_sec": 1700019840,
-        "pkts": 51,
-        "bytes": 5831
-      },
-      {
-        "epoch_sec": 1700019960,
-        "pkts": 53,
-        "bytes": 6104
-      },
-      {
-        "epoch_sec": 1700020080,
-        "pkts": 52,
-        "bytes": 5484
-      },
-      {
-        "epoch_sec": 1700020200,
-        "pkts": 52,
-        "bytes": 5936
-      },
-      {
-        "epoch_sec": 1700020320,
-        "pkts": 55,
-        "bytes": 6288
-      },
-      {
-        "epoch_sec": 1700020440,
-        "pkts": 55,
-        "bytes": 5845
-      },
-      {
-        "epoch_sec": 1700020560,
-        "pkts": 54,
-        "bytes": 6144
-      },
-      {
-        "epoch_sec": 1700020680,
-        "pkts": 50,
-        "bytes": 5537
-      },
-      {
-        "epoch_sec": 1700020800,
-        "pkts": 49,
-        "bytes": 5389
-      },
-      {
-        "epoch_sec": 1700020920,
-        "pkts": 48,
-        "bytes": 5396
-      },
-      {
-        "epoch_sec": 1700021040,
-        "pkts": 52,
-        "bytes": 6109
-      },
-      {
-        "epoch_sec": 1700021160,
-        "pkts": 58,
-        "bytes": 6270
-      },
-      {
-        "epoch_sec": 1700021280,
-        "pkts": 50,
-        "bytes": 5587
-      },
-      {
-        "epoch_sec": 1700021400,
-        "pkts": 57,
-        "bytes": 6664
-      },
-      {
-        "epoch_sec": 1700021520,
-        "pkts": 49,
-        "bytes": 5735
-      },
-      {
-        "epoch_sec": 1700021640,
-        "pkts": 49,
-        "bytes": 5540
-      },
-      {
-        "epoch_sec": 1700021760,
-        "pkts": 52,
-        "bytes": 6013
-      },
-      {
-        "epoch_sec": 1700021880,
-        "pkts": 52,
-        "bytes": 5993
-      },
-      {
-        "epoch_sec": 1700022000,
-        "pkts": 54,
-        "bytes": 6308
-      },
-      {
-        "epoch_sec": 1700022120,
-        "pkts": 52,
-        "bytes": 5784
-      },
-      {
-        "epoch_sec": 1700022240,
-        "pkts": 51,
-        "bytes": 5689
-      },
-      {
-        "epoch_sec": 1700022360,
-        "pkts": 51,
-        "bytes": 5728
-      },
-      {
-        "epoch_sec": 1700022480,
-        "pkts": 51,
-        "bytes": 5775
-      },
-      {
-        "epoch_sec": 1700022600,
-        "pkts": 53,
-        "bytes": 5949
-      },
-      {
-        "epoch_sec": 1700022720,
-        "pkts": 53,
-        "bytes": 5825
-      },
-      {
-        "epoch_sec": 1700022840,
-        "pkts": 52,
-        "bytes": 6090
-      },
-      {
-        "epoch_sec": 1700022960,
-        "pkts": 55,
-        "bytes": 6138
-      },
-      {
-        "epoch_sec": 1700023080,
-        "pkts": 48,
-        "bytes": 5244
-      },
-      {
-        "epoch_sec": 1700023200,
-        "pkts": 49,
-        "bytes": 5872
-      },
-      {
-        "epoch_sec": 1700023320,
-        "pkts": 50,
-        "bytes": 5616
-      },
-      {
-        "epoch_sec": 1700023440,
-        "pkts": 53,
-        "bytes": 5638
-      },
-      {
-        "epoch_sec": 1700023560,
-        "pkts": 51,
-        "bytes": 5717
-      },
-      {
-        "epoch_sec": 1700023680,
-        "pkts": 54,
-        "bytes": 5852
-      },
-      {
-        "epoch_sec": 1700023800,
-        "pkts": 48,
-        "bytes": 5349
-      },
-      {
-        "epoch_sec": 1700023920,
-        "pkts": 53,
-        "bytes": 5916
-      },
-      {
-        "epoch_sec": 1700024040,
-        "pkts": 51,
-        "bytes": 5693
-      },
-      {
-        "epoch_sec": 1700024160,
-        "pkts": 54,
-        "bytes": 6137
-      },
-      {
-        "epoch_sec": 1700024280,
-        "pkts": 55,
-        "bytes": 5925
-      },
-      {
-        "epoch_sec": 1700024400,
-        "pkts": 52,
-        "bytes": 5539
-      },
-      {
-        "epoch_sec": 1700024520,
-        "pkts": 52,
-        "bytes": 5699
-      },
-      {
-        "epoch_sec": 1700024640,
-        "pkts": 51,
-        "bytes": 5636
-      },
-      {
-        "epoch_sec": 1700024760,
-        "pkts": 53,
-        "bytes": 5990
-      },
-      {
-        "epoch_sec": 1700024880,
-        "pkts": 56,
-        "bytes": 6688
-      },
-      {
-        "epoch_sec": 1700025000,
-        "pkts": 51,
-        "bytes": 5669
-      },
-      {
-        "epoch_sec": 1700025120,
-        "pkts": 53,
-        "bytes": 5874
-      },
-      {
-        "epoch_sec": 1700025240,
-        "pkts": 54,
-        "bytes": 6107
-      },
-      {
-        "epoch_sec": 1700025360,
-        "pkts": 53,
-        "bytes": 6122
-      },
-      {
-        "epoch_sec": 1700025480,
-        "pkts": 48,
-        "bytes": 5269
-      },
-      {
-        "epoch_sec": 1700025600,
-        "pkts": 52,
-        "bytes": 5935
-      },
-      {
-        "epoch_sec": 1700025720,
-        "pkts": 51,
-        "bytes": 5520
-      },
-      {
-        "epoch_sec": 1700025840,
-        "pkts": 52,
-        "bytes": 5683
-      },
-      {
-        "epoch_sec": 1700025960,
-        "pkts": 48,
-        "bytes": 5382
-      },
-      {
-        "epoch_sec": 1700026080,
-        "pkts": 53,
-        "bytes": 5529
-      },
-      {
-        "epoch_sec": 1700026200,
-        "pkts": 50,
-        "bytes": 5779
-      },
-      {
-        "epoch_sec": 1700026320,
-        "pkts": 52,
-        "bytes": 6139
-      },
-      {
-        "epoch_sec": 1700026440,
-        "pkts": 49,
-        "bytes": 5576
-      },
-      {
-        "epoch_sec": 1700026560,
-        "pkts": 52,
-        "bytes": 6000
-      },
-      {
-        "epoch_sec": 1700026680,
-        "pkts": 53,
-        "bytes": 6027
-      },
-      {
-        "epoch_sec": 1700026800,
-        "pkts": 50,
-        "bytes": 5523
-      },
-      {
-        "epoch_sec": 1700026920,
-        "pkts": 55,
-        "bytes": 5919
-      },
-      {
-        "epoch_sec": 1700027040,
-        "pkts": 50,
-        "bytes": 5266
-      },
-      {
-        "epoch_sec": 1700027160,
-        "pkts": 52,
-        "bytes": 5826
-      },
-      {
-        "epoch_sec": 1700027280,
-        "pkts": 51,
-        "bytes": 5744
-      },
-      {
-        "epoch_sec": 1700027400,
-        "pkts": 55,
-        "bytes": 5982
-      },
-      {
-        "epoch_sec": 1700027520,
-        "pkts": 52,
-        "bytes": 5772
-      },
-      {
-        "epoch_sec": 1700027640,
-        "pkts": 56,
-        "bytes": 6378
-      },
-      {
-        "epoch_sec": 1700027760,
-        "pkts": 51,
-        "bytes": 5986
-      },
-      {
-        "epoch_sec": 1700027880,
-        "pkts": 54,
-        "bytes": 6030
-      },
-      {
-        "epoch_sec": 1700028000,
-        "pkts": 50,
-        "bytes": 5470
-      },
-      {
-        "epoch_sec": 1700028120,
-        "pkts": 54,
-        "bytes": 5862
-      },
-      {
-        "epoch_sec": 1700028240,
-        "pkts": 52,
-        "bytes": 6019
-      },
-      {
-        "epoch_sec": 1700028360,
-        "pkts": 52,
-        "bytes": 5945
-      },
-      {
-        "epoch_sec": 1700028480,
-        "pkts": 54,
-        "bytes": 5977
-      },
-      {
-        "epoch_sec": 1700028600,
-        "pkts": 50,
-        "bytes": 5766
-      },
-      {
-        "epoch_sec": 1700028720,
-        "pkts": 55,
-        "bytes": 6374
-      },
-      {
-        "epoch_sec": 1700028840,
-        "pkts": 51,
-        "bytes": 5782
-      },
-      {
-        "epoch_sec": 1700028960,
-        "pkts": 50,
-        "bytes": 5597
-      },
-      {
-        "epoch_sec": 1700029080,
-        "pkts": 50,
-        "bytes": 5392
-      },
-      {
-        "epoch_sec": 1700029200,
-        "pkts": 50,
-        "bytes": 5832
-      },
-      {
-        "epoch_sec": 1700029320,
-        "pkts": 54,
-        "bytes": 6205
-      },
-      {
-        "epoch_sec": 1700029440,
-        "pkts": 52,
-        "bytes": 5789
-      },
-      {
-        "epoch_sec": 1700029560,
-        "pkts": 55,
-        "bytes": 6510
-      },
-      {
-        "epoch_sec": 1700029680,
-        "pkts": 50,
-        "bytes": 5908
-      },
-      {
-        "epoch_sec": 1700029800,
-        "pkts": 54,
-        "bytes": 5800
-      },
-      {
-        "epoch_sec": 1700029920,
-        "pkts": 49,
-        "bytes": 5732
-      },
-      {
-        "epoch_sec": 1700030040,
-        "pkts": 53,
-        "bytes": 5989
-      },
-      {
-        "epoch_sec": 1700030160,
-        "pkts": 52,
-        "bytes": 5587
-      },
-      {
-        "epoch_sec": 1700030280,
-        "pkts": 52,
-        "bytes": 5743
-      },
-      {
-        "epoch_sec": 1700030400,
-        "pkts": 53,
-        "bytes": 6078
-      },
-      {
-        "epoch_sec": 1700030520,
-        "pkts": 52,
-        "bytes": 6020
-      },
-      {
-        "epoch_sec": 1700030640,
-        "pkts": 55,
-        "bytes": 6135
-      },
-      {
-        "epoch_sec": 1700030760,
-        "pkts": 54,
-        "bytes": 6293
-      },
-      {
-        "epoch_sec": 1700030880,
-        "pkts": 53,
-        "bytes": 5983
-      },
-      {
-        "epoch_sec": 1700031000,
-        "pkts": 55,
-        "bytes": 6063
-      },
-      {
-        "epoch_sec": 1700031120,
-        "pkts": 48,
-        "bytes": 5412
-      },
-      {
-        "epoch_sec": 1700031240,
-        "pkts": 54,
-        "bytes": 6346
-      },
-      {
-        "epoch_sec": 1700031360,
-        "pkts": 50,
-        "bytes": 5493
-      },
-      {
-        "epoch_sec": 1700031480,
-        "pkts": 52,
-        "bytes": 5819
-      },
-      {
-        "epoch_sec": 1700031600,
-        "pkts": 54,
-        "bytes": 6292
-      },
-      {
-        "epoch_sec": 1700031720,
-        "pkts": 53,
-        "bytes": 6308
-      },
-      {
-        "epoch_sec": 1700031840,
-        "pkts": 50,
-        "bytes": 5681
-      },
-      {
-        "epoch_sec": 1700031960,
-        "pkts": 51,
-        "bytes": 5633
-      },
-      {
-        "epoch_sec": 1700032080,
-        "pkts": 48,
-        "bytes": 5618
-      },
-      {
-        "epoch_sec": 1700032200,
-        "pkts": 55,
-        "bytes": 6271
-      },
-      {
-        "epoch_sec": 1700032320,
-        "pkts": 51,
-        "bytes": 5590
-      },
-      {
-        "epoch_sec": 1700032440,
-        "pkts": 52,
-        "bytes": 5803
-      },
-      {
-        "epoch_sec": 1700032560,
-        "pkts": 54,
-        "bytes": 5961
-      },
-      {
-        "epoch_sec": 1700032680,
-        "pkts": 51,
-        "bytes": 5437
-      },
-      {
-        "epoch_sec": 1700032800,
-        "pkts": 54,
-        "bytes": 5888
-      },
-      {
-        "epoch_sec": 1700032920,
-        "pkts": 48,
-        "bytes": 5300
-      },
-      {
-        "epoch_sec": 1700033040,
-        "pkts": 49,
-        "bytes": 5725
-      },
-      {
-        "epoch_sec": 1700033160,
-        "pkts": 57,
-        "bytes": 6824
-      },
-      {
-        "epoch_sec": 1700033280,
-        "pkts": 54,
-        "bytes": 6150
-      },
-      {
-        "epoch_sec": 1700033400,
-        "pkts": 50,
-        "bytes": 5324
-      },
-      {
-        "epoch_sec": 1700033520,
-        "pkts": 51,
-        "bytes": 5609
-      },
-      {
-        "epoch_sec": 1700033640,
-        "pkts": 54,
-        "bytes": 6278
-      },
-      {
-        "epoch_sec": 1700033760,
-        "pkts": 51,
-        "bytes": 5751
-      },
-      {
-        "epoch_sec": 1700033880,
-        "pkts": 54,
-        "bytes": 6013
-      },
-      {
-        "epoch_sec": 1700034000,
-        "pkts": 52,
-        "bytes": 5638
-      },
-      {
-        "epoch_sec": 1700034120,
-        "pkts": 48,
-        "bytes": 5796
-      },
-      {
-        "epoch_sec": 1700034240,
-        "pkts": 50,
-        "bytes": 5795
-      },
-      {
-        "epoch_sec": 1700034360,
-        "pkts": 52,
-        "bytes": 5593
-      },
-      {
-        "epoch_sec": 1700034480,
-        "pkts": 52,
-        "bytes": 5861
-      },
-      {
-        "epoch_sec": 1700034600,
-        "pkts": 52,
-        "bytes": 5783
-      },
-      {
-        "epoch_sec": 1700034720,
-        "pkts": 52,
-        "bytes": 6016
-      },
-      {
-        "epoch_sec": 1700034840,
-        "pkts": 51,
-        "bytes": 5796
-      },
-      {
-        "epoch_sec": 1700034960,
-        "pkts": 49,
-        "bytes": 5498
-      },
-      {
-        "epoch_sec": 1700035080,
-        "pkts": 54,
-        "bytes": 6122
-      },
-      {
-        "epoch_sec": 1700035200,
-        "pkts": 53,
-        "bytes": 6024
-      },
-      {
-        "epoch_sec": 1700035320,
-        "pkts": 50,
-        "bytes": 5594
-      },
-      {
-        "epoch_sec": 1700035440,
-        "pkts": 52,
-        "bytes": 5844
-      },
-      {
-        "epoch_sec": 1700035560,
-        "pkts": 54,
-        "bytes": 5791
-      },
-      {
-        "epoch_sec": 1700035680,
-        "pkts": 54,
-        "bytes": 5924
-      },
-      {
-        "epoch_sec": 1700035800,
-        "pkts": 55,
-        "bytes": 6153
-      },
-      {
-        "epoch_sec": 1700035920,
-        "pkts": 51,
-        "bytes": 6027
-      },
-      {
-        "epoch_sec": 1700036040,
-        "pkts": 52,
-        "bytes": 5699
-      },
-      {
-        "epoch_sec": 1700036160,
-        "pkts": 53,
-        "bytes": 5878
-      },
-      {
-        "epoch_sec": 1700036280,
-        "pkts": 48,
-        "bytes": 5209
-      },
-      {
-        "epoch_sec": 1700036400,
-        "pkts": 55,
-        "bytes": 5955
-      },
-      {
-        "epoch_sec": 1700036520,
-        "pkts": 50,
-        "bytes": 5602
-      },
-      {
-        "epoch_sec": 1700036640,
-        "pkts": 53,
-        "bytes": 5810
-      },
-      {
-        "epoch_sec": 1700036760,
-        "pkts": 52,
-        "bytes": 5740
-      },
-      {
-        "epoch_sec": 1700036880,
-        "pkts": 53,
-        "bytes": 5754
-      },
-      {
-        "epoch_sec": 1700037000,
-        "pkts": 51,
-        "bytes": 5828
-      },
-      {
-        "epoch_sec": 1700037120,
-        "pkts": 48,
-        "bytes": 5626
-      },
-      {
-        "epoch_sec": 1700037240,
-        "pkts": 51,
-        "bytes": 5764
-      },
-      {
-        "epoch_sec": 1700037360,
-        "pkts": 51,
-        "bytes": 5839
-      },
-      {
-        "epoch_sec": 1700037480,
-        "pkts": 54,
-        "bytes": 6280
-      },
-      {
-        "epoch_sec": 1700037600,
-        "pkts": 56,
-        "bytes": 5972
-      },
-      {
-        "epoch_sec": 1700037720,
-        "pkts": 50,
-        "bytes": 5510
-      },
-      {
-        "epoch_sec": 1700037840,
-        "pkts": 52,
-        "bytes": 5824
-      },
-      {
-        "epoch_sec": 1700037960,
-        "pkts": 53,
-        "bytes": 5942
-      },
-      {
-        "epoch_sec": 1700038080,
-        "pkts": 49,
-        "bytes": 5466
-      },
-      {
-        "epoch_sec": 1700038200,
-        "pkts": 53,
-        "bytes": 5771
-      },
-      {
-        "epoch_sec": 1700038320,
-        "pkts": 56,
-        "bytes": 6413
-      },
-      {
-        "epoch_sec": 1700038440,
-        "pkts": 50,
-        "bytes": 5725
-      },
-      {
-        "epoch_sec": 1700038560,
-        "pkts": 52,
-        "bytes": 5963
-      },
-      {
-        "epoch_sec": 1700038680,
-        "pkts": 52,
-        "bytes": 5752
-      },
-      {
-        "epoch_sec": 1700038800,
-        "pkts": 49,
-        "bytes": 5242
-      },
-      {
-        "epoch_sec": 1700038920,
-        "pkts": 53,
-        "bytes": 6147
-      },
-      {
-        "epoch_sec": 1700039040,
-        "pkts": 51,
-        "bytes": 5637
-      },
-      {
-        "epoch_sec": 1700039160,
-        "pkts": 51,
-        "bytes": 5740
-      },
-      {
-        "epoch_sec": 1700039280,
-        "pkts": 50,
-        "bytes": 5635
-      },
-      {
-        "epoch_sec": 1700039400,
-        "pkts": 55,
-        "bytes": 6345
-      },
-      {
-        "epoch_sec": 1700039520,
-        "pkts": 53,
-        "bytes": 5739
-      },
-      {
-        "epoch_sec": 1700039640,
-        "pkts": 52,
-        "bytes": 5899
-      },
-      {
-        "epoch_sec": 1700039760,
-        "pkts": 51,
-        "bytes": 5328
-      },
-      {
-        "epoch_sec": 1700039880,
-        "pkts": 52,
-        "bytes": 5645
-      },
-      {
-        "epoch_sec": 1700040000,
-        "pkts": 54,
-        "bytes": 5943
-      },
-      {
-        "epoch_sec": 1700040120,
-        "pkts": 54,
-        "bytes": 5958
-      },
-      {
-        "epoch_sec": 1700040240,
-        "pkts": 50,
-        "bytes": 5528
-      },
-      {
-        "epoch_sec": 1700040360,
-        "pkts": 54,
-        "bytes": 6435
-      },
-      {
-        "epoch_sec": 1700040480,
-        "pkts": 49,
-        "bytes": 5395
-      },
-      {
-        "epoch_sec": 1700040600,
-        "pkts": 54,
-        "bytes": 5813
-      },
-      {
-        "epoch_sec": 1700040720,
-        "pkts": 53,
-        "bytes": 6162
-      },
-      {
-        "epoch_sec": 1700040840,
-        "pkts": 52,
-        "bytes": 5872
-      },
-      {
-        "epoch_sec": 1700040960,
-        "pkts": 49,
-        "bytes": 5588
-      },
-      {
-        "epoch_sec": 1700041080,
-        "pkts": 54,
-        "bytes": 6079
-      },
-      {
-        "epoch_sec": 1700041200,
-        "pkts": 53,
-        "bytes": 5945
-      },
-      {
-        "epoch_sec": 1700041320,
-        "pkts": 51,
-        "bytes": 5824
-      },
-      {
-        "epoch_sec": 1700041440,
-        "pkts": 52,
-        "bytes": 6030
-      },
-      {
-        "epoch_sec": 1700041560,
-        "pkts": 52,
-        "bytes": 6077
-      },
-      {
-        "epoch_sec": 1700041680,
-        "pkts": 53,
-        "bytes": 5979
-      },
-      {
-        "epoch_sec": 1700041800,
-        "pkts": 54,
-        "bytes": 6119
-      },
-      {
-        "epoch_sec": 1700041920,
-        "pkts": 55,
-        "bytes": 6004
-      },
-      {
-        "epoch_sec": 1700042040,
-        "pkts": 52,
-        "bytes": 5993
-      },
-      {
-        "epoch_sec": 1700042160,
-        "pkts": 53,
-        "bytes": 6053
-      },
-      {
-        "epoch_sec": 1700042280,
-        "pkts": 52,
-        "bytes": 5812
-      },
-      {
-        "epoch_sec": 1700042400,
-        "pkts": 50,
-        "bytes": 5583
-      },
-      {
-        "epoch_sec": 1700042520,
-        "pkts": 52,
-        "bytes": 5974
-      },
-      {
-        "epoch_sec": 1700042640,
-        "pkts": 50,
-        "bytes": 5622
-      },
-      {
-        "epoch_sec": 1700042760,
-        "pkts": 52,
-        "bytes": 5942
-      },
-      {
-        "epoch_sec": 1700042880,
-        "pkts": 51,
-        "bytes": 5303
-      },
-      {
-        "epoch_sec": 1700043000,
-        "pkts": 53,
-        "bytes": 6162
-      },
-      {
-        "epoch_sec": 1700043120,
-        "pkts": 54,
-        "bytes": 5927
-      },
-      {
-        "epoch_sec": 1700043240,
-        "pkts": 52,
-        "bytes": 5499
-      },
-      {
-        "epoch_sec": 1700043360,
-        "pkts": 53,
-        "bytes": 5967
-      },
-      {
-        "epoch_sec": 1700043480,
-        "pkts": 51,
-        "bytes": 5746
-      },
-      {
-        "epoch_sec": 1700043600,
-        "pkts": 51,
-        "bytes": 5857
-      },
-      {
-        "epoch_sec": 1700043720,
-        "pkts": 52,
-        "bytes": 5837
-      },
-      {
-        "epoch_sec": 1700043840,
-        "pkts": 51,
-        "bytes": 5919
-      },
-      {
-        "epoch_sec": 1700043960,
-        "pkts": 51,
-        "bytes": 5632
-      },
-      {
-        "epoch_sec": 1700044080,
-        "pkts": 51,
-        "bytes": 5901
-      },
-      {
-        "epoch_sec": 1700044200,
-        "pkts": 53,
-        "bytes": 5710
-      },
-      {
-        "epoch_sec": 1700044320,
-        "pkts": 56,
-        "bytes": 6625
-      },
-      {
-        "epoch_sec": 1700044440,
-        "pkts": 54,
-        "bytes": 6314
-      },
-      {
-        "epoch_sec": 1700044560,
-        "pkts": 54,
-        "bytes": 6125
-      },
-      {
-        "epoch_sec": 1700044680,
-        "pkts": 55,
-        "bytes": 6148
-      },
-      {
-        "epoch_sec": 1700044800,
-        "pkts": 53,
-        "bytes": 5835
-      },
-      {
-        "epoch_sec": 1700044920,
-        "pkts": 53,
-        "bytes": 5950
-      },
-      {
-        "epoch_sec": 1700045040,
-        "pkts": 52,
-        "bytes": 5696
-      },
-      {
-        "epoch_sec": 1700045160,
-        "pkts": 52,
-        "bytes": 6319
-      },
-      {
-        "epoch_sec": 1700045280,
-        "pkts": 52,
-        "bytes": 6003
-      },
-      {
-        "epoch_sec": 1700045400,
-        "pkts": 50,
-        "bytes": 5657
-      },
-      {
-        "epoch_sec": 1700045520,
-        "pkts": 50,
-        "bytes": 5775
-      },
-      {
-        "epoch_sec": 1700045640,
-        "pkts": 53,
-        "bytes": 6109
-      },
-      {
-        "epoch_sec": 1700045760,
-        "pkts": 50,
-        "bytes": 5581
-      },
-      {
-        "epoch_sec": 1700045880,
-        "pkts": 54,
-        "bytes": 6048
-      },
-      {
-        "epoch_sec": 1700046000,
-        "pkts": 54,
-        "bytes": 5984
-      },
-      {
-        "epoch_sec": 1700046120,
-        "pkts": 52,
-        "bytes": 5746
-      },
-      {
-        "epoch_sec": 1700046240,
-        "pkts": 53,
-        "bytes": 5789
-      },
-      {
-        "epoch_sec": 1700046360,
-        "pkts": 49,
-        "bytes": 5723
-      },
-      {
-        "epoch_sec": 1700046480,
-        "pkts": 48,
-        "bytes": 5429
-      },
-      {
-        "epoch_sec": 1700046600,
-        "pkts": 56,
-        "bytes": 6253
-      },
-      {
-        "epoch_sec": 1700046720,
-        "pkts": 50,
-        "bytes": 5463
-      },
-      {
-        "epoch_sec": 1700046840,
-        "pkts": 54,
-        "bytes": 6135
-      },
-      {
-        "epoch_sec": 1700046960,
-        "pkts": 53,
-        "bytes": 5788
-      },
-      {
-        "epoch_sec": 1700047080,
-        "pkts": 50,
-        "bytes": 5526
-      },
-      {
-        "epoch_sec": 1700047200,
-        "pkts": 50,
-        "bytes": 5506
-      },
-      {
-        "epoch_sec": 1700047320,
-        "pkts": 50,
-        "bytes": 5974
-      },
-      {
-        "epoch_sec": 1700047440,
-        "pkts": 53,
-        "bytes": 6130
-      },
-      {
-        "epoch_sec": 1700047560,
-        "pkts": 52,
-        "bytes": 5779
-      },
-      {
-        "epoch_sec": 1700047680,
-        "pkts": 50,
-        "bytes": 5533
-      },
-      {
-        "epoch_sec": 1700047800,
-        "pkts": 51,
-        "bytes": 6273
-      },
-      {
-        "epoch_sec": 1700047920,
-        "pkts": 50,
-        "bytes": 5504
-      },
-      {
-        "epoch_sec": 1700048040,
-        "pkts": 54,
-        "bytes": 6348
-      },
-      {
-        "epoch_sec": 1700048160,
-        "pkts": 52,
-        "bytes": 5664
-      },
-      {
-        "epoch_sec": 1700048280,
-        "pkts": 55,
-        "bytes": 6191
-      },
-      {
-        "epoch_sec": 1700048400,
-        "pkts": 51,
-        "bytes": 5748
-      },
-      {
-        "epoch_sec": 1700048520,
-        "pkts": 53,
-        "bytes": 6026
-      },
-      {
-        "epoch_sec": 1700048640,
-        "pkts": 53,
-        "bytes": 5986
-      },
-      {
-        "epoch_sec": 1700048760,
-        "pkts": 52,
-        "bytes": 5860
-      },
-      {
-        "epoch_sec": 1700048880,
-        "pkts": 53,
-        "bytes": 6019
-      },
-      {
-        "epoch_sec": 1700049000,
-        "pkts": 51,
-        "bytes": 5731
-      },
-      {
-        "epoch_sec": 1700049120,
-        "pkts": 51,
-        "bytes": 5840
-      },
-      {
-        "epoch_sec": 1700049240,
-        "pkts": 54,
-        "bytes": 6244
-      },
-      {
-        "epoch_sec": 1700049360,
-        "pkts": 49,
-        "bytes": 5803
-      },
-      {
-        "epoch_sec": 1700049480,
-        "pkts": 54,
-        "bytes": 5906
-      },
-      {
-        "epoch_sec": 1700049600,
-        "pkts": 51,
-        "bytes": 5968
-      },
-      {
-        "epoch_sec": 1700049720,
-        "pkts": 52,
-        "bytes": 6055
-      },
-      {
-        "epoch_sec": 1700049840,
-        "pkts": 54,
-        "bytes": 6226
-      },
-      {
-        "epoch_sec": 1700049960,
-        "pkts": 53,
-        "bytes": 6011
-      },
-      {
-        "epoch_sec": 1700050080,
-        "pkts": 49,
-        "bytes": 5407
-      },
-      {
-        "epoch_sec": 1700050200,
-        "pkts": 51,
-        "bytes": 5843
-      },
-      {
-        "epoch_sec": 1700050320,
-        "pkts": 53,
-        "bytes": 6004
-      },
-      {
-        "epoch_sec": 1700050440,
-        "pkts": 51,
-        "bytes": 5681
-      },
-      {
-        "epoch_sec": 1700050560,
-        "pkts": 51,
-        "bytes": 5591
-      },
-      {
-        "epoch_sec": 1700050680,
-        "pkts": 54,
-        "bytes": 5995
-      },
-      {
-        "epoch_sec": 1700050800,
-        "pkts": 50,
-        "bytes": 5625
-      },
-      {
-        "epoch_sec": 1700050920,
-        "pkts": 56,
-        "bytes": 6276
-      },
-      {
-        "epoch_sec": 1700051040,
-        "pkts": 54,
-        "bytes": 5946
-      },
-      {
-        "epoch_sec": 1700051160,
-        "pkts": 56,
-        "bytes": 6259
-      },
-      {
-        "epoch_sec": 1700051280,
-        "pkts": 50,
-        "bytes": 5341
-      },
-      {
-        "epoch_sec": 1700051400,
-        "pkts": 51,
-        "bytes": 5592
-      },
-      {
-        "epoch_sec": 1700051520,
-        "pkts": 50,
-        "bytes": 5585
-      },
-      {
-        "epoch_sec": 1700051640,
-        "pkts": 51,
-        "bytes": 5941
-      },
-      {
-        "epoch_sec": 1700051760,
-        "pkts": 51,
-        "bytes": 5735
-      },
-      {
-        "epoch_sec": 1700051880,
-        "pkts": 52,
-        "bytes": 5715
-      },
-      {
-        "epoch_sec": 1700052000,
-        "pkts": 53,
-        "bytes": 5974
-      },
-      {
-        "epoch_sec": 1700052120,
-        "pkts": 52,
-        "bytes": 5907
-      },
-      {
-        "epoch_sec": 1700052240,
-        "pkts": 49,
-        "bytes": 5422
-      },
-      {
-        "epoch_sec": 1700052360,
-        "pkts": 53,
-        "bytes": 5986
-      },
-      {
-        "epoch_sec": 1700052480,
-        "pkts": 53,
-        "bytes": 6033
-      },
-      {
-        "epoch_sec": 1700052600,
-        "pkts": 54,
-        "bytes": 5848
-      },
-      {
-        "epoch_sec": 1700052720,
-        "pkts": 54,
-        "bytes": 6165
-      },
-      {
-        "epoch_sec": 1700052840,
-        "pkts": 50,
-        "bytes": 5835
-      },
-      {
-        "epoch_sec": 1700052960,
-        "pkts": 48,
-        "bytes": 5270
-      },
-      {
-        "epoch_sec": 1700053080,
-        "pkts": 51,
-        "bytes": 5553
-      },
-      {
-        "epoch_sec": 1700053200,
-        "pkts": 53,
-        "bytes": 5855
-      },
-      {
-        "epoch_sec": 1700053320,
-        "pkts": 52,
-        "bytes": 5796
-      },
-      {
-        "epoch_sec": 1700053440,
-        "pkts": 55,
-        "bytes": 6071
-      },
-      {
-        "epoch_sec": 1700053560,
-        "pkts": 49,
-        "bytes": 5345
-      },
-      {
-        "epoch_sec": 1700053680,
-        "pkts": 50,
-        "bytes": 5780
-      },
-      {
-        "epoch_sec": 1700053800,
-        "pkts": 56,
-        "bytes": 6194
-      },
-      {
-        "epoch_sec": 1700053920,
-        "pkts": 52,
-        "bytes": 5848
-      },
-      {
-        "epoch_sec": 1700054040,
-        "pkts": 49,
-        "bytes": 5460
-      },
-      {
-        "epoch_sec": 1700054160,
-        "pkts": 51,
-        "bytes": 5969
-      },
-      {
-        "epoch_sec": 1700054280,
-        "pkts": 51,
-        "bytes": 5549
-      },
-      {
-        "epoch_sec": 1700054400,
-        "pkts": 53,
-        "bytes": 6011
-      },
-      {
-        "epoch_sec": 1700054520,
-        "pkts": 56,
-        "bytes": 6229
-      },
-      {
-        "epoch_sec": 1700054640,
-        "pkts": 50,
-        "bytes": 5590
-      },
-      {
-        "epoch_sec": 1700054760,
-        "pkts": 52,
-        "bytes": 5964
-      },
-      {
-        "epoch_sec": 1700054880,
-        "pkts": 52,
-        "bytes": 5983
-      },
-      {
-        "epoch_sec": 1700055000,
-        "pkts": 49,
-        "bytes": 5143
-      },
-      {
-        "epoch_sec": 1700055120,
-        "pkts": 52,
-        "bytes": 5717
-      },
-      {
-        "epoch_sec": 1700055240,
-        "pkts": 54,
-        "bytes": 6023
-      },
-      {
-        "epoch_sec": 1700055360,
-        "pkts": 53,
-        "bytes": 6015
-      },
-      {
-        "epoch_sec": 1700055480,
-        "pkts": 53,
-        "bytes": 6092
-      },
-      {
-        "epoch_sec": 1700055600,
-        "pkts": 53,
-        "bytes": 5823
-      },
-      {
-        "epoch_sec": 1700055720,
-        "pkts": 50,
-        "bytes": 5373
-      },
-      {
-        "epoch_sec": 1700055840,
-        "pkts": 52,
-        "bytes": 5404
-      },
-      {
-        "epoch_sec": 1700055960,
-        "pkts": 52,
-        "bytes": 5832
-      },
-      {
-        "epoch_sec": 1700056080,
-        "pkts": 50,
-        "bytes": 5492
-      },
-      {
-        "epoch_sec": 1700056200,
-        "pkts": 51,
-        "bytes": 5946
-      },
-      {
-        "epoch_sec": 1700056320,
-        "pkts": 54,
-        "bytes": 6139
-      },
-      {
-        "epoch_sec": 1700056440,
-        "pkts": 50,
-        "bytes": 5685
-      },
-      {
-        "epoch_sec": 1700056560,
-        "pkts": 52,
-        "bytes": 5597
-      },
-      {
-        "epoch_sec": 1700056680,
-        "pkts": 56,
-        "bytes": 6110
-      },
-      {
-        "epoch_sec": 1700056800,
-        "pkts": 50,
-        "bytes": 5606
-      },
-      {
-        "epoch_sec": 1700056920,
-        "pkts": 54,
-        "bytes": 5988
-      },
-      {
-        "epoch_sec": 1700057040,
-        "pkts": 53,
-        "bytes": 5900
-      },
-      {
-        "epoch_sec": 1700057160,
-        "pkts": 53,
-        "bytes": 5961
-      },
-      {
-        "epoch_sec": 1700057280,
-        "pkts": 52,
-        "bytes": 5752
-      },
-      {
-        "epoch_sec": 1700057400,
-        "pkts": 55,
-        "bytes": 6228
-      },
-      {
-        "epoch_sec": 1700057520,
-        "pkts": 49,
-        "bytes": 5442
-      },
-      {
-        "epoch_sec": 1700057640,
-        "pkts": 48,
-        "bytes": 5407
-      },
-      {
-        "epoch_sec": 1700057760,
-        "pkts": 57,
-        "bytes": 6938
-      },
-      {
-        "epoch_sec": 1700057880,
-        "pkts": 50,
-        "bytes": 5910
-      },
-      {
-        "epoch_sec": 1700058000,
-        "pkts": 52,
-        "bytes": 5463
-      },
-      {
-        "epoch_sec": 1700058120,
-        "pkts": 48,
-        "bytes": 5387
-      },
-      {
-        "epoch_sec": 1700058240,
-        "pkts": 55,
-        "bytes": 6173
-      },
-      {
-        "epoch_sec": 1700058360,
-        "pkts": 48,
-        "bytes": 5261
-      },
-      {
-        "epoch_sec": 1700058480,
-        "pkts": 50,
-        "bytes": 5523
-      },
-      {
-        "epoch_sec": 1700058600,
-        "pkts": 54,
-        "bytes": 6095
-      },
-      {
-        "epoch_sec": 1700058720,
-        "pkts": 52,
-        "bytes": 6008
-      },
-      {
-        "epoch_sec": 1700058840,
-        "pkts": 53,
-        "bytes": 5812
-      },
-      {
-        "epoch_sec": 1700058960,
-        "pkts": 50,
-        "bytes": 5354
-      },
-      {
-        "epoch_sec": 1700059080,
-        "pkts": 49,
-        "bytes": 5918
-      },
-      {
-        "epoch_sec": 1700059200,
-        "pkts": 51,
-        "bytes": 5735
-      },
-      {
-        "epoch_sec": 1700059320,
-        "pkts": 53,
-        "bytes": 5836
-      },
-      {
-        "epoch_sec": 1700059440,
-        "pkts": 52,
-        "bytes": 5809
-      },
-      {
-        "epoch_sec": 1700059560,
-        "pkts": 52,
-        "bytes": 5544
-      },
-      {
-        "epoch_sec": 1700059680,
-        "pkts": 52,
-        "bytes": 6048
-      },
-      {
-        "epoch_sec": 1700059800,
-        "pkts": 48,
-        "bytes": 5617
-      },
-      {
-        "epoch_sec": 1700059920,
-        "pkts": 52,
-        "bytes": 5904
-      },
-      {
-        "epoch_sec": 1700060040,
-        "pkts": 51,
-        "bytes": 5389
-      },
-      {
-        "epoch_sec": 1700060160,
-        "pkts": 58,
-        "bytes": 6090
-      },
-      {
-        "epoch_sec": 1700060280,
-        "pkts": 51,
-        "bytes": 5889
-      },
-      {
-        "epoch_sec": 1700060400,
-        "pkts": 53,
-        "bytes": 6411
-      },
-      {
-        "epoch_sec": 1700060520,
-        "pkts": 54,
-        "bytes": 6077
-      },
-      {
-        "epoch_sec": 1700060640,
-        "pkts": 51,
-        "bytes": 5678
-      },
-      {
-        "epoch_sec": 1700060760,
-        "pkts": 54,
-        "bytes": 6180
-      },
-      {
-        "epoch_sec": 1700060880,
-        "pkts": 50,
-        "bytes": 5799
-      },
-      {
-        "epoch_sec": 1700061000,
-        "pkts": 53,
-        "bytes": 6224
-      },
-      {
-        "epoch_sec": 1700061120,
-        "pkts": 50,
-        "bytes": 5802
-      },
-      {
-        "epoch_sec": 1700061240,
-        "pkts": 50,
-        "bytes": 5371
-      },
-      {
-        "epoch_sec": 1700061360,
-        "pkts": 53,
-        "bytes": 5979
-      },
-      {
-        "epoch_sec": 1700061480,
-        "pkts": 52,
-        "bytes": 5502
-      },
-      {
-        "epoch_sec": 1700061600,
-        "pkts": 50,
-        "bytes": 5804
-      },
-      {
-        "epoch_sec": 1700061720,
-        "pkts": 52,
-        "bytes": 6124
-      },
-      {
-        "epoch_sec": 1700061840,
-        "pkts": 53,
-        "bytes": 5896
-      },
-      {
-        "epoch_sec": 1700061960,
-        "pkts": 51,
-        "bytes": 5845
-      },
-      {
-        "epoch_sec": 1700062080,
-        "pkts": 54,
-        "bytes": 6187
-      },
-      {
-        "epoch_sec": 1700062200,
-        "pkts": 53,
-        "bytes": 6152
-      },
-      {
-        "epoch_sec": 1700062320,
-        "pkts": 50,
-        "bytes": 5488
-      },
-      {
-        "epoch_sec": 1700062440,
-        "pkts": 49,
-        "bytes": 5409
-      },
-      {
-        "epoch_sec": 1700062560,
-        "pkts": 54,
-        "bytes": 6225
-      },
-      {
-        "epoch_sec": 1700062680,
-        "pkts": 50,
-        "bytes": 5670
-      },
-      {
-        "epoch_sec": 1700062800,
-        "pkts": 48,
-        "bytes": 5689
-      },
-      {
-        "epoch_sec": 1700062920,
-        "pkts": 54,
-        "bytes": 6138
-      },
-      {
-        "epoch_sec": 1700063040,
-        "pkts": 50,
-        "bytes": 5480
-      },
-      {
-        "epoch_sec": 1700063160,
-        "pkts": 53,
-        "bytes": 6061
-      },
-      {
-        "epoch_sec": 1700063280,
-        "pkts": 52,
-        "bytes": 6059
-      },
-      {
-        "epoch_sec": 1700063400,
-        "pkts": 54,
-        "bytes": 5742
-      },
-      {
-        "epoch_sec": 1700063520,
-        "pkts": 50,
-        "bytes": 5837
-      },
-      {
-        "epoch_sec": 1700063640,
-        "pkts": 56,
-        "bytes": 6412
-      },
-      {
-        "epoch_sec": 1700063760,
-        "pkts": 51,
-        "bytes": 5694
-      },
-      {
-        "epoch_sec": 1700063880,
-        "pkts": 53,
-        "bytes": 6049
-      },
-      {
-        "epoch_sec": 1700064000,
-        "pkts": 51,
-        "bytes": 5700
-      },
-      {
-        "epoch_sec": 1700064120,
-        "pkts": 54,
-        "bytes": 5907
-      },
-      {
-        "epoch_sec": 1700064240,
-        "pkts": 53,
-        "bytes": 5711
-      },
-      {
-        "epoch_sec": 1700064360,
-        "pkts": 50,
-        "bytes": 5508
-      },
-      {
-        "epoch_sec": 1700064480,
-        "pkts": 54,
-        "bytes": 6335
-      },
-      {
-        "epoch_sec": 1700064600,
-        "pkts": 53,
-        "bytes": 6203
-      },
-      {
-        "epoch_sec": 1700064720,
-        "pkts": 54,
-        "bytes": 5847
-      },
-      {
-        "epoch_sec": 1700064840,
-        "pkts": 52,
-        "bytes": 5920
-      },
-      {
-        "epoch_sec": 1700064960,
-        "pkts": 51,
-        "bytes": 5892
-      },
-      {
-        "epoch_sec": 1700065080,
-        "pkts": 51,
-        "bytes": 5732
-      },
-      {
-        "epoch_sec": 1700065200,
-        "pkts": 56,
-        "bytes": 6121
-      },
-      {
-        "epoch_sec": 1700065320,
-        "pkts": 51,
-        "bytes": 5763
-      },
-      {
-        "epoch_sec": 1700065440,
-        "pkts": 50,
-        "bytes": 5524
-      },
-      {
-        "epoch_sec": 1700065560,
-        "pkts": 52,
-        "bytes": 5736
-      },
-      {
-        "epoch_sec": 1700065680,
-        "pkts": 54,
-        "bytes": 6448
-      },
-      {
-        "epoch_sec": 1700065800,
-        "pkts": 50,
-        "bytes": 5514
-      },
-      {
-        "epoch_sec": 1700065920,
-        "pkts": 51,
-        "bytes": 5787
-      },
-      {
-        "epoch_sec": 1700066040,
-        "pkts": 49,
-        "bytes": 5742
-      },
-      {
-        "epoch_sec": 1700066160,
-        "pkts": 53,
-        "bytes": 5658
-      },
-      {
-        "epoch_sec": 1700066280,
-        "pkts": 50,
-        "bytes": 5665
-      },
-      {
-        "epoch_sec": 1700066400,
-        "pkts": 54,
-        "bytes": 6204
-      },
-      {
-        "epoch_sec": 1700066520,
-        "pkts": 53,
-        "bytes": 5999
-      },
-      {
-        "epoch_sec": 1700066640,
-        "pkts": 50,
-        "bytes": 5738
-      },
-      {
-        "epoch_sec": 1700066760,
-        "pkts": 55,
-        "bytes": 6185
-      },
-      {
-        "epoch_sec": 1700066880,
-        "pkts": 54,
-        "bytes": 6313
-      },
-      {
-        "epoch_sec": 1700067000,
-        "pkts": 54,
-        "bytes": 5844
-      },
-      {
-        "epoch_sec": 1700067120,
-        "pkts": 52,
-        "bytes": 5556
-      },
-      {
-        "epoch_sec": 1700067240,
-        "pkts": 51,
-        "bytes": 5979
-      },
-      {
-        "epoch_sec": 1700067360,
-        "pkts": 51,
-        "bytes": 5951
-      },
-      {
-        "epoch_sec": 1700067480,
-        "pkts": 51,
-        "bytes": 5762
-      },
-      {
-        "epoch_sec": 1700067600,
-        "pkts": 49,
-        "bytes": 5287
-      },
-      {
-        "epoch_sec": 1700067720,
-        "pkts": 51,
-        "bytes": 5681
-      },
-      {
-        "epoch_sec": 1700067840,
-        "pkts": 53,
-        "bytes": 5864
-      },
-      {
-        "epoch_sec": 1700067960,
-        "pkts": 51,
-        "bytes": 5953
-      },
-      {
-        "epoch_sec": 1700068080,
-        "pkts": 55,
-        "bytes": 6154
-      },
-      {
-        "epoch_sec": 1700068200,
-        "pkts": 54,
-        "bytes": 5894
-      },
-      {
-        "epoch_sec": 1700068320,
-        "pkts": 53,
-        "bytes": 5767
-      },
-      {
-        "epoch_sec": 1700068440,
-        "pkts": 52,
-        "bytes": 6008
-      },
-      {
-        "epoch_sec": 1700068560,
-        "pkts": 51,
-        "bytes": 5972
-      },
-      {
-        "epoch_sec": 1700068680,
-        "pkts": 52,
-        "bytes": 5826
-      },
-      {
-        "epoch_sec": 1700068800,
-        "pkts": 52,
-        "bytes": 5900
-      },
-      {
-        "epoch_sec": 1700068920,
-        "pkts": 53,
-        "bytes": 6243
-      },
-      {
-        "epoch_sec": 1700069040,
-        "pkts": 53,
-        "bytes": 5990
-      },
-      {
-        "epoch_sec": 1700069160,
-        "pkts": 52,
-        "bytes": 6007
-      },
-      {
-        "epoch_sec": 1700069280,
-        "pkts": 52,
-        "bytes": 5988
-      },
-      {
-        "epoch_sec": 1700069400,
-        "pkts": 50,
-        "bytes": 5782
-      },
-      {
-        "epoch_sec": 1700069520,
-        "pkts": 51,
-        "bytes": 5578
-      },
-      {
-        "epoch_sec": 1700069640,
-        "pkts": 52,
-        "bytes": 5723
-      },
-      {
-        "epoch_sec": 1700069760,
-        "pkts": 54,
-        "bytes": 5803
-      },
-      {
-        "epoch_sec": 1700069880,
-        "pkts": 50,
-        "bytes": 5662
-      },
-      {
-        "epoch_sec": 1700070000,
-        "pkts": 53,
-        "bytes": 5901
-      },
-      {
-        "epoch_sec": 1700070120,
-        "pkts": 50,
-        "bytes": 5786
-      },
-      {
-        "epoch_sec": 1700070240,
-        "pkts": 51,
-        "bytes": 5779
-      },
-      {
-        "epoch_sec": 1700070360,
-        "pkts": 52,
-        "bytes": 6201
-      },
-      {
-        "epoch_sec": 1700070480,
-        "pkts": 50,
-        "bytes": 5711
-      },
-      {
-        "epoch_sec": 1700070600,
-        "pkts": 52,
-        "bytes": 5946
-      },
-      {
-        "epoch_sec": 1700070720,
-        "pkts": 54,
-        "bytes": 6186
-      },
-      {
-        "epoch_sec": 1700070840,
-        "pkts": 49,
-        "bytes": 5733
-      },
-      {
-        "epoch_sec": 1700070960,
-        "pkts": 49,
-        "bytes": 5398
-      },
-      {
-        "epoch_sec": 1700071080,
-        "pkts": 55,
-        "bytes": 6417
-      },
-      {
-        "epoch_sec": 1700071200,
-        "pkts": 52,
-        "bytes": 5631
-      },
-      {
-        "epoch_sec": 1700071320,
-        "pkts": 52,
-        "bytes": 6091
-      },
-      {
-        "epoch_sec": 1700071440,
-        "pkts": 53,
-        "bytes": 5992
-      },
-      {
-        "epoch_sec": 1700071560,
-        "pkts": 51,
-        "bytes": 5904
-      },
-      {
-        "epoch_sec": 1700071680,
-        "pkts": 52,
-        "bytes": 5826
-      },
-      {
-        "epoch_sec": 1700071800,
-        "pkts": 51,
-        "bytes": 5863
-      },
-      {
-        "epoch_sec": 1700071920,
-        "pkts": 50,
-        "bytes": 5732
-      },
-      {
-        "epoch_sec": 1700072040,
-        "pkts": 51,
-        "bytes": 5490
-      },
-      {
-        "epoch_sec": 1700072160,
-        "pkts": 53,
-        "bytes": 5854
-      },
-      {
-        "epoch_sec": 1700072280,
-        "pkts": 52,
-        "bytes": 5904
-      },
-      {
-        "epoch_sec": 1700072400,
-        "pkts": 54,
-        "bytes": 5962
-      },
-      {
-        "epoch_sec": 1700072520,
-        "pkts": 53,
-        "bytes": 5975
-      },
-      {
-        "epoch_sec": 1700072640,
-        "pkts": 53,
-        "bytes": 6092
-      },
-      {
-        "epoch_sec": 1700072760,
-        "pkts": 54,
-        "bytes": 6051
-      },
-      {
-        "epoch_sec": 1700072880,
-        "pkts": 50,
-        "bytes": 5262
-      },
-      {
-        "epoch_sec": 1700073000,
-        "pkts": 52,
-        "bytes": 5808
-      },
-      {
-        "epoch_sec": 1700073120,
-        "pkts": 55,
-        "bytes": 6216
-      },
-      {
-        "epoch_sec": 1700073240,
-        "pkts": 51,
-        "bytes": 5724
-      },
-      {
-        "epoch_sec": 1700073360,
-        "pkts": 51,
-        "bytes": 5825
-      },
-      {
-        "epoch_sec": 1700073480,
-        "pkts": 54,
-        "bytes": 5957
-      },
-      {
-        "epoch_sec": 1700073600,
-        "pkts": 56,
-        "bytes": 6173
-      },
-      {
-        "epoch_sec": 1700073720,
-        "pkts": 54,
-        "bytes": 6021
-      },
-      {
-        "epoch_sec": 1700073840,
-        "pkts": 54,
-        "bytes": 6130
-      },
-      {
-        "epoch_sec": 1700073960,
-        "pkts": 55,
-        "bytes": 6135
-      },
-      {
-        "epoch_sec": 1700074080,
-        "pkts": 55,
-        "bytes": 6165
-      },
-      {
-        "epoch_sec": 1700074200,
-        "pkts": 51,
-        "bytes": 5956
-      },
-      {
-        "epoch_sec": 1700074320,
-        "pkts": 55,
-        "bytes": 6284
-      },
-      {
-        "epoch_sec": 1700074440,
-        "pkts": 52,
-        "bytes": 5794
-      },
-      {
-        "epoch_sec": 1700074560,
-        "pkts": 53,
-        "bytes": 5971
-      },
-      {
-        "epoch_sec": 1700074680,
-        "pkts": 53,
-        "bytes": 5914
-      },
-      {
-        "epoch_sec": 1700074800,
-        "pkts": 52,
-        "bytes": 5907
-      },
-      {
-        "epoch_sec": 1700074920,
-        "pkts": 52,
-        "bytes": 5887
-      },
-      {
-        "epoch_sec": 1700075040,
-        "pkts": 47,
-        "bytes": 5342
-      },
-      {
-        "epoch_sec": 1700075160,
-        "pkts": 50,
-        "bytes": 5272
-      },
-      {
-        "epoch_sec": 1700075280,
-        "pkts": 49,
-        "bytes": 5251
-      },
-      {
-        "epoch_sec": 1700075400,
-        "pkts": 52,
-        "bytes": 6036
-      },
-      {
-        "epoch_sec": 1700075520,
-        "pkts": 51,
-        "bytes": 5801
-      },
-      {
-        "epoch_sec": 1700075640,
-        "pkts": 51,
-        "bytes": 5787
-      },
-      {
-        "epoch_sec": 1700075760,
-        "pkts": 51,
-        "bytes": 5830
-      },
-      {
-        "epoch_sec": 1700075880,
-        "pkts": 50,
-        "bytes": 5564
-      },
-      {
-        "epoch_sec": 1700076000,
-        "pkts": 50,
-        "bytes": 5612
-      },
-      {
-        "epoch_sec": 1700076120,
-        "pkts": 54,
-        "bytes": 6269
-      },
-      {
-        "epoch_sec": 1700076240,
-        "pkts": 52,
-        "bytes": 5664
-      },
-      {
-        "epoch_sec": 1700076360,
-        "pkts": 50,
-        "bytes": 5768
-      },
-      {
-        "epoch_sec": 1700076480,
-        "pkts": 58,
-        "bytes": 6483
-      },
-      {
-        "epoch_sec": 1700076600,
-        "pkts": 56,
-        "bytes": 6464
-      },
-      {
-        "epoch_sec": 1700076720,
-        "pkts": 52,
-        "bytes": 5741
-      },
-      {
-        "epoch_sec": 1700076840,
-        "pkts": 50,
-        "bytes": 5683
-      },
-      {
-        "epoch_sec": 1700076960,
-        "pkts": 54,
-        "bytes": 5919
-      },
-      {
-        "epoch_sec": 1700077080,
-        "pkts": 54,
-        "bytes": 6007
-      },
-      {
-        "epoch_sec": 1700077200,
-        "pkts": 54,
-        "bytes": 6006
-      },
-      {
-        "epoch_sec": 1700077320,
-        "pkts": 50,
-        "bytes": 5585
-      },
-      {
-        "epoch_sec": 1700077440,
-        "pkts": 56,
-        "bytes": 6563
-      },
-      {
-        "epoch_sec": 1700077560,
-        "pkts": 52,
-        "bytes": 5859
-      },
-      {
-        "epoch_sec": 1700077680,
-        "pkts": 55,
-        "bytes": 6400
-      },
-      {
-        "epoch_sec": 1700077800,
-        "pkts": 50,
-        "bytes": 5637
-      },
-      {
-        "epoch_sec": 1700077920,
-        "pkts": 54,
-        "bytes": 6153
-      },
-      {
-        "epoch_sec": 1700078040,
-        "pkts": 51,
-        "bytes": 5719
-      },
-      {
-        "epoch_sec": 1700078160,
-        "pkts": 52,
-        "bytes": 5861
-      },
-      {
-        "epoch_sec": 1700078280,
-        "pkts": 51,
-        "bytes": 5848
-      },
-      {
-        "epoch_sec": 1700078400,
-        "pkts": 51,
-        "bytes": 5699
-      },
-      {
-        "epoch_sec": 1700078520,
-        "pkts": 49,
-        "bytes": 5563
-      },
-      {
-        "epoch_sec": 1700078640,
-        "pkts": 55,
-        "bytes": 5992
-      },
-      {
-        "epoch_sec": 1700078760,
-        "pkts": 52,
-        "bytes": 5866
-      },
-      {
-        "epoch_sec": 1700078880,
-        "pkts": 53,
-        "bytes": 5740
-      },
-      {
-        "epoch_sec": 1700079000,
-        "pkts": 51,
-        "bytes": 5674
-      },
-      {
-        "epoch_sec": 1700079120,
-        "pkts": 53,
-        "bytes": 5949
-      },
-      {
-        "epoch_sec": 1700079240,
-        "pkts": 47,
-        "bytes": 5623
-      },
-      {
-        "epoch_sec": 1700079360,
-        "pkts": 49,
-        "bytes": 5344
-      },
-      {
-        "epoch_sec": 1700079480,
-        "pkts": 55,
-        "bytes": 6482
-      },
-      {
-        "epoch_sec": 1700079600,
-        "pkts": 52,
-        "bytes": 5851
-      },
-      {
-        "epoch_sec": 1700079720,
-        "pkts": 53,
-        "bytes": 5836
-      },
-      {
-        "epoch_sec": 1700079840,
-        "pkts": 48,
-        "bytes": 5557
-      },
-      {
-        "epoch_sec": 1700079960,
-        "pkts": 52,
-        "bytes": 5908
-      },
-      {
-        "epoch_sec": 1700080080,
-        "pkts": 50,
-        "bytes": 5754
-      },
-      {
-        "epoch_sec": 1700080200,
-        "pkts": 54,
-        "bytes": 6228
-      },
-      {
-        "epoch_sec": 1700080320,
-        "pkts": 55,
-        "bytes": 6500
-      },
-      {
-        "epoch_sec": 1700080440,
-        "pkts": 53,
-        "bytes": 6240
-      },
-      {
-        "epoch_sec": 1700080560,
-        "pkts": 53,
-        "bytes": 6039
-      },
-      {
-        "epoch_sec": 1700080680,
-        "pkts": 52,
-        "bytes": 6131
-      },
-      {
-        "epoch_sec": 1700080800,
-        "pkts": 53,
-        "bytes": 5812
-      },
-      {
-        "epoch_sec": 1700080920,
-        "pkts": 49,
-        "bytes": 5341
-      },
-      {
-        "epoch_sec": 1700081040,
-        "pkts": 52,
-        "bytes": 5491
-      },
-      {
-        "epoch_sec": 1700081160,
-        "pkts": 52,
-        "bytes": 5891
-      },
-      {
-        "epoch_sec": 1700081280,
-        "pkts": 49,
-        "bytes": 5411
-      },
-      {
-        "epoch_sec": 1700081400,
-        "pkts": 57,
-        "bytes": 6420
-      },
-      {
-        "epoch_sec": 1700081520,
-        "pkts": 52,
-        "bytes": 6030
-      },
-      {
-        "epoch_sec": 1700081640,
-        "pkts": 55,
-        "bytes": 6432
-      },
-      {
-        "epoch_sec": 1700081760,
-        "pkts": 51,
-        "bytes": 5625
-      },
-      {
-        "epoch_sec": 1700081880,
-        "pkts": 53,
-        "bytes": 6023
-      },
-      {
-        "epoch_sec": 1700082000,
-        "pkts": 52,
-        "bytes": 5579
-      },
-      {
-        "epoch_sec": 1700082120,
-        "pkts": 51,
-        "bytes": 5801
-      },
-      {
-        "epoch_sec": 1700082240,
-        "pkts": 54,
-        "bytes": 6308
-      },
-      {
-        "epoch_sec": 1700082360,
-        "pkts": 57,
-        "bytes": 6607
-      },
-      {
-        "epoch_sec": 1700082480,
-        "pkts": 49,
-        "bytes": 5459
-      },
-      {
-        "epoch_sec": 1700082600,
-        "pkts": 55,
-        "bytes": 5830
-      },
-      {
-        "epoch_sec": 1700082720,
-        "pkts": 50,
-        "bytes": 5674
-      },
-      {
-        "epoch_sec": 1700082840,
-        "pkts": 53,
-        "bytes": 5880
-      },
-      {
-        "epoch_sec": 1700082960,
-        "pkts": 53,
-        "bytes": 5950
-      },
-      {
-        "epoch_sec": 1700083080,
-        "pkts": 49,
-        "bytes": 5471
-      },
-      {
-        "epoch_sec": 1700083200,
-        "pkts": 53,
-        "bytes": 5905
-      },
-      {
-        "epoch_sec": 1700083320,
-        "pkts": 48,
-        "bytes": 5673
-      },
-      {
-        "epoch_sec": 1700083440,
-        "pkts": 53,
-        "bytes": 5696
-      },
-      {
-        "epoch_sec": 1700083560,
-        "pkts": 52,
-        "bytes": 6084
-      },
-      {
-        "epoch_sec": 1700083680,
-        "pkts": 54,
-        "bytes": 6341
-      },
-      {
-        "epoch_sec": 1700083800,
-        "pkts": 47,
-        "bytes": 5571
-      },
-      {
-        "epoch_sec": 1700083920,
-        "pkts": 51,
-        "bytes": 5715
-      },
-      {
-        "epoch_sec": 1700084040,
-        "pkts": 50,
-        "bytes": 5355
-      },
-      {
-        "epoch_sec": 1700084160,
-        "pkts": 52,
-        "bytes": 6010
-      },
-      {
-        "epoch_sec": 1700084280,
-        "pkts": 51,
-        "bytes": 5472
-      },
-      {
-        "epoch_sec": 1700084400,
-        "pkts": 52,
-        "bytes": 5684
-      },
-      {
-        "epoch_sec": 1700084520,
-        "pkts": 51,
-        "bytes": 5456
-      },
-      {
-        "epoch_sec": 1700084640,
-        "pkts": 50,
-        "bytes": 5785
-      },
-      {
-        "epoch_sec": 1700084760,
-        "pkts": 54,
-        "bytes": 5875
-      },
-      {
-        "epoch_sec": 1700084880,
-        "pkts": 53,
-        "bytes": 6229
-      },
-      {
-        "epoch_sec": 1700085000,
-        "pkts": 51,
-        "bytes": 5849
-      },
-      {
-        "epoch_sec": 1700085120,
-        "pkts": 53,
-        "bytes": 6223
-      },
-      {
-        "epoch_sec": 1700085240,
-        "pkts": 51,
-        "bytes": 5971
-      },
-      {
-        "epoch_sec": 1700085360,
-        "pkts": 53,
-        "bytes": 6085
-      },
-      {
-        "epoch_sec": 1700085480,
-        "pkts": 55,
-        "bytes": 6223
-      },
-      {
-        "epoch_sec": 1700085600,
-        "pkts": 54,
-        "bytes": 6305
-      },
-      {
-        "epoch_sec": 1700085720,
-        "pkts": 53,
-        "bytes": 5983
-      },
-      {
-        "epoch_sec": 1700085840,
-        "pkts": 53,
-        "bytes": 6052
-      },
-      {
-        "epoch_sec": 1700085960,
-        "pkts": 53,
-        "bytes": 6009
-      },
-      {
-        "epoch_sec": 1700086080,
-        "pkts": 53,
-        "bytes": 6169
-      },
-      {
-        "epoch_sec": 1700086200,
-        "pkts": 54,
-        "bytes": 6172
-      },
-      {
-        "epoch_sec": 1700086320,
-        "pkts": 51,
-        "bytes": 5676
-      },
-      {
-        "epoch_sec": 1700086440,
-        "pkts": 52,
-        "bytes": 5572
-      },
-      {
-        "epoch_sec": 1700086560,
-        "pkts": 52,
-        "bytes": 5542
-      },
-      {
-        "epoch_sec": 1700086680,
-        "pkts": 55,
-        "bytes": 6132
-      },
-      {
-        "epoch_sec": 1700086800,
-        "pkts": 48,
-        "bytes": 5299
-      },
-      {
-        "epoch_sec": 1700086920,
-        "pkts": 54,
-        "bytes": 6052
-      },
-      {
-        "epoch_sec": 1700087040,
-        "pkts": 52,
-        "bytes": 5809
-      },
-      {
-        "epoch_sec": 1700087160,
-        "pkts": 54,
-        "bytes": 6138
-      },
-      {
-        "epoch_sec": 1700087280,
-        "pkts": 49,
-        "bytes": 5725
-      },
-      {
-        "epoch_sec": 1700087400,
-        "pkts": 52,
-        "bytes": 5977
-      },
-      {
-        "epoch_sec": 1700087520,
-        "pkts": 54,
-        "bytes": 6137
-      },
-      {
-        "epoch_sec": 1700087640,
-        "pkts": 52,
-        "bytes": 5967
-      },
-      {
-        "epoch_sec": 1700087760,
-        "pkts": 52,
-        "bytes": 5615
-      },
-      {
-        "epoch_sec": 1700087880,
-        "pkts": 53,
-        "bytes": 6107
-      },
-      {
-        "epoch_sec": 1700088000,
-        "pkts": 49,
-        "bytes": 5659
-      },
-      {
-        "epoch_sec": 1700088120,
-        "pkts": 53,
-        "bytes": 6031
-      },
-      {
-        "epoch_sec": 1700088240,
-        "pkts": 54,
-        "bytes": 6425
-      },
-      {
-        "epoch_sec": 1700088360,
-        "pkts": 52,
-        "bytes": 5911
-      },
-      {
-        "epoch_sec": 1700088480,
-        "pkts": 49,
-        "bytes": 5510
-      },
-      {
-        "epoch_sec": 1700088600,
-        "pkts": 53,
-        "bytes": 5994
-      },
-      {
-        "epoch_sec": 1700088720,
-        "pkts": 53,
-        "bytes": 5872
-      },
-      {
-        "epoch_sec": 1700088840,
-        "pkts": 49,
-        "bytes": 5816
-      },
-      {
-        "epoch_sec": 1700088960,
-        "pkts": 55,
-        "bytes": 6104
-      },
-      {
-        "epoch_sec": 1700089080,
-        "pkts": 53,
-        "bytes": 5607
-      },
-      {
-        "epoch_sec": 1700089200,
-        "pkts": 48,
-        "bytes": 5209
-      },
-      {
-        "epoch_sec": 1700089320,
-        "pkts": 51,
-        "bytes": 6002
-      },
-      {
-        "epoch_sec": 1700089440,
-        "pkts": 53,
-        "bytes": 5871
-      },
-      {
-        "epoch_sec": 1700089560,
-        "pkts": 53,
-        "bytes": 5859
-      },
-      {
-        "epoch_sec": 1700089680,
-        "pkts": 50,
-        "bytes": 5837
-      },
-      {
-        "epoch_sec": 1700089800,
-        "pkts": 35,
-        "bytes": 4015
+        "epoch_sec": 1700000039,
+        "pkts": 988,
+        "bytes": 99886
       }
     ],
-    "time_bucket_secs": 120,
+    "time_bucket_secs": 1,
+    "size_distribution": [
+      {
+        "label": "0–63",
+        "min": 0,
+        "max": 63,
+        "pkts": 5714
+      },
+      {
+        "label": "64–127",
+        "min": 64,
+        "max": 127,
+        "pkts": 22857
+      },
+      {
+        "label": "128–255",
+        "min": 128,
+        "max": 255,
+        "pkts": 11428
+      },
+      {
+        "label": "256–511",
+        "min": 256,
+        "max": 511,
+        "pkts": 0
+      },
+      {
+        "label": "512–1023",
+        "min": 512,
+        "max": 1023,
+        "pkts": 0
+      },
+      {
+        "label": "1024–1517",
+        "min": 1024,
+        "max": 1517,
+        "pkts": 0
+      },
+      {
+        "label": "≥1518",
+        "min": 1518,
+        "max": 4294967295,
+        "pkts": 0
+      }
+    ],
+    "ttl_distribution": [
+      {
+        "ttl": 64,
+        "pkts": 39998
+      }
+    ],
     "category_breakdown": [
       {
         "category": "web",
-        "flows": 26859,
-        "pkts": 27758,
-        "bytes": 4788513
+        "flows": 20407,
+        "pkts": 20408,
+        "bytes": 2641481
       },
       {
         "category": "dns",
-        "flows": 12161,
-        "pkts": 12162,
-        "bytes": 913670
+        "flows": 8163,
+        "pkts": 8163,
+        "bytes": 612225
       },
       {
         "category": "email",
@@ -4169,27 +932,27 @@
       },
       {
         "category": "file-transfer",
-        "flows": 25,
-        "pkts": 26,
-        "bytes": 1439
+        "flows": 0,
+        "pkts": 0,
+        "bytes": 0
       },
       {
         "category": "remote-access",
-        "flows": 36,
-        "pkts": 54,
-        "bytes": 19716
+        "flows": 0,
+        "pkts": 0,
+        "bytes": 0
       },
       {
         "category": "voip",
-        "flows": 0,
-        "pkts": 0,
-        "bytes": 0
+        "flows": 2342,
+        "pkts": 2342,
+        "bytes": 173308
       },
       {
         "category": "iot-ot",
-        "flows": 0,
-        "pkts": 0,
-        "bytes": 0
+        "flows": 1,
+        "pkts": 1,
+        "bytes": 74
       },
       {
         "category": "tunnel-vpn",
@@ -4199,9 +962,9 @@
       },
       {
         "category": "scan",
-        "flows": 0,
-        "pkts": 0,
-        "bytes": 0
+        "flows": 9084,
+        "pkts": 9084,
+        "bytes": 557956
       },
       {
         "category": "c2",
@@ -4224,1399 +987,2540 @@
     ],
     "severity_counts": {
       "critical": 0,
-      "high": 0,
+      "high": 5051,
       "medium": 0,
-      "low": 2999,
-      "info": 36082
+      "low": 8504,
+      "info": 26442
     },
     "ip_threats": [
       {
-        "ip": "10.13.37.7",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 74,
-        "flows": 3099,
-        "bytes": 1738862,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [
-          "T1021",
-          "T1046",
-          "T1048",
-          "T1071",
-          "T1071.004",
-          "T1110"
-        ],
-        "evidence": [
-          "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
-          "high-entropy, long-label queries — data/C2 tunneled over DNS",
-          "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
-        ]
-      },
-      {
-        "ip": "10.0.0.53",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 74,
-        "flows": 40,
-        "bytes": 4520,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [
-          "T1071.004"
-        ],
-        "evidence": [
-          "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
-          "high-entropy, long-label queries — data/C2 tunneled over DNS",
-          "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
-        ]
-      },
-      {
-        "ip": "185.220.101.5",
-        "ip_class": "public",
-        "severity": "high",
-        "score": 72,
-        "flows": 1,
-        "bytes": 1308600,
-        "ioc": false,
-        "tags": [
-          "public"
-        ],
-        "attack": [
-          "T1048"
-        ],
-        "evidence": [
-          "outbound 1.2 MB to external 185.220.101.5:443",
-          "1308600x more out than in (asymmetric upload; 0 B in)",
-          "external destination"
-        ]
-      },
-      {
-        "ip": "45.77.13.37",
-        "ip_class": "public",
-        "severity": "high",
-        "score": 70,
-        "flows": 2998,
-        "bytes": 404730,
-        "ioc": false,
-        "tags": [
-          "public"
-        ],
-        "attack": [
-          "T1071"
-        ],
-        "evidence": [
-          "periodic beaconing: 2998 contacts to 45.77.13.37:443",
-          "interval ~30s, jitter CV 0.013 (low = machine-regular)",
-          "external destination"
-        ]
-      },
-      {
-        "ip": "10.66.0.1",
+        "ip": "10.0.0.10",
         "ip_class": "private",
         "severity": "high",
         "score": 68,
-        "flows": 32,
-        "bytes": 4690,
-        "ioc": false,
+        "flows": 1342,
+        "bytes": 133872,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
         "attack": [
-          "T1110"
+          "T1046",
+          "T1499.001"
         ],
         "evidence": [
-          "30 connection attempts to SSH 10.66.0.1:22",
-          "many separate logins to one auth service — password guessing"
+          "221 half-open connections from 60 sources to 10.0.0.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.0.80",
+        "ip": "10.0.36.10",
         "ip_class": "private",
         "severity": "high",
-        "score": 66,
-        "flows": 9,
-        "bytes": 1765,
-        "ioc": false,
+        "score": 68,
+        "flows": 1288,
+        "bytes": 128909,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
         "attack": [
-          "T1040",
-          "T1552"
+          "T1046",
+          "T1499.001"
         ],
         "evidence": [
-          "HTTP Basic auth sent in cleartext to 10.0.0.80:80 (5 exposures)",
-          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)",
-          "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
-          "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
-        ]
-      },
-      {
-        "ip": "10.0.0.50",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 66,
-        "flows": 5,
-        "bytes": 845,
-        "ioc": false,
-        "tags": [
-          "internal"
+          "204 half-open connections from 62 sources to 10.0.36.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
         ],
-        "attack": [
-          "T1552"
-        ],
-        "evidence": [
-          "HTTP Basic auth sent in cleartext to 10.0.0.80:80 (5 exposures)",
-          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
-        ]
-      },
-      {
-        "ip": "10.0.0.51",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 66,
-        "flows": 1,
-        "bytes": 143,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [
-          "T1552"
-        ],
-        "evidence": [
-          "FTP login sent in cleartext to 10.0.0.91:21 (2 exposures)",
-          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
-        ]
-      },
-      {
-        "ip": "10.0.0.91",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 66,
-        "flows": 1,
-        "bytes": 143,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [
-          "T1552"
-        ],
-        "evidence": [
-          "FTP login sent in cleartext to 10.0.0.91:21 (2 exposures)",
-          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
-        ]
-      },
-      {
-        "ip": "10.0.0.52",
-        "ip_class": "private",
-        "severity": "high",
-        "score": 64,
-        "flows": 4,
-        "bytes": 920,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [
-          "T1040"
-        ],
-        "evidence": [
-          "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
-          "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
-        ]
-      },
-      {
-        "ip": "10.0.28.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1189,
-        "bytes": 130659,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.3.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1188,
-        "bytes": 131586,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.63.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1180,
-        "bytes": 132724,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.49.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1176,
-        "bytes": 132200,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.34.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1174,
-        "bytes": 128927,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.24.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1173,
-        "bytes": 130439,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.18.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1164,
-        "bytes": 128175,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.12.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1163,
-        "bytes": 127788,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.48.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1160,
-        "bytes": 128190,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.37.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1158,
-        "bytes": 128286,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.39.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1158,
-        "bytes": 127363,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.55.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1158,
-        "bytes": 129700,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.61.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1155,
-        "bytes": 128911,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.9.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1154,
-        "bytes": 128051,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.57.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1152,
-        "bytes": 128417,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.19.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1150,
-        "bytes": 126872,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.6.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1143,
-        "bytes": 127129,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.13.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1141,
-        "bytes": 125129,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.27.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1141,
-        "bytes": 125520,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.31.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1141,
-        "bytes": 126636,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.4.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1137,
-        "bytes": 124984,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.45.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1137,
-        "bytes": 123999,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.29.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1135,
-        "bytes": 126331,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.38.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1135,
-        "bytes": 125765,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
         "ip": "10.0.50.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1135,
-        "bytes": 125535,
-        "ioc": false,
+        "severity": "high",
+        "score": 68,
+        "flows": 1283,
+        "bytes": 128475,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046",
+          "T1499.001"
+        ],
         "evidence": [
+          "200 half-open connections from 59 sources to 10.0.50.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.19.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 68,
+        "flows": 1219,
+        "bytes": 121045,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046",
+          "T1499.001"
+        ],
+        "evidence": [
+          "200 half-open connections from 60 sources to 10.0.19.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.56.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 68,
+        "flows": 1216,
+        "bytes": 122705,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046",
+          "T1499.001"
+        ],
+        "evidence": [
+          "205 half-open connections from 62 sources to 10.0.56.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.12.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1320,
+        "bytes": 132654,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.26.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1317,
+        "bytes": 131404,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
           "category dns (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category web (+3)"
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.5.10",
+        "ip": "10.0.31.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1134,
-        "bytes": 125323,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1310,
+        "bytes": 132539,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.30.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1130,
-        "bytes": 127710,
-        "ioc": false,
-        "tags": [
-          "internal"
+          "category scan (+25)"
         ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
         "ip": "10.0.51.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1130,
-        "bytes": 124019,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1310,
+        "bytes": 130137,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
-          "category dns (+3)",
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "floor: ioc match forces High (>= 60)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.38.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1294,
+        "bytes": 130096,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
-          "category web (+3)"
+          "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.3.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1293,
+        "bytes": 128334,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.54.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1293,
+        "bytes": 129289,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.49.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1284,
+        "bytes": 127840,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.13.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1281,
+        "bytes": 126792,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
         "ip": "10.0.60.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1130,
-        "bytes": 123719,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1278,
+        "bytes": 126104,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.44.10",
+        "ip": "10.0.59.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1129,
-        "bytes": 125318,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1276,
+        "bytes": 126831,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.46.10",
+        "ip": "10.0.7.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1129,
-        "bytes": 124077,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1273,
+        "bytes": 129186,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.16.10",
+        "ip": "10.0.24.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1128,
-        "bytes": 125455,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1272,
+        "bytes": 127185,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.8.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1271,
+        "bytes": 126635,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
           "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.28.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1270,
+        "bytes": 125636,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.4.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1267,
+        "bytes": 125509,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "floor: ioc match forces High (>= 60)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
         "ip": "10.0.21.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1125,
-        "bytes": 123677,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1261,
+        "bytes": 125164,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
-          "category dns (+3)"
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.10.10",
+        "ip": "10.0.35.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1124,
-        "bytes": 123033,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1259,
+        "bytes": 125530,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.17.10",
+        "ip": "10.0.46.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1123,
-        "bytes": 124799,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1258,
+        "bytes": 125301,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      },
-      {
-        "ip": "10.0.32.10",
-        "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1120,
-        "bytes": 123184,
-        "ioc": false,
-        "tags": [
-          "internal"
-        ],
-        "attack": [],
-        "evidence": [
           "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.9.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1253,
+        "bytes": 125294,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
-          "category web (+3)"
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.34.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1252,
+        "bytes": 123025,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.61.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1251,
+        "bytes": 123282,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.40.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1249,
+        "bytes": 124967,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category voip (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.48.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1246,
+        "bytes": 125558,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.16.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1245,
+        "bytes": 124319,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "floor: ioc match forces High (>= 60)",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.42.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1244,
+        "bytes": 123702,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.33.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1243,
+        "bytes": 125779,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.37.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1243,
+        "bytes": 122226,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "floor: ioc match forces High (>= 60)",
+          "category voip (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
         "ip": "10.0.15.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1117,
-        "bytes": 125894,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1242,
+        "bytes": 125187,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
-          "category dns (+3)"
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.11.10",
+        "ip": "10.0.17.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1116,
-        "bytes": 124055,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1242,
+        "bytes": 123794,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
-          "category dns (+3)"
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
-        "ip": "10.0.41.10",
+        "ip": "10.0.57.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1116,
-        "bytes": 124674,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1242,
+        "bytes": 123112,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
+        "attack": [
+          "T1046"
+        ],
         "evidence": [
           "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.43.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1241,
+        "bytes": 123711,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
           "all-internal peers (-10)",
           "clamp: raw -7 -> 0",
           "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.29.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1240,
+        "bytes": 122344,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
         ]
       },
       {
         "ip": "10.0.53.10",
         "ip_class": "private",
-        "severity": "info",
-        "score": 0,
-        "flows": 1116,
-        "bytes": 122497,
-        "ioc": false,
+        "severity": "high",
+        "score": 63,
+        "flows": 1240,
+        "bytes": 123231,
+        "ioc": true,
         "tags": [
-          "internal"
+          "internal",
+          "ioc"
         ],
-        "attack": [],
-        "evidence": [
-          "category web (+3)",
-          "all-internal peers (-10)",
-          "clamp: raw -7 -> 0",
-          "category dns (+3)"
-        ]
-      }
-    ],
-    "findings": [
-      {
-        "kind": "beacon",
-        "severity": "high",
-        "score": 70,
-        "title": "Periodic beacon: 10.13.37.7 -> 45.77.13.37:443 every ~30s",
-        "src_ip": "10.13.37.7",
-        "dst_ip": "45.77.13.37",
-        "dst_port": 443,
-        "attack": [
-          "T1071"
-        ],
-        "evidence": [
-          "periodic beaconing: 2998 contacts to 45.77.13.37:443",
-          "interval ~30s, jitter CV 0.013 (low = machine-regular)",
-          "external destination"
-        ],
-        "interval_ns": 29999845757,
-        "jitter_cv": 0.013475325495046495,
-        "contacts": 2998
-      },
-      {
-        "kind": "data_exfil",
-        "severity": "high",
-        "score": 72,
-        "title": "Data exfiltration: 10.13.37.7 -> 185.220.101.5:443 (1.2 MB out)",
-        "src_ip": "10.13.37.7",
-        "dst_ip": "185.220.101.5",
-        "dst_port": 443,
-        "attack": [
-          "T1048"
-        ],
-        "evidence": [
-          "outbound 1.2 MB to external 185.220.101.5:443",
-          "1308600x more out than in (asymmetric upload; 0 B in)",
-          "external destination"
-        ],
-        "interval_ns": null,
-        "jitter_cv": null,
-        "contacts": null
-      },
-      {
-        "kind": "host_sweep",
-        "severity": "high",
-        "score": 65,
-        "title": "Host sweep: 10.13.37.7 probed 24 hosts on port 445",
-        "src_ip": "10.13.37.7",
-        "dst_ip": null,
-        "dst_port": 445,
         "attack": [
           "T1046"
         ],
         "evidence": [
-          "24 distinct destination hosts contacted on port 445",
-          "horizontal scan / remote-system discovery"
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
         ],
-        "interval_ns": null,
-        "jitter_cv": null,
-        "contacts": null
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
       },
       {
-        "kind": "brute_force",
+        "ip": "10.0.62.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1238,
+        "bytes": 124454,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.25.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1236,
+        "bytes": 121553,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category dns (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.30.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1235,
+        "bytes": 123074,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.14.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1234,
+        "bytes": 122738,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.55.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1231,
+        "bytes": 121692,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category scan (+25)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.63.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1231,
+        "bytes": 123636,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.32.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1230,
+        "bytes": 122414,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "clamp: raw -7 -> 0",
+          "category dns (+3)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.2.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1229,
+        "bytes": 121366,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.58.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1224,
+        "bytes": 122224,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category voip (+3)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.6.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1224,
+        "bytes": 123550,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "floor: ioc match forces High (>= 60)",
+          "clamp: raw -7 -> 0"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      },
+      {
+        "ip": "10.0.10.10",
+        "ip_class": "private",
+        "severity": "high",
+        "score": 63,
+        "flows": 1223,
+        "bytes": 121916,
+        "ioc": true,
+        "tags": [
+          "internal",
+          "ioc"
+        ],
+        "attack": [
+          "T1046"
+        ],
+        "evidence": [
+          "category web (+3)",
+          "ioc: endpoint ip on threat feed (+35)",
+          "ioc: sni on threat feed (+35)",
+          "all-internal peers (-10)",
+          "category scan (+25)",
+          "behavior: scan-shaped probe (+10)"
+        ],
+        "reputation": [],
+        "fingerprints": [],
+        "score_terms": [
+          {
+            "label": "category web",
+            "points": 3
+          },
+          {
+            "label": "ioc: endpoint ip on threat feed",
+            "points": 35
+          },
+          {
+            "label": "ioc: sni on threat feed",
+            "points": 35
+          },
+          {
+            "label": "all-internal peers",
+            "points": -10
+          }
+        ]
+      }
+    ],
+    "domain_threats": [
+      {
+        "host": "login.example.net",
+        "flows": 1513,
+        "bytes": 199716,
+        "reputation": []
+      },
+      {
+        "host": "static.media.example.org",
+        "flows": 1426,
+        "bytes": 198214,
+        "reputation": []
+      },
+      {
+        "host": "mail.corp.example",
+        "flows": 1457,
+        "bytes": 192324,
+        "reputation": []
+      },
+      {
+        "host": "cdn.assets.example.com",
+        "flows": 1387,
+        "bytes": 190019,
+        "reputation": []
+      },
+      {
+        "host": "api.service.io",
+        "flows": 1460,
+        "bytes": 188340,
+        "reputation": []
+      },
+      {
+        "host": "telemetry.app.example",
+        "flows": 1383,
+        "bytes": 188224,
+        "reputation": []
+      },
+      {
+        "host": "auth.bank.example",
+        "flows": 1409,
+        "bytes": 185988,
+        "reputation": []
+      },
+      {
+        "host": "updates.vendor.com",
+        "flows": 1392,
+        "bytes": 185136,
+        "reputation": []
+      }
+    ],
+    "http_hosts": [
+      {
+        "host": "example.com",
+        "flows": 8980
+      }
+    ],
+    "user_agents": [
+      {
+        "user_agent": "ppcap-gen",
+        "flows": 8980
+      }
+    ],
+    "resolved_ips": [],
+    "arp_hosts": [
+      {
+        "ip": "10.0.14.10",
+        "mac": "02:00:00:00:00:0e"
+      }
+    ],
+    "downloads": [],
+    "encrypted_dns": [],
+    "carved_files": [],
+    "findings": [
+      {
+        "kind": "syn_flood",
         "severity": "high",
         "score": 68,
-        "title": "Brute force: 10.13.37.7 -> 10.66.0.1:22 (30 SSH attempts)",
-        "src_ip": "10.13.37.7",
-        "dst_ip": "10.66.0.1",
-        "dst_port": 22,
-        "attack": [
-          "T1110"
-        ],
-        "evidence": [
-          "30 connection attempts to SSH 10.66.0.1:22",
-          "many separate logins to one auth service — password guessing"
-        ],
-        "interval_ns": null,
-        "jitter_cv": null,
-        "contacts": 30
-      },
-      {
-        "kind": "cleartext_creds",
-        "severity": "high",
-        "score": 66,
-        "title": "Cleartext credentials: 10.0.0.50 -> 10.0.0.80:80 (HTTP Basic auth)",
-        "src_ip": "10.0.0.50",
-        "dst_ip": "10.0.0.80",
-        "dst_port": 80,
-        "attack": [
-          "T1552"
-        ],
-        "evidence": [
-          "HTTP Basic auth sent in cleartext to 10.0.0.80:80 (5 exposures)",
-          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
-        ],
-        "interval_ns": null,
-        "jitter_cv": null,
-        "contacts": 5
-      },
-      {
-        "kind": "cleartext_creds",
-        "severity": "high",
-        "score": 66,
-        "title": "Cleartext credentials: 10.0.0.51 -> 10.0.0.91:21 (FTP login)",
-        "src_ip": "10.0.0.51",
-        "dst_ip": "10.0.0.91",
-        "dst_port": 21,
-        "attack": [
-          "T1552"
-        ],
-        "evidence": [
-          "FTP login sent in cleartext to 10.0.0.91:21 (2 exposures)",
-          "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
-        ],
-        "interval_ns": null,
-        "jitter_cv": null,
-        "contacts": 2
-      },
-      {
-        "kind": "pii_exposure",
-        "severity": "high",
-        "score": 64,
-        "title": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
-        "src_ip": "10.0.0.52",
-        "dst_ip": "10.0.0.80",
-        "dst_port": 80,
-        "attack": [
-          "T1040"
-        ],
-        "evidence": [
-          "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
-          "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
-        ],
-        "interval_ns": null,
-        "jitter_cv": null,
-        "contacts": 4
-      },
-      {
-        "kind": "lateral_movement",
-        "severity": "high",
-        "score": 70,
-        "title": "Lateral movement: 10.13.37.7 -> 6 internal hosts over RDP (3389)",
-        "src_ip": "10.13.37.7",
+        "title": "SYN flood: 10.0.0.10:443 hit by 221 half-open connections",
+        "src_ip": "10.0.0.10",
         "dst_ip": null,
-        "dst_port": 3389,
+        "dst_port": 443,
         "attack": [
-          "T1021"
+          "T1499.001"
         ],
         "evidence": [
-          "established RDP sessions to 6 distinct internal hosts on port 3389",
-          "e.g. 10.66.0.1, 10.66.0.2, 10.66.0.3",
-          "east-west admin sessions across hosts — pivoting / remote execution"
+          "221 half-open connections from 60 sources to 10.0.0.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 6
+        "contacts": 221
       },
       {
-        "kind": "dns_tunnel",
+        "kind": "syn_flood",
         "severity": "high",
-        "score": 74,
-        "title": "DNS tunneling: 10.13.37.7 -> 10.0.0.53 (40 high-entropy queries)",
-        "src_ip": "10.13.37.7",
-        "dst_ip": "10.0.0.53",
-        "dst_port": 53,
+        "score": 68,
+        "title": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
+        "src_ip": "10.0.56.10",
+        "dst_ip": null,
+        "dst_port": 443,
         "attack": [
-          "T1071.004"
+          "T1499.001"
         ],
         "evidence": [
-          "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
-          "high-entropy, long-label queries — data/C2 tunneled over DNS",
-          "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
+          "205 half-open connections from 62 sources to 10.0.56.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 40
+        "contacts": 205
+      },
+      {
+        "kind": "syn_flood",
+        "severity": "high",
+        "score": 68,
+        "title": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
+        "src_ip": "10.0.36.10",
+        "dst_ip": null,
+        "dst_port": 443,
+        "attack": [
+          "T1499.001"
+        ],
+        "evidence": [
+          "204 half-open connections from 62 sources to 10.0.36.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": 204
+      },
+      {
+        "kind": "syn_flood",
+        "severity": "high",
+        "score": 68,
+        "title": "SYN flood: 10.0.19.10:443 hit by 200 half-open connections",
+        "src_ip": "10.0.19.10",
+        "dst_ip": null,
+        "dst_port": 443,
+        "attack": [
+          "T1499.001"
+        ],
+        "evidence": [
+          "200 half-open connections from 60 sources to 10.0.19.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": 200
+      },
+      {
+        "kind": "syn_flood",
+        "severity": "high",
+        "score": 68,
+        "title": "SYN flood: 10.0.50.10:443 hit by 200 half-open connections",
+        "src_ip": "10.0.50.10",
+        "dst_ip": null,
+        "dst_port": 443,
+        "attack": [
+          "T1499.001"
+        ],
+        "evidence": [
+          "200 half-open connections from 59 sources to 10.0.50.10:443",
+          "many sources, never-completed handshakes — distributed TCP DoS"
+        ],
+        "interval_ns": null,
+        "jitter_cv": null,
+        "contacts": 200
       }
     ],
     "incidents": [
       {
-        "host": "10.13.37.7",
-        "severity": "critical",
-        "score": 89,
-        "title": "Multi-stage incident on 10.13.37.7",
-        "narrative": "10.13.37.7 swept the network, then brute-forced credentials, then moved laterally, then beaconed to a C2, then tunneled data over DNS, then exfiltrated data.",
+        "host": "10.0.0.10",
+        "severity": "high",
+        "score": 68,
+        "title": "SYN flood: 10.0.0.10:443 hit by 221 half-open connections",
+        "narrative": "SYN flood: 10.0.0.10:443 hit by 221 half-open connections",
         "stages": [
-          "Discovery",
-          "Credential Access",
-          "Lateral Movement",
-          "Command & Control",
-          "Exfiltration"
+          "Impact"
         ],
         "attack": [
-          "T1021",
-          "T1046",
-          "T1048",
-          "T1071",
-          "T1071.004",
-          "T1110"
+          "T1499.001"
         ],
         "findings": [
           {
-            "kind": "host_sweep",
-            "severity": "high",
-            "score": 65,
-            "title": "Host sweep: 10.13.37.7 probed 24 hosts on port 445",
-            "src_ip": "10.13.37.7",
-            "dst_ip": null,
-            "dst_port": 445,
-            "attack": [
-              "T1046"
-            ],
-            "evidence": [
-              "24 distinct destination hosts contacted on port 445",
-              "horizontal scan / remote-system discovery"
-            ],
-            "interval_ns": null,
-            "jitter_cv": null,
-            "contacts": null
-          },
-          {
-            "kind": "brute_force",
+            "kind": "syn_flood",
             "severity": "high",
             "score": 68,
-            "title": "Brute force: 10.13.37.7 -> 10.66.0.1:22 (30 SSH attempts)",
-            "src_ip": "10.13.37.7",
-            "dst_ip": "10.66.0.1",
-            "dst_port": 22,
-            "attack": [
-              "T1110"
-            ],
-            "evidence": [
-              "30 connection attempts to SSH 10.66.0.1:22",
-              "many separate logins to one auth service — password guessing"
-            ],
-            "interval_ns": null,
-            "jitter_cv": null,
-            "contacts": 30
-          },
-          {
-            "kind": "lateral_movement",
-            "severity": "high",
-            "score": 70,
-            "title": "Lateral movement: 10.13.37.7 -> 6 internal hosts over RDP (3389)",
-            "src_ip": "10.13.37.7",
+            "title": "SYN flood: 10.0.0.10:443 hit by 221 half-open connections",
+            "src_ip": "10.0.0.10",
             "dst_ip": null,
-            "dst_port": 3389,
-            "attack": [
-              "T1021"
-            ],
-            "evidence": [
-              "established RDP sessions to 6 distinct internal hosts on port 3389",
-              "e.g. 10.66.0.1, 10.66.0.2, 10.66.0.3",
-              "east-west admin sessions across hosts — pivoting / remote execution"
-            ],
-            "interval_ns": null,
-            "jitter_cv": null,
-            "contacts": 6
-          },
-          {
-            "kind": "beacon",
-            "severity": "high",
-            "score": 70,
-            "title": "Periodic beacon: 10.13.37.7 -> 45.77.13.37:443 every ~30s",
-            "src_ip": "10.13.37.7",
-            "dst_ip": "45.77.13.37",
             "dst_port": 443,
             "attack": [
-              "T1071"
+              "T1499.001"
             ],
             "evidence": [
-              "periodic beaconing: 2998 contacts to 45.77.13.37:443",
-              "interval ~30s, jitter CV 0.013 (low = machine-regular)",
-              "external destination"
-            ],
-            "interval_ns": 29999845757,
-            "jitter_cv": 0.013475325495046495,
-            "contacts": 2998
-          },
-          {
-            "kind": "dns_tunnel",
-            "severity": "high",
-            "score": 74,
-            "title": "DNS tunneling: 10.13.37.7 -> 10.0.0.53 (40 high-entropy queries)",
-            "src_ip": "10.13.37.7",
-            "dst_ip": "10.0.0.53",
-            "dst_port": 53,
-            "attack": [
-              "T1071.004"
-            ],
-            "evidence": [
-              "40 DNS queries to 10.0.0.53 with avg label entropy 4.22 (max label 32 chars)",
-              "high-entropy, long-label queries — data/C2 tunneled over DNS",
-              "example: nqq7ry4ginbyiw6f3q3zmhm2kq5ydexx.tunnel.exfil.example"
+              "221 half-open connections from 60 sources to 10.0.0.10:443",
+              "many sources, never-completed handshakes — distributed TCP DoS"
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 40
-          },
+            "contacts": 221
+          }
+        ]
+      },
+      {
+        "host": "10.0.19.10",
+        "severity": "high",
+        "score": 68,
+        "title": "SYN flood: 10.0.19.10:443 hit by 200 half-open connections",
+        "narrative": "SYN flood: 10.0.19.10:443 hit by 200 half-open connections",
+        "stages": [
+          "Impact"
+        ],
+        "attack": [
+          "T1499.001"
+        ],
+        "findings": [
           {
-            "kind": "data_exfil",
+            "kind": "syn_flood",
             "severity": "high",
-            "score": 72,
-            "title": "Data exfiltration: 10.13.37.7 -> 185.220.101.5:443 (1.2 MB out)",
-            "src_ip": "10.13.37.7",
-            "dst_ip": "185.220.101.5",
+            "score": 68,
+            "title": "SYN flood: 10.0.19.10:443 hit by 200 half-open connections",
+            "src_ip": "10.0.19.10",
+            "dst_ip": null,
             "dst_port": 443,
             "attack": [
-              "T1048"
+              "T1499.001"
             ],
             "evidence": [
-              "outbound 1.2 MB to external 185.220.101.5:443",
-              "1308600x more out than in (asymmetric upload; 0 B in)",
-              "external destination"
+              "200 half-open connections from 60 sources to 10.0.19.10:443",
+              "many sources, never-completed handshakes — distributed TCP DoS"
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": null
+            "contacts": 200
           }
         ]
       },
       {
-        "host": "10.0.0.50",
+        "host": "10.0.36.10",
         "severity": "high",
-        "score": 66,
-        "title": "Cleartext credentials: 10.0.0.50 -> 10.0.0.80:80 (HTTP Basic auth)",
-        "narrative": "Cleartext credentials: 10.0.0.50 -> 10.0.0.80:80 (HTTP Basic auth)",
+        "score": 68,
+        "title": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
+        "narrative": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
         "stages": [
-          "Credential Access"
+          "Impact"
         ],
         "attack": [
-          "T1552"
+          "T1499.001"
         ],
         "findings": [
           {
-            "kind": "cleartext_creds",
+            "kind": "syn_flood",
             "severity": "high",
-            "score": 66,
-            "title": "Cleartext credentials: 10.0.0.50 -> 10.0.0.80:80 (HTTP Basic auth)",
-            "src_ip": "10.0.0.50",
-            "dst_ip": "10.0.0.80",
-            "dst_port": 80,
+            "score": 68,
+            "title": "SYN flood: 10.0.36.10:443 hit by 204 half-open connections",
+            "src_ip": "10.0.36.10",
+            "dst_ip": null,
+            "dst_port": 443,
             "attack": [
-              "T1552"
+              "T1499.001"
             ],
             "evidence": [
-              "HTTP Basic auth sent in cleartext to 10.0.0.80:80 (5 exposures)",
-              "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
+              "204 half-open connections from 62 sources to 10.0.36.10:443",
+              "many sources, never-completed handshakes — distributed TCP DoS"
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 5
+            "contacts": 204
           }
         ]
       },
       {
-        "host": "10.0.0.51",
+        "host": "10.0.50.10",
         "severity": "high",
-        "score": 66,
-        "title": "Cleartext credentials: 10.0.0.51 -> 10.0.0.91:21 (FTP login)",
-        "narrative": "Cleartext credentials: 10.0.0.51 -> 10.0.0.91:21 (FTP login)",
+        "score": 68,
+        "title": "SYN flood: 10.0.50.10:443 hit by 200 half-open connections",
+        "narrative": "SYN flood: 10.0.50.10:443 hit by 200 half-open connections",
         "stages": [
-          "Credential Access"
+          "Impact"
         ],
         "attack": [
-          "T1552"
+          "T1499.001"
         ],
         "findings": [
           {
-            "kind": "cleartext_creds",
+            "kind": "syn_flood",
             "severity": "high",
-            "score": 66,
-            "title": "Cleartext credentials: 10.0.0.51 -> 10.0.0.91:21 (FTP login)",
-            "src_ip": "10.0.0.51",
-            "dst_ip": "10.0.0.91",
-            "dst_port": 21,
+            "score": 68,
+            "title": "SYN flood: 10.0.50.10:443 hit by 200 half-open connections",
+            "src_ip": "10.0.50.10",
+            "dst_ip": null,
+            "dst_port": 443,
             "attack": [
-              "T1552"
+              "T1499.001"
             ],
             "evidence": [
-              "FTP login sent in cleartext to 10.0.0.91:21 (2 exposures)",
-              "credentials are readable to anyone on-path — use an encrypted protocol (TLS)"
+              "200 half-open connections from 59 sources to 10.0.50.10:443",
+              "many sources, never-completed handshakes — distributed TCP DoS"
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 2
+            "contacts": 200
           }
         ]
       },
       {
-        "host": "10.0.0.52",
+        "host": "10.0.56.10",
         "severity": "high",
-        "score": 64,
-        "title": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
-        "narrative": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
+        "score": 68,
+        "title": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
+        "narrative": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
         "stages": [
-          "Collection"
+          "Impact"
         ],
         "attack": [
-          "T1040"
+          "T1499.001"
         ],
         "findings": [
           {
-            "kind": "pii_exposure",
+            "kind": "syn_flood",
             "severity": "high",
-            "score": 64,
-            "title": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
-            "src_ip": "10.0.0.52",
-            "dst_ip": "10.0.0.80",
-            "dst_port": 80,
+            "score": 68,
+            "title": "SYN flood: 10.0.56.10:443 hit by 205 half-open connections",
+            "src_ip": "10.0.56.10",
+            "dst_ip": null,
+            "dst_port": 443,
             "attack": [
-              "T1040"
+              "T1499.001"
             ],
             "evidence": [
-              "credit card numbers sent in cleartext to 10.0.0.80:80 (4 exposures)",
-              "sensitive data is readable to anyone on-path — use an encrypted protocol (TLS)"
+              "205 half-open connections from 62 sources to 10.0.56.10:443",
+              "many sources, never-completed handshakes — distributed TCP DoS"
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 4
+            "contacts": 205
           }
         ]
       }
     ]
   },
-  "flows_parquet_path": "D:/Project/PacketPilot/ui/public/sample/flows.parquet",
-  "elapsed_ms": 667
+  "flows_parquet_path": "D:\\Project\\PacketPilot\\ui\\public\\sample\\flows.parquet",
+  "elapsed_ms": 313
 }

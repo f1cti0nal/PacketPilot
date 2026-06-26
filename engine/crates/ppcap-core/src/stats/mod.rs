@@ -16,7 +16,7 @@ use crate::model::packet::{DownloadKind, PacketMeta, Transport};
 use crate::model::severity::Severity;
 use crate::model::summary::{
     CategoryCount, FingerprintHit, IpThreat, PortCount, ProtoCount, ScoreTerm, SeverityCounts,
-    Summary, TimeBucket, TopTalker,
+    SizeBucket, Summary, TimeBucket, TopTalker, TtlCount,
 };
 use crate::score::ScoredFlow;
 
@@ -172,6 +172,37 @@ pub struct StatsAccumulator {
     /// Encrypted DNS (DoH/DoT): (client host, resolver label) → flow count — the resolution passive
     /// DNS can't see. Bounded by `max_tracked_keys`.
     encrypted_dns: HashMap<(IpAddr, String), u64>,
+    /// Packet-size distribution: packet count per fixed wire-length bucket (see [`SIZE_BUCKETS`]).
+    size_buckets: [u64; SIZE_BUCKETS.len()],
+    /// TTL / hop-limit distribution: packet count indexed by TTL value (0 slot stays unused —
+    /// non-IP frames carry no TTL). Fixed 256-wide, so it is inherently bounded.
+    ttl_hist: [u64; 256],
+}
+
+/// Fixed packet-size buckets `(label, min, max)` with inclusive `[min, max]` wire-length ranges;
+/// the final bucket is open-ended (`u32::MAX`). Chosen to separate tiny control packets
+/// (ACK/SYN), mid-size payloads, and near/over-MTU bulk transfer at triage glance.
+const SIZE_BUCKETS: [(&str, u32, u32); 7] = [
+    ("0–63", 0, 63),
+    ("64–127", 64, 127),
+    ("128–255", 128, 255),
+    ("256–511", 256, 511),
+    ("512–1023", 512, 1023),
+    ("1024–1517", 1024, 1517),
+    ("≥1518", 1518, u32::MAX),
+];
+
+/// Index `(0..SIZE_BUCKETS.len())` of the packet-size bucket for a given wire length.
+fn size_bucket_index(wire_len: u32) -> usize {
+    match wire_len {
+        0..=63 => 0,
+        64..=127 => 1,
+        128..=255 => 2,
+        256..=511 => 3,
+        512..=1023 => 4,
+        1024..=1517 => 5,
+        _ => 6,
+    }
 }
 
 /// Upper bound on distinct destination ports retained per source for scan detection.
@@ -208,6 +239,8 @@ impl StatsAccumulator {
             arp_macs: HashMap::new(),
             encrypted_dns: HashMap::new(),
             downloads: HashMap::new(),
+            size_buckets: [0; SIZE_BUCKETS.len()],
+            ttl_hist: [0; 256],
         }
     }
 
@@ -218,6 +251,15 @@ impl StatsAccumulator {
         self.total_packets += 1;
         self.total_bytes += u64::from(p.wire_len);
         self.captured_bytes += u64::from(p.cap_len);
+
+        // Packet-size distribution: every packet counts (wire length is layer-agnostic, so ARP /
+        // non-IP frames belong here too) — tallied before the IP short-circuit below.
+        self.size_buckets[size_bucket_index(p.wire_len)] += 1;
+        // TTL / hop-limit distribution: IP packets only (`ttl` is 0 for non-IP / undecoded frames,
+        // and a captured packet always has TTL >= 1). The 0 slot is therefore never written.
+        if p.ttl > 0 {
+            self.ttl_hist[usize::from(p.ttl)] += 1;
+        }
 
         // Capture window.
         self.first_ts = Some(match self.first_ts {
@@ -784,6 +826,34 @@ impl StatsAccumulator {
         });
         encrypted_dns.truncate(TOP_K_ENCRYPTED_DNS);
 
+        // Packet-size distribution: all fixed buckets, ascending order (a distribution reads
+        // clearest with every range shown, including empty ones).
+        let size_distribution: Vec<SizeBucket> = SIZE_BUCKETS
+            .iter()
+            .enumerate()
+            .map(|(i, (label, min, max))| SizeBucket {
+                label: (*label).to_string(),
+                min: *min,
+                max: *max,
+                pkts: self.size_buckets[i],
+            })
+            .collect();
+
+        // TTL distribution: distinct observed TTLs, desc by packet count then asc by TTL, capped.
+        const TOP_K_TTL: usize = 16;
+        let mut ttl_distribution: Vec<TtlCount> = self
+            .ttl_hist
+            .iter()
+            .enumerate()
+            .filter(|(_, &pkts)| pkts > 0)
+            .map(|(ttl, &pkts)| TtlCount {
+                ttl: ttl as u8,
+                pkts,
+            })
+            .collect();
+        ttl_distribution.sort_by(|a, b| b.pkts.cmp(&a.pkts).then(a.ttl.cmp(&b.ttl)));
+        ttl_distribution.truncate(TOP_K_TTL);
+
         Summary {
             total_packets: self.total_packets,
             total_bytes: self.total_bytes,
@@ -801,6 +871,8 @@ impl StatsAccumulator {
             port_histogram: ports,
             time_histogram: time,
             time_bucket_secs,
+            size_distribution,
+            ttl_distribution,
             category_breakdown,
             severity_counts: self.severity_counts,
             ip_threats,
@@ -1453,6 +1525,55 @@ mod tests {
         // Then 10.0.0.1 and 10.0.0.2 tie at 1000 bytes; tie-break asc IP string.
         assert_eq!(s.top_talkers[1].ip, "10.0.0.1");
         assert_eq!(s.top_talkers[2].ip, "10.0.0.2");
+    }
+
+    #[test]
+    fn size_and_ttl_distributions() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let mut obs = |wire: u32, ttl: u8| {
+            let mut p = pkt(
+                0,
+                0,
+                wire,
+                Transport::Tcp,
+                Some(ip4(10, 0, 0, 1)),
+                Some(ip4(10, 0, 0, 2)),
+                1234,
+                80,
+                0,
+            );
+            p.ttl = ttl;
+            acc.observe_packet(&p);
+        };
+        obs(40, 64); // bucket 0 (0–63), Linux TTL
+        obs(54, 64); // bucket 0
+        obs(60, 64); // bucket 0
+        obs(300, 64); // bucket 3 (256–511)
+        obs(1500, 128); // bucket 5 (1024–1517), Windows TTL
+        obs(1514, 128); // bucket 5
+                        // A non-IP (ARP) frame: counts toward size (bucket 0) but NOT TTL (ttl forced 0).
+        let mut arp = pkt(0, 0, 60, Transport::Other(0), None, None, 0, 0, 0);
+        arp.ttl = 0;
+        acc.observe_packet(&arp);
+
+        let s = acc.finish();
+        // Size distribution: all 7 buckets present, ascending, Σ pkts == total packets.
+        assert_eq!(s.size_distribution.len(), 7);
+        assert_eq!(s.size_distribution[0].label, "0–63");
+        assert_eq!(s.size_distribution[0].pkts, 4); // 3 tiny IP + 1 ARP
+        assert_eq!(s.size_distribution[3].pkts, 1); // the 300-byte packet
+        assert_eq!(s.size_distribution[5].pkts, 2); // the two near-MTU packets
+        assert_eq!(s.size_distribution[6].max, u32::MAX); // top bucket is open-ended
+        let size_total: u64 = s.size_distribution.iter().map(|b| b.pkts).sum();
+        assert_eq!(size_total, s.total_packets);
+        // TTL distribution: only IP packets (the ARP frame is excluded), desc by count.
+        assert_eq!(s.ttl_distribution[0].ttl, 64); // 4 packets at TTL 64
+        assert_eq!(s.ttl_distribution[0].pkts, 4);
+        assert_eq!(s.ttl_distribution[1].ttl, 128); // 2 packets at TTL 128
+        assert_eq!(s.ttl_distribution[1].pkts, 2);
+        assert!(s.ttl_distribution.iter().all(|t| t.ttl != 0)); // ARP never recorded
+        let ttl_total: u64 = s.ttl_distribution.iter().map(|t| t.pkts).sum();
+        assert_eq!(ttl_total, 6); // 7 packets total, minus the 1 non-IP frame
     }
 
     #[test]

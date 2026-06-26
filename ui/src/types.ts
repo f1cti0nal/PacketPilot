@@ -44,6 +44,20 @@ export interface TimeHistogramEntry {
   bytes: number;
 }
 
+/** One packet-size-distribution bucket; the top bucket is open-ended (max === 4294967295). */
+export interface SizeBucket {
+  label: string;
+  min: number;
+  max: number;
+  pkts: number;
+}
+
+/** One TTL/hop-limit-distribution row: a distinct observed TTL and its packet count. */
+export interface TtlCount {
+  ttl: number;
+  pkts: number;
+}
+
 /** summary.json uses KEBAB-case tokens. */
 export type SummaryCategory =
   | "web"
@@ -88,6 +102,10 @@ export interface Summary {
    * in summaries written before adaptive bucketing.
    */
   time_bucket_secs?: number;
+  /** Packet-size distribution across fixed wire-length buckets; absent in older summaries. */
+  size_distribution?: SizeBucket[];
+  /** TTL/hop-limit distribution ranked by packet count; absent in older summaries. */
+  ttl_distribution?: TtlCount[];
   category_breakdown: CategoryBreakdownEntry[];
   severity_counts?: SeverityCounts;
   ip_threats?: IpThreat[];

@@ -26,6 +26,7 @@ import { EncryptedDnsCard } from "../cockpit/EncryptedDnsCard";
 import { CarvedFilesCard } from "../cockpit/CarvedFilesCard";
 import { LocalHostsCard } from "../cockpit/LocalHostsCard";
 import { DownloadsCard } from "../cockpit/DownloadsCard";
+import { PacketDistributionsCard } from "../cockpit/PacketDistributionsCard";
 import { TriageBadge } from "../cockpit/TriageAnnotation";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
@@ -194,6 +195,12 @@ export function Dashboard({
           </div>
           <div className="lg:col-span-12">
             <HttpOverviewCard hosts={s.http_hosts ?? []} userAgents={s.user_agents ?? []} />
+          </div>
+          <div className="lg:col-span-12">
+            <PacketDistributionsCard
+              sizes={s.size_distribution ?? []}
+              ttls={s.ttl_distribution ?? []}
+            />
           </div>
         </div>
         <SignatureMatchesPanel findings={s.findings ?? []} onJump={toFlowsIp} />
