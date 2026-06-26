@@ -7,11 +7,13 @@ import AxeBuilder from "@axe-core/playwright";
 // This GATES on STRUCTURAL WCAG A/AA (valid ARIA, accessible names, roles, keyboard
 // reachability) across the key surfaces and both themes.
 //
-// ⚠️ color-contrast (1.4.3) is deliberately excluded from the gate and tracked as a known
-// issue (see the fixme test below). The audit found the cockpit's intentionally low-contrast
-// "faint" text + severity-on-tint chips fall below AA (≈3.4:1) in BOTH themes — ~50–170 nodes
-// per surface, rooted in a few tokens (--color-text-faint, severity colours used as text).
-// Bringing the palette to AA is a design-affecting pass that should be done deliberately.
+// ⚠️ color-contrast (1.4.3) is excluded from the gate and tracked as a known issue (fixme
+// below). PROGRESS: --color-text-faint was bumped to AA, clearing the dominant plain-surface
+// failures (dashboard dark 169→39 nodes). The REMAINING failures are (a) severity-coloured
+// text on same-hue tinted chips and (b) mid-tone tinted backgrounds where neither dim nor
+// faint text passes — both conflated with a theme-toggle stale-colour bug (sevColor() bakes a
+// literal hex at render time, so severity text doesn't re-colour on theme switch). Finishing
+// it is a per-component pass (tint opacities + readable severity-text + reactive sevColor).
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 async function waitForDashboard(page: Page) {
