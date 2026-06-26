@@ -87,8 +87,11 @@ export function CommandBar({
         <span className="font-display text-[15px] font-semibold tracking-tight">PacketPilot</span>
       </div>
 
-      {/* Capture identity (center) */}
-      <div className="ml-3 hidden min-w-0 items-center gap-2.5 md:flex">
+      {/* Capture identity (center). Deferred to lg: at the 768px md boundary the
+          capture identity + Views switcher + action cluster together overflowed
+          the bar by ~36px (horizontal scrollbar). The capture name/status is
+          secondary — the dashboard already shows the capture context. */}
+      <div className="ml-3 hidden min-w-0 items-center gap-2.5 lg:flex">
         {captureStatus === "loading" && (
           <>
             <Loader2 size={13} className="animate-spin text-[var(--color-text-faint)]" aria-hidden />
@@ -170,7 +173,7 @@ export function CommandBar({
           aria-label="Command palette"
           onClick={onOpenPalette}
           disabled={!onOpenPalette}
-          className="hidden items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)] disabled:cursor-default disabled:opacity-50 sm:inline-flex"
+          className="hidden items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)] disabled:cursor-default disabled:opacity-50 lg:inline-flex"
         >
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
