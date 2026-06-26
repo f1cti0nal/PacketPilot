@@ -10,9 +10,7 @@ import { FindingMetrics } from "../components/transparency/FindingMetrics";
 import { ScoreWaterfall } from "../components/transparency/ScoreWaterfall";
 import { TriageAnnotation } from "./TriageAnnotation";
 import { vendorForMac } from "../lib/oui";
-
-const humanizeKind = (k: string) =>
-  k.split("_").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
+import { kindLabel } from "../lib/findingKinds";
 
 export function DetailFlyout({
   incident,
@@ -169,7 +167,7 @@ export function DetailFlyout({
               <li key={`${f.kind}-${i}`} className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3">
                 <div className="flex items-center gap-2">
                   <SeverityDot severity={f.severity} />
-                  <span className="text-[13px] font-medium text-[var(--color-text)]">{humanizeKind(f.kind)}</span>
+                  <span className="text-[13px] font-medium text-[var(--color-text)]">{kindLabel(f.kind)}</span>
                 </div>
                 <div className="font-mono-num mt-1 text-xs text-[var(--color-text-dim)]">{f.title}</div>
                 <div className="mt-2">
