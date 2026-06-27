@@ -19,6 +19,7 @@ import { CaptureIntegrity } from "../cockpit/CaptureIntegrity";
 import { AiSummaryCard } from "../cockpit/AiSummaryCard";
 import { ThreatGraph } from "../cockpit/ThreatGraph";
 import { ProtocolSunburst } from "../cockpit/ProtocolSunburst";
+import { AttackMatrixCard } from "../cockpit/AttackMatrixCard";
 import { TopPortsCard } from "../cockpit/TopPortsCard";
 import { HttpOverviewCard } from "../cockpit/HttpOverviewCard";
 import { DnsResolutionsCard } from "../cockpit/DnsResolutionsCard";
@@ -182,6 +183,9 @@ export function Dashboard({
           bucketSecs={s.time_bucket_secs}
           findings={s.findings}
         />
+
+        {/* ATT&CK coverage — the capture's techniques mapped onto the kill-chain tactics */}
+        <AttackMatrixCard findings={s.findings ?? []} />
 
         {/* Zones 4 & 5 — category / integrity / protocol / talkers */}
         <div className="grid grid-cols-1 gap-[var(--density-gap)] lg:grid-cols-12">
