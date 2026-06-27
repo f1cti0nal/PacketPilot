@@ -244,6 +244,24 @@ pub struct PortScanCandidate {
     pub ports: usize,
 }
 
+/// An established remote-administration session that crosses the internal↔external boundary — the
+/// exposed-remote-access shape (the direction lateral movement excludes). One endpoint is a public
+/// address, the other private, on a remote-admin port, with a real bidirectional session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExposedRemoteAccessCandidate {
+    /// The public-side peer.
+    pub external: IpAddr,
+    /// The private-side peer.
+    pub internal: IpAddr,
+    /// The remote-administration service port.
+    pub port: u16,
+    /// `true` = external is the client (inbound exposure); `false` = internal is the client
+    /// (outbound pivot / reverse channel).
+    pub inbound: bool,
+    /// Contacts (connections) observed on this channel.
+    pub sessions: u64,
+}
+
 /// A flow that transferred at least this many *wire* bytes in BOTH directions is treated as a real
 /// session, not a port-scan probe (a SYN/RST probe stays far below this each way). Mirrors the
 /// lateral-movement detector's `min_session_bytes` floor.
@@ -1257,6 +1275,62 @@ impl BehaviorTracker {
                 targets: set.into_iter().collect(),
             })
             .collect()
+    }
+
+    /// All established remote-admin channels (real bidirectional sessions on `ports`) whose two
+    /// endpoints straddle the internal↔external boundary — the exposed-remote-access signal, the
+    /// complement of [`lateral_candidates`] (which is east-west only). A both-internal channel is
+    /// lateral movement's domain; a both-external channel is transit we don't own. Returned
+    /// busiest-first, then by endpoints/port for determinism.
+    pub fn exposed_remote_access_candidates(
+        &self,
+        min_session_bytes: u64,
+        ports: &[u16],
+    ) -> Vec<ExposedRemoteAccessCandidate> {
+        let mut out: Vec<ExposedRemoteAccessCandidate> = self
+            .channels
+            .iter()
+            .filter_map(|(k, s)| {
+                if !ports.contains(&k.dst_port) {
+                    return None;
+                }
+                // Real bidirectional session, not a bare handshake / scan probe.
+                if s.bytes_out() < min_session_bytes || s.bytes_in() < min_session_bytes {
+                    return None;
+                }
+                // Boundary-crossing: exactly one endpoint must be a routable public address.
+                match (
+                    classify_ip(k.src).is_external(),
+                    classify_ip(k.dst).is_external(),
+                ) {
+                    // External client reached INTO an internal admin service (inbound exposure).
+                    (true, false) => Some(ExposedRemoteAccessCandidate {
+                        external: k.src,
+                        internal: k.dst,
+                        port: k.dst_port,
+                        inbound: true,
+                        sessions: s.contacts(),
+                    }),
+                    // Internal client reached OUT to an external admin service (outbound pivot).
+                    (false, true) => Some(ExposedRemoteAccessCandidate {
+                        external: k.dst,
+                        internal: k.src,
+                        port: k.dst_port,
+                        inbound: false,
+                        sessions: s.contacts(),
+                    }),
+                    _ => None,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.sessions
+                .cmp(&a.sessions)
+                .then(a.external.cmp(&b.external))
+                .then(a.internal.cmp(&b.internal))
+                .then(a.port.cmp(&b.port))
+        });
+        out
     }
 
     /// All `(src, dst, dst_port)` channels that exposed at least `min_exposures` cleartext
@@ -2329,6 +2403,110 @@ pub fn suppress_swept_by_lateral(sweeps: Vec<Finding>, lateral: &[Finding]) -> V
         .collect()
 }
 
+/// Tuning for the exposed-remote-access detector.
+///
+/// The complement of the lateral-movement detector: where lateral movement is east-west
+/// (internal→internal), this flags a remote-admin session that crosses the internal↔external
+/// boundary in either direction — an external peer reaching an internal admin service (exposed
+/// RDP/SMB/VNC, a top ransomware entry vector) or an internal host opening a remote-admin session
+/// out to a public address (reverse channel / pivot). The signature is tight (admin port +
+/// boundary crossing + a real bidirectional session), so the FP surface is small; the allowlists
+/// exist for sanctioned bastions / VPN concentrators / managed remote-access providers.
+#[derive(Debug, Clone)]
+pub struct ExposedRemoteAccessParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum bytes in **each** direction for a channel to count as a real session (not a bare
+    /// handshake / scan). Mirrors the lateral-movement session floor.
+    pub min_session_bytes: u64,
+    /// Remote-administration ports considered. Defaults to [`LATERAL_PORTS`].
+    pub ports: Vec<u16>,
+    /// External peers never flagged — sanctioned remote-access providers / managed gateways.
+    pub ignore_external: Vec<IpAddr>,
+    /// Internal peers never flagged — published bastions / jump hosts / VPN concentrators.
+    pub ignore_internal: Vec<IpAddr>,
+}
+
+impl Default for ExposedRemoteAccessParams {
+    fn default() -> Self {
+        ExposedRemoteAccessParams {
+            enabled: true,
+            // Same floor as lateral movement: real admin sessions move well past it both ways.
+            min_session_bytes: 512,
+            ports: LATERAL_PORTS.to_vec(),
+            ignore_external: Vec::new(),
+            ignore_internal: Vec::new(),
+        }
+    }
+}
+
+/// Detect exposed remote access from the behavioral tracker: one [`Finding`] per established
+/// remote-administration session (RDP/VNC/SMB/SSH/WinRM/Telnet) that crosses the internal↔external
+/// boundary — the direction [`detect_lateral_movement`] excludes (an external peer is exposure /
+/// pivot, not east-west movement). High severity, ATT&CK T1133 (External Remote Services).
+/// Deterministic order.
+pub fn detect_exposed_remote_access(
+    tracker: &BehaviorTracker,
+    params: &ExposedRemoteAccessParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.exposed_remote_access_candidates(params.min_session_bytes, &params.ports) {
+        if params.ignore_external.contains(&c.external) || params.ignore_internal.contains(&c.internal)
+        {
+            continue;
+        }
+        let service = lateral_service_name(c.port);
+        // The actor (connection initiator) is the client side: external for inbound, internal for
+        // outbound. `dst_ip` is the service side.
+        let (src_ip, dst_ip) = if c.inbound {
+            (c.external, c.internal)
+        } else {
+            (c.internal, c.external)
+        };
+        let title = if c.inbound {
+            format!(
+                "Exposed remote access: {} reached {} on {}:{}",
+                c.external, service, c.internal, c.port
+            )
+        } else {
+            format!(
+                "Exposed remote access: {} opened {} to external {}:{}",
+                c.internal, service, c.external, c.port
+            )
+        };
+        let direction_line = if c.inbound {
+            format!("inbound: external {} connected to internal {}", c.external, c.internal)
+        } else {
+            format!("outbound: internal {} connected to external {}", c.internal, c.external)
+        };
+        findings.push(Finding {
+            kind: FindingKind::ExposedRemoteAccess,
+            severity: Severity::High,
+            score: 66,
+            title,
+            src_ip: src_ip.to_string(),
+            dst_ip: Some(dst_ip.to_string()),
+            dst_port: Some(c.port),
+            attack: vec!["T1133".to_string()],
+            evidence: vec![
+                format!(
+                    "established {} session on port {} crossing the internal↔external boundary",
+                    service, c.port
+                ),
+                direction_line,
+                "remote-administration service exposed across the perimeter (T1021)".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.sessions),
+        });
+    }
+    findings
+}
+
 /// Tuning for the cleartext-credential-exposure detector.
 #[derive(Debug, Clone)]
 pub struct CleartextCredsParams {
@@ -3072,6 +3250,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::DisguisedDownload => 4, // command-and-control (malware payload delivery)
         FindingKind::Cryptomining => 6,  // impact (resource hijacking)
         FindingKind::MalwareDownload => 4, // command-and-control (confirmed malware delivery)
+        FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
     }
 }
 
@@ -3098,6 +3277,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::DisguisedDownload => "Command & Control",
         FindingKind::Cryptomining => "Impact",
         FindingKind::MalwareDownload => "Command & Control",
+        FindingKind::ExposedRemoteAccess => "Lateral Movement",
     }
 }
 
@@ -3124,6 +3304,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::DisguisedDownload => "downloaded a disguised executable",
         FindingKind::Cryptomining => "mined cryptocurrency to a pool",
         FindingKind::MalwareDownload => "downloaded a known-malicious file",
+        FindingKind::ExposedRemoteAccess => "exposed remote access across the perimeter",
     }
 }
 
@@ -3924,6 +4105,81 @@ mod tests {
             detect_lateral_movement(&t, &params).is_empty(),
             "an allowlisted source is exempt"
         );
+    }
+
+    #[test]
+    fn exposed_remote_access_flags_inbound_and_outbound_boundary_crossing() {
+        // Inbound: an external client reached an internal RDP service (exposed RDP).
+        let mut inbound = BehaviorTracker::new(DetectConfig::default());
+        inbound.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 3389, SEC, 4000, 8000);
+        let f = detect_exposed_remote_access(&inbound, &ExposedRemoteAccessParams::default());
+        assert_eq!(f.len(), 1, "findings: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::ExposedRemoteAccess);
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].dst_port, Some(3389));
+        assert!(f[0].attack.iter().any(|a| a == "T1133"));
+        assert_eq!(f[0].src_ip, "8.8.8.8", "inbound: external is the actor");
+        assert_eq!(f[0].dst_ip.as_deref(), Some("10.0.0.9"));
+        assert!(f[0].title.contains("RDP"), "title names the service: {}", f[0].title);
+
+        // Outbound: an internal host opened a VNC session out to a public address (pivot).
+        let mut outbound = BehaviorTracker::new(DetectConfig::default());
+        outbound.observe_flow_contact(ip(10, 0, 0, 9), ip(1, 1, 1, 1), 5900, SEC, 4000, 8000);
+        let g = detect_exposed_remote_access(&outbound, &ExposedRemoteAccessParams::default());
+        assert_eq!(g.len(), 1, "findings: {g:?}");
+        assert_eq!(g[0].src_ip, "10.0.0.9", "outbound: internal is the actor");
+        assert_eq!(g[0].dst_ip.as_deref(), Some("1.1.1.1"));
+        assert!(g[0].title.contains("VNC"), "title names the service: {}", g[0].title);
+    }
+
+    #[test]
+    fn exposed_remote_access_excludes_internal_nonadmin_handshake_and_disabled() {
+        // Internal-only admin session — that is lateral movement's domain, not exposed access.
+        let mut internal = BehaviorTracker::new(DetectConfig::default());
+        internal.observe_flow_contact(ip(10, 0, 0, 1), ip(10, 0, 0, 2), 3389, SEC, 4000, 8000);
+        assert!(detect_exposed_remote_access(&internal, &ExposedRemoteAccessParams::default()).is_empty());
+
+        // Boundary-crossing but a NON-admin port (HTTPS) — not a remote-admin service.
+        let mut web = BehaviorTracker::new(DetectConfig::default());
+        web.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 443, SEC, 4000, 8000);
+        assert!(detect_exposed_remote_access(&web, &ExposedRemoteAccessParams::default()).is_empty());
+
+        // Bare handshake: the reverse direction is below the session floor (a probe, not a session).
+        let mut probe = BehaviorTracker::new(DetectConfig::default());
+        probe.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 3389, SEC, 4000, 60);
+        assert!(detect_exposed_remote_access(&probe, &ExposedRemoteAccessParams::default()).is_empty());
+
+        // Disabled switch yields nothing even on a qualifying session.
+        let mut on = BehaviorTracker::new(DetectConfig::default());
+        on.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 3389, SEC, 4000, 8000);
+        let off = ExposedRemoteAccessParams {
+            enabled: false,
+            ..ExposedRemoteAccessParams::default()
+        };
+        assert!(detect_exposed_remote_access(&on, &off).is_empty());
+    }
+
+    #[test]
+    fn exposed_remote_access_respects_allowlists() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 3389, SEC, 4000, 8000);
+        assert_eq!(
+            detect_exposed_remote_access(&t, &ExposedRemoteAccessParams::default()).len(),
+            1,
+            "a boundary-crossing admin session fires by default"
+        );
+        // Exempting the external provider (a sanctioned remote-access gateway) silences it.
+        let by_ext = ExposedRemoteAccessParams {
+            ignore_external: vec![ip(8, 8, 8, 8)],
+            ..ExposedRemoteAccessParams::default()
+        };
+        assert!(detect_exposed_remote_access(&t, &by_ext).is_empty());
+        // Exempting the internal bastion also silences it.
+        let by_int = ExposedRemoteAccessParams {
+            ignore_internal: vec![ip(10, 0, 0, 9)],
+            ..ExposedRemoteAccessParams::default()
+        };
+        assert!(detect_exposed_remote_access(&t, &by_int).is_empty());
     }
 
     #[test]

@@ -7,6 +7,7 @@ import {
   Network,
   Radio,
   Radar,
+  ScreenShare,
   Unlock,
   Crosshair,
   FileWarning,
@@ -54,6 +55,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   disguised_download: { label: "Disguised Download", Icon: VenetianMask },
   cryptomining: { label: "Cryptomining", Icon: Pickaxe },
   malware_download: { label: "Malware Download", Icon: FileWarning },
+  exposed_remote_access: { label: "Exposed Remote Access", Icon: ScreenShare },
 };
 
 /** Title-case a raw kind token, e.g. "pii_exposure" → "Pii Exposure" (fallback only). */

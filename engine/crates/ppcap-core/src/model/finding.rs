@@ -59,6 +59,9 @@ pub enum FindingKind {
     /// A file downloaded over cleartext HTTP whose carved SHA-256 matched a known-bad hash set —
     /// confirmed malware delivery (T1105).
     MalwareDownload,
+    /// Exposed remote access: an established remote-administration session (RDP/VNC/SMB/WinRM/SSH/
+    /// Telnet) crossing the internal↔external boundary — external remote services / pivot (T1133).
+    ExposedRemoteAccess,
 }
 
 impl FindingKind {
@@ -85,6 +88,7 @@ impl FindingKind {
             FindingKind::DisguisedDownload => "disguised_download",
             FindingKind::Cryptomining => "cryptomining",
             FindingKind::MalwareDownload => "malware_download",
+            FindingKind::ExposedRemoteAccess => "exposed_remote_access",
         }
     }
 }

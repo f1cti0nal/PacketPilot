@@ -18,13 +18,14 @@ use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
     contact_from_flow, correlate_incidents, detect_arp_spoof, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_cryptomining, detect_dga, detect_disguised_download,
-    detect_dns_tunnel, detect_exfil, detect_icmp_tunnel, detect_lateral_movement,
-    detect_pii_exposure, detect_port_scan, detect_suspicious_ua, detect_sweeps, detect_syn_flood,
-    detect_tls_cert_health, detect_weak_tls, suppress_swept_by_lateral, ArpSpoofParams,
-    BeaconParams, BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams,
-    DetectConfig, DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams,
-    IcmpTunnelParams, LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams,
-    SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
+    detect_dns_tunnel, detect_exfil, detect_exposed_remote_access, detect_icmp_tunnel,
+    detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_suspicious_ua,
+    detect_sweeps, detect_syn_flood, detect_tls_cert_health, detect_weak_tls,
+    suppress_swept_by_lateral, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
+    CleartextCredsParams, CryptominingParams, DetectConfig, DgaParams, DisguisedDownloadParams,
+    DnsTunnelParams, ExfilParams, ExposedRemoteAccessParams, IcmpTunnelParams,
+    LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams,
+    SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -93,6 +94,8 @@ pub struct PipelineConfig {
     pub disguised_download: DisguisedDownloadParams,
     /// Cryptomining (Stratum) detector tuning.
     pub cryptomining: CryptominingParams,
+    /// Exposed-remote-access (boundary-crossing remote-admin session) detector tuning.
+    pub exposed_remote_access: ExposedRemoteAccessParams,
 }
 
 impl Default for PipelineConfig {
@@ -130,6 +133,7 @@ impl Default for PipelineConfig {
             suspicious_ua: SuspiciousUaParams::default(),
             disguised_download: DisguisedDownloadParams::default(),
             cryptomining: CryptominingParams::default(),
+            exposed_remote_access: ExposedRemoteAccessParams::default(),
         }
     }
 }
@@ -429,6 +433,7 @@ pub fn run_source_visiting(
     findings.extend(detect_cleartext_creds(&tracker, &cfg.cleartext_creds));
     findings.extend(detect_pii_exposure(&tracker, &cfg.pii));
     findings.extend(lateral);
+    findings.extend(detect_exposed_remote_access(&tracker, &cfg.exposed_remote_access));
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     findings.extend(detect_tls_cert_health(&tracker, &cfg.tls_cert_health));
     findings.extend(detect_weak_tls(&tracker, &cfg.weak_tls));

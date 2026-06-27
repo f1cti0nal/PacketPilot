@@ -266,7 +266,8 @@ export type FindingKind =
   | "suspicious_ua"
   | "disguised_download"
   | "cryptomining"
-  | "malware_download";
+  | "malware_download"
+  | "exposed_remote_access";
 
 /**
  * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a
