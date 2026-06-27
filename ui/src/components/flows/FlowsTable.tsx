@@ -95,7 +95,7 @@ function SeverityCell({ flow }: { flow: FlowRow }) {
           // Outlined chip (transparent fill) rather than a same-hue tint: the rose IOC text on a
           // rose-tinted background only reached 4.39:1 (below WCAG AA 4.5:1); on the row's plain
           // surface it clears 4.5:1 in both themes. The border keeps the chip affordance.
-          className="shrink-0 rounded border px-1 py-0.5 text-[0.6rem] font-semibold"
+          className="shrink-0 rounded border px-1 py-0.5 text-[0.6rem] font-medium"
           style={{
             color: "var(--color-sev-critical)",
             borderColor:
@@ -355,129 +355,130 @@ export function FlowsTable({
   const headerGroups = table.getHeaderGroups();
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-surface">
-      <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-auto"
-        role="grid"
-        tabIndex={0}
-        aria-rowcount={tableRows.length}
-      >
-        <div style={{ width: totalWidth, minWidth: "100%" }}>
-          {/* Sticky header */}
-          <div className="sticky top-0 z-10 border-b border-border bg-surface-2">
-            {headerGroups.map((hg) => (
-              <div key={hg.id} className="flex" role="row">
-                {hg.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  const align =
-                    (
-                      header.column.columnDef.meta as
-                        | { align?: "right" }
-                        | undefined
-                    )?.align === "right";
-                  return (
-                    <div
-                      key={header.id}
-                      role="columnheader"
-                      aria-sort={
-                        header.column.getIsSorted() === "asc"
-                          ? "ascending"
-                          : header.column.getIsSorted() === "desc"
-                            ? "descending"
-                            : canSort
-                              ? "none"
-                              : undefined
-                      }
-                      style={{ width: header.getSize() }}
-                      className={clsx(
-                        "group flex shrink-0 items-center gap-1 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-dim)] select-none",
-                        align && "justify-end text-right",
-                        canSort &&
-                          "cursor-pointer transition-colors hover:text-[var(--color-text)]",
-                      )}
-                      onClick={
-                        canSort
-                          ? header.column.getToggleSortingHandler()
-                          : undefined
-                      }
-                      tabIndex={canSort ? 0 : undefined}
-                      onKeyDown={
-                        canSort
-                          ? (e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                header.column.getToggleSortingHandler()?.(e);
-                              }
-                            }
-                          : undefined
-                      }
-                    >
-                      <span className="truncate">
-                        {flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                      </span>
-                      {canSort && (
-                        <SortIcon dir={header.column.getIsSorted()} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* Virtualized body — only the visible window is in the DOM */}
-          <div role="rowgroup">
-            {paddingTop > 0 && <div style={{ height: paddingTop }} />}
-            {virtualItems.map((vi) => {
-              const row = tableRows[vi.index];
-              const flow = row.original;
-              const selected = selectedFlowId === flow.flowId;
-              return (
-                <div
-                  key={row.id}
-                  role="row"
-                  aria-selected={selected}
-                  aria-rowindex={vi.index + 1}
-                  tabIndex={0}
-                  onClick={() => handleRowClick(flow)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      handleRowClick(flow);
+    <div
+      ref={scrollRef}
+      className="h-full min-h-0 overflow-auto"
+      role="grid"
+      tabIndex={0}
+      aria-rowcount={tableRows.length}
+    >
+      <div style={{ width: totalWidth, minWidth: "100%" }}>
+        {/* Sticky elevated header — mirrors .pp-table thead th */}
+        <div
+          className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]"
+          style={{ boxShadow: "0 1px 0 var(--color-border)" }}
+        >
+          {headerGroups.map((hg) => (
+            <div key={hg.id} className="flex" role="row">
+              {hg.headers.map((header) => {
+                const canSort = header.column.getCanSort();
+                const align =
+                  (
+                    header.column.columnDef.meta as
+                      | { align?: "right" }
+                      | undefined
+                  )?.align === "right";
+                return (
+                  <div
+                    key={header.id}
+                    role="columnheader"
+                    aria-sort={
+                      header.column.getIsSorted() === "asc"
+                        ? "ascending"
+                        : header.column.getIsSorted() === "desc"
+                          ? "descending"
+                          : canSort
+                            ? "none"
+                            : undefined
                     }
-                  }}
-                  style={{ height: ROW_HEIGHT }}
-                  className={clsx(
-                    "flex cursor-pointer items-center border-b border-border/60 text-sm transition-colors",
-                    selected
-                      ? "bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] ring-1 ring-inset ring-[var(--color-accent)]"
-                      : vi.index % 2 === 1
-                        ? "bg-surface hover:bg-surface-2"
-                        : "bg-transparent hover:bg-surface-2",
-                  )}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <div
-                      key={cell.id}
-                      role="gridcell"
-                      style={{ width: cell.column.getSize() }}
-                      className="flex min-w-0 shrink-0 items-center px-3"
-                    >
+                    style={{ width: header.getSize() }}
+                    className={clsx(
+                      "group flex shrink-0 items-center gap-1 px-[10px] py-[7px] font-normal uppercase tracking-[.04em] text-[var(--color-text-faint)] select-none",
+                      "text-[length:var(--fs-label)]",
+                      align && "justify-end text-right",
+                      canSort &&
+                        "cursor-pointer transition-colors hover:text-[var(--color-text)]",
+                    )}
+                    onClick={
+                      canSort
+                        ? header.column.getToggleSortingHandler()
+                        : undefined
+                    }
+                    tabIndex={canSort ? 0 : undefined}
+                    onKeyDown={
+                      canSort
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              header.column.getToggleSortingHandler()?.(e);
+                            }
+                          }
+                        : undefined
+                    }
+                  >
+                    <span className="truncate">
                       {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
+                        header.column.columnDef.header,
+                        header.getContext(),
                       )}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-            {paddingBottom > 0 && <div style={{ height: paddingBottom }} />}
-          </div>
+                    </span>
+                    {canSort && (
+                      <SortIcon dir={header.column.getIsSorted()} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* Virtualized body — only the visible window is in the DOM */}
+        <div role="rowgroup">
+          {paddingTop > 0 && <div style={{ height: paddingTop }} />}
+          {virtualItems.map((vi) => {
+            const row = tableRows[vi.index];
+            const flow = row.original;
+            const selected = selectedFlowId === flow.flowId;
+            return (
+              <div
+                key={row.id}
+                role="row"
+                aria-selected={selected}
+                aria-rowindex={vi.index + 1}
+                tabIndex={0}
+                onClick={() => handleRowClick(flow)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleRowClick(flow);
+                  }
+                }}
+                style={{ height: ROW_HEIGHT }}
+                className={clsx(
+                  // hairline rows + hover — mirrors .pp-table tbody tr / tr:hover
+                  "flex cursor-pointer items-center border-t border-[var(--color-border)] text-[length:var(--fs-body)] transition-colors",
+                  selected
+                    ? "bg-[color-mix(in_srgb,var(--color-accent)_16%,transparent)] ring-1 ring-inset ring-[var(--color-accent)]"
+                    : "hover:bg-[var(--color-surface-2)]",
+                )}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <div
+                    key={cell.id}
+                    role="gridcell"
+                    style={{ width: cell.column.getSize() }}
+                    className="flex min-w-0 shrink-0 items-center px-[10px] text-[var(--color-text)]"
+                  >
+                    {flexRender(
+                      cell.column.columnDef.cell,
+                      cell.getContext(),
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {paddingBottom > 0 && <div style={{ height: paddingBottom }} />}
         </div>
       </div>
     </div>

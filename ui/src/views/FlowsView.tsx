@@ -21,6 +21,7 @@ import { EmptyState } from "../components/state/EmptyState";
 import { FlowsTable } from "../components/flows/FlowsTable";
 import { FlowDetail } from "../components/FlowDetail";
 import { PacketInspector } from "../cockpit/PacketInspector";
+import { Panel, Toolbar } from "../cockpit/primitives";
 
 export interface FlowsViewProps {
   state: FlowsState;
@@ -230,8 +231,8 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
   }
 
   const inputBase =
-    "rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] " +
-    "text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] " +
+    "rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] " +
+    "text-[length:var(--fs-body)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] " +
     "focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] " +
     "focus:border-[var(--color-accent)]";
 
@@ -240,8 +241,8 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
       data-component="FlowsView"
       className="flex h-full min-h-0 flex-col gap-3"
     >
-      {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Filter toolbar */}
+      <Toolbar className="gap-2">
         <div className="relative min-w-[16rem] flex-1">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-faint)]"
@@ -267,7 +268,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           )}
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-[var(--color-text-dim)]">
+        <label className="flex items-center gap-2 text-[length:var(--fs-body)] text-[var(--color-text-dim)]">
           <span>Category</span>
           <select
             value={category}
@@ -284,7 +285,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           </select>
         </label>
 
-        <div className="ml-auto flex items-center gap-3 text-sm text-[var(--color-text-dim)]">
+        <div className="ml-auto flex items-center gap-2 text-[length:var(--fs-body)] text-[var(--color-text-dim)]">
           <span>
             <span className="font-mono-num text-[var(--color-text)]">
               {humanNumber(filtered.length)}
@@ -297,7 +298,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             <button
               type="button"
               onClick={clearFilters}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:border-[var(--color-accent)]"
+              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:border-[var(--color-accent)]"
             >
               Clear filters
             </button>
@@ -309,16 +310,16 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             onNotice={setNotice}
           />
         </div>
-      </div>
+      </Toolbar>
       {notice && (
-        <p className="text-xs text-[var(--color-text-dim)]" role="status">
+        <p className="text-[length:var(--fs-label)] text-[var(--color-text-dim)]" role="status">
           {notice}
         </p>
       )}
 
       {/* Table + detail */}
       <div className="flex min-h-0 flex-1 gap-3">
-        <div className="min-h-0 min-w-0 flex-1">
+        <Panel className="min-h-0 min-w-0 flex-1" bodyClassName="min-h-0 flex-1 flex flex-col">
           {filtered.length === 0 ? (
             <EmptyState
               title="No flows match the current filters"
@@ -333,7 +334,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
               selectedFlowId={selected?.flowId ?? null}
             />
           )}
-        </div>
+        </Panel>
 
         {selected && (
           // Mobile: full-screen overlay (an inline 352px column would crush the
