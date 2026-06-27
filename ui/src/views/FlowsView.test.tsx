@@ -129,6 +129,33 @@ describe("FlowsView", () => {
     ).not.toThrow();
   });
 
+  it("renders a filter stats bar with total bytes and packets", () => {
+    const { container } = render(
+      <FlowsView state={{ status: "ready", rows: makeFlows(5) }} activeSource={null} />,
+    );
+    const bar = container.querySelector('[data-component="FlowsStats"]');
+    expect(bar).toBeInTheDocument();
+    expect(bar!.textContent).toMatch(/MB|KB|B/); // total bytes
+    expect(bar!.textContent).toMatch(/packets/);
+  });
+
+  it("Export CSV button triggers a download of the filtered flows", async () => {
+    // jsdom lacks URL.createObjectURL; patch just that method (don't replace the whole
+    // URL global — that would drop the URL constructor other code relies on) and restore.
+    const u = userEvent.setup();
+    const createObjectURL = vi.fn(() => "blob:fake");
+    const origCreate = (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+    const origRevoke = (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    try {
+      render(<FlowsView state={{ status: "ready", rows: makeFlows(5) }} activeSource={null} />);
+      await u.click(screen.getByRole("button", { name: /export csv/i }));
+      expect(createObjectURL).toHaveBeenCalled();
+    } finally {
+      Object.assign(URL, { createObjectURL: origCreate, revokeObjectURL: origRevoke });
+    }
+  });
+
   it("clearFilters button appears and resets the text filter when clicked", async () => {
     const u = userEvent.setup();
     const rows = makeFlows(5);

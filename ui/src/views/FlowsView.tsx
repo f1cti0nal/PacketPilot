@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilterProfiles } from "../components/flows/FilterProfiles";
 import type { FlowFilter } from "../lib/filterProfiles";
 import type { SortingState } from "@tanstack/react-table";
-import { Search, X } from "lucide-react";
+import { Download, Search, X } from "lucide-react";
 import type {
   ActiveSource,
   FlowsState,
@@ -12,7 +12,10 @@ import type {
   FlowCategory,
 } from "../types";
 import { normCategory } from "../lib/severity";
-import { humanNumber } from "../lib/format";
+import { compactNumber, humanBytes, humanNumber } from "../lib/format";
+import { flowStats } from "../lib/flowStats";
+import { flowsToCsv } from "../lib/flowsCsv";
+import { downloadText } from "../lib/platform";
 import { extractFlowPackets, carveSubPcap } from "../lib/packets";
 import { cn } from "../lib/cn";
 import { LoadingState } from "../components/state/LoadingState";
@@ -195,11 +198,21 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
     }
   }, [filtered, selected]);
 
+  // Live aggregate over the current filter — bytes / packets / IOCs / top categories.
+  const stats = useMemo(() => flowStats(filtered), [filtered]);
+
   const hasActiveFilters =
     query.trim() !== "" ||
     category !== ALL_CATEGORIES ||
     severity !== undefined ||
     proto !== undefined;
+
+  // Export exactly what's on screen (the filtered set) as CSV.
+  const exportCsv = useCallback(() => {
+    if (filtered.length === 0) return;
+    const name = hasActiveFilters ? "packetpilot-flows-filtered.csv" : "packetpilot-flows.csv";
+    downloadText(flowsToCsv(filtered), name, "text/csv");
+  }, [filtered, hasActiveFilters]);
 
   const clearFilters = () => {
     setQuery("");
@@ -303,6 +316,16 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
               Clear filters
             </button>
           )}
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            title="Export the filtered flows to CSV"
+            className="inline-flex items-center gap-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden />
+            Export CSV
+          </button>
           <FilterProfiles
             current={{ query, category, severity, proto }}
             hasActiveFilters={hasActiveFilters}
@@ -311,6 +334,42 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           />
         </div>
       </Toolbar>
+
+      {/* Live stats for the current filter — bytes / packets / IOCs / top categories. */}
+      <div
+        data-component="FlowsStats"
+        className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)]"
+      >
+        <span>
+          <span className="font-mono-num text-[var(--color-text)]">{humanBytes(stats.bytes)}</span>
+        </span>
+        <span>
+          <span className="font-mono-num text-[var(--color-text)]">{compactNumber(stats.packets)}</span>{" "}
+          packets
+        </span>
+        {stats.iocs > 0 && (
+          <span>
+            <span className="font-mono-num" style={{ color: "var(--color-sev-critical)" }}>
+              {humanNumber(stats.iocs)}
+            </span>{" "}
+            IOC{stats.iocs === 1 ? "" : "s"}
+          </span>
+        )}
+        {stats.topCategories.length > 0 && (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-[var(--color-text-faint)]">Top:</span>
+            {stats.topCategories.map((c) => (
+              <span key={c.category} className="inline-flex items-center gap-1">
+                {categoryLabel(c.category)}
+                <span className="font-mono-num text-[var(--color-text-faint)]">
+                  {compactNumber(c.flows)}
+                </span>
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+
       {notice && (
         <p className="text-[length:var(--fs-label)] text-[var(--color-text-dim)]" role="status">
           {notice}
