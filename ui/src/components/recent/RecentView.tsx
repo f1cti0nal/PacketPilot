@@ -15,7 +15,7 @@ import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { RecentEntry, RecentOrigin, Severity } from "../../types";
 import { SEVERITY_META, SEVERITY_ORDER } from "../../lib/severity";
-import { compactNumber, humanBytes, humanNumber } from "../../lib/format";
+import { compactNumber, humanBytes, humanNumber, relativeTime } from "../../lib/format";
 import { cn } from "../../lib/cn";
 import { Panel } from "../../cockpit/primitives";
 
@@ -46,23 +46,6 @@ const ORIGIN_META: Record<
 };
 
 const STRIP_ORDER = SEVERITY_ORDER as Exclude<Severity, "none">[];
-
-/** Compact relative-time, e.g. "just now", "3m ago", "2h ago", "Apr 5". */
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const sec = Math.round(diff / 1000);
-  if (sec < 45) return "just now";
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  return new Date(ts).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 /** A thin stacked bar visualizing the severity mix of a cached summary. */
 function SeverityBar({ entry }: { entry: RecentEntry }) {

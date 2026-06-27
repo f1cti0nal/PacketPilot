@@ -32,6 +32,7 @@ export function CommandBar({
   onTab,
   collapsed,
   onToggleCollapse,
+  onGoHome,
   tabs = DEFAULT_TABS,
   captureStatus = "ready",
   captureError,
@@ -51,6 +52,8 @@ export function CommandBar({
   onTab: (t: TabId) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  /** Return to the Home overview (unloads the active capture). Makes the wordmark clickable. */
+  onGoHome?: () => void;
   tabs?: ReadonlyArray<{ id: TabId; label: string; badge?: number }>;
   /** Render the inline Views switcher. Off on mobile, where the bottom tab bar replaces it. */
   showTabs?: boolean;
@@ -78,13 +81,18 @@ export function CommandBar({
         >
           {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
         </button>
-        <span
-          className="flex h-7 w-7 items-center justify-center rounded-[var(--r-tile)]"
-          style={{ background: "color-mix(in srgb, var(--color-accent) 16%, transparent)" }}
-        >
-          <Radar size={17} style={{ color: "var(--color-accent)" }} aria-hidden />
-        </span>
-        <span className="hidden font-display text-[15px] font-medium tracking-tight sm:inline">PacketPilot</span>
+        {onGoHome ? (
+          <button
+            type="button"
+            onClick={onGoHome}
+            aria-label="Go to overview"
+            className="flex items-center gap-2 rounded-[var(--r-tile)] transition-opacity hover:opacity-80"
+          >
+            <BrandMark />
+          </button>
+        ) : (
+          <BrandMark />
+        )}
       </div>
 
       {/* Capture identity (center). Deferred to lg: at the 768px md boundary the
@@ -214,6 +222,21 @@ export function CommandBar({
         {rulesMenu && <span className="hidden md:contents">{rulesMenu}</span>}
       </div>
     </header>
+  );
+}
+
+/** The glyph + wordmark lockup, shared by the static and clickable (go-home) brand. */
+function BrandMark() {
+  return (
+    <>
+      <span
+        className="flex h-7 w-7 items-center justify-center rounded-[var(--r-tile)]"
+        style={{ background: "color-mix(in srgb, var(--color-accent) 16%, transparent)" }}
+      >
+        <Radar size={17} style={{ color: "var(--color-accent)" }} aria-hidden />
+      </span>
+      <span className="hidden font-display text-[15px] font-medium tracking-tight sm:inline">PacketPilot</span>
+    </>
   );
 }
 

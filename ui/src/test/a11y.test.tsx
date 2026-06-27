@@ -14,9 +14,23 @@ import { ThreatRail } from "../cockpit/ThreatRail";
 import { ShortcutsOverlay } from "../cockpit/ShortcutsOverlay";
 import { EmptyState } from "../components/state/EmptyState";
 import { ErrorState } from "../components/state/ErrorState";
+import { HomeView } from "../components/home/HomeView";
+import type { RecentEntry } from "../types";
 
 const noop = () => {};
 const threats = makeOutput().summary.ip_threats ?? [];
+
+const mkRecent = (id: string): RecentEntry => ({
+  id,
+  name: `${id}.pcap`,
+  sizeBytes: 1000,
+  analyzedAt: 1_700_000_000_000,
+  engineVersion: "0.1.0",
+  origin: "wasm",
+  summary: makeOutput(),
+  flowCount: 1000,
+  flowsCached: false,
+});
 
 // Automated regression net over the dialog / menu / nav-list accessibility work
 // (aria-modal dialogs, role=menu dropdowns with keyboard nav, aria-current lists).
@@ -94,6 +108,25 @@ describe("accessibility (axe)", () => {
 
   it("ErrorState (with retry) has no violations", async () => {
     const { container } = render(<ErrorState message="Failed to load" onRetry={noop} />);
+    await expectNoA11yViolations(container);
+  });
+
+  it("HomeView (first run) has no violations", async () => {
+    const { container } = render(
+      <HomeView recent={[]} onOpen={noop} onLoadNew={noop} onLoadSample={noop} sampleAvailable />,
+    );
+    await expectNoA11yViolations(container);
+  });
+
+  it("HomeView (returning-user overview) has no violations", async () => {
+    const { container } = render(
+      <HomeView
+        recent={[mkRecent("a"), mkRecent("b")]}
+        onOpen={noop}
+        onLoadNew={noop}
+        onCompare={noop}
+      />,
+    );
     await expectNoA11yViolations(container);
   });
 });

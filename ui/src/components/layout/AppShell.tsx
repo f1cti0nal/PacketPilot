@@ -77,6 +77,8 @@ export interface AppShellProps {
   rulesMenu?: ReactNode;
   /** Whether a capture comparison is active (shows the Compare tab). */
   compareActive?: boolean;
+  /** Return to the Home overview (unloads the active capture). Wires the clickable wordmark + palette action. */
+  onGoHome?: () => void;
   children: ReactNode;
 }
 
@@ -123,6 +125,7 @@ export function AppShell({
   onLoadRules,
   rulesMenu,
   compareActive = false,
+  onGoHome,
   children,
 }: AppShellProps) {
   const [exportHint, setExportHint] = useState<string | null>(null);
@@ -248,6 +251,7 @@ export function AppShell({
     summary.status === "error" ? "error" : "idle";
 
   const paletteActions = useMemo<PaletteAction[]>(() => [
+    ...(onGoHome ? [{ id: "go-home", label: "Go to overview", hint: "view", run: onGoHome }] : []),
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
@@ -271,7 +275,7 @@ export function AppShell({
       { id: "export-sigma", label: "Export Sigma rules", hint: "action", run: () => void runExport(onExportSigma) },
       { id: "export-sigma-copy", label: "Copy Sigma rules", hint: "action", run: () => void runExport(onCopySigma) },
     ] : []),
-  ], [onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma]);
+  ], [onGoHome, onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
@@ -283,6 +287,7 @@ export function AppShell({
         tabs={tabs}
         captureStatus={captureStatus}
         captureError={summary.status === "error" ? summary.error : undefined}
+        onGoHome={onGoHome}
         onRequestLoad={onRequestLoad}
         exportActions={canExport ? exportActions : []}
         exporting={exporting}

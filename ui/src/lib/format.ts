@@ -88,3 +88,16 @@ export function shortHash(hash: string, head = 8, tail = 6): string {
   if (hash.length <= head + tail + 1) return hash;
   return `${hash.slice(0, head)}…${hash.slice(-tail)}`;
 }
+
+/** Compact relative-time from an epoch-ms timestamp, e.g. "just now", "3m ago", "2h ago", "Apr 5". */
+export function relativeTime(ts: number): string {
+  const sec = Math.round((Date.now() - ts) / 1000);
+  if (sec < 45) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}

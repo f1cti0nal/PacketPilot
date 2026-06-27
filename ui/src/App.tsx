@@ -50,7 +50,7 @@ import {
 } from "./lib/platform";
 import { packetsAvailable } from "./lib/packets";
 import { analyzeViaWasm, applyReputationWasm, applyDomainReputationWasm } from "./lib/wasmEngine";
-import { EmptyState } from "./components/state/EmptyState";
+import { HomeView } from "./components/home/HomeView";
 import {
   repEnabled,
   getProxyUrl,
@@ -161,42 +161,30 @@ export function App() {
   const [ruleNotice, setRuleNotice] = useState<string | null>(null);
   const rulesInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Eagerly load the bundled sample capture on mount.
-  useEffect(() => {
-    if (IS_TAURI) return; // desktop shows empty state until a capture is opened
-    let cancelled = false;
-
+  // The app no longer auto-loads the bundled sample — launch lands on the Home surface
+  // (upload-first hero for new visitors, workspace overview for returning ones). The sample
+  // is now an opt-in preview, loaded on demand below WITHOUT recording to Recent, so it stays
+  // a pure demo and never masquerades as the user's own capture history.
+  const loadSample = useCallback(() => {
+    setActiveId(null);
     setActiveSource(null); // the bundled sample has no re-extractable source
+    setSelectedIncident(null);
+    setActiveIp(null);
+    setTab("dashboard");
+
     setSummary({ status: "loading" });
     loadSummary(SUMMARY_URL)
-      .then((data) => {
-        if (!cancelled) setSummary({ status: "ready", data });
-      })
-      .catch((err: unknown) => {
-        if (!cancelled)
-          setSummary({
-            status: "error",
-            error: String((err as Error)?.message ?? err),
-          });
-      });
+      .then((data) => setSummary({ status: "ready", data }))
+      .catch((err: unknown) =>
+        setSummary({ status: "error", error: String((err as Error)?.message ?? err) }),
+      );
 
     setFlows({ status: "loading", rows: [] });
     loadFlows(FLOWS_URL)
-      .then((rows) => {
-        if (!cancelled) setFlows({ status: "ready", rows });
-      })
-      .catch((err: unknown) => {
-        if (!cancelled)
-          setFlows({
-            status: "error",
-            rows: [],
-            error: String((err as Error)?.message ?? err),
-          });
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .then((rows) => setFlows({ status: "ready", rows }))
+      .catch((err: unknown) =>
+        setFlows({ status: "error", rows: [], error: String((err as Error)?.message ?? err) }),
+      );
   }, []);
 
   // Keep summaryDataRef in sync so enrichAndCommit always enriches the freshest data.
@@ -516,6 +504,18 @@ export function App() {
     setActiveId(null);
   }, []);
 
+  // Return to the Home overview: unload the active capture (it stays cached in Recent, so
+  // reopening is instant). Non-destructive — just resets the view to the idle/Home branch.
+  const goHome = useCallback(() => {
+    setSummary({ status: "idle" });
+    setFlows({ status: "idle", rows: [] });
+    setActiveId(null);
+    setActiveSource(null);
+    setSelectedIncident(null);
+    setActiveIp(null);
+    setTab("dashboard");
+  }, []);
+
   const handleExport = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
     const ai = await getAiSummary(captureKey(summary.data));
@@ -625,6 +625,7 @@ export function App() {
     <AppShell
       activeTab={tab}
       onTabChange={setTab}
+      onGoHome={goHome}
       compareActive={compareIds !== null}
       summary={summary}
       recentCount={recent.length}
@@ -682,11 +683,15 @@ export function App() {
           onCompare={startCompare}
         />
       ) : summary.status === "idle" ? (
-        IS_TAURI ? (
-          <EmptyState title="No capture loaded" onLoad={handleRequestLoad} />
-        ) : (
-          <LoadingState label="Loading summary…" />
-        )
+        <HomeView
+          recent={recent}
+          activeId={activeId}
+          onOpen={(e) => void handleSelectRecent(e)}
+          onLoadNew={handleRequestLoad}
+          onLoadSample={loadSample}
+          onCompare={startCompare}
+          sampleAvailable={!IS_TAURI}
+        />
       ) : summary.status === "loading" ? (
         <LoadingState label="Loading summary…" />
       ) : summary.status === "error" ? (
