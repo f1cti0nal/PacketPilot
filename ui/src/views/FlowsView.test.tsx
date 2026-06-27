@@ -119,6 +119,17 @@ describe("FlowsView", () => {
     expect((filter as HTMLInputElement).value).toBe("10.0.0.1");
   });
 
+  it("initialFilter.query seeds the filter box (card drill-down)", () => {
+    render(
+      <FlowsView
+        state={{ status: "ready", rows: makeFlows(5) }}
+        initialFilter={{ query: "443" }}
+        activeSource={null}
+      />,
+    );
+    expect((screen.getByLabelText("Filter flows") as HTMLInputElement).value).toBe("443");
+  });
+
   it("mounts without throwing", () => {
     // Ensure the component doesn't require unexpected props
     expect(

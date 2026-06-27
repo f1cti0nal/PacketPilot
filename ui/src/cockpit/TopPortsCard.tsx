@@ -9,7 +9,14 @@ import { serviceName } from "../lib/services";
  * port-level complement to the app-protocol `ProtocolMix` — surfaces traffic on non-standard ports
  * (no service name) that the app-proto view hides. Display-only; hidden when no ports were seen.
  */
-export function TopPortsCard({ ports }: { ports: PortHistogramEntry[] }) {
+export function TopPortsCard({
+  ports,
+  onSelect,
+}: {
+  ports: PortHistogramEntry[];
+  /** Drill into Flows filtered on the clicked port. Rows are static when omitted. */
+  onSelect?: (port: number) => void;
+}) {
   const top = useMemo(
     () => [...(ports ?? [])].sort((a, b) => b.pkts - a.pkts || b.bytes - a.bytes).slice(0, 8),
     [ports],
@@ -31,8 +38,8 @@ export function TopPortsCard({ ports }: { ports: PortHistogramEntry[] }) {
         {top.map((p) => {
           const svc = serviceName(p.port);
           const pct = Math.max(2, Math.round((p.pkts / max) * 100));
-          return (
-            <li key={`${p.transport}-${p.port}`} className="flex flex-col gap-1">
+          const body = (
+            <>
               <div className="flex items-center gap-2 text-xs">
                 <span className="font-mono-num font-medium text-[var(--color-text)]">{p.port}</span>
                 <span className="t-tag uppercase text-[var(--color-text-faint)]">{p.transport}</span>
@@ -51,6 +58,22 @@ export function TopPortsCard({ ports }: { ports: PortHistogramEntry[] }) {
                   style={{ width: `${pct}%` }}
                 />
               </div>
+            </>
+          );
+          return (
+            <li key={`${p.transport}-${p.port}`}>
+              {onSelect ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(p.port)}
+                  title={`Show flows on port ${p.port}`}
+                  className="flex w-full flex-col gap-1 rounded-[var(--r-micro)] text-left transition-colors hover:bg-[var(--color-surface-2)]"
+                >
+                  {body}
+                </button>
+              ) : (
+                <div className="flex flex-col gap-1">{body}</div>
+              )}
             </li>
           );
         })}

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "../test/render";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, userEvent } from "../test/render";
 import { ProtocolMix } from "./ProtocolMix";
 import { makeOutput } from "../test/fixtures";
 
@@ -30,6 +30,18 @@ describe("ProtocolMix", () => {
     render(<ProtocolMix proto={proto} />);
     expect(screen.getByText("TLS")).toBeInTheDocument();
     expect(screen.getByText("HTTP")).toBeInTheDocument();
+  });
+
+  it("calls onSelect with the protocol key for a filterable legend item", async () => {
+    const onSelect = vi.fn();
+    render(<ProtocolMix proto={makeOutput().summary.proto} onSelect={onSelect} />);
+    await userEvent.setup().click(screen.getByRole("button", { name: /TLS/ }));
+    expect(onSelect).toHaveBeenCalledWith("tls");
+  });
+
+  it("leaves non-filterable segments static (Other TCP is not a button)", () => {
+    render(<ProtocolMix proto={makeOutput().summary.proto} onSelect={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Other TCP/ })).toBeNull();
   });
 
   it("renders an empty state when all proto counts are zero", () => {

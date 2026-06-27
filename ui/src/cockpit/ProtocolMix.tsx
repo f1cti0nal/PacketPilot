@@ -6,7 +6,18 @@ import { protoSegments } from "./viz";
 import { Card } from "./primitives";
 import type { ProtoCounts } from "../types";
 
-export function ProtocolMix({ proto }: { proto: ProtoCounts }): JSX.Element {
+/** Segment keys whose token cleanly filters the Flows view (matches a flow's appProto). The
+ *  "other_tcp" / "other_udp" / "non_ipv4" segments have no clean flow-filter token, so stay static. */
+const FILTERABLE = new Set(["dns", "http", "tls"]);
+
+export function ProtocolMix({
+  proto,
+  onSelect,
+}: {
+  proto: ProtoCounts;
+  /** Drill into Flows filtered on the clicked protocol token. Legend is static when omitted. */
+  onSelect?: (key: string) => void;
+}): JSX.Element {
   const segs = useMemo(() => protoSegments(proto), [proto]);
   const total = useMemo(() => segs.reduce((sum, s) => sum + s.value, 0), [segs]);
   const tlsHeavy = useMemo(
@@ -36,19 +47,37 @@ export function ProtocolMix({ proto }: { proto: ProtoCounts }): JSX.Element {
           </div>
 
           <div className="flex flex-wrap gap-x-3 gap-y-1.5">
-            {segs.map((s) => (
-              <div key={s.key} className="flex items-center gap-1.5">
-                <span
-                  aria-hidden
-                  className="inline-block h-2 w-2 shrink-0 rounded-[var(--r-micro)]"
-                  style={{ backgroundColor: s.color }}
-                />
-                <span className="text-xs text-[var(--color-text-dim)]">{s.label}</span>
-                <span className="font-mono-num text-xs text-[var(--color-text-faint)]">
-                  {percent(s.value, total)}
-                </span>
-              </div>
-            ))}
+            {segs.map((s) => {
+              const clickable = !!onSelect && FILTERABLE.has(s.key);
+              const inner = (
+                <>
+                  <span
+                    aria-hidden
+                    className="inline-block h-2 w-2 shrink-0 rounded-[var(--r-micro)]"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  <span className="text-xs text-[var(--color-text-dim)]">{s.label}</span>
+                  <span className="font-mono-num text-xs text-[var(--color-text-faint)]">
+                    {percent(s.value, total)}
+                  </span>
+                </>
+              );
+              return clickable ? (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => onSelect!(s.key)}
+                  title={`Show ${s.label} flows`}
+                  className="flex items-center gap-1.5 rounded-[var(--r-micro)] px-0.5 transition-colors hover:bg-[var(--color-surface-2)]"
+                >
+                  {inner}
+                </button>
+              ) : (
+                <div key={s.key} className="flex items-center gap-1.5">
+                  {inner}
+                </div>
+              );
+            })}
           </div>
 
           {tlsHeavy && (

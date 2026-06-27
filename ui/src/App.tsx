@@ -80,6 +80,8 @@ export interface FlowsInitialFilter {
   category?: string;
   proto?: number;
   ip?: string;
+  /** Free-text query to seed the filter box (e.g. a port, HTTP host, or protocol from a card). */
+  query?: string;
 }
 
 const SUMMARY_URL = "/sample/summary.json";
@@ -564,8 +566,13 @@ export function App() {
   }, [summary]);
 
   const jumpToFlows = useCallback(
-    (filter: { severity?: Severity; category?: string; ip?: string }) => {
-      setFlowsFilter({ severity: filter.severity, category: filter.category, ip: filter.ip });
+    (filter: { severity?: Severity; category?: string; ip?: string; query?: string }) => {
+      setFlowsFilter({
+        severity: filter.severity,
+        category: filter.category,
+        ip: filter.ip,
+        query: filter.query,
+      });
       setTab("flows");
     },
     [],

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "../test/render";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, userEvent } from "../test/render";
 import { TopPortsCard } from "./TopPortsCard";
 import type { PortHistogramEntry } from "../types";
 
@@ -24,5 +24,17 @@ describe("TopPortsCard", () => {
   it("renders nothing when no ports were seen", () => {
     render(<TopPortsCard ports={[]} />);
     expect(screen.queryByText("Top ports")).toBeNull();
+  });
+
+  it("calls onSelect with the port when a row is clicked", async () => {
+    const onSelect = vi.fn();
+    render(<TopPortsCard ports={ports} onSelect={onSelect} />);
+    await userEvent.setup().click(screen.getByRole("button", { name: /443/ }));
+    expect(onSelect).toHaveBeenCalledWith(443);
+  });
+
+  it("rows are static (no buttons) when onSelect is omitted", () => {
+    render(<TopPortsCard ports={ports} />);
+    expect(screen.queryByRole("button")).toBeNull();
   });
 });

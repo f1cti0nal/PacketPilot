@@ -42,6 +42,8 @@ export interface DashboardDrilldown {
   severity?: Severity;
   category?: string;
   ip?: string;
+  /** Free-text query seeded into the Flows filter (e.g. a port, HTTP host, or protocol). */
+  query?: string;
 }
 
 /** Carve window upper bound — above any real ns-since-epoch (~1.8e18), below i64::MAX (9.22e18). */
@@ -101,6 +103,10 @@ export function Dashboard({
   };
   const toFlowsIp = (ip: string) => onJumpToFlows?.({ ip });
   const toFlowsCat = (category: string) => onJumpToFlows?.({ category });
+  // Drill into Flows by free-text (a port number, an HTTP host/UA, or a protocol token).
+  const toFlowsQuery = onJumpToFlows
+    ? (query: string) => onJumpToFlows({ query })
+    : undefined;
 
   // Per-host pcap carve — reuses the retained capture source (disabled when not retained).
   const canCarve = packetsAvailable(activeSource ?? null);
@@ -186,7 +192,7 @@ export function Dashboard({
             <CaptureIntegrity output={output} />
           </div>
           <div className="lg:col-span-6">
-            <ProtocolMix proto={s.proto} />
+            <ProtocolMix proto={s.proto} onSelect={toFlowsQuery} />
           </div>
           <div className="lg:col-span-6">
             <TopTalkersCard talkers={s.top_talkers} onSelect={openHost} />
@@ -195,10 +201,17 @@ export function Dashboard({
             <ProtocolSunburst hierarchy={s.protocol_hierarchy ?? []} />
           </div>
           <div className="lg:col-span-6">
-            <TopPortsCard ports={s.port_histogram ?? []} />
+            <TopPortsCard
+              ports={s.port_histogram ?? []}
+              onSelect={toFlowsQuery ? (port) => toFlowsQuery(String(port)) : undefined}
+            />
           </div>
           <div className="lg:col-span-12">
-            <HttpOverviewCard hosts={s.http_hosts ?? []} userAgents={s.user_agents ?? []} />
+            <HttpOverviewCard
+              hosts={s.http_hosts ?? []}
+              userAgents={s.user_agents ?? []}
+              onSelect={toFlowsQuery}
+            />
           </div>
           <div className="lg:col-span-12">
             <PacketDistributionsCard

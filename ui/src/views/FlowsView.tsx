@@ -28,7 +28,7 @@ import { Panel, Toolbar } from "../cockpit/primitives";
 
 export interface FlowsViewProps {
   state: FlowsState;
-  initialFilter?: { severity?: Severity; category?: string; proto?: number; ip?: string };
+  initialFilter?: { severity?: Severity; category?: string; proto?: number; ip?: string; query?: string };
   /** The active capture source — enables per-flow packet drill-down when non-null. */
   activeSource: ActiveSource;
 }
@@ -129,7 +129,9 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
         ? normCategory(initialFilter.category)
         : ALL_CATEGORIES,
     );
-    setQuery(initialFilter.ip ?? "");
+    // An explicit free-text query (port / host / protocol from a card) takes precedence
+    // over the ip convenience field; both seed the same filter box.
+    setQuery(initialFilter.query ?? initialFilter.ip ?? "");
     setSelected(null);
   }, [initialFilter]);
 
