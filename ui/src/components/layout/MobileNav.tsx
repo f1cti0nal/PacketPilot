@@ -57,7 +57,7 @@ function Badge({ children, tone = "accent" }: { children: ReactNode; tone?: "acc
   return (
     <span
       aria-hidden
-      className="absolute -right-2 -top-1.5 inline-flex min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-tight text-[var(--color-bg)]"
+      className="absolute -right-2 -top-1.5 inline-flex min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-medium leading-tight text-[var(--color-bg)]"
       style={{ background: tone === "critical" ? "var(--color-sev-critical)" : "var(--color-accent)" }}
     >
       {children}
@@ -82,7 +82,7 @@ export function BottomTabBar({
   return (
     <nav
       aria-label="Primary"
-      className="glass-band z-20 flex shrink-0 items-stretch justify-around border-t border-[var(--color-border)] pb-[env(safe-area-inset-bottom)]"
+      className="z-20 flex shrink-0 items-stretch justify-around border-t border-[var(--color-border)] bg-[var(--color-surface)] pb-[env(safe-area-inset-bottom)]"
     >
       {tabs.map((tab) => {
         const Icon = TAB_ICON[tab.id];
@@ -192,11 +192,11 @@ export function MobileThreatDrawer({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
       <div
         ref={panelRef}
-        className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col"
+        className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col bg-[var(--color-surface)]"
         style={{ boxShadow: "var(--sh-float)" }}
       >
-        <div className="glass-band flex items-center justify-between border-b border-r border-[var(--color-border)] px-3 py-2.5">
-          <span id={labelId} className="font-display text-sm font-semibold text-[var(--color-text)]">
+        <div className="flex items-center justify-between border-b border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
+          <span id={labelId} className="font-display text-sm font-medium text-[var(--color-text)]">
             Threats
           </span>
           <button

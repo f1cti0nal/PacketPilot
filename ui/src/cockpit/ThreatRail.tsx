@@ -27,7 +27,7 @@ export function ThreatRail({
   return (
     <aside
       className={cn(
-        "glass-band z-20 flex shrink-0 flex-col border-r border-[var(--color-border)] transition-[width] duration-200",
+        "z-20 flex shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] transition-[width] duration-200",
         collapsed ? "w-16" : "w-[280px]",
       )}
     >
@@ -56,11 +56,14 @@ export function ThreatRail({
                   className={cn(
                     "group relative w-full overflow-hidden rounded-[var(--r-tile)] text-left transition-colors",
                     collapsed ? "flex items-center justify-center py-2" : "px-2.5 py-2",
-                    active ? "bg-[var(--color-surface-2)]" : "hover:bg-[var(--color-surface-2)]",
+                    active ? "bg-[var(--color-surface-2)] text-[var(--color-accent)]" : "text-[var(--color-text-dim)] hover:bg-[var(--color-surface-2)]",
                   )}
-                  style={active ? { boxShadow: `inset 2px 0 0 ${color}` } : undefined}
                 >
-                  <span aria-hidden className="absolute inset-y-0 left-0 w-0.5" style={{ backgroundColor: color }} />
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 left-0 w-0.5 transition-colors"
+                    style={{ backgroundColor: active ? "var(--color-accent)" : color }}
+                  />
                   {collapsed ? (
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
                   ) : (
@@ -82,7 +85,7 @@ function RailRow({ threat, color }: { threat: IpThreat; color: string }) {
       <div className="flex items-center gap-2">
         <span className="font-mono-num min-w-0 flex-1 truncate text-[13px] text-[var(--color-text)]">{threat.ip}</span>
         {threat.ioc && <IocDot />}
-        <span className="font-mono-num shrink-0 text-xs font-semibold tabular-nums" style={{ color }}>
+        <span className="font-mono-num shrink-0 text-xs font-medium tabular-nums" style={{ color }}>
           {threat.score}
         </span>
       </div>

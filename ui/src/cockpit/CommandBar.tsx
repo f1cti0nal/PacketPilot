@@ -67,7 +67,7 @@ export function CommandBar({
   rulesMenu?: ReactNode;
 }) {
   return (
-    <header className="glass-band relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] px-3">
+    <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3">
       {/* Wordmark + collapse */}
       <div className="flex items-center gap-2">
         <button
@@ -84,7 +84,7 @@ export function CommandBar({
         >
           <Radar size={17} style={{ color: "var(--color-accent)" }} aria-hidden />
         </span>
-        <span className="hidden font-display text-[15px] font-semibold tracking-tight sm:inline">PacketPilot</span>
+        <span className="hidden font-display text-[15px] font-medium tracking-tight sm:inline">PacketPilot</span>
       </div>
 
       {/* Capture identity (center). Deferred to lg: at the 768px md boundary the
@@ -108,9 +108,9 @@ export function CommandBar({
                 {shortHash(sha256, 8, 6)}
               </span>
             )}
-            <span className="glow-live inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" style={{ boxShadow: "0 0 6px var(--color-accent)" }} />
-              <span className="t-tag font-semibold uppercase text-[var(--color-accent)]">Analyzed</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+              <span className="t-tag font-medium uppercase text-[var(--color-accent)]">Analyzed</span>
             </span>
           </>
         )}
@@ -145,7 +145,7 @@ export function CommandBar({
               >
                 {tab.label}
                 {tab.badge ? (
-                  <span className="ml-1.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-semibold text-[var(--color-accent)]">
+                  <span className="ml-1.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-medium text-[var(--color-accent)]">
                     {tab.badge}
                   </span>
                 ) : null}
@@ -182,7 +182,7 @@ export function CommandBar({
           aria-label="Command palette"
           onClick={onOpenPalette}
           disabled={!onOpenPalette}
-          className="hidden items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)] disabled:cursor-default disabled:opacity-50 lg:inline-flex"
+          className="hidden items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-2 py-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)] disabled:cursor-default disabled:opacity-50 lg:inline-flex"
         >
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
@@ -196,7 +196,7 @@ export function CommandBar({
             type="button"
             aria-label="Settings"
             onClick={onOpenSettings}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
+            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
           >
             <Settings size={14} />
           </button>
@@ -206,7 +206,7 @@ export function CommandBar({
             type="button"
             aria-label="Ask AI"
             onClick={onOpenAiChat}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
+            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
           >
             <Sparkles size={14} />
           </button>
@@ -234,7 +234,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[color:color-mix(in_srgb,var(--color-accent)_50%,var(--color-border))] hover:text-[var(--color-text)] disabled:cursor-default disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-default disabled:opacity-50"
     >
       {icon}
       <span className="hidden lg:inline">{label}</span>
