@@ -829,9 +829,23 @@ impl SynthGen {
         // record_flow normalizes endpoints, so both directions map to the one session flow.
         self.record_flow(attacker, victim, sport, 3389, IP_PROTO_TCP);
         let (src, dst, sp, dp, smac, dmac) = if outbound {
-            (attacker, victim, sport, 3389, BEACON_C2_MAC, BEACON_LATERAL_MAC)
+            (
+                attacker,
+                victim,
+                sport,
+                3389,
+                BEACON_C2_MAC,
+                BEACON_LATERAL_MAC,
+            )
         } else {
-            (victim, attacker, 3389, sport, BEACON_LATERAL_MAC, BEACON_C2_MAC)
+            (
+                victim,
+                attacker,
+                3389,
+                sport,
+                BEACON_LATERAL_MAC,
+                BEACON_C2_MAC,
+            )
         };
         let tcp = frames::build_tcp(src, dst, sp, dp, TCP_PSH | TCP_ACK, &payload);
         let ip = frames::build_ipv4(src, dst, IP_PROTO_TCP, 64, tcp.len());

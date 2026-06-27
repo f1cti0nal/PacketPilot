@@ -2454,7 +2454,8 @@ pub fn detect_exposed_remote_access(
     }
     let mut findings = Vec::new();
     for c in tracker.exposed_remote_access_candidates(params.min_session_bytes, &params.ports) {
-        if params.ignore_external.contains(&c.external) || params.ignore_internal.contains(&c.internal)
+        if params.ignore_external.contains(&c.external)
+            || params.ignore_internal.contains(&c.internal)
         {
             continue;
         }
@@ -2478,9 +2479,15 @@ pub fn detect_exposed_remote_access(
             )
         };
         let direction_line = if c.inbound {
-            format!("inbound: external {} connected to internal {}", c.external, c.internal)
+            format!(
+                "inbound: external {} connected to internal {}",
+                c.external, c.internal
+            )
         } else {
-            format!("outbound: internal {} connected to external {}", c.internal, c.external)
+            format!(
+                "outbound: internal {} connected to external {}",
+                c.internal, c.external
+            )
         };
         findings.push(Finding {
             kind: FindingKind::ExposedRemoteAccess,
@@ -3230,15 +3237,15 @@ pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
 /// Kill-chain stage of a finding kind (lower = earlier in the chain).
 fn stage_ordinal(kind: FindingKind) -> u8 {
     match kind {
-        FindingKind::HostSweep => 0,         // discovery
-        FindingKind::CleartextCreds => 1,    // credential access (exposure)
-        FindingKind::BruteForce => 1,        // credential access
-        FindingKind::LateralMovement => 2,   // lateral movement
-        FindingKind::PiiExposure => 3,       // collection (data at risk on the wire)
-        FindingKind::Beacon => 4,            // command-and-control
-        FindingKind::DataExfil => 5,         // exfiltration
-        FindingKind::DnsTunnel => 5,         // exfiltration / C2 over DNS
-        FindingKind::RuleMatch => 4,         // imported signature — treat as C2-stage by default
+        FindingKind::HostSweep => 0,           // discovery
+        FindingKind::CleartextCreds => 1,      // credential access (exposure)
+        FindingKind::BruteForce => 1,          // credential access
+        FindingKind::LateralMovement => 2,     // lateral movement
+        FindingKind::PiiExposure => 3,         // collection (data at risk on the wire)
+        FindingKind::Beacon => 4,              // command-and-control
+        FindingKind::DataExfil => 5,           // exfiltration
+        FindingKind::DnsTunnel => 5,           // exfiltration / C2 over DNS
+        FindingKind::RuleMatch => 4,           // imported signature — treat as C2-stage by default
         FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
         FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
         FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
@@ -4120,7 +4127,11 @@ mod tests {
         assert!(f[0].attack.iter().any(|a| a == "T1133"));
         assert_eq!(f[0].src_ip, "8.8.8.8", "inbound: external is the actor");
         assert_eq!(f[0].dst_ip.as_deref(), Some("10.0.0.9"));
-        assert!(f[0].title.contains("RDP"), "title names the service: {}", f[0].title);
+        assert!(
+            f[0].title.contains("RDP"),
+            "title names the service: {}",
+            f[0].title
+        );
 
         // Outbound: an internal host opened a VNC session out to a public address (pivot).
         let mut outbound = BehaviorTracker::new(DetectConfig::default());
@@ -4129,7 +4140,11 @@ mod tests {
         assert_eq!(g.len(), 1, "findings: {g:?}");
         assert_eq!(g[0].src_ip, "10.0.0.9", "outbound: internal is the actor");
         assert_eq!(g[0].dst_ip.as_deref(), Some("1.1.1.1"));
-        assert!(g[0].title.contains("VNC"), "title names the service: {}", g[0].title);
+        assert!(
+            g[0].title.contains("VNC"),
+            "title names the service: {}",
+            g[0].title
+        );
     }
 
     #[test]
@@ -4137,17 +4152,24 @@ mod tests {
         // Internal-only admin session — that is lateral movement's domain, not exposed access.
         let mut internal = BehaviorTracker::new(DetectConfig::default());
         internal.observe_flow_contact(ip(10, 0, 0, 1), ip(10, 0, 0, 2), 3389, SEC, 4000, 8000);
-        assert!(detect_exposed_remote_access(&internal, &ExposedRemoteAccessParams::default()).is_empty());
+        assert!(
+            detect_exposed_remote_access(&internal, &ExposedRemoteAccessParams::default())
+                .is_empty()
+        );
 
         // Boundary-crossing but a NON-admin port (HTTPS) — not a remote-admin service.
         let mut web = BehaviorTracker::new(DetectConfig::default());
         web.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 443, SEC, 4000, 8000);
-        assert!(detect_exposed_remote_access(&web, &ExposedRemoteAccessParams::default()).is_empty());
+        assert!(
+            detect_exposed_remote_access(&web, &ExposedRemoteAccessParams::default()).is_empty()
+        );
 
         // Bare handshake: the reverse direction is below the session floor (a probe, not a session).
         let mut probe = BehaviorTracker::new(DetectConfig::default());
         probe.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 3389, SEC, 4000, 60);
-        assert!(detect_exposed_remote_access(&probe, &ExposedRemoteAccessParams::default()).is_empty());
+        assert!(
+            detect_exposed_remote_access(&probe, &ExposedRemoteAccessParams::default()).is_empty()
+        );
 
         // Disabled switch yields nothing even on a qualifying session.
         let mut on = BehaviorTracker::new(DetectConfig::default());

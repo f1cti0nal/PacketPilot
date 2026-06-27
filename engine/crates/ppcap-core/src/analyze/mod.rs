@@ -433,7 +433,10 @@ pub fn run_source_visiting(
     findings.extend(detect_cleartext_creds(&tracker, &cfg.cleartext_creds));
     findings.extend(detect_pii_exposure(&tracker, &cfg.pii));
     findings.extend(lateral);
-    findings.extend(detect_exposed_remote_access(&tracker, &cfg.exposed_remote_access));
+    findings.extend(detect_exposed_remote_access(
+        &tracker,
+        &cfg.exposed_remote_access,
+    ));
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     findings.extend(detect_tls_cert_health(&tracker, &cfg.tls_cert_health));
     findings.extend(detect_weak_tls(&tracker, &cfg.weak_tls));
