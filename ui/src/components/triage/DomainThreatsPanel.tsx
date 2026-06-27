@@ -8,7 +8,7 @@ function DomainCard({ domain }: { domain: DomainThreat }) {
   const malicious = (domain.reputation ?? []).some((v) => v.status === "malicious");
   return (
     <li
-      className="flex flex-col gap-2.5 rounded-lg border bg-[var(--color-surface-2)] p-3"
+      className="flex flex-col gap-2.5 rounded-[var(--r-tile)] border bg-[var(--color-surface-2)] p-3"
       style={{ borderColor: malicious ? "color-mix(in srgb, var(--color-sev-critical) 50%, var(--color-border))" : "var(--color-border)" }}
     >
       <div className="flex flex-wrap items-center gap-2">

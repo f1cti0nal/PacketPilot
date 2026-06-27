@@ -56,7 +56,7 @@ describe("CertHealthPanel", () => {
     const { container } = render(
       <CertHealthPanel findings={[{ ...certFinding(), kind: "beacon" }]} />,
     );
-    expect(container.querySelector('[data-component="CertHealthPanel"]')).toBeNull();
+    expect(container.firstChild).toBeNull();
   });
 
   it("jumps to the server IP when a card is activated", () => {
