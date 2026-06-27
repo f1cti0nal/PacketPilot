@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
-import type { RecentEntry, IpThreat, Incident, Severity } from "../types";
+import type { RecentEntry, IpThreat, Incident, Finding, Severity } from "../types";
 import { diffSummaries } from "../lib/diff";
 import type { Changed, DiffResult, FieldDelta } from "../lib/diff";
 import { severityColor } from "../lib/palette";
+import { kindLabel } from "../lib/findingKinds";
+import { humanBytes, humanNumber } from "../lib/format";
 import { Panel, Card, SectionHeader } from "../cockpit/primitives";
 
 /** A signed delta number, colored: increases (worse) red, decreases green. */
@@ -35,9 +37,47 @@ function EntityRow({ ipOrHost, severity, kind }: { ipOrHost: string; severity: S
   );
 }
 
-function DiffSection<T extends IpThreat | Incident>({
-  title, result, label,
-}: { title: string; result: DiffResult<T>; label: (t: T) => string }) {
+/** A compact "+N new / −M resolved" change tally for a diffed entity class. */
+function ChangeStat({ label, added, removed }: { label: string; added: number; removed: number }) {
+  return (
+    <div className="rounded-[var(--r-tile)] bg-[var(--color-surface-2)] px-3 py-2">
+      <div className="t-label text-[var(--color-text-dim)]">{label}</div>
+      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 font-mono-num text-xs">
+        <span style={{ color: added > 0 ? "var(--color-sev-high)" : "var(--color-text-faint)" }}>+{added} new</span>
+        <span style={{ color: removed > 0 ? "var(--color-sev-low)" : "var(--color-text-faint)" }}>−{removed} resolved</span>
+      </div>
+    </div>
+  );
+}
+
+/** A before → after scalar with a signed delta (increase = worse/red, decrease = better/green). */
+function DeltaStat({
+  label, before, after, fmt,
+}: { label: string; before: number; after: number; fmt: (n: number) => string }) {
+  const delta = after - before;
+  const color = delta > 0 ? "var(--color-sev-high)" : delta < 0 ? "var(--color-sev-low)" : "var(--color-text-faint)";
+  return (
+    <div className="rounded-[var(--r-tile)] bg-[var(--color-surface-2)] px-3 py-2">
+      <div className="t-label text-[var(--color-text-dim)]">{label}</div>
+      <div className="mt-0.5 font-mono-num text-xs text-[var(--color-text)]">
+        {fmt(before)} → {fmt(after)}{" "}
+        <span style={{ color }}>
+          {delta === 0 ? "·" : `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DiffSection<T extends IpThreat | Incident | Finding>({
+  title, result, label, addedLabel = "New", removedLabel = "Resolved",
+}: {
+  title: string;
+  result: DiffResult<T>;
+  label: (t: T) => string;
+  addedLabel?: string;
+  removedLabel?: string;
+}) {
   const total = result.added.length + result.removed.length + result.changed.length;
   if (total === 0) return null;
   return (
@@ -49,13 +89,13 @@ function DiffSection<T extends IpThreat | Incident>({
       <div className="flex flex-col gap-3">
         {result.added.length > 0 && (
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-high)]">Added · {result.added.length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-high)]">{addedLabel} · {result.added.length}</div>
             {result.added.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="+" />)}
           </div>
         )}
         {result.removed.length > 0 && (
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-low)]">Removed · {result.removed.length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-low)]">{removedLabel} · {result.removed.length}</div>
             {result.removed.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="−" />)}
           </div>
         )}
@@ -64,7 +104,7 @@ function DiffSection<T extends IpThreat | Incident>({
             <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">Changed · {result.changed.length}</div>
             {result.changed.map((c: Changed<T>, i) => (
               <div key={i} className="flex flex-col gap-0.5">
-                <EntityRow ipOrHost={c.key} severity={c.after.severity} kind="~" />
+                <EntityRow ipOrHost={label(c.after)} severity={c.after.severity} kind="~" />
                 <div className="pl-5"><DeltaRow deltas={c.deltas} /></div>
               </div>
             ))}
@@ -86,11 +126,14 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
       </div>
     );
   }
-  const diff = diffSummaries(before.summary.summary, after.summary.summary);
+  const bSum = before.summary.summary;
+  const aSum = after.summary.summary;
+  const diff = diffSummaries(bSum, aSum);
   const threatTotal = diff.threats.added.length + diff.threats.removed.length + diff.threats.changed.length;
   const incidentTotal = diff.incidents.added.length + diff.incidents.removed.length + diff.incidents.changed.length;
+  const findingTotal = diff.findings.added.length + diff.findings.removed.length + diff.findings.changed.length;
   const severityChanged = diff.severity.some((b) => b.delta !== 0);
-  const noDiff = threatTotal === 0 && incidentTotal === 0 && !severityChanged;
+  const noDiff = threatTotal === 0 && incidentTotal === 0 && findingTotal === 0 && !severityChanged;
   const bothNonEmpty =
     ((before.summary.summary.ip_threats?.length ?? 0) + (before.summary.summary.incidents?.length ?? 0)) > 0 &&
     ((after.summary.summary.ip_threats?.length ?? 0) + (after.summary.summary.incidents?.length ?? 0)) > 0;
@@ -130,6 +173,17 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
         </div>
       )}
 
+      {/* Change summary — new / resolved tallies + headline scale deltas at a glance. */}
+      <Panel label="Change summary">
+        <div className="grid grid-cols-2 gap-2 px-3.5 pb-3 sm:grid-cols-3 lg:grid-cols-5">
+          <ChangeStat label="Findings" added={diff.findings.added.length} removed={diff.findings.removed.length} />
+          <ChangeStat label="Incidents" added={diff.incidents.added.length} removed={diff.incidents.removed.length} />
+          <ChangeStat label="Threat IPs" added={diff.threats.added.length} removed={diff.threats.removed.length} />
+          <DeltaStat label="Flows" before={bSum.total_flows} after={aSum.total_flows} fmt={humanNumber} />
+          <DeltaStat label="Bytes" before={bSum.total_bytes} after={aSum.total_bytes} fmt={humanBytes} />
+        </div>
+      </Panel>
+
       {/* Severity delta chips */}
       {diff.severity.length > 0 && (
         <Panel label="Severity delta">
@@ -156,8 +210,13 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
         </Panel>
       ) : (
         <div className="flex flex-col gap-4">
-          <DiffSection title="Threat IPs" result={diff.threats} label={(t: IpThreat) => t.ip} />
+          <DiffSection
+            title="Findings"
+            result={diff.findings}
+            label={(f: Finding) => `${kindLabel(f.kind)} · ${f.src_ip}${f.dst_ip ? ` → ${f.dst_ip}` : ""}`}
+          />
           <DiffSection title="Incidents" result={diff.incidents} label={(i: Incident) => i.host} />
+          <DiffSection title="Threat IPs" result={diff.threats} label={(t: IpThreat) => t.ip} />
         </div>
       )}
     </div>

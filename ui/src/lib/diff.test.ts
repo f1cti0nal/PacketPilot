@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { diffByKey, diffSummaries } from "./diff";
-import type { IpThreat, Incident, Summary, SeverityCounts, ReputationVerdict } from "../types";
+import type { IpThreat, Incident, Finding, Summary, SeverityCounts, ReputationVerdict } from "../types";
 
 const sev = (o: Partial<SeverityCounts> = {}): SeverityCounts => ({ critical: 0, high: 0, medium: 0, low: 0, info: 0, ...o });
 const summary = (over: Partial<Summary>): Summary =>
@@ -11,6 +11,10 @@ const threat = (o: Partial<IpThreat>): IpThreat =>
 const incident = (o: Partial<Incident>): Incident =>
   ({ host: "10.0.0.1", severity: "low", score: 10, title: "t", narrative: "n",
      stages: [], attack: [], findings: [], ...o } as Incident);
+const finding = (o: Partial<Finding>): Finding =>
+  ({ kind: "port_scan", severity: "low", score: 10, title: "t", src_ip: "10.0.0.1",
+     dst_ip: null, dst_port: null, attack: [], evidence: [],
+     interval_ns: null, jitter_cv: null, contacts: null, ...o } as Finding);
 const verdict = (status: ReputationVerdict["status"]): ReputationVerdict =>
   ({ source: "abuseipdb", status, malicious: status === "malicious", score: 0,
      tags: [], link: null, fetched_at: 0 } as ReputationVerdict);
@@ -56,6 +60,29 @@ describe("diffSummaries", () => {
     ]));
     expect(d.severity.find((s) => s.band === "critical")).toMatchObject({ before: 1, after: 3, delta: 2 });
     expect(d.shared).toBe(2); // ip 1.1.1.1 + host h1 present in both
+  });
+
+  it("diffs behavioral findings as new / resolved / changed by kind + endpoints", () => {
+    const before = summary({
+      findings: [
+        finding({ kind: "port_scan", src_ip: "10.0.0.1", score: 50, severity: "medium" }),
+        finding({ kind: "beacon", src_ip: "10.0.0.2", dst_ip: "5.5.5.5" }),
+      ],
+    });
+    const after = summary({
+      findings: [
+        finding({ kind: "port_scan", src_ip: "10.0.0.1", score: 80, severity: "high" }), // changed
+        finding({ kind: "dga", src_ip: "10.0.0.3" }), // new
+      ],
+    });
+    const d = diffSummaries(before, after);
+    expect(d.findings.added.map((f) => f.kind)).toEqual(["dga"]);
+    expect(d.findings.removed.map((f) => f.kind)).toEqual(["beacon"]);
+    expect(d.findings.changed[0].key).toBe("port_scan|10.0.0.1||");
+    expect(d.findings.changed[0].deltas).toEqual(expect.arrayContaining([
+      { field: "score", before: 50, after: 80 },
+      { field: "severity", before: "medium", after: "high" },
+    ]));
   });
 
   it("returns an empty diff for identical inputs", () => {

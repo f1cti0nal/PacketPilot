@@ -1,4 +1,4 @@
-import type { IpThreat, Incident, Summary, SeverityCounts, RepStatus } from "../types";
+import type { IpThreat, Incident, Finding, Summary, SeverityCounts, RepStatus } from "../types";
 
 export interface FieldDelta { field: string; before: string | number; after: string | number; }
 export interface Changed<T> { key: string; before: T; after: T; deltas: FieldDelta[]; }
@@ -7,6 +7,8 @@ export interface SeverityDelta { band: keyof SeverityCounts; before: number; aft
 export interface SummaryDiff {
   threats: DiffResult<IpThreat>;
   incidents: DiffResult<Incident>;
+  /** Behavioral findings, keyed by kind + endpoints: added = new in `after`, removed = resolved. */
+  findings: DiffResult<Finding>;
   severity: SeverityDelta[];
   /** Count of entities (threat IPs + incident hosts) present in BOTH captures. */
   shared: number;
@@ -70,11 +72,23 @@ function incidentDeltas(before: Incident, after: Incident): FieldDelta[] {
   return d;
 }
 
+/** Stable identity for a behavioral finding across captures: its kind plus the endpoints it names. */
+const findingKey = (f: Finding): string =>
+  `${f.kind}|${f.src_ip}|${f.dst_ip ?? ""}|${f.dst_port ?? ""}`;
+
+function findingDeltas(before: Finding, after: Finding): FieldDelta[] {
+  const d: FieldDelta[] = [];
+  if (before.score !== after.score) d.push({ field: "score", before: before.score, after: after.score });
+  if (before.severity !== after.severity) d.push({ field: "severity", before: before.severity, after: after.severity });
+  return d;
+}
+
 const SEV_BANDS: (keyof SeverityCounts)[] = ["critical", "high", "medium", "low", "info"];
 
 export function diffSummaries(before: Summary, after: Summary): SummaryDiff {
   const threats = diffByKey(before.ip_threats ?? [], after.ip_threats ?? [], (t) => t.ip, threatDeltas);
   const incidents = diffByKey(before.incidents ?? [], after.incidents ?? [], (i) => i.host, incidentDeltas);
+  const findings = diffByKey(before.findings ?? [], after.findings ?? [], findingKey, findingDeltas);
   const severity: SeverityDelta[] = SEV_BANDS.map((band) => {
     const b = before.severity_counts?.[band] ?? 0;
     const a = after.severity_counts?.[band] ?? 0;
@@ -87,5 +101,5 @@ export function diffSummaries(before: Summary, after: Summary): SummaryDiff {
   let shared = 0;
   for (const t of after.ip_threats ?? []) if (beforeKeys.has(`ip:${t.ip}`)) shared++;
   for (const i of after.incidents ?? []) if (beforeKeys.has(`host:${i.host}`)) shared++;
-  return { threats, incidents, severity, shared };
+  return { threats, incidents, findings, severity, shared };
 }

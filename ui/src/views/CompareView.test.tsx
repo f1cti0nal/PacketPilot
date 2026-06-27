@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CompareView } from "./CompareView";
-import type { RecentEntry, Summary, IpThreat, Incident, SeverityCounts } from "../types";
+import type { RecentEntry, Summary, IpThreat, Incident, Finding, SeverityCounts } from "../types";
 
 const sev = (o: Partial<SeverityCounts> = {}): SeverityCounts => ({ critical: 0, high: 0, medium: 0, low: 0, info: 0, ...o });
 const threat = (o: Partial<IpThreat>): IpThreat =>
@@ -10,10 +10,14 @@ const threat = (o: Partial<IpThreat>): IpThreat =>
      ioc: false, tags: [], attack: [], evidence: [], ...o } as IpThreat);
 const incident = (o: Partial<Incident>): Incident =>
   ({ host: "h1", severity: "low", score: 10, title: "t", narrative: "n", stages: [], attack: [], findings: [], ...o } as Incident);
+const finding = (o: Partial<Finding>): Finding =>
+  ({ kind: "port_scan", severity: "low", score: 10, title: "t", src_ip: "10.0.0.1",
+     dst_ip: null, dst_port: null, attack: [], evidence: [],
+     interval_ns: null, jitter_cv: null, contacts: null, ...o } as Finding);
 const ent = (id: string, s: Partial<Summary>): RecentEntry =>
   ({ id, name: id, analyzedAt: id === "a" ? 100 : 200, sizeBytes: 1, engineVersion: "x", origin: "browser",
      flowCount: 1, flowsCached: false,
-     summary: { summary: { ip_threats: [], incidents: [], severity_counts: sev(), ...s } } } as unknown as RecentEntry);
+     summary: { summary: { ip_threats: [], incidents: [], severity_counts: sev(), total_flows: 0, total_bytes: 0, ...s } } } as unknown as RecentEntry);
 
 describe("CompareView", () => {
   it("shows a graceful message when a capture is missing", () => {
@@ -72,6 +76,24 @@ describe("CompareView", () => {
     const after = ent("b", { incidents: [] });
     render(<CompareView before={before} after={after} onSwap={() => {}} />);
     expect(screen.getByText("victim.local")).toBeInTheDocument();
+  });
+
+  it("renders new and resolved findings with kind labels", () => {
+    const before = ent("a", { findings: [finding({ kind: "beacon", src_ip: "10.0.0.2" })] });
+    const after = ent("b", { findings: [finding({ kind: "dga", src_ip: "10.0.0.3" })] });
+    render(<CompareView before={before} after={after} onSwap={() => {}} />);
+    expect(screen.getByText(/DGA Domains/)).toBeInTheDocument(); // new
+    expect(screen.getByText(/C2 Beacon/)).toBeInTheDocument(); // resolved
+  });
+
+  it("shows a change summary with new / resolved tallies", () => {
+    const before = ent("a", { findings: [finding({ kind: "beacon", src_ip: "10.0.0.2" })] });
+    const after = ent("b", {
+      findings: [finding({ kind: "dga", src_ip: "10.0.0.3" }), finding({ kind: "port_scan", src_ip: "10.0.0.4" })],
+    });
+    render(<CompareView before={before} after={after} onSwap={() => {}} />);
+    expect(screen.getByText("+2 new")).toBeInTheDocument(); // Findings: 2 new
+    expect(screen.getByText(/1 resolved/)).toBeInTheDocument(); // Findings: 1 resolved
   });
 
   it("does not crash when a capture disappears while mounted (hooks order)", () => {
