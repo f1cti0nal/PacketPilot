@@ -90,6 +90,20 @@ describe("HomeView — returning user (workspace overview)", () => {
     expect(onOpen).toHaveBeenCalledWith(recent[0]);
   });
 
+  it("hides 'View all' when every capture already fits in the overview", () => {
+    render(<HomeView recent={recent} onOpen={vi.fn()} onLoadNew={vi.fn()} onViewAll={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /view all/i })).toBeNull();
+  });
+
+  it("shows 'View all' and routes to Recent when captures exceed the shown rows", () => {
+    const onViewAll = vi.fn();
+    const many = Array.from({ length: 7 }, (_, i) => entry(`id${i}`, `cap${i}.pcap`, cleanOutput, 1000 + i));
+    render(<HomeView recent={many} onOpen={vi.fn()} onLoadNew={vi.fn()} onViewAll={onViewAll} />);
+    const link = screen.getByRole("button", { name: /view all 7/i });
+    fireEvent.click(link);
+    expect(onViewAll).toHaveBeenCalledTimes(1);
+  });
+
   it("offers Compare only when at least two captures and a handler exist", () => {
     const onCompare = vi.fn();
     const { rerender } = render(

@@ -690,6 +690,7 @@ export function App() {
           onLoadNew={handleRequestLoad}
           onLoadSample={loadSample}
           onCompare={startCompare}
+          onViewAll={() => setTab("recent")}
           sampleAvailable={!IS_TAURI}
         />
       ) : summary.status === "loading" ? (

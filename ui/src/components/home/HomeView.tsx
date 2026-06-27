@@ -3,6 +3,7 @@
 // resume-recent, severity trend, and recurring threats — instead of the raw dashboard. Every
 // number is derived from the cached Recent summaries (offline; no engine re-run).
 import {
+  ArrowRight,
   Database,
   FileStack,
   GitCompare,
@@ -32,6 +33,8 @@ export interface HomeViewProps {
   onLoadSample?: () => void;
   /** Compare two captures (ids ordered older-first by analyzedAt). */
   onCompare?: (beforeId: string, afterId: string) => void;
+  /** Jump to the full Recent list (shown as "View all" when the overview truncates it). */
+  onViewAll?: () => void;
   /** Whether the bundled sample can be loaded (browser only — desktop has no bundled assets). */
   sampleAvailable?: boolean;
 }
@@ -48,6 +51,7 @@ export function HomeView({
   onLoadNew,
   onLoadSample,
   onCompare,
+  onViewAll,
   sampleAvailable = false,
 }: HomeViewProps) {
   if (recent.length === 0) {
@@ -66,6 +70,7 @@ export function HomeView({
       onOpen={onOpen}
       onLoadNew={onLoadNew}
       onCompare={onCompare}
+      onViewAll={onViewAll}
     />
   );
 }
@@ -153,12 +158,14 @@ function Overview({
   onOpen,
   onLoadNew,
   onCompare,
+  onViewAll,
 }: {
   recent: RecentEntry[];
   activeId: string | null;
   onOpen: (entry: RecentEntry) => void;
   onLoadNew: () => void;
   onCompare?: (beforeId: string, afterId: string) => void;
+  onViewAll?: () => void;
 }) {
   const roll = workspaceRollup(recent);
   const top = recent.slice(0, 5);
@@ -209,7 +216,19 @@ function Overview({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.5fr_1fr]">
         <section className="min-w-0">
-          <h2 className="t-label mb-2 text-[var(--color-text-dim)]">Continue analysis</h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="t-label text-[var(--color-text-dim)]">Continue analysis</h2>
+            {onViewAll && recent.length > top.length && (
+              <button
+                type="button"
+                onClick={onViewAll}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--color-accent)] transition-opacity hover:opacity-80"
+              >
+                View all {recent.length}
+                <ArrowRight className="h-3 w-3" aria-hidden />
+              </button>
+            )}
+          </div>
           <div className="overflow-hidden rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-panel)]">
             {top.map((entry) => (
               <RecentLine
