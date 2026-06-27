@@ -18,7 +18,7 @@ async function settle(page: Page) {
 /** Load the app already in `theme` (pre-paint), so sevColor() reads the right palette. */
 async function freshLoad(page: Page, theme: "dark" | "light") {
   await page.addInitScript((t) => localStorage.setItem("packetpilot.theme.v1", t as string), theme);
-  await page.goto("/");
+  await page.goto("/app");
   await waitForDashboard(page);
   await settle(page);
 }
@@ -87,6 +87,16 @@ test.describe("accessibility (axe, real browser) — WCAG A/AA incl. contrast", 
     await freshLoad(page, "dark");
     await page.keyboard.press("Shift+Slash");
     await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
+    const vs = await audit(page);
+    expect(vs, fmt(vs)).toEqual([]);
+  });
+
+  // The marketing landing page at "/" is a production surface — hold it to the same
+  // WCAG AA contrast bar as the app. It is self-contained dark (ignores the theme toggle).
+  test("landing page (/) — AA contrast", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".pp-landing")).toBeVisible({ timeout: 15_000 });
+    await settle(page);
     const vs = await audit(page);
     expect(vs, fmt(vs)).toEqual([]);
   });

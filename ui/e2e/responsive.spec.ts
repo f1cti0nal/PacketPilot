@@ -17,7 +17,7 @@ test.describe("responsive — tablet range has no horizontal scrollbar", () => {
   for (const w of TABLET) {
     test(`dashboard + Flows fit within ${w}px`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: 1100 });
-      await page.goto("/");
+      await page.goto("/app");
       await waitForDashboard(page);
       expect(await hasHorizontalScrollbar(page), `dashboard @ ${w}px`).toBe(false);
 
@@ -29,7 +29,7 @@ test.describe("responsive — tablet range has no horizontal scrollbar", () => {
 
   test("768px uses the desktop layout (Views switcher), not the mobile bottom bar", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1100 });
-    await page.goto("/");
+    await page.goto("/app");
     await waitForDashboard(page);
     // The inline Views switcher is desktop-only (mobile replaces it with the bottom tab bar).
     await expect(page.getByRole("navigation", { name: "Views" })).toBeVisible();

@@ -21,8 +21,8 @@
     --sev-medium: #fbbf24;
     --sev-low: #2dd4bf;
     --sev-info: #38bdf8;
-    --mono: ui-monospace, "SF Mono", Menlo, monospace;
-    --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "Geist", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --radius: 12px;
     --radius-sm: 8px;
     --radius-lg: 14px;
@@ -460,7 +460,6 @@
     font-family: var(--mono);
     font-size: 9px;
     color: var(--text-faint);
-    opacity: 0.7;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -470,7 +469,6 @@
     font-family: var(--mono);
     font-size: 10px;
     color: var(--text-faint);
-    opacity: 0.7;
   }
   /* stat tiles in sidebar */
   .pp-stat-tiles {
@@ -626,7 +624,6 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 3px 8px;
-    opacity: 0.82;
     white-space: nowrap;
   }
 
@@ -928,7 +925,6 @@
     background: rgba(244,63,94,0.04);
     border-color: rgba(244,63,94,0.14);
     color: var(--text-dim);
-    opacity: 0.85;
   }
   .pp-privacy-row-icon {
     width: 30px; height: 30px;
@@ -1481,63 +1477,63 @@
         <circle cx="22" cy="20" r="4.5" fill="#f43f5e" opacity="0.5"/>
         <circle cx="38" cy="20" r="4.5" fill="#fbbf24" opacity="0.5"/>
         <circle cx="54" cy="20" r="4.5" fill="#2dd4bf" opacity="0.5"/>
-        <text x="500" y="24" fill="#8b98ad" font-size="11" font-family="ui-monospace,monospace" text-anchor="middle">PacketPilot — Overview</text>
+        <text x="500" y="24" fill="#8b98ad" font-size="11" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">PacketPilot — Overview</text>
 
         <!-- stat tiles row -->
         <rect x="24" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
-        <text x="40" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Total flows</text>
-        <text x="40" y="103" fill="#e7edf7" font-size="22" font-family="ui-monospace,monospace">48,291</text>
+        <text x="40" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',system-ui,sans-serif">Total flows</text>
+        <text x="40" y="103" fill="#e7edf7" font-size="22" font-family="'Geist Mono',ui-monospace,monospace">48,291</text>
 
         <rect x="256" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
-        <text x="272" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Unique hosts</text>
-        <text x="272" y="103" fill="#e7edf7" font-size="22" font-family="ui-monospace,monospace">127</text>
+        <text x="272" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',system-ui,sans-serif">Unique hosts</text>
+        <text x="272" y="103" fill="#e7edf7" font-size="22" font-family="'Geist Mono',ui-monospace,monospace">127</text>
 
         <rect x="488" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
-        <text x="504" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Capture duration</text>
-        <text x="504" y="103" fill="#e7edf7" font-size="22" font-family="ui-monospace,monospace">4h 12m</text>
+        <text x="504" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',system-ui,sans-serif">Capture duration</text>
+        <text x="504" y="103" fill="#e7edf7" font-size="22" font-family="'Geist Mono',ui-monospace,monospace">4h 12m</text>
 
         <rect x="720" y="58" width="256" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
-        <text x="736" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Risk score</text>
-        <text x="736" y="103" fill="#f43f5e" font-size="22" font-family="ui-monospace,monospace">87 / 100</text>
+        <text x="736" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',system-ui,sans-serif">Risk score</text>
+        <text x="736" y="103" fill="#f43f5e" font-size="22" font-family="'Geist Mono',ui-monospace,monospace">87 / 100</text>
 
         <!-- ── SCORE WATERFALL panel ── -->
         <rect x="24" y="138" width="466" height="308" rx="10" fill="#0f1828" stroke="#223049" stroke-width="1"/>
-        <text x="44" y="168" fill="#e7edf7" font-size="13" font-family="system-ui,sans-serif">Score waterfall</text>
-        <text x="44" y="186" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">How each detection contributes to the risk score</text>
+        <text x="44" y="168" fill="#e7edf7" font-size="13" font-family="'Geist',system-ui,sans-serif">Score waterfall</text>
+        <text x="44" y="186" fill="#8b98ad" font-size="10" font-family="'Geist',system-ui,sans-serif">How each detection contributes to the risk score</text>
 
         <!-- waterfall bars (baseline at x=200) -->
         <!-- +42 Malware -->
         <rect x="200" y="206" width="210" height="26" rx="4" fill="rgba(244,63,94,0.18)" stroke="#f43f5e" stroke-width="1"/>
-        <text x="44" y="223" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">Malware DL</text>
-        <text x="412" y="223" fill="#f43f5e" font-size="10.5" font-family="ui-monospace,monospace">+42</text>
+        <text x="44" y="223" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">Malware DL</text>
+        <text x="412" y="223" fill="#f43f5e" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">+42</text>
         <!-- +25 Beaconing -->
         <rect x="200" y="240" width="125" height="26" rx="4" fill="rgba(251,146,60,0.18)" stroke="#fb923c" stroke-width="1"/>
-        <text x="44" y="257" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">Beaconing</text>
-        <text x="333" y="257" fill="#fb923c" font-size="10.5" font-family="ui-monospace,monospace">+25</text>
+        <text x="44" y="257" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">Beaconing</text>
+        <text x="333" y="257" fill="#fb923c" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">+25</text>
         <!-- +14 DGA -->
         <rect x="200" y="274" width="70" height="26" rx="4" fill="rgba(251,191,36,0.16)" stroke="#fbbf24" stroke-width="1"/>
-        <text x="44" y="291" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">DGA</text>
-        <text x="278" y="291" fill="#fbbf24" font-size="10.5" font-family="ui-monospace,monospace">+14</text>
+        <text x="44" y="291" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">DGA</text>
+        <text x="278" y="291" fill="#fbbf24" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">+14</text>
         <!-- +6 PortScan -->
         <rect x="200" y="308" width="30" height="26" rx="4" fill="rgba(45,212,191,0.16)" stroke="#2dd4bf" stroke-width="1"/>
-        <text x="44" y="325" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">Port scan</text>
-        <text x="238" y="325" fill="#2dd4bf" font-size="10.5" font-family="ui-monospace,monospace">+6</text>
+        <text x="44" y="325" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">Port scan</text>
+        <text x="238" y="325" fill="#2dd4bf" font-size="10.5" font-family="'Geist Mono',ui-monospace,monospace">+6</text>
 
         <!-- waterfall total line -->
         <line x1="44" y1="352" x2="470" y2="352" stroke="#223049" stroke-width="1"/>
-        <text x="44" y="375" fill="#e7edf7" font-size="11" font-family="ui-monospace,monospace">Total risk</text>
-        <text x="470" y="375" fill="#f43f5e" font-size="13" font-family="ui-monospace,monospace" text-anchor="end">87</text>
+        <text x="44" y="375" fill="#e7edf7" font-size="11" font-family="'Geist Mono',ui-monospace,monospace">Total risk</text>
+        <text x="470" y="375" fill="#f43f5e" font-size="13" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="end">87</text>
 
         <!-- export buttons -->
         <rect x="44" y="396" width="124" height="30" rx="7" fill="#1d4ed8"/>
-        <text x="106" y="415" fill="#ffffff" font-size="11" text-anchor="middle" font-family="system-ui,sans-serif">Export STIX &#8594;</text>
+        <text x="106" y="415" fill="#ffffff" font-size="11" text-anchor="middle" font-family="'Geist',system-ui,sans-serif">Export STIX &#8594;</text>
         <rect x="178" y="396" width="120" height="30" rx="7" fill="none" stroke="#223049" stroke-width="1"/>
-        <text x="238" y="415" fill="#93a1b7" font-size="11" text-anchor="middle" font-family="system-ui,sans-serif">HTML report</text>
+        <text x="238" y="415" fill="#93a1b7" font-size="11" text-anchor="middle" font-family="'Geist',system-ui,sans-serif">HTML report</text>
 
         <!-- ── THREAT GRAPH panel ── -->
         <rect x="510" y="138" width="466" height="308" rx="10" fill="#0f1828" stroke="#223049" stroke-width="1"/>
-        <text x="530" y="168" fill="#e7edf7" font-size="13" font-family="system-ui,sans-serif">Threat relationship graph</text>
-        <text x="530" y="186" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Central host and its associated indicators</text>
+        <text x="530" y="168" fill="#e7edf7" font-size="13" font-family="'Geist',system-ui,sans-serif">Threat relationship graph</text>
+        <text x="530" y="186" fill="#8b98ad" font-size="10" font-family="'Geist',system-ui,sans-serif">Central host and its associated indicators</text>
 
         <!-- edges -->
         <line x1="743" y1="310" x2="640" y2="240" stroke="#f43f5e" stroke-width="1.1" opacity="0.5"/>
@@ -1547,21 +1543,21 @@
 
         <!-- central host node -->
         <circle cx="743" cy="310" r="30" fill="#1b2740" stroke="#60a5fa" stroke-width="1.4"/>
-        <text x="743" y="307" fill="#93c5fd" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">10.0.1.42</text>
-        <text x="743" y="320" fill="#8b98ad" font-size="8" text-anchor="middle" font-family="system-ui,sans-serif">host</text>
+        <text x="743" y="307" fill="#93c5fd" font-size="10" text-anchor="middle" font-family="'Geist Mono',ui-monospace,monospace">10.0.1.42</text>
+        <text x="743" y="320" fill="#8b98ad" font-size="8" text-anchor="middle" font-family="'Geist',system-ui,sans-serif">host</text>
 
         <!-- IOC node -->
         <circle cx="640" cy="240" r="20" fill="#141e30" stroke="#f43f5e" stroke-width="1.2"/>
-        <text x="640" y="244" fill="#f43f5e" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">IOC</text>
+        <text x="640" y="244" fill="#f43f5e" font-size="9" text-anchor="middle" font-family="'Geist',system-ui,sans-serif">IOC</text>
         <!-- C2 node -->
         <circle cx="846" cy="240" r="20" fill="#141e30" stroke="#fb923c" stroke-width="1.2"/>
-        <text x="846" y="244" fill="#fb923c" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">C2</text>
+        <text x="846" y="244" fill="#fb923c" font-size="9" text-anchor="middle" font-family="'Geist',system-ui,sans-serif">C2</text>
         <!-- DGA node -->
         <circle cx="640" cy="380" r="20" fill="#141e30" stroke="#fbbf24" stroke-width="1.2"/>
-        <text x="640" y="384" fill="#fbbf24" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">DGA</text>
+        <text x="640" y="384" fill="#fbbf24" font-size="9" text-anchor="middle" font-family="'Geist',system-ui,sans-serif">DGA</text>
         <!-- DNS node -->
         <circle cx="846" cy="380" r="20" fill="#141e30" stroke="#8b98ad" stroke-width="1.2"/>
-        <text x="846" y="384" fill="#93a1b7" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">DNS</text>
+        <text x="846" y="384" fill="#93a1b7" font-size="9" text-anchor="middle" font-family="'Geist',system-ui,sans-serif">DNS</text>
       </svg>
     </div>
   </div>

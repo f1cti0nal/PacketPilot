@@ -26,7 +26,7 @@ const DOWNLOADS = [
 
 test.describe("PacketPilot — exports & recent", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     await waitForDashboard(page);
   });
 

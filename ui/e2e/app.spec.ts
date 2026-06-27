@@ -7,7 +7,7 @@ async function waitForDashboard(page: Page) {
 
 test.describe("PacketPilot — desktop", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     await waitForDashboard(page);
   });
 
@@ -79,7 +79,7 @@ test.describe("PacketPilot — desktop", () => {
   test("no uncaught exceptions during a load + interaction flow", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(`${e.name}: ${e.message}`));
-    await page.goto("/");
+    await page.goto("/app");
     await waitForDashboard(page);
     await page.getByRole("button", { name: "Flows", exact: true }).click();
     await expect(page.getByLabel("Filter flows")).toBeVisible();
@@ -91,7 +91,7 @@ test.describe("PacketPilot — mobile", () => {
   test.use({ viewport: { width: 390, height: 800 } });
 
   test("uses the bottom tab bar and opens the threat drawer", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     await waitForDashboard(page);
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
     await expect(page.getByRole("complementary")).toHaveCount(0); // no always-on rail

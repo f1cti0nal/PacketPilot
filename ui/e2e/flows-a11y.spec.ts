@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 const PCAP = "e2e/fixtures/cap.pcap";
 
 async function uploadAndOpenFlows(page: Page) {
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByText("Packets").first()).toBeVisible({ timeout: 15_000 });
   const dialog = page.getByRole("dialog", { name: "Load capture" });
   await page.getByRole("button", { name: "Load capture" }).click();

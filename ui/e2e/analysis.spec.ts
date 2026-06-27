@@ -23,7 +23,7 @@ async function uploadPcap(page: Page) {
 
 test.describe("PacketPilot — core analysis flows", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     await waitForDashboard(page);
   });
 
