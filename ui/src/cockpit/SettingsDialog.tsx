@@ -86,99 +86,134 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
-  return (
-    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-[28rem] max-h-[90vh] overflow-y-auto rounded-lg bg-[var(--color-surface)] p-5 text-[var(--color-text)]">
-        {/* Reputation section */}
-        <h2 className="text-sm font-semibold">Online reputation</h2>
-        <label className="mt-3 flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enable reputation lookups
-        </label>
-        <label className="mt-3 flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={domainEnabledState} onChange={(e) => setDomainEnabledState(e.target.checked)} /> Enable domain reputation lookups (sends SNI hostnames to VirusTotal)
-        </label>
-        {!isTauri() && (
-          <label className="mt-3 block text-xs">Proxy URL (required in the browser)
-            <input className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs" value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="https://your-relay.example/relay" />
-          </label>
-        )}
-        {PROVIDERS.map((p) => (
-          <label key={p} className="mt-3 block text-xs uppercase">{p}
-            <input type="password" className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs"
-              value={keys[p]} onChange={(e) => setKeys({ ...keys, [p]: e.target.value })}
-              placeholder={isTauri() ? "stored in OS keychain" : "stored locally"} />
-          </label>
-        ))}
+  const inputCls = "mt-1 w-full rounded-[var(--r-micro)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 font-mono text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]";
 
-        {/* AI section */}
-        <h2 className="mt-6 text-sm font-semibold">AI Analyst</h2>
-        <label className="mt-3 flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={aiEnabled} onChange={(e) => setAiEnabledState(e.target.checked)} /> Enable AI analysis
-        </label>
-        <label className="mt-3 block text-xs">Preset
-          <select
-            className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs"
-            value={aiPreset}
-            onChange={(e) => handlePresetChange(e.target.value)}
-            aria-label="Preset"
-          >
-            {AI_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>{p.label}</option>
-            ))}
-          </select>
-        </label>
-        <label className="mt-3 block text-xs">Base URL
-          <input
-            className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs"
-            value={aiBaseUrl}
-            onChange={(e) => { setAiBaseUrlState(e.target.value); setAiPreset("custom"); }}
-            placeholder="https://api.anthropic.com/v1"
-            aria-label="Base URL"
-          />
-        </label>
-        <label className="mt-3 block text-xs">Model
-          <input
-            className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs"
-            value={aiModel}
-            onChange={(e) => { setAiModelState(e.target.value); setAiPreset("custom"); }}
-            placeholder="claude-opus-4-8"
-            aria-label="Model"
-          />
-        </label>
-        <label className="mt-3 block text-xs">API Key
-          <input
-            type="password"
-            className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs"
-            value={aiKey}
-            onChange={(e) => setAiKeyState(e.target.value)}
-            placeholder={isTauri() ? "stored in OS keychain" : "stored locally"}
-            aria-label="API Key"
-          />
-        </label>
-        {!isTauri() && (
-          <label className="mt-3 block text-xs">Proxy URL (required in the browser for cloud providers)
-            <input
-              className="mt-1 w-full rounded bg-[var(--color-bg)] p-1 font-mono text-xs"
-              value={aiProxy}
-              onChange={(e) => setAiProxy(e.target.value)}
-              placeholder="https://your-relay.example/ai-relay"
-              aria-label="Proxy URL"
-            />
-            {aiEnabled && aiProxy.trim() === "" && !isLoopbackUrl(aiBaseUrl) && (
-              <span className="mt-1 block text-[0.7rem] text-[var(--color-text-dim)]">
-                ⚠ A browser can't reach a cloud provider directly (CORS + your key would be exposed).
-                Set a relay here, or pick the Ollama (local) preset, or use the desktop app.
-              </span>
-            )}
-          </label>
-        )}
+  return (
+    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-[30rem] max-h-[90vh] overflow-y-auto rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-[var(--sh-float)]">
+        {/* Dialog header */}
+        <div className="border-b border-[var(--color-border)] px-5 py-4">
+          <h2 className="text-sm font-medium text-[var(--color-text)]">Settings</h2>
+        </div>
+
+        <div className="px-5 py-4 space-y-6">
+          {/* Reputation section */}
+          <section>
+            <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">Online reputation</h3>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2.5 text-xs text-[var(--color-text-dim)] cursor-pointer">
+                <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="rounded" /> Enable reputation lookups
+              </label>
+              <label className="flex items-center gap-2.5 text-xs text-[var(--color-text-dim)] cursor-pointer">
+                <input type="checkbox" checked={domainEnabledState} onChange={(e) => setDomainEnabledState(e.target.checked)} className="rounded" /> Enable domain reputation lookups (sends SNI hostnames to VirusTotal)
+              </label>
+              {!isTauri() && (
+                <label className="block text-xs text-[var(--color-text-dim)]">
+                  Proxy URL (required in the browser)
+                  <input className={inputCls} value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="https://your-relay.example/relay" />
+                </label>
+              )}
+              {PROVIDERS.map((p) => (
+                <label key={p} className="block text-xs uppercase text-[var(--color-text-faint)]">{p}
+                  <input type="password" className={inputCls}
+                    value={keys[p]} onChange={(e) => setKeys({ ...keys, [p]: e.target.value })}
+                    placeholder={isTauri() ? "stored in OS keychain" : "stored locally"} />
+                </label>
+              ))}
+            </div>
+          </section>
+
+          {/* AI section */}
+          <section>
+            <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">AI Analyst</h3>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2.5 text-xs text-[var(--color-text-dim)] cursor-pointer">
+                <input type="checkbox" checked={aiEnabled} onChange={(e) => setAiEnabledState(e.target.checked)} className="rounded" /> Enable AI analysis
+              </label>
+              <label className="block text-xs text-[var(--color-text-dim)]">
+                Preset
+                <select
+                  className={inputCls}
+                  value={aiPreset}
+                  onChange={(e) => handlePresetChange(e.target.value)}
+                  aria-label="Preset"
+                >
+                  {AI_PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-[var(--color-text-dim)]">
+                Base URL
+                <input
+                  className={inputCls}
+                  value={aiBaseUrl}
+                  onChange={(e) => { setAiBaseUrlState(e.target.value); setAiPreset("custom"); }}
+                  placeholder="https://api.anthropic.com/v1"
+                  aria-label="Base URL"
+                />
+              </label>
+              <label className="block text-xs text-[var(--color-text-dim)]">
+                Model
+                <input
+                  className={inputCls}
+                  value={aiModel}
+                  onChange={(e) => { setAiModelState(e.target.value); setAiPreset("custom"); }}
+                  placeholder="claude-opus-4-8"
+                  aria-label="Model"
+                />
+              </label>
+              <label className="block text-xs text-[var(--color-text-dim)]">
+                API Key
+                <input
+                  type="password"
+                  className={inputCls}
+                  value={aiKey}
+                  onChange={(e) => setAiKeyState(e.target.value)}
+                  placeholder={isTauri() ? "stored in OS keychain" : "stored locally"}
+                  aria-label="API Key"
+                />
+              </label>
+              {!isTauri() && (
+                <label className="block text-xs text-[var(--color-text-dim)]">
+                  Proxy URL (required in the browser for cloud providers)
+                  <input
+                    className={inputCls}
+                    value={aiProxy}
+                    onChange={(e) => setAiProxy(e.target.value)}
+                    placeholder="https://your-relay.example/ai-relay"
+                    aria-label="Proxy URL"
+                  />
+                  {aiEnabled && aiProxy.trim() === "" && !isLoopbackUrl(aiBaseUrl) && (
+                    <span className="mt-1.5 block text-[11px] text-[var(--color-text-faint)]">
+                      A browser can't reach a cloud provider directly (CORS + your key would be exposed).
+                      Set a relay here, or pick the Ollama (local) preset, or use the desktop app.
+                    </span>
+                  )}
+                </label>
+              )}
+            </div>
+          </section>
+        </div>
 
         {error && (
-          <p className="mt-3 text-xs text-[var(--color-severity-high,#f87171)]">{error}</p>
+          <p className="px-5 pb-3 text-xs text-[var(--color-sev-high)]">{error}</p>
         )}
-        <div className="mt-4 flex justify-end gap-2">
-          <button className="t-tag" onClick={onClose}>Cancel</button>
-          <button className="t-tag font-semibold" onClick={save}>Save</button>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
+          <button
+            className="rounded-[var(--r-micro)] border border-[var(--color-border)] bg-transparent px-3 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-[var(--r-micro)] bg-[var(--color-accent-deep)] px-3 py-1.5 text-xs font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90"
+            onClick={save}
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>

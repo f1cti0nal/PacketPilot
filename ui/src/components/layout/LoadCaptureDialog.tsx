@@ -118,7 +118,7 @@ export function LoadCaptureDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 id={titleId} className="text-sm font-semibold">
+          <h2 id={titleId} className="text-sm font-medium">
             Load capture
           </h2>
           <button

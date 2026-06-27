@@ -189,7 +189,7 @@ export function DetailFlyout({
             <button
               type="button"
               onClick={() => onJumpToFlows(incident.host)}
-              className="glow-live flex w-full items-center justify-center gap-2 rounded-[var(--r-tile)] border border-[color:color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_12%,transparent)] px-3 py-2 text-sm font-semibold text-[var(--color-accent)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
+              className="glow-live flex w-full items-center justify-center gap-2 rounded-[var(--r-tile)] border border-[color:color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_12%,transparent)] px-3 py-2 text-sm font-medium text-[var(--color-accent)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
             >
               View flows for {incident.host}
               <ArrowRight size={15} />
