@@ -32,7 +32,7 @@
   --color-spine-violet: #7c5cff;
 
   /* Severity — byte-identical to the engine contract */
-  --color-sev-critical: #f8546e;     /* brightened from #f43f5e: new blue surfaces shift chip-tint bg, requires +lum for AA */
+  --color-sev-critical: #f43f5e;     /* engine contract — do NOT change; chip AA is solved by outlined style, not hue */
   --color-sev-high: #fb923c;
   --color-sev-medium: #fbbf24;
   --color-sev-low: #2dd4bf;

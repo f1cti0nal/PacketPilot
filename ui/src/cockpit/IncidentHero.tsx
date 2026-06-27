@@ -145,7 +145,7 @@ export function IncidentHero({
             type="button"
             onClick={() => onPivot(incident.host)}
             className="hidden shrink-0 items-center gap-1.5 rounded-[var(--r-tile)] border px-3 py-1.5 text-xs font-semibold transition-colors sm:inline-flex"
-            style={{ color, borderColor: `color-mix(in srgb, ${color} 50%, var(--color-border))`, background: `color-mix(in srgb, ${color} 10%, transparent)` }}
+            style={{ color, borderColor: `color-mix(in srgb, ${color} 50%, var(--color-border))`, background: "var(--color-surface-2)" }}
           >
             <Crosshair size={13} />
             Pivot to host
@@ -194,7 +194,7 @@ export function IncidentHero({
                   aria-label={`Open details: ${f.title}`}
                   className="flex w-full items-center gap-2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] px-2.5 py-2 text-left transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]"
                 >
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-[var(--r-micro)] px-1.5 py-0.5 t-tag font-semibold" style={{ color: fc, background: `color-mix(in srgb, ${fc} 14%, transparent)` }}>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-[var(--r-micro)] px-1.5 py-0.5 t-tag font-semibold" style={{ color: fc, background: "var(--color-surface-2)" }}>
                     <Icon size={11} />
                     {meta.label}
                   </span>

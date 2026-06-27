@@ -54,7 +54,7 @@ export function TriageBadge({ captureKey, ip }: { captureKey: string; ip: string
       style={{
         color: `var(${meta.cssVar})`,
         borderColor: `var(${meta.cssVar})`,
-        backgroundColor: `color-mix(in srgb, var(${meta.cssVar}) 14%, transparent)`,
+        backgroundColor: "var(--color-surface-2)",
       }}
     >
       {meta.label}
@@ -85,7 +85,7 @@ export function TriageAnnotation({ captureKey, ip }: { captureKey: string; ip: s
                   ? {
                       color: `var(${meta.cssVar})`,
                       borderColor: `var(${meta.cssVar})`,
-                      backgroundColor: `color-mix(in srgb, var(${meta.cssVar}) 16%, transparent)`,
+                      backgroundColor: "var(--color-surface-2)",
                     }
                   : {
                       color: "var(--color-text-dim)",

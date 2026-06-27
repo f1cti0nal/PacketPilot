@@ -23,7 +23,7 @@ function SeverityChip({ severity }: { severity: IpThreat["severity"] }) {
       style={{
         color,
         borderColor: color,
-        backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+        backgroundColor: "var(--color-surface-2)",
       }}
     >
       <span
@@ -148,7 +148,7 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
               className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold"
               style={{
                 color: "var(--color-sev-critical)",
-                backgroundColor: "color-mix(in srgb, var(--color-sev-critical) 16%, transparent)",
+                backgroundColor: "var(--color-surface-2)",
               }}
               title={[fp.ja3 && `JA3: ${fp.ja3}`, fp.ja4 && `JA4: ${fp.ja4}`].filter(Boolean).join("\n")}
             >

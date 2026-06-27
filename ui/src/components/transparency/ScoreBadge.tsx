@@ -8,7 +8,7 @@ export function ScoreBadge({ score, severity }: { score: number; severity?: Seve
   return (
     <span
       className="font-mono-num inline-flex items-center rounded px-1.5 py-0.5 text-[0.7rem] font-semibold tabular-nums"
-      style={{ color, backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)` }}
+      style={{ color, backgroundColor: "var(--color-surface-2)" }}
       title={`Score ${clamped}/100`}
     >
       {clamped}

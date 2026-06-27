@@ -55,7 +55,7 @@ export function SeverityChip({ severity, className }: { severity: Severity; clas
         "inline-flex shrink-0 items-center gap-1.5 rounded-[var(--r-chip)] border px-2 py-0.5 t-tag font-semibold uppercase",
         className,
       )}
-      style={{ color, borderColor: color, backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)` }}
+      style={{ color, borderColor: color, backgroundColor: "var(--color-surface-2)" }}
     >
       <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
       {label}

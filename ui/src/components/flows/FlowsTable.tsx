@@ -56,7 +56,7 @@ function CategoryChip({ category }: { category: string }) {
       style={{
         color,
         borderColor: color,
-        backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+        backgroundColor: "var(--color-surface-2)",
       }}
       title={categoryLabel(category)}
     >
@@ -80,7 +80,7 @@ function SeverityCell({ flow }: { flow: FlowRow }) {
         style={{
           color,
           borderColor: color,
-          backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+          backgroundColor: "var(--color-surface-2)",
         }}
       >
         <span

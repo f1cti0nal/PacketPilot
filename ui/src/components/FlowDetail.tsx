@@ -123,7 +123,7 @@ function CategoryChip({ flow }: { flow: FlowRow }) {
       style={{
         color,
         borderColor: color,
-        backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+        backgroundColor: "var(--color-surface-2)",
       }}
       title={`Severity: ${sevLabel}`}
     >
@@ -502,9 +502,7 @@ export function FlowDetail({
             style={{
               color: severityColor(flow.severity),
               borderColor: severityColor(flow.severity),
-              backgroundColor: `color-mix(in srgb, ${severityColor(
-                flow.severity,
-              )} 14%, transparent)`,
+              backgroundColor: "var(--color-surface-2)",
             }}
           >
             <span
