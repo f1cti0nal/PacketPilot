@@ -116,7 +116,7 @@ export function CommandPalette({
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
         ref={panelRef}
-        className="glass-panel relative w-full max-w-lg rounded-[var(--r-card)] border border-[var(--color-border)]"
+        className="glass-band relative w-full max-w-lg rounded-[var(--r-card)] border border-[var(--color-border)]"
         style={{ boxShadow: "var(--sh-float)" }}
         onKeyDown={onKeyDown}
       >

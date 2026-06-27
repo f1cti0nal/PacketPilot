@@ -61,7 +61,7 @@ export function ShortcutsOverlay({
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
       <div
-        className="glass-panel relative w-full max-w-md rounded-[var(--r-card)] border border-[var(--color-border)]"
+        className="glass-band relative w-full max-w-md rounded-[var(--r-card)] border border-[var(--color-border)]"
         style={{ boxShadow: "var(--sh-float)" }}
       >
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
