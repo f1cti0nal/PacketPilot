@@ -7,7 +7,7 @@ import { SEVERITY_ORDER } from "../lib/severity";
 import { humanBytes, humanNumber } from "../lib/format";
 
 import { sevColor } from "../cockpit/viz";
-import { Card, SectionLabel, ScoreBar, IocDot, MitreTag } from "../cockpit/primitives";
+import { Panel, ScoreBar, IocDot, MitreTag, ProvenanceChip, Tag } from "../cockpit/primitives";
 import { KpiCluster } from "../cockpit/KpiCluster";
 import { IncidentHero } from "../cockpit/IncidentHero";
 import { DetailFlyout } from "../cockpit/DetailFlyout";
@@ -134,8 +134,12 @@ export function Dashboard({
           />
         )}
         {secondary.length > 0 && (
-          <div>
-            <SectionLabel className="mb-2">Other incidents · {secondary.length}</SectionLabel>
+          <Panel
+            label="INCIDENTS"
+            title="Other incidents"
+            count={secondary.length}
+            bodyClassName="p-3"
+          >
             <div className="grid grid-cols-1 gap-[var(--density-gap)] xl:grid-cols-2">
               {secondary.map((inc, i) => (
                 <IncidentHero
@@ -146,7 +150,7 @@ export function Dashboard({
                 />
               ))}
             </div>
-          </div>
+          </Panel>
         )}
 
         {/* Threat watchlist — the ranked scored hosts (the rail, as a card) */}
@@ -246,18 +250,18 @@ function ThreatWatchlist({
   if (top.length === 0) return null;
 
   return (
-    <Card
+    <Panel
       label="THREATS"
       title="Threat watchlist"
-      right={
-        <span className="font-mono-num t-tag text-[var(--color-text-dim)]">
-          {humanNumber(threats.length)} scored
-        </span>
-      }
+      count={`${humanNumber(threats.length)} scored`}
+      bodyClassName="p-3"
     >
       <ul className="grid grid-cols-1 gap-[var(--density-gap-sm)] md:grid-cols-2 xl:grid-cols-3">
         {top.map((t) => {
           const color = sevColor(t.severity);
+          // Parse cloud tags for ProvenanceChip rendering
+          const cloudTag = (t.tags ?? []).find((tag) => tag.startsWith("cloud:"));
+          const cloudProvider = cloudTag ? cloudTag.slice(6) : null;
           return (
             <li key={t.ip} className="relative">
               <button
@@ -273,13 +277,14 @@ function ThreatWatchlist({
                   </span>
                   <TriageBadge captureKey={captureKey} ip={t.ip} />
                   {t.ioc && <IocDot />}
-                  <span className="font-mono-num shrink-0 text-xs font-semibold tabular-nums" style={{ color }}>
+                  {cloudProvider && <ProvenanceChip provider={cloudProvider} />}
+                  <span className="font-mono-num shrink-0 text-xs font-medium tabular-nums" style={{ color }}>
                     {t.score}
                   </span>
                 </div>
                 <ScoreBar score={t.score} severity={t.severity} />
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="t-tag uppercase text-[var(--color-text-faint)]">{t.ip_class}</span>
+                  <Tag>{t.ip_class}</Tag>
                   <span className="font-mono-num t-tag text-[var(--color-text-faint)]">
                     {humanNumber(t.flows)} fl · {humanBytes(t.bytes)}
                   </span>
@@ -315,7 +320,7 @@ function ThreatWatchlist({
           );
         })}
       </ul>
-    </Card>
+    </Panel>
   );
 }
 

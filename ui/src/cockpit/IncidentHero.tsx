@@ -6,7 +6,7 @@ import { durationHumanNs, humanNumber } from "../lib/format";
 import type { Finding, FindingKind, Incident } from "../types";
 import { kindMeta } from "../lib/findingKinds";
 import { sevColor } from "./viz";
-import { SeverityChip, MitreTag, SectionLabel } from "./primitives";
+import { SeverityChip, MitreTag, SectionLabel, Panel } from "./primitives";
 import { ScoreRing, BeaconRadar, RadarStat } from "./instruments";
 
 const KIND_STAGE: Record<FindingKind, string> = {
@@ -124,7 +124,11 @@ export function IncidentHero({
   const beacon = incident.findings.find((f) => f.kind === "beacon");
 
   return (
-    <article className={cn("card relative p-5", primary ? "glow-critical" : "glow-high")}>
+    <Panel
+      accent={incident.severity}
+      className={cn("relative", primary ? "glow-critical" : "glow-high")}
+      bodyClassName="p-5"
+    >
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
         <ScoreRing score={incident.score} severity={incident.severity} size={primary ? 112 : 92} breathing={primary} />
@@ -144,7 +148,7 @@ export function IncidentHero({
           <button
             type="button"
             onClick={() => onPivot(incident.host)}
-            className="hidden shrink-0 items-center gap-1.5 rounded-[var(--r-tile)] border px-3 py-1.5 text-xs font-semibold transition-colors sm:inline-flex"
+            className="hidden shrink-0 items-center gap-1.5 rounded-[var(--r-tile)] border px-3 py-1.5 text-xs font-medium transition-colors sm:inline-flex"
             style={{ color, borderColor: `color-mix(in srgb, ${color} 50%, var(--color-border))`, background: "var(--color-surface-2)" }}
           >
             <Crosshair size={13} />
@@ -194,7 +198,7 @@ export function IncidentHero({
                   aria-label={`Open details: ${f.title}`}
                   className="flex w-full items-center gap-2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] px-2.5 py-2 text-left transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]"
                 >
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-[var(--r-micro)] px-1.5 py-0.5 t-tag font-semibold" style={{ color: fc, background: "var(--color-surface-2)" }}>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-[var(--r-micro)] px-1.5 py-0.5 t-tag font-medium" style={{ color: fc, background: "var(--color-surface-2)" }}>
                     <Icon size={11} />
                     {meta.label}
                   </span>
@@ -206,7 +210,7 @@ export function IncidentHero({
           })}
         </ul>
       </div>
-    </article>
+    </Panel>
   );
 }
 

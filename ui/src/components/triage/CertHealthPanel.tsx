@@ -1,7 +1,7 @@
 import { ShieldAlert } from "lucide-react";
 import type { Finding } from "../../types";
 import { humanNumber } from "../../lib/format";
-import { SeverityChip, MitreTag } from "../../cockpit/primitives";
+import { SeverityChip, MitreTag, Panel } from "../../cockpit/primitives";
 import { EvidenceList } from "../transparency/EvidenceList";
 
 function CertCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) {
@@ -12,7 +12,7 @@ function CertCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) 
     <>
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text)]"
+          className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)]"
           title={f.title}
         >
           {f.title}
@@ -42,7 +42,7 @@ function CertCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) 
           type="button"
           onClick={() => onJump(pivot)}
           aria-label={`View flows for ${pivot}`}
-          className="flex w-full flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-left transition-colors hover:border-[var(--color-border-strong)]"
+          className="flex w-full flex-col gap-2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-left transition-colors hover:border-[var(--color-border-strong)]"
         >
           {content}
         </button>
@@ -51,7 +51,7 @@ function CertCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) 
   }
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+    <li className="flex flex-col gap-2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       {content}
     </li>
   );
@@ -74,25 +74,21 @@ export function CertHealthPanel({
   );
   if (tls.length === 0) return null;
   return (
-    <section
+    <Panel
       data-component="CertHealthPanel"
-      aria-label="TLS issues"
-      className="rounded-lg border border-border bg-surface p-4 shadow-sm"
+      label="TLS POSTURE"
+      title="TLS issues"
+      count={`${humanNumber(tls.length)} flagged`}
+      icon={<ShieldAlert size={14} style={{ color: "var(--color-sev-high)" }} />}
+      accent="high"
+      bodyClassName="p-3"
     >
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
-          <ShieldAlert size={15} className="text-[var(--color-sev-high)]" /> TLS issues
-        </h2>
-        <span className="font-mono-num text-xs text-[var(--color-text-faint)]">
-          {humanNumber(tls.length)} flagged
-        </span>
-      </div>
       <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
         {tls.slice(0, 50).map((f, i) => (
           <CertCard key={`${f.kind}-${f.src_ip}-${f.dst_ip ?? "nodst"}-${i}`} f={f} onJump={onJump} />
         ))}
       </ul>
-    </section>
+    </Panel>
   );
 }
 

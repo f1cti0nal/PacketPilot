@@ -1,6 +1,7 @@
 import { Globe } from "lucide-react";
 import type { DomainThreat } from "../../types";
 import { humanBytes, humanNumber } from "../../lib/format";
+import { Panel } from "../../cockpit/primitives";
 import { ProviderVerdictList } from "../transparency/ProviderVerdictList";
 
 function DomainCard({ domain }: { domain: DomainThreat }) {
@@ -12,9 +13,9 @@ function DomainCard({ domain }: { domain: DomainThreat }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <Globe size={13} className="shrink-0 text-[var(--color-text-faint)]" aria-hidden />
-        <span className="font-mono-num min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text)]">{domain.host}</span>
+        <span className="font-mono-num min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)]">{domain.host}</span>
         {malicious && (
-          <span className="t-tag font-semibold" style={{ color: "var(--color-sev-critical)" }} aria-label="malicious">⚠</span>
+          <span className="t-tag font-medium" style={{ color: "var(--color-sev-critical)" }} aria-label="malicious">⚠</span>
         )}
       </div>
       <div className="flex items-center gap-3 text-xs text-[var(--color-text-dim)]">
@@ -31,16 +32,16 @@ export function DomainThreatsPanel({ domains }: { domains: DomainThreat[] }) {
   if (!domains || domains.length === 0) return null;
   const top = domains.slice(0, 12);
   return (
-    <section data-component="DomainThreatsPanel" aria-label="Domains" className="rounded-lg border border-border bg-surface p-4 shadow-sm">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
-          <Globe size={15} className="text-[var(--color-accent)]" /> Domains
-        </h2>
-        <span className="font-mono-num text-xs text-[var(--color-text-faint)]">{humanNumber(domains.length)} seen</span>
-      </div>
+    <Panel
+      label="DNS / SNI"
+      title="Domains"
+      count={`${humanNumber(domains.length)} seen`}
+      icon={<Globe size={14} />}
+      bodyClassName="p-3"
+    >
       <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {top.map((d) => <DomainCard key={d.host} domain={d} />)}
       </ul>
-    </section>
+    </Panel>
   );
 }

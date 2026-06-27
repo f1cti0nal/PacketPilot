@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Panel, StatTile, ProvenanceChip, Toolbar, SectionHeader } from "./primitives";
+import { Panel, StatTile, ProvenanceChip, Tag, Toolbar, SectionHeader } from "./primitives";
 
 describe("Panel", () => {
   it("renders a titled console panel with a count and severity accent", () => {
@@ -26,6 +26,15 @@ describe("StatTile + chips", () => {
   it("renders a cloud provenance chip with the provider", () => {
     render(<ProvenanceChip provider="AWS" />);
     expect(screen.getByText(/AWS/)).toBeInTheDocument();
+  });
+  it("Tag neutral renders children", () => {
+    render(<Tag>aws-ec2</Tag>);
+    expect(screen.getByText("aws-ec2")).toBeInTheDocument();
+  });
+  it("Tag accent applies accent color style", () => {
+    const { container } = render(<Tag tone="accent">internal</Tag>);
+    const span = container.querySelector("span");
+    expect(span?.getAttribute("style") || "").toMatch(/color-accent/);
   });
 });
 

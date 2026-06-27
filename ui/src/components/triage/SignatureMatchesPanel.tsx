@@ -1,7 +1,7 @@
 import { ShieldAlert } from "lucide-react";
 import type { Finding } from "../../types";
 import { humanNumber } from "../../lib/format";
-import { SeverityChip, MitreTag } from "../../cockpit/primitives";
+import { SeverityChip, MitreTag, Panel } from "../../cockpit/primitives";
 
 /** Extract the rule sid from a finding's evidence (defensive; null if absent). */
 function sidOf(f: Finding): string | null {
@@ -20,7 +20,7 @@ function MatchCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void })
   const content = (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text)]" title={f.title}>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--color-text)]" title={f.title}>
           {f.title}
         </span>
         {sid && <span className="t-tag font-mono-num text-[var(--color-text-faint)]">sid {sid}</span>}
@@ -48,7 +48,7 @@ function MatchCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void })
           type="button"
           onClick={() => onJump(pivot)}
           aria-label={`View flows for ${pivot}`}
-          className="flex w-full flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-left transition-colors hover:border-[var(--color-border-strong)]"
+          className="flex w-full flex-col gap-2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-left transition-colors hover:border-[var(--color-border-strong)]"
         >
           {content}
         </button>
@@ -57,7 +57,7 @@ function MatchCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void })
   }
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+    <li className="flex flex-col gap-2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       {content}
     </li>
   );
@@ -68,22 +68,18 @@ export function SignatureMatchesPanel({ findings, onJump }: { findings: Finding[
   const matches = (findings ?? []).filter((f) => f.kind === "rule_match");
   if (matches.length === 0) return null;
   return (
-    <section
-      data-component="SignatureMatchesPanel"
-      aria-label="Signature matches"
-      className="rounded-lg border border-border bg-surface p-4 shadow-sm"
+    <Panel
+      label="DETECTIONS"
+      title="Signature matches"
+      count={`${humanNumber(matches.length)} matched`}
+      icon={<ShieldAlert size={14} />}
+      bodyClassName="p-3"
     >
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
-          <ShieldAlert size={15} className="text-[var(--color-accent)]" /> Signature matches
-        </h2>
-        <span className="font-mono-num text-xs text-[var(--color-text-faint)]">{humanNumber(matches.length)} matched</span>
-      </div>
       <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
         {matches.slice(0, 50).map((f, i) => (
           <MatchCard key={`${sidOf(f) ?? "nosid"}-${f.src_ip}-${f.dst_ip}-${i}`} f={f} onJump={onJump} />
         ))}
       </ul>
-    </section>
+    </Panel>
   );
 }
