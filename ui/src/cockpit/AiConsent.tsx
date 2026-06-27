@@ -23,7 +23,7 @@ export function AiConsent({ baseUrl, model, onProceed, onCancel }:
             model <b>{model}</b>. {local ? "This endpoint is local — it stays on this device." : ""}
           </p>
           {needsRelay && (
-            <p className="mt-3 rounded-[var(--r-micro)] border border-[var(--color-border-strong)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-text-dim)]">
+            <p className="mt-3 rounded-[var(--r-micro)] border border-[var(--color-sev-medium)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-text-dim)]">
               In the browser this cloud endpoint needs a <b>relay URL</b> (set one as the Proxy URL in
               Settings), or the request will fail. Alternatively use a local model (Ollama on localhost)
               or the desktop app, which talk to the provider directly.
