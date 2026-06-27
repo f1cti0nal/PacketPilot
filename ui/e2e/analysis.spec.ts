@@ -7,7 +7,15 @@ import { test, expect, type Page } from "@playwright/test";
 const PCAP = "e2e/fixtures/cap.pcap";
 
 async function waitForDashboard(page: Page) {
-  await expect(page.getByText("Packets").first()).toBeVisible({ timeout: 15_000 });
+  // Launch lands on the Home overview; the dashboard loads via the opt-in bundled sample. After
+  // navigation the app shows either the dashboard (capture active) or the Home hero (fresh launch).
+  const packets = page.getByText("Packets").first();
+  const sample = page.getByRole("button", { name: /explore sample capture/i });
+  await expect(packets.or(sample)).toBeVisible({ timeout: 15_000 });
+  if (await sample.isVisible()) {
+    await sample.click();
+    await expect(packets).toBeVisible({ timeout: 15_000 });
+  }
 }
 
 /** Open the load dialog and analyze the bundled pcap in-browser via the WASM engine. */

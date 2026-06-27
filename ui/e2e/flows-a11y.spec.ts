@@ -4,9 +4,11 @@ const PCAP = "e2e/fixtures/cap.pcap";
 
 async function uploadAndOpenFlows(page: Page) {
   await page.goto("/app");
-  await expect(page.getByText("Packets").first()).toBeVisible({ timeout: 15_000 });
+  // Launch lands on the Home overview; uploading a capture works from there (the shell's "Load
+  // capture" affordance is always present), so just wait for the shell to be ready.
+  await expect(page.getByRole("button", { name: "Load capture", exact: true })).toBeVisible({ timeout: 15_000 });
   const dialog = page.getByRole("dialog", { name: "Load capture" });
-  await page.getByRole("button", { name: "Load capture" }).click();
+  await page.getByRole("button", { name: "Load capture", exact: true }).click();
   await dialog.locator('input[type="file"]').setInputFiles(PCAP);
   await expect(dialog).toBeHidden({ timeout: 30_000 });
   await page.getByRole("button", { name: "Flows", exact: true }).click();
