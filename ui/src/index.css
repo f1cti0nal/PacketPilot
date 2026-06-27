@@ -8,29 +8,31 @@
    the existing AppShell (`bg-surface`); the cockpit widgets use surface-1/2/3.
    ============================================================================ */
 :root {
-  /* Surfaces & structure */
-  --color-bg: #070b11;
-  --color-surface: #0d121b; /* AppShell header/cards (was #111722) */
-  --color-surface-1: #0d121b;
-  --color-surface-2: #121a26;
-  --color-surface-3: #1a2230;
-  --color-surface-raised: #222d3e;
-  --color-border: #243042;
-  --color-border-strong: #2c3a4e;
-  --color-grid: #1e2733;
+  /* Surfaces & structure — slate-navy */
+  --color-bg: #0b1220;
+  --color-surface: #0f1828;
+  --color-surface-1: #0f1828;
+  --color-surface-2: #141e30;
+  --color-surface-3: #1b2740;
+  --color-surface-raised: #202c42;
+  --color-panel: #0e1a2c;            /* console panel bg (threats/incidents/flows) */
+  --color-border: #223049;
+  --color-border-strong: #2c3c58;
+  --color-grid: #1b2740;
 
   /* Text */
-  --color-text: #e6edf6;
-  --color-text-dim: #94a3b8;
-  --color-text-faint: #8b98ad; /* WCAG AA (≥4.5:1) on the surface ramp; was #5b6b80 (3.4:1) */
+  --color-text: #e7edf7;
+  --color-text-dim: #93a1b7;
+  --color-text-faint: #8b98ad;       /* AA-safe; re-verify via axe */
 
-  /* Accents — glow language */
-  --color-accent: #38bdf8;
-  --color-accent-strong: #5fd0ff;
+  /* Accent — enterprise blue (interactive/brand only; never decorative) */
+  --color-accent: #60a5fa;           /* blue-400; blue-500 (#3b82f6) fails AA on tinted dark surfaces */
+  --color-accent-strong: #93c5fd;
+  --color-accent-deep: #1d4ed8;      /* filled-button bg, white text */
   --color-spine-violet: #7c5cff;
 
   /* Severity — byte-identical to the engine contract */
-  --color-sev-critical: #f43f5e;
+  --color-sev-critical: #f8546e;     /* brightened from #f43f5e: new blue surfaces shift chip-tint bg, requires +lum for AA */
   --color-sev-high: #fb923c;
   --color-sev-medium: #fbbf24;
   --color-sev-low: #2dd4bf;
@@ -49,10 +51,18 @@
   --r-chip: 6px;
   --r-micro: 4px;
 
+  /* Type scale (px) — apply via .t-* utilities + primitives */
+  --fs-display: 22px;
+  --fs-title: 18px;
+  --fs-heading: 15px;
+  --fs-body: 13px;
+  --fs-label: 12px;
+  --fs-micro: 11px;
+
   /* Elevation */
-  --sh-rest: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -14px rgba(0, 0, 0, 0.55);
-  --sh-hero: 0 2px 4px rgba(0, 0, 0, 0.5), 0 18px 50px -22px rgba(0, 0, 0, 0.7);
-  --sh-float: 0 16px 48px -24px rgba(0, 0, 0, 0.7), 0 2px 8px -4px rgba(0, 0, 0, 0.5);
+  --sh-rest: 0 1px 2px rgba(2, 6, 16, 0.35);
+  --sh-hero: 0 2px 8px -2px rgba(2, 6, 16, 0.45);
+  --sh-float: 0 12px 32px -16px rgba(2, 6, 16, 0.6), 0 2px 6px -3px rgba(2, 6, 16, 0.4);
 
   color-scheme: dark;
 }
@@ -73,24 +83,26 @@
    ---------------------------------------------------------------------------- */
 [data-theme="light"] {
   /* Surfaces & structure */
-  --color-bg: #eef2f8;
+  --color-bg: #f4f7fb;
   --color-surface: #ffffff;
   --color-surface-1: #ffffff;
-  --color-surface-2: #f4f7fb;
-  --color-surface-3: #e9eef5;
+  --color-surface-2: #eef3f9;
+  --color-surface-3: #e7edf5;
   --color-surface-raised: #ffffff;
-  --color-border: #d7e0ea;
+  --color-panel: #eef3fb;
+  --color-border: #d8e0ea;
   --color-border-strong: #bcc8d6;
   --color-grid: #e3e9f1;
 
   /* Text — AA on white + the tinted surface ramp */
-  --color-text: #0e1b2e;
-  --color-text-dim: #44536b;
-  --color-text-faint: #586678; /* darkened from #64748b (3.2:1 on tinted surfaces) for AA */
+  --color-text: #0d1b2e;
+  --color-text-dim: #475569;
+  --color-text-faint: #586678;       /* AA on tinted surfaces */
 
   /* Accents */
-  --color-accent: #056291; /* darkened from #0670a8 for AA (≥4.5:1) on its own tint */
-  --color-accent-strong: #045b87;
+  --color-accent: #1d4ed8;           /* blue-700 — AA on white */
+  --color-accent-strong: #2563eb;
+  --color-accent-deep: #1d4ed8;
   --color-spine-violet: #6135f5;
 
   /* Severity — darkened so each reads as text (AA ≥4.5:1) on white AND on its own tinted chip */
@@ -101,10 +113,10 @@
   --color-sev-info: #056291;
   --color-sev-none: #64748b;
 
-  /* Elevation — dark uses near-opaque black; on light that muddies, so soften. */
-  --sh-rest: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px -16px rgba(15, 23, 42, 0.14);
-  --sh-hero: 0 2px 4px rgba(15, 23, 42, 0.08), 0 18px 50px -24px rgba(15, 23, 42, 0.18);
-  --sh-float: 0 16px 48px -24px rgba(15, 23, 42, 0.22), 0 2px 8px -4px rgba(15, 23, 42, 0.12);
+  /* Elevation — soften for light; low alpha on the slate base */
+  --sh-rest: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --sh-hero: 0 2px 8px -2px rgba(15, 23, 42, 0.10);
+  --sh-float: 0 12px 32px -16px rgba(15, 23, 42, 0.15), 0 2px 6px -3px rgba(15, 23, 42, 0.08);
 
   color-scheme: light;
 }
