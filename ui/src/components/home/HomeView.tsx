@@ -3,6 +3,7 @@
 // resume-recent, severity trend, and recurring threats — instead of the raw dashboard. Every
 // number is derived from the cached Recent summaries (offline; no engine re-run).
 import {
+  AlertTriangle,
   ArrowRight,
   Database,
   FileStack,
@@ -11,9 +12,16 @@ import {
   Upload,
 } from "lucide-react";
 import type { RecentEntry } from "../../types";
-import { captureVerdict, workspaceRollup } from "../../lib/workspace";
+import {
+  captureVerdict,
+  reviewStatus,
+  workspaceRollup,
+  type ReviewStatus,
+} from "../../lib/workspace";
 import { compactNumber, humanBytes, humanNumber, relativeTime } from "../../lib/format";
 import { kindMeta } from "../../lib/findingKinds";
+import { captureKey } from "../../lib/ai/cache";
+import { annotationsForCapture } from "../../lib/annotations";
 import { StatTile, Sparkline } from "../../cockpit/primitives";
 import { VerdictChip } from "../VerdictChip";
 import { cn } from "../../lib/cn";
@@ -166,6 +174,10 @@ function Overview({
   onViewAll?: () => void;
 }) {
   const roll = workspaceRollup(recent);
+  const review = reviewStatus(
+    recent,
+    (e) => new Set(Object.keys(annotationsForCapture(captureKey(e.summary)))),
+  );
   const top = recent.slice(0, 5);
   const canCompare = !!onCompare && recent.length >= 2;
 
@@ -202,6 +214,8 @@ function Overview({
           </button>
         </div>
       </div>
+
+      {review.capturesNeedingReview > 0 && <ReviewBanner review={review} onOpen={onOpen} />}
 
       <div className="grid grid-cols-2 gap-[var(--density-gap-sm)] sm:grid-cols-3 lg:grid-cols-6">
         <StatTile label="Captures" value={humanNumber(roll.captures)} />
@@ -245,6 +259,42 @@ function Overview({
         </div>
       </div>
     </div>
+  );
+}
+
+function ReviewBanner({
+  review,
+  onOpen,
+}: {
+  review: ReviewStatus;
+  onOpen: (entry: RecentEntry) => void;
+}) {
+  const { capturesNeedingReview: c, untriagedHosts: h, topCapture } = review;
+  return (
+    <section
+      data-component="ReviewBanner"
+      className="flex items-center gap-3 rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-panel)] px-4 py-3"
+      style={{ borderLeft: "2px solid var(--color-sev-high)", borderRadius: "0 var(--r-card) var(--r-card) 0" }}
+    >
+      <AlertTriangle className="h-4 w-4 shrink-0" style={{ color: "var(--color-sev-high)" }} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-[var(--color-text)]">
+          {c} capture{c === 1 ? "" : "s"} need{c === 1 ? "s" : ""} review
+        </div>
+        <div className="mt-0.5 text-xs text-[var(--color-text-dim)]">
+          {humanNumber(h)} untriaged critical/high host{h === 1 ? "" : "s"} across your workspace
+        </div>
+      </div>
+      {topCapture && (
+        <button
+          type="button"
+          onClick={() => onOpen(topCapture)}
+          className="shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        >
+          Review
+        </button>
+      )}
+    </section>
   );
 }
 

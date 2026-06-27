@@ -142,3 +142,46 @@ export function workspaceRollup(entries: RecentEntry[], maxRecurring = 4): Works
     recurring,
   };
 }
+
+/** Workspace triage-review status, derived from per-host triage annotations. */
+export interface ReviewStatus {
+  /** Captures with at least one untriaged critical/high incident host. */
+  capturesNeedingReview: number;
+  /** Total untriaged critical/high hosts across the workspace. */
+  untriagedHosts: number;
+  /** The most-severe capture still needing review (for a "Review" shortcut), or null. */
+  topCapture: RecentEntry | null;
+}
+
+/**
+ * Cross-reference each capture's critical/high incident hosts against the analyst's triage
+ * annotations to surface what still needs review. Pure: the caller supplies the set of already-
+ * triaged hosts per capture (annotations live in localStorage; this stays testable + storage-free).
+ */
+export function reviewStatus(
+  entries: RecentEntry[],
+  triagedHostsOf: (entry: RecentEntry) => Set<string>,
+): ReviewStatus {
+  let capturesNeedingReview = 0;
+  let untriagedHosts = 0;
+  let top: { entry: RecentEntry; rank: number } | null = null;
+
+  for (const entry of entries) {
+    const triaged = triagedHostsOf(entry);
+    const critHosts = new Set(
+      (entry.summary.summary.incidents ?? [])
+        .filter((i) => i.severity === "critical" || i.severity === "high")
+        .map((i) => i.host),
+    );
+    let n = 0;
+    for (const host of critHosts) if (!triaged.has(host)) n++;
+    if (n === 0) continue;
+    capturesNeedingReview++;
+    untriagedHosts += n;
+    const v = captureVerdict(entry.summary);
+    const rank = SEV_RANK[v.worst] * 1000 + v.worstCount;
+    if (!top || rank > top.rank) top = { entry, rank };
+  }
+
+  return { capturesNeedingReview, untriagedHosts, topCapture: top?.entry ?? null };
+}

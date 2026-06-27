@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HomeView } from "./HomeView";
 import { makeOutput } from "../../test/fixtures";
+import { captureKey } from "../../lib/ai/cache";
+import { setAnnotation } from "../../lib/annotations";
 import type { AnalysisOutput, RecentEntry } from "../../types";
 
 function entry(id: string, name: string, summary: AnalysisOutput, analyzedAt = 1000): RecentEntry {
@@ -54,6 +56,8 @@ describe("HomeView — first run (no recent captures)", () => {
 });
 
 describe("HomeView — returning user (workspace overview)", () => {
+  beforeEach(() => localStorage.clear());
+
   const recent = [
     entry("a", "alpha.pcap", makeOutput(), 2000), // critical incident in fixture
     entry("b", "beta.pcap", cleanOutput, 1000),
@@ -102,6 +106,25 @@ describe("HomeView — returning user (workspace overview)", () => {
     const link = screen.getByRole("button", { name: /view all 7/i });
     fireEvent.click(link);
     expect(onViewAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a review banner when a capture has untriaged critical hosts", () => {
+    render(<HomeView recent={recent} onOpen={vi.fn()} onLoadNew={vi.fn()} />);
+    expect(screen.getByText(/needs review/i)).toBeInTheDocument();
+  });
+
+  it("clicking Review on the banner opens the most-severe capture", () => {
+    const onOpen = vi.fn();
+    render(<HomeView recent={recent} onOpen={onOpen} onLoadNew={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(onOpen).toHaveBeenCalledWith(recent[0]); // alpha — the critical capture
+  });
+
+  it("hides the review banner once the critical host is triaged", () => {
+    // makeOutput()'s critical incident is on host 10.13.37.7.
+    setAnnotation(captureKey(makeOutput()), "10.13.37.7", { status: "cleared" });
+    render(<HomeView recent={recent} onOpen={vi.fn()} onLoadNew={vi.fn()} />);
+    expect(screen.queryByText(/needs review/i)).toBeNull();
   });
 
   it("offers Compare only when at least two captures and a handler exist", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { captureVerdict, workspaceRollup, TREND_WINDOW } from "./workspace";
+import { captureVerdict, reviewStatus, workspaceRollup, TREND_WINDOW } from "./workspace";
 import { makeOutput } from "../test/fixtures";
 import type {
   AnalysisOutput,
@@ -164,5 +164,36 @@ describe("workspaceRollup", () => {
     expect(r.trend).toEqual([]);
     expect(r.trendRising).toBe(false);
     expect(r.recurring).toEqual([]);
+  });
+});
+
+describe("reviewStatus", () => {
+  // mkIncident's host is "10.0.0.1".
+  const critCap = entry("crit", { summary: outputWith([], [mkIncident("critical")]) });
+  const highCap = entry("high", { summary: outputWith([], [mkIncident("high")]) });
+  const mediumCap = entry("med", { summary: outputWith([mkFinding("dga", "medium")], []) });
+
+  it("flags a capture with an untriaged critical host", () => {
+    const r = reviewStatus([critCap], () => new Set());
+    expect(r.capturesNeedingReview).toBe(1);
+    expect(r.untriagedHosts).toBe(1);
+    expect(r.topCapture).toBe(critCap);
+  });
+
+  it("clears the flag once the host is triaged", () => {
+    const r = reviewStatus([critCap], () => new Set(["10.0.0.1"]));
+    expect(r.capturesNeedingReview).toBe(0);
+    expect(r.untriagedHosts).toBe(0);
+    expect(r.topCapture).toBeNull();
+  });
+
+  it("ignores captures whose worst incident is below high", () => {
+    expect(reviewStatus([mediumCap], () => new Set()).capturesNeedingReview).toBe(0);
+  });
+
+  it("picks the most-severe capture needing review as topCapture", () => {
+    const r = reviewStatus([highCap, critCap], () => new Set());
+    expect(r.capturesNeedingReview).toBe(2);
+    expect(r.topCapture).toBe(critCap);
   });
 });
