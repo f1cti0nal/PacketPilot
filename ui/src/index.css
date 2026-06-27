@@ -29,6 +29,7 @@
   --color-accent: #60a5fa;           /* blue-400; blue-500 (#3b82f6) fails AA on tinted dark surfaces */
   --color-accent-strong: #93c5fd;
   --color-accent-deep: #1d4ed8;      /* filled-button bg, white text */
+  --color-on-accent: #ffffff;        /* text on filled accent-deep button — white in both themes */
   --color-spine-violet: #7c5cff;
 
   /* Severity — byte-identical to the engine contract */
@@ -103,6 +104,7 @@
   --color-accent: #1d4ed8;           /* blue-700 — AA on white */
   --color-accent-strong: #2563eb;
   --color-accent-deep: #1d4ed8;
+  --color-on-accent: #ffffff;        /* text on filled accent-deep button — white in both themes */
   --color-spine-violet: #6135f5;
 
   /* Severity — darkened so each reads as text (AA ≥4.5:1) on white AND on its own tinted chip */

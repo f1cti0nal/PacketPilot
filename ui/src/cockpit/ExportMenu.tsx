@@ -42,7 +42,7 @@ export function ExportMenu({
         disabled={disabled || busy}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-[var(--color-accent-deep)] px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-[var(--color-accent-deep)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-on-accent)] transition-colors hover:opacity-90 disabled:opacity-50"
       >
         {busy ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
         Export
