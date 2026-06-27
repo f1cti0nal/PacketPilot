@@ -120,6 +120,15 @@ describe("workspaceRollup", () => {
     expect(r.criticalHigh).toBe(4); // eA:1 high, eB:1 high, eC:1 critical + 1 high
   });
 
+  it("aggregates total bytes, distinct hosts, and last-analyzed time", () => {
+    const r = workspaceRollup(recent);
+    // Each entry's cached summary is makeOutput() → total_bytes 5.7MB; 3 captures.
+    expect(r.totalBytes).toBe(3 * 5_700_000);
+    // Union of host IPs (top_talkers ∪ ip_threats) — same 3 talkers in every capture, deduped.
+    expect(r.distinctHosts).toBe(3);
+    expect(r.lastAnalyzed).toBe(3000); // newest analyzedAt (eC)
+  });
+
   it("ranks recurring kinds by how many captures they appear in", () => {
     const r = workspaceRollup(recent);
     expect(r.recurring[0]).toEqual({ kind: "port_scan", label: "Port Scan", captures: 3 });
@@ -143,7 +152,15 @@ describe("workspaceRollup", () => {
 
   it("returns zeroed stats for an empty workspace", () => {
     const r = workspaceRollup([]);
-    expect(r).toMatchObject({ captures: 0, totalFlows: 0, totalFindings: 0, criticalHigh: 0 });
+    expect(r).toMatchObject({
+      captures: 0,
+      totalFlows: 0,
+      totalBytes: 0,
+      distinctHosts: 0,
+      totalFindings: 0,
+      criticalHigh: 0,
+    });
+    expect(r.lastAnalyzed).toBeNull();
     expect(r.trend).toEqual([]);
     expect(r.trendRising).toBe(false);
     expect(r.recurring).toEqual([]);

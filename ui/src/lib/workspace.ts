@@ -60,6 +60,17 @@ export interface RecurringThreat {
 export interface WorkspaceRollup {
   captures: number;
   totalFlows: number;
+  /** Sum of every capture's total bytes on the wire. */
+  totalBytes: number;
+  /**
+   * Distinct host IPs across the workspace, deduplicated by IP. Computed from the union of the
+   * hosts each summary actually enumerates (top talkers, IP threats, ARP bindings, resolved IPs).
+   * This is a true distinct count but a LOWER BOUND — it can't see hosts beyond those lists, since
+   * the cached summaries don't carry the full per-capture host set (`unique_hosts` is only a count).
+   */
+  distinctHosts: number;
+  /** Most recent analyzedAt (epoch ms) across the workspace, or null when empty. */
+  lastAnalyzed: number | null;
   totalFindings: number;
   /** Findings at critical or high severity, summed across all captures. */
   criticalHigh: number;
@@ -77,13 +88,24 @@ export interface WorkspaceRollup {
  */
 export function workspaceRollup(entries: RecentEntry[], maxRecurring = 4): WorkspaceRollup {
   let totalFlows = 0;
+  let totalBytes = 0;
   let totalFindings = 0;
   let criticalHigh = 0;
+  let lastAnalyzed: number | null = null;
   const kindCaptures = new Map<string, number>();
+  const hosts = new Set<string>();
 
   for (const e of entries) {
     totalFlows += e.flowCount ?? 0;
-    const findings = e.summary.summary.findings ?? [];
+    if (lastAnalyzed === null || e.analyzedAt > lastAnalyzed) lastAnalyzed = e.analyzedAt;
+    const s = e.summary.summary;
+    totalBytes += s.total_bytes ?? 0;
+    // Distinct hosts: union of every host IP the summary enumerates (deduped across captures).
+    for (const t of s.top_talkers ?? []) hosts.add(t.ip);
+    for (const t of s.ip_threats ?? []) hosts.add(t.ip);
+    for (const a of s.arp_hosts ?? []) hosts.add(a.ip);
+    for (const r of s.resolved_ips ?? []) hosts.add(r.ip);
+    const findings = s.findings ?? [];
     totalFindings += findings.length;
     criticalHigh += findings.filter(
       (fnd) => fnd.severity === "critical" || fnd.severity === "high",
@@ -110,6 +132,9 @@ export function workspaceRollup(entries: RecentEntry[], maxRecurring = 4): Works
   return {
     captures: entries.length,
     totalFlows,
+    totalBytes,
+    distinctHosts: hosts.size,
+    lastAnalyzed,
     totalFindings,
     criticalHigh,
     trend,

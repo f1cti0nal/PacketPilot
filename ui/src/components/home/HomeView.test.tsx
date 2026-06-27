@@ -77,6 +77,8 @@ describe("HomeView — returning user (workspace overview)", () => {
     render(<HomeView recent={recent} onOpen={vi.fn()} onLoadNew={vi.fn()} />);
     expect(screen.getByText("Captures")).toBeInTheDocument();
     expect(screen.getByText("Total flows")).toBeInTheDocument();
+    expect(screen.getByText("Total bytes")).toBeInTheDocument();
+    expect(screen.getByText("Distinct hosts")).toBeInTheDocument();
     expect(screen.getByText("Findings")).toBeInTheDocument();
     expect(screen.getByText("Critical / high")).toBeInTheDocument();
   });

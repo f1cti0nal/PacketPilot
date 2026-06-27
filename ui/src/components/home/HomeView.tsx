@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import type { RecentEntry } from "../../types";
 import { captureVerdict, workspaceRollup, type CaptureVerdict } from "../../lib/workspace";
-import { compactNumber, humanNumber, relativeTime } from "../../lib/format";
+import { compactNumber, humanBytes, humanNumber, relativeTime } from "../../lib/format";
 import { SEVERITY_META } from "../../lib/severity";
 import { kindMeta } from "../../lib/findingKinds";
 import { sevColor } from "../../cockpit/viz";
@@ -175,8 +175,9 @@ function Overview({
             Welcome back
           </h1>
           <p className="mt-0.5 text-xs text-[var(--color-text-dim)]">
-            {humanNumber(roll.captures)} capture{roll.captures === 1 ? "" : "s"} analyzed in this
-            workspace · all analysis runs locally
+            {humanNumber(roll.captures)} capture{roll.captures === 1 ? "" : "s"} in this workspace
+            {roll.lastAnalyzed !== null && ` · last analyzed ${relativeTime(roll.lastAnalyzed)}`} · all
+            analysis runs locally
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -197,9 +198,11 @@ function Overview({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-[var(--density-gap-sm)] sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-[var(--density-gap-sm)] sm:grid-cols-3 lg:grid-cols-6">
         <StatTile label="Captures" value={humanNumber(roll.captures)} />
         <StatTile label="Total flows" value={compactNumber(roll.totalFlows)} />
+        <StatTile label="Total bytes" value={humanBytes(roll.totalBytes)} />
+        <StatTile label="Distinct hosts" value={humanNumber(roll.distinctHosts)} />
         <StatTile label="Findings" value={humanNumber(roll.totalFindings)} />
         <CriticalHighTile value={roll.criticalHigh} />
       </div>
