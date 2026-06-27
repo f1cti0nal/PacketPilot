@@ -35,7 +35,7 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
               </span>
               {f.known_bad && (
                 <span
-                  className="shrink-0 rounded px-1 text-[0.6rem] font-semibold uppercase"
+                  className="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase"
                   style={{ color: "var(--color-sev-critical)" }}
                 >
                   known-bad

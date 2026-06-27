@@ -63,7 +63,7 @@ export function ScoreWaterfall({
 
       {/* Final score row */}
       <div
-        className="mt-1 flex items-center gap-1 text-xs font-semibold"
+        className="mt-1 flex items-center gap-1 text-xs font-medium"
         style={{ color: sevColor(severity) }}
       >
         <span>Score</span>

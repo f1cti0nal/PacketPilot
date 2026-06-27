@@ -59,7 +59,7 @@ export function SeverityStrip({
       className="flex flex-col gap-3"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--color-text-dim)]">
           What matters
         </h2>
         <span className="font-mono-num text-xs text-[var(--color-text-faint)]">
@@ -119,7 +119,7 @@ export function SeverityStrip({
 
               <span className="flex flex-col leading-tight">
                 <span
-                  className="font-mono-num text-lg font-semibold"
+                  className="font-mono-num text-lg font-medium"
                   style={{ color }}
                 >
                   {compactNumber(value)}

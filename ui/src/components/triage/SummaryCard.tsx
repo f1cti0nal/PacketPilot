@@ -125,7 +125,7 @@ export function SummaryCard({ summary, source }: SummaryCardProps) {
           <div className="flex items-center gap-2">
             <FileText size={16} className="shrink-0 text-[color:var(--color-accent)]" />
             <span
-              className={clsx("truncate font-mono-num text-sm font-semibold", txt)}
+              className={clsx("truncate font-mono-num text-sm font-medium", txt)}
               title={source.source_path}
             >
               {fileName}

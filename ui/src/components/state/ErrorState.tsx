@@ -16,7 +16,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
       <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--color-sev-critical)] bg-[color-mix(in_srgb,var(--color-sev-critical)_12%,transparent)] text-[var(--color-sev-critical)]">
         <AlertTriangle size={30} aria-hidden />
       </div>
-      <h2 className="font-display text-xl font-semibold text-[var(--color-text)]">Couldn't load the capture</h2>
+      <h2 className="font-display text-xl font-medium text-[var(--color-text)]">Couldn't load the capture</h2>
       <p className="mt-2 max-w-md break-words text-sm text-[var(--color-text-dim)]">{message}</p>
       {onRetry && (
         <button

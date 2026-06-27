@@ -52,7 +52,7 @@ export function SeverityChip({ severity, className }: { severity: Severity; clas
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-[var(--r-chip)] border px-2 py-0.5 t-tag font-semibold uppercase",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-[var(--r-chip)] border px-2 py-0.5 t-tag font-medium uppercase",
         className,
       )}
       style={{ color, borderColor: color, backgroundColor: "var(--color-surface-2)" }}

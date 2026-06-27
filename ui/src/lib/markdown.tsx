@@ -91,7 +91,7 @@ export function Markdown({ text, className }: { text: string; className?: string
       flushPara();
       flushList();
       blocks.push(
-        <p key={`h-${key++}`} className="mt-1 font-semibold text-[var(--color-text)]">{inline(h[2], `h-${key}`)}</p>,
+        <p key={`h-${key++}`} className="mt-1 font-medium text-[var(--color-text)]">{inline(h[2], `h-${key}`)}</p>,
       );
       continue;
     }

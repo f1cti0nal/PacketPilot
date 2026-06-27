@@ -49,7 +49,7 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
       {/* Header row: severity, IP, class, IOC */}
       <div className="flex flex-wrap items-center gap-2">
         <SeverityChip severity={threat.severity} />
-        <span className="font-mono-num truncate text-sm font-semibold text-[var(--color-text)]">
+        <span className="font-mono-num truncate text-sm font-medium text-[var(--color-text)]">
           {threat.ip}
         </span>
         <span className="shrink-0 rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-text-dim)]">
@@ -57,7 +57,7 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
         </span>
         {threat.ioc && (
           <span
-            className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold"
+            className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium"
             style={{
               color: "var(--color-sev-critical)",
               backgroundColor:
@@ -74,7 +74,7 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
       {/* Score + bar */}
       <div className="flex items-center gap-2">
         <span
-          className="font-mono-num text-sm font-semibold tabular-nums"
+          className="font-mono-num text-sm font-medium tabular-nums"
           style={{ color }}
         >
           {score}
@@ -145,7 +145,7 @@ function ThreatCard({ threat }: { threat: IpThreat }) {
           {threat.fingerprints.map((fp, i) => (
             <span
               key={i}
-              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold"
+              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium"
               style={{
                 color: "var(--color-sev-critical)",
                 backgroundColor: "var(--color-surface-2)",
@@ -201,7 +201,7 @@ export function ThreatsPanel({ threats }: ThreatsPanelProps) {
       className="rounded-lg border border-border bg-surface p-4 shadow-sm"
     >
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
+        <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-[var(--color-text-dim)]">
           <ShieldAlert size={15} className="text-[var(--color-sev-critical)]" />
           Top threats
         </h2>

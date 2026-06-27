@@ -127,7 +127,7 @@ export function ProtocolPanel({ proto, protocolHierarchy }: ProtocolPanelProps) 
     >
       <header className="flex items-center gap-2">
         <Layers className="h-4 w-4 text-[var(--color-accent)]" aria-hidden />
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">
+        <h3 className="text-sm font-medium text-[var(--color-text)]">
           Protocol mix
         </h3>
         <span className="ml-auto text-xs text-[var(--color-text-faint)]">
@@ -268,7 +268,7 @@ function ProtoStat({ tile, total }: ProtoStatProps) {
           {percent(count, total)}
         </span>
       </div>
-      <span className="font-mono-num text-lg font-semibold leading-none text-[var(--color-text)]">
+      <span className="font-mono-num text-lg font-medium leading-none text-[var(--color-text)]">
         {humanNumber(count)}
       </span>
       <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--color-grid)]">

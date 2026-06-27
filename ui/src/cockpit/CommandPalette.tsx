@@ -184,7 +184,7 @@ function PaletteRow({ id, item, active, onMouseEnter, onClick }: { id: string; i
             <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: sevColor(item.threat.severity) }} />
             <span className="font-mono-num min-w-0 flex-1 truncate text-sm text-[var(--color-text)]">{item.threat.ip}</span>
             <span className="t-tag uppercase text-[var(--color-text-faint)]">{SEVERITY_META[item.threat.severity].label}</span>
-            <span className="font-mono-num text-xs font-semibold" style={{ color: sevColor(item.threat.severity) }}>{item.threat.score}</span>
+            <span className="font-mono-num text-xs font-medium" style={{ color: sevColor(item.threat.severity) }}>{item.threat.score}</span>
             <span className="font-mono-num t-tag text-[var(--color-text-faint)]">{humanNumber(item.threat.flows)} fl</span>
           </>
         )}

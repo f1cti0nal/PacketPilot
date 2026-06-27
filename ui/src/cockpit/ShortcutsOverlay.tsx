@@ -65,7 +65,7 @@ export function ShortcutsOverlay({
         style={{ boxShadow: "var(--sh-float)" }}
       >
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-          <h2 id={labelId} className="font-display text-sm font-semibold text-[var(--color-text)]">
+          <h2 id={labelId} className="font-display text-sm font-medium text-[var(--color-text)]">
             Keyboard shortcuts
           </h2>
           <button

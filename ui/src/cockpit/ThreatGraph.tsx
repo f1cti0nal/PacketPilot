@@ -33,7 +33,7 @@ export function ThreatGraph({
       className="rounded-lg border border-border bg-surface p-4 shadow-sm"
     >
       <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
+        <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-[var(--color-text-dim)]">
           <Share2 size={15} className="text-[var(--color-accent)]" /> Threat relationships
         </h2>
         {model.truncated > 0 && (

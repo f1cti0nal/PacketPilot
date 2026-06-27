@@ -103,7 +103,7 @@ function Section({
 }) {
   return (
     <section className="border-t border-[var(--color-border)] px-4 py-3 first:border-t-0">
-      <h3 className="mb-1.5 flex items-center gap-1.5 text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--color-text-dim)]">
+      <h3 className="mb-1.5 flex items-center gap-1.5 text-[0.7rem] font-medium uppercase tracking-wider text-[var(--color-text-dim)]">
         {icon}
         {title}
       </h3>
@@ -307,7 +307,7 @@ export function FlowDetail({
               {flow.protoLabel}
             </span>
           </div>
-          <h2 className="mt-1 truncate text-sm font-semibold">
+          <h2 className="mt-1 truncate text-sm font-medium">
             Flow <span className="font-mono-num">#{flow.flowId}</span>
           </h2>
         </div>
@@ -533,7 +533,7 @@ export function FlowDetail({
         <Field label="IOC">
           {flow.ioc ? (
             <span
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold"
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium"
               style={{
                 color: "var(--color-sev-critical)",
                 backgroundColor:

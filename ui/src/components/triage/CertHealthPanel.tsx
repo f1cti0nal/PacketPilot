@@ -75,7 +75,6 @@ export function CertHealthPanel({
   if (tls.length === 0) return null;
   return (
     <Panel
-      data-component="CertHealthPanel"
       label="TLS POSTURE"
       title="TLS issues"
       count={`${humanNumber(tls.length)} flagged`}

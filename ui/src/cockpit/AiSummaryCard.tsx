@@ -73,8 +73,8 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
     <>
       <section className="rounded-lg bg-[var(--color-surface)] p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">AI Analyst Summary</h2>
-          <button className="t-tag font-semibold" onClick={run} disabled={st.status === "loading"}>
+          <h2 className="text-sm font-medium">AI Analyst Summary</h2>
+          <button className="t-tag font-medium" onClick={run} disabled={st.status === "loading"}>
             {st.status === "ready" ? "Regenerate" : st.status === "loading" ? "Generating…" : "Generate"}
           </button>
         </div>

@@ -47,7 +47,7 @@ export function ScoreRing({
         textAnchor="middle"
         dominantBaseline="central"
         className="font-display"
-        style={{ fontWeight: 600, fontSize: size * 0.32, fill: color }}
+        style={{ fontWeight: 500, fontSize: size * 0.32, fill: color }}
       >
         {score}
       </text>

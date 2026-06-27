@@ -21,7 +21,7 @@ export function EmptyState({
       <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-1)] text-[var(--color-accent)]">
         <Radar size={30} aria-hidden />
       </div>
-      <h2 className="font-display text-xl font-semibold text-[var(--color-text)]">{title}</h2>
+      <h2 className="font-display text-xl font-medium text-[var(--color-text)]">{title}</h2>
       <p className="mt-2 max-w-sm text-sm text-[var(--color-text-dim)]">{hint}</p>
       {onLoad && (
         <button
