@@ -140,6 +140,7 @@ export function AppShell({
     () => [
       { id: "dashboard" as const, label: "Dashboard" },
       { id: "flows" as const, label: "Flows" },
+      { id: "findings" as const, label: "Findings" },
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
       ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
     ],
@@ -254,6 +255,7 @@ export function AppShell({
     ...(onGoHome ? [{ id: "go-home", label: "Go to overview", hint: "view", run: onGoHome }] : []),
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
+    { id: "go-findings", label: "Go to Findings", hint: "view", run: () => onTabChange("findings") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
     { id: "go-compare", label: "Compare captures", hint: "view", run: () => onTabChange("recent") },
     { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },

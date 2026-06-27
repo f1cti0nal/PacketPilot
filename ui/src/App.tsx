@@ -29,6 +29,7 @@ import { ErrorState } from "./components/state/ErrorState";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
 import { FlowsView } from "./views/FlowsView";
+import { FindingsView } from "./views/FindingsView";
 import { RecentView } from "./components/recent/RecentView";
 import { CompareView } from "./views/CompareView";
 import {
@@ -677,6 +678,11 @@ export function App() {
         })()
       ) : tab === "flows" ? (
         <FlowsView state={flows} initialFilter={flowsFilter} activeSource={activeSource} />
+      ) : tab === "findings" ? (
+        <FindingsView
+          findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}
+          onJumpToFlows={jumpToFlows}
+        />
       ) : tab === "recent" ? (
         <RecentView
           entries={recent}

@@ -9,6 +9,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
   Share2,
+  ListChecks,
   History,
   GitCompare,
   ShieldAlert,
@@ -22,6 +23,7 @@ import { ThreatRail } from "../../cockpit/ThreatRail";
 const TAB_ICON: Record<TabId, LucideIcon> = {
   dashboard: LayoutDashboard,
   flows: Share2,
+  findings: ListChecks,
   recent: History,
   compare: GitCompare,
 };
