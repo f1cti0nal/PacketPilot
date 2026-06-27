@@ -551,11 +551,17 @@ impl SynthGen {
         let sweep_count = self.beacon_sweep_count();
         let brute_count = self.beacon_brute_count();
         let lateral_count = self.beacon_lateral_count();
+        let exposed_count = self.beacon_exposed_count();
         let exfil_count = self.beacon_exfil_count();
         let dns_count = self.beacon_dns_count();
         let creds_count = self.beacon_creds_count();
-        let prefix =
-            sweep_count + brute_count + lateral_count + exfil_count + dns_count + creds_count;
+        let prefix = sweep_count
+            + brute_count
+            + lateral_count
+            + exposed_count
+            + exfil_count
+            + dns_count
+            + creds_count;
 
         // Stage 1 (recon): a short SYN sweep — the beacon host probes many internal hosts on
         // 445. Combined with the C2 beacon below, this gives the host a multi-stage incident.
@@ -595,10 +601,25 @@ impl SynthGen {
             return Some((ts, FrameKind::OtherTcp, frame));
         }
 
+        // Stage 3.5 (exposed remote access): an EXTERNAL attacker opens an established RDP session
+        // INTO an internal host across the perimeter — exposed remote access (T1133), the
+        // boundary-crossing complement of the east-west lateral movement above.
+        if i < sweep_count + brute_count + lateral_count + exposed_count {
+            let k = i - sweep_count - brute_count - lateral_count;
+            let frame = self.build_beacon_exposed(k);
+            let ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(2_900_000_000)
+                .saturating_add(k as i64 * 5_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::OtherTcp, frame));
+        }
+
         // Stage 4 (exfiltration): a large asymmetric upload from the beacon host to an external
         // drop server — one flow, megabytes outbound, almost nothing back.
-        if i < sweep_count + brute_count + lateral_count + exfil_count {
-            let k = i - sweep_count - brute_count - lateral_count;
+        if i < sweep_count + brute_count + lateral_count + exposed_count + exfil_count {
+            let k = i - sweep_count - brute_count - lateral_count - exposed_count;
             let frame = self.build_beacon_exfil();
             // A few seconds after the sweep, ~1 ms apart.
             let ts = self
@@ -612,8 +633,8 @@ impl SynthGen {
 
         // Stage 5 (DNS tunneling): a burst of high-entropy DNS queries to the internal resolver,
         // smuggling data out over DNS.
-        if i < sweep_count + brute_count + lateral_count + exfil_count + dns_count {
-            let k = i - sweep_count - brute_count - lateral_count - exfil_count;
+        if i < sweep_count + brute_count + lateral_count + exposed_count + exfil_count + dns_count {
+            let k = i - sweep_count - brute_count - lateral_count - exposed_count - exfil_count;
             let frame = self.build_beacon_dns(k);
             let ts = self
                 .cfg
@@ -628,7 +649,13 @@ impl SynthGen {
         // over cleartext HTTP Basic auth — an unrelated victim whose credentials are exposed,
         // surfacing as its own single-stage incident alongside the attacker's chain.
         if i < prefix {
-            let k = i - sweep_count - brute_count - lateral_count - exfil_count - dns_count;
+            let k = i
+                - sweep_count
+                - brute_count
+                - lateral_count
+                - exposed_count
+                - exfil_count
+                - dns_count;
             let frame = self.build_beacon_creds(k);
             let ts = self
                 .cfg
@@ -768,6 +795,43 @@ impl SynthGen {
                 BEACON_LATERAL_MAC,
                 BEACON_CLIENT_MAC,
             )
+        };
+        let tcp = frames::build_tcp(src, dst, sp, dp, TCP_PSH | TCP_ACK, &payload);
+        let ip = frames::build_ipv4(src, dst, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(smac, dmac, ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
+    }
+
+    /// Number of exposed-remote-access frames (0 for small captures): one established inbound RDP
+    /// session from an external attacker into an internal host, [`BEACON_EXPOSED_FRAMES`] frames
+    /// alternating direction so both directions clear the detector's per-direction session floor.
+    fn beacon_exposed_count(&self) -> u64 {
+        if self.cfg.packets >= 2_000 {
+            BEACON_EXPOSED_FRAMES
+        } else {
+            0
+        }
+    }
+
+    /// Build one exposed-remote-access frame: a data segment of an established RDP (3389) session
+    /// where an EXTERNAL attacker reaches an internal host across the perimeter — inbound exposed
+    /// remote access (T1133), the boundary-crossing complement of the east-west lateral movement.
+    /// The attacker is the client (ephemeral source port); alternating direction gives the flow
+    /// real bytes both ways, and the external↔internal split makes it exposed access (not lateral).
+    fn build_beacon_exposed(&mut self, idx: u64) -> Vec<u8> {
+        let attacker = beacon_rdp_attacker(); // external (public)
+        let victim = beacon_rdp_victim(); // internal (RFC1918)
+        let sport = 51000u16;
+        let outbound = idx % 2 == 0; // even: attacker -> victim (client -> server)
+        let payload = [0x33u8; BEACON_EXPOSED_PAYLOAD];
+        // record_flow normalizes endpoints, so both directions map to the one session flow.
+        self.record_flow(attacker, victim, sport, 3389, IP_PROTO_TCP);
+        let (src, dst, sp, dp, smac, dmac) = if outbound {
+            (attacker, victim, sport, 3389, BEACON_C2_MAC, BEACON_LATERAL_MAC)
+        } else {
+            (victim, attacker, 3389, sport, BEACON_LATERAL_MAC, BEACON_C2_MAC)
         };
         let tcp = frames::build_tcp(src, dst, sp, dp, TCP_PSH | TCP_ACK, &payload);
         let ip = frames::build_ipv4(src, dst, IP_PROTO_TCP, 64, tcp.len());
@@ -1002,6 +1066,10 @@ const BEACON_LATERAL_HOSTS: u64 = 6;
 const BEACON_LATERAL_FRAMES_PER_HOST: u64 = 4;
 const BEACON_LATERAL_PAYLOAD: usize = 700;
 const BEACON_LATERAL_MAC: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xAC, 0x06];
+/// Exposed-remote-access stage: one inbound established RDP session (external attacker -> internal
+/// host). 4 frames alternating direction → ~1.4 KB each way, clearing the detector's session floor.
+const BEACON_EXPOSED_FRAMES: u64 = 4;
+const BEACON_EXPOSED_PAYLOAD: usize = 700;
 /// Cleartext-credential stage: HTTP Basic auth requests from a victim host to an intranet web
 /// app, the (opaque) base64 token, the victim / server MACs, and the FTP source port.
 const BEACON_CREDS_HTTP: u64 = 5;
@@ -1093,6 +1161,17 @@ fn beacon_c2() -> Ipv4Addr {
 /// The external drop server the beacon host exfiltrates to (distinct from the C2, public).
 fn beacon_exfil_server() -> Ipv4Addr {
     Ipv4Addr::new(185, 220, 101, 5)
+}
+
+/// The external attacker that opens an inbound RDP session across the perimeter (public, classified
+/// external) — the source of the exposed-remote-access finding.
+fn beacon_rdp_attacker() -> Ipv4Addr {
+    Ipv4Addr::new(45, 77, 13, 38)
+}
+
+/// The internal host whose RDP service the external attacker reaches (RFC1918, classified internal).
+fn beacon_rdp_victim() -> Ipv4Addr {
+    Ipv4Addr::new(10, 0, 0, 42)
 }
 
 /// Deterministic per-host IPv4 in 10.0.0.0/8: 10.<hi>.<mid>.<lo+1>.

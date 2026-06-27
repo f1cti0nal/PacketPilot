@@ -87,6 +87,10 @@ pub enum Command {
         /// Inject the fixed edge-case frames.
         #[arg(long)]
         edge_cases: bool,
+        /// Number of distinct synthetic hosts the background traffic spreads across (default 64).
+        /// Raise it to thin out per-service connection counts (e.g. avoid emergent half-open floods).
+        #[arg(long, default_value_t = 64)]
+        hosts: u16,
     },
     /// Emit the embedded DuckDB DDL to stdout or a file (for the external duckdb sidecar/Wasm).
     InitDb {
@@ -316,6 +320,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             seed,
             pcapng,
             edge_cases,
+            hosts,
         } => {
             // IMPL:
             //  - let sc = ppcap_core::gen::Scenario::from_str_opt(&scenario)
@@ -335,6 +340,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 seed,
                 pcapng,
                 include_edge_cases: edge_cases,
+                host_count: hosts,
                 ..Default::default()
             };
             let mut g = SynthGen::new(cfg);
