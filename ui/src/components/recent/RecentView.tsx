@@ -13,11 +13,12 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import type { RecentEntry, RecentOrigin, Severity } from "../../types";
-import { SEVERITY_META, SEVERITY_ORDER } from "../../lib/severity";
+import type { RecentEntry, RecentOrigin } from "../../types";
 import { compactNumber, humanBytes, humanNumber, relativeTime } from "../../lib/format";
+import { captureVerdict, workspaceRollup } from "../../lib/workspace";
 import { cn } from "../../lib/cn";
 import { Panel } from "../../cockpit/primitives";
+import { VerdictChip } from "../VerdictChip";
 
 export interface RecentViewProps {
   entries: RecentEntry[];
@@ -45,43 +46,31 @@ const ORIGIN_META: Record<
   sample: { label: "Sample", icon: Database, title: "Bundled sample capture" },
 };
 
-const STRIP_ORDER = SEVERITY_ORDER as Exclude<Severity, "none">[];
-
-/** A thin stacked bar visualizing the severity mix of a cached summary. */
-function SeverityBar({ entry }: { entry: RecentEntry }) {
-  const counts = entry.summary.summary.severity_counts;
-  const total = counts
-    ? STRIP_ORDER.reduce((acc, s) => acc + (counts[s] ?? 0), 0)
-    : 0;
-  if (!counts || total === 0) {
-    return (
-      <div
-        className="h-1 w-full rounded-full bg-[var(--color-surface-3)]"
-        aria-hidden
-      />
-    );
-  }
+/** A compact workspace rollup strip — captures / flows / bytes / hosts / findings — mirroring the
+ *  Home overview's KPIs so the two recent surfaces report the same numbers. */
+function RecentRollup({ entries }: { entries: RecentEntry[] }) {
+  const r = workspaceRollup(entries);
+  const items: { label: string; value: string; hot?: boolean }[] = [
+    { label: "Captures", value: humanNumber(r.captures) },
+    { label: "Flows", value: compactNumber(r.totalFlows) },
+    { label: "Bytes", value: humanBytes(r.totalBytes) },
+    { label: "Hosts", value: humanNumber(r.distinctHosts) },
+    { label: "Findings", value: humanNumber(r.totalFindings) },
+    { label: "Critical / high", value: humanNumber(r.criticalHigh), hot: r.criticalHigh > 0 },
+  ];
   return (
-    <div
-      className="flex h-1 w-full overflow-hidden rounded-full bg-[var(--color-surface-3)]"
-      role="img"
-      aria-label={STRIP_ORDER.map(
-        (s) => `${SEVERITY_META[s].label} ${counts[s] ?? 0}`,
-      ).join(", ")}
-    >
-      {STRIP_ORDER.map((s) => {
-        const v = counts[s] ?? 0;
-        if (v === 0) return null;
-        return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3.5 py-2.5">
+      {items.map((it) => (
+        <div key={it.label} className="flex items-baseline gap-1.5">
           <span
-            key={s}
-            style={{
-              width: `${(v / total) * 100}%`,
-              background: `var(${SEVERITY_META[s].cssVar})`,
-            }}
-          />
-        );
-      })}
+            className="font-mono-num text-sm font-medium"
+            style={{ color: it.hot ? "var(--color-sev-critical)" : "var(--color-text)" }}
+          >
+            {it.value}
+          </span>
+          <span className="t-label text-[var(--color-text-dim)]">{it.label}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -162,9 +151,9 @@ function RecentRow({
         </button>
       </td>
 
-      {/* Severity bar */}
-      <td className="w-24 px-3 py-2.5">
-        <SeverityBar entry={entry} />
+      {/* Verdict chip */}
+      <td className="w-28 px-3 py-2.5">
+        <VerdictChip verdict={captureVerdict(entry.summary)} />
       </td>
 
       {/* Stats */}
@@ -336,6 +325,8 @@ export function RecentView({
         {toolbar}
       </div>
 
+      {entries.length > 0 && <RecentRollup entries={entries} />}
+
       {entries.length === 0 ? (
         <Panel className="flex-1">
           <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center">
@@ -363,7 +354,7 @@ export function RecentView({
               <tr>
                 {selectable && <th className="w-8 px-3 py-2 text-left" />}
                 <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">Capture</th>
-                <th className="w-24 px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">Severity</th>
+                <th className="w-28 px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">Verdict</th>
                 <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] sm:table-cell">Flows</th>
                 <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] md:table-cell">Packets</th>
                 <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] lg:table-cell">Size</th>

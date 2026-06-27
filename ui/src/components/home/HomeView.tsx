@@ -8,16 +8,14 @@ import {
   FileStack,
   GitCompare,
   Radar,
-  ShieldCheck,
   Upload,
 } from "lucide-react";
 import type { RecentEntry } from "../../types";
-import { captureVerdict, workspaceRollup, type CaptureVerdict } from "../../lib/workspace";
+import { captureVerdict, workspaceRollup } from "../../lib/workspace";
 import { compactNumber, humanBytes, humanNumber, relativeTime } from "../../lib/format";
-import { SEVERITY_META } from "../../lib/severity";
 import { kindMeta } from "../../lib/findingKinds";
-import { sevColor } from "../../cockpit/viz";
 import { StatTile, Sparkline } from "../../cockpit/primitives";
+import { VerdictChip } from "../VerdictChip";
 import { cn } from "../../lib/cn";
 
 export interface HomeViewProps {
@@ -320,28 +318,6 @@ function RecentLine({
         Open
       </button>
     </div>
-  );
-}
-
-function VerdictChip({ verdict }: { verdict: CaptureVerdict }) {
-  if (verdict.worst === "none") {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-[var(--r-chip)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 t-tag text-[var(--color-text-dim)]">
-        <ShieldCheck className="h-3 w-3" aria-hidden />
-        Clean
-      </span>
-    );
-  }
-  const color = sevColor(verdict.worst);
-  const label = SEVERITY_META[verdict.worst]?.label ?? verdict.worst;
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--r-chip)] border px-2 py-0.5 t-tag font-medium"
-      style={{ color, borderColor: color, backgroundColor: "var(--color-surface-2)" }}
-    >
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-      {verdict.worstCount} {label}
-    </span>
   );
 }
 

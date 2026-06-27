@@ -94,6 +94,37 @@ describe("RecentView", () => {
     expect(onRemove).toHaveBeenCalledWith(entry);
   });
 
+  it("shows a per-capture verdict chip matching the Home overview", () => {
+    const entry = makeEntry(); // makeOutput() has a critical incident
+    render(
+      <RecentView
+        entries={[entry]}
+        onOpen={vi.fn()}
+        onReanalyze={vi.fn()}
+        onRemove={vi.fn()}
+        onClear={vi.fn()}
+        onLoadNew={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("1 Critical")).toBeInTheDocument();
+  });
+
+  it("shows the workspace rollup header", () => {
+    const entry = makeEntry();
+    render(
+      <RecentView
+        entries={[entry]}
+        onOpen={vi.fn()}
+        onReanalyze={vi.fn()}
+        onRemove={vi.fn()}
+        onClear={vi.fn()}
+        onLoadNew={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Captures")).toBeInTheDocument();
+    expect(screen.getByText("Critical / high")).toBeInTheDocument();
+  });
+
   it("shows empty state when no entries", () => {
     render(
       <RecentView
