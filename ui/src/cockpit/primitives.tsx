@@ -107,6 +107,40 @@ export function IocDot() {
   );
 }
 
+/** Dense, bordered, shadow-free console container (threats / incidents / flows). */
+export function Panel({
+  title, label, count, icon, accent, right, className, bodyClassName, children,
+}: {
+  title?: string; label?: string; count?: string | number; icon?: ReactNode;
+  accent?: Severity; right?: ReactNode; className?: string; bodyClassName?: string; children: ReactNode;
+}) {
+  const accentColor = accent ? sevColor(accent) : undefined;
+  return (
+    <section
+      className={cn(
+        "flex min-w-0 flex-col overflow-hidden rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-panel)]",
+        className,
+      )}
+      style={accentColor ? { borderLeft: `2px solid ${accentColor}`, borderRadius: "0 var(--r-card) var(--r-card) 0" } : undefined}
+    >
+      {(title || label || right || icon) && (
+        <header className="flex items-center gap-2 border-b border-[var(--color-border)] px-3.5 py-2.5">
+          {icon && <span aria-hidden className="text-[var(--color-text-dim)]">{icon}</span>}
+          <div className="min-w-0">
+            {label && <div className="t-label">{label}</div>}
+            {title && <h3 className="t-title text-[var(--color-text)]">{title}</h3>}
+          </div>
+          {count !== undefined && (
+            <span className="font-mono-num t-tag text-[var(--color-text-faint)]">{count}</span>
+          )}
+          {right && <span className="ml-auto">{right}</span>}
+        </header>
+      )}
+      <div className={cn("min-w-0 flex-1", bodyClassName)}>{children}</div>
+    </section>
+  );
+}
+
 /** Inline micro-sparkline (area + line + endpoint dot). */
 export function Sparkline({
   values,
