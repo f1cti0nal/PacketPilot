@@ -23,7 +23,7 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className={cn("card flex min-w-0 flex-col", className)}>
+    <section className={cn("card flex min-w-0 flex-col shadow-[var(--sh-rest)]", className)}>
       {(title || label || right) && (
         <header className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-2">
           <div className="min-w-0">
@@ -138,6 +138,41 @@ export function Panel({
       )}
       <div className={cn("min-w-0 flex-1", bodyClassName)}>{children}</div>
     </section>
+  );
+}
+
+/** KPI metric tile: muted label + large mono value + optional sub line. */
+export function StatTile({ label, value, sub, accent, mono = true }: {
+  label: string; value: ReactNode; sub?: ReactNode; accent?: boolean; mono?: boolean;
+}) {
+  return (
+    <div className="rounded-[var(--r-tile)] bg-[var(--color-surface-2)] px-3 py-2.5">
+      <div className="t-label text-[var(--color-text-dim)]">{label}</div>
+      <div className={cn("mt-0.5 text-[var(--fs-display)] font-medium leading-none", mono && "font-mono-num",
+        accent ? "text-[var(--color-accent-strong)]" : "text-[var(--color-text)]")}>{value}</div>
+      {sub && <div className="mt-1 t-tag text-[var(--color-text-faint)]">{sub}</div>}
+    </div>
+  );
+}
+
+/** Neutral or accent tag chip. */
+export function Tag({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "accent" }) {
+  const isAccent = tone === "accent";
+  return (
+    <span className="inline-flex items-center rounded-[var(--r-chip)] border px-1.5 py-0.5 t-tag"
+      style={{
+        color: isAccent ? "var(--color-accent-strong)" : "var(--color-text-dim)",
+        borderColor: "var(--color-border)",
+        backgroundColor: isAccent ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "var(--color-surface-2)",
+      }}>{children}</span>
+  );
+}
+
+/** Offline cloud/hosting attribution chip ("☁ AWS"). */
+export function ProvenanceChip({ provider }: { provider: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-[var(--r-chip)] border border-[var(--color-border)] px-1.5 py-0.5 t-tag text-[var(--color-text-dim)]"
+      title="Offline cloud/hosting attribution (coarse hint)">☁ {provider}</span>
   );
 }
 

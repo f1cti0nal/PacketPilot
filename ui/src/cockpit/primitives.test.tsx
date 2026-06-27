@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Panel } from "./primitives";
+import { Panel, StatTile, Tag, ProvenanceChip } from "./primitives";
 
 describe("Panel", () => {
   it("renders a titled console panel with a count and severity accent", () => {
@@ -14,5 +14,17 @@ describe("Panel", () => {
     expect(screen.getByText("rows")).toBeInTheDocument();
     // severity accent applies the critical token as a left border color
     expect(container.querySelector("section")?.getAttribute("style") || "").toMatch(/--color-sev-critical|border-left/);
+  });
+});
+
+describe("StatTile + chips", () => {
+  it("renders a KPI tile with label and value", () => {
+    render(<StatTile label="Flows" value="99,993" />);
+    expect(screen.getByText("Flows")).toBeInTheDocument();
+    expect(screen.getByText("99,993")).toBeInTheDocument();
+  });
+  it("renders a cloud provenance chip with the provider", () => {
+    render(<ProvenanceChip provider="AWS" />);
+    expect(screen.getByText(/AWS/)).toBeInTheDocument();
   });
 });
