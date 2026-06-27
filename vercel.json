@@ -5,6 +5,10 @@
   "buildCommand": "cd ui && npm run build",
   "outputDirectory": "ui/dist",
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/app", "destination": "/index.html" },
+    { "source": "/app/(.*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",

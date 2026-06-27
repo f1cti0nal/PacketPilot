@@ -1,0 +1,1845 @@
+<div class="pp-landing">
+<style>
+  .pp-landing *, .pp-landing *::before, .pp-landing *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  .pp-landing {
+    --bg: #0b1220;
+    --surface: #0f1828;
+    --surface-2: #141e30;
+    --surface-3: #1b2740;
+    --panel: #0e1a2c;
+    --border: #223049;
+    --text: #e7edf7;
+    --text-dim: #93a1b7;
+    --text-faint: #8b98ad;
+    --accent: #60a5fa;
+    --accent-strong: #93c5fd;
+    --accent-deep: #1d4ed8;
+    --on-accent: #ffffff;
+    --sev-critical: #f43f5e;
+    --sev-high: #fb923c;
+    --sev-medium: #fbbf24;
+    --sev-low: #2dd4bf;
+    --sev-info: #38bdf8;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-lg: 14px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── UTILITY ── */
+  .pp-landing .mono { font-family: var(--mono); }
+  .pp-landing .accent { color: var(--accent); }
+  .pp-landing .dim { color: var(--text-dim); }
+  .pp-landing .faint { color: var(--text-faint); }
+  .pp-landing .inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── NAV ── */
+  .pp-nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(11,18,32,0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .pp-nav .inner {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    height: 56px;
+  }
+  .pp-nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    flex-shrink: 0;
+  }
+  .pp-nav-brand svg { color: var(--accent); flex-shrink: 0; }
+  .pp-nav-links {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    justify-content: center;
+  }
+  .pp-nav-links a {
+    text-decoration: none;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s, background 0.15s;
+  }
+  .pp-nav-links a:hover { color: var(--text); background: var(--surface-2); }
+  .pp-nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .pp-btn-ghost {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: color 0.15s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+  .pp-btn-ghost:hover { color: var(--text); }
+  .pp-btn-primary {
+    background: var(--accent-deep);
+    color: var(--on-accent);
+    border: none;
+    font-size: 14px;
+    padding: 7px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--sans);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .pp-btn-primary:hover { background: #2563eb; }
+  .pp-btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-size: 14px;
+    padding: 7px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: var(--sans);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+  .pp-btn-secondary:hover { border-color: var(--accent); background: rgba(96,165,250,0.05); color: var(--text); }
+
+  /* ── HERO ── */
+  .pp-hero {
+    position: relative;
+    overflow: hidden;
+    padding: 72px 0 80px;
+  }
+  .pp-hero-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  /* scanline texture */
+  .pp-hero-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(255,255,255,0.012) 3px,
+      rgba(255,255,255,0.012) 4px
+    );
+  }
+  /* subtle masked grid */
+  .pp-hero-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(34,48,73,0.4) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,48,73,0.4) 1px, transparent 1px);
+    background-size: 60px 60px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 30%, transparent 80%);
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 30%, transparent 80%);
+  }
+  .pp-hero-glow {
+    position: absolute;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 900px;
+    height: 600px;
+    max-width: 100%;
+    background: radial-gradient(ellipse at center, rgba(29,78,216,0.18) 0%, rgba(96,165,250,0.06) 45%, transparent 70%);
+    pointer-events: none;
+  }
+  .pp-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 24px;
+  }
+  .pp-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(29,78,216,0.18);
+    border: 1px solid rgba(96,165,250,0.25);
+    border-radius: 100px;
+    padding: 4px 14px 4px 10px;
+    font-size: 12px;
+    color: var(--accent-strong);
+    font-family: var(--mono);
+    letter-spacing: 0.03em;
+  }
+  .pp-eyebrow-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    flex-shrink: 0;
+  }
+  .pp-hero-headline {
+    font-size: clamp(32px, 5vw, 54px);
+    line-height: 1.12;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+    max-width: 820px;
+    color: var(--text);
+  }
+  .pp-hero-headline em {
+    font-style: normal;
+    color: var(--accent);
+  }
+  .pp-hero-sub {
+    font-size: 17px;
+    color: var(--text-dim);
+    max-width: 560px;
+    line-height: 1.6;
+  }
+  .pp-hero-ctas {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .pp-hero-ctas .pp-btn-primary { font-size: 15px; padding: 10px 22px; }
+  .pp-hero-ctas .pp-btn-secondary { font-size: 15px; padding: 10px 22px; }
+
+  /* ── MOCKUP ── */
+  .pp-mockup-wrap {
+    position: relative;
+    margin-top: 56px;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+  .pp-mockup-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 900px;
+    height: 500px;
+    max-width: 100%;
+    background: radial-gradient(ellipse at center, rgba(29,78,216,0.22) 0%, rgba(96,165,250,0.08) 50%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .pp-mockup {
+    position: relative;
+    z-index: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    width: 100%;
+    max-width: 1000px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(96,165,250,0.08);
+  }
+  /* titlebar */
+  .pp-titlebar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pp-titlebar-dots { display: flex; gap: 6px; }
+  .pp-titlebar-dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+  .pp-titlebar-dots span:nth-child(1) { background: #f43f5e; opacity: 0.55; }
+  .pp-titlebar-dots span:nth-child(2) { background: #fbbf24; opacity: 0.55; }
+  .pp-titlebar-dots span:nth-child(3) { background: #2dd4bf; opacity: 0.55; }
+  .pp-titlebar-title {
+    flex: 1;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-titlebar-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--sev-info);
+    background: rgba(56,189,248,0.1);
+    border: 1px solid rgba(56,189,248,0.2);
+    border-radius: 4px;
+    padding: 1px 6px;
+    flex-shrink: 0;
+  }
+  /* app layout */
+  .pp-app-layout {
+    display: grid;
+    grid-template-columns: 48px 232px 1fr;
+    height: 432px;
+  }
+  /* rail */
+  .pp-rail {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 6px;
+  }
+  .pp-rail-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .pp-rail-icon.active {
+    background: rgba(96,165,250,0.12);
+    color: var(--accent);
+  }
+  .pp-rail-icon:hover:not(.active) { background: var(--surface-2); color: var(--text-dim); }
+  .pp-rail-sep {
+    width: 24px;
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+  /* sidebar */
+  .pp-sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .pp-sidebar-header {
+    padding: 12px 14px 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pp-sidebar-title {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .pp-sidebar-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--sev-critical);
+    background: rgba(244,63,94,0.1);
+    border: 1px solid rgba(244,63,94,0.2);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .pp-findings {
+    flex: 1;
+    overflow: hidden;
+    padding: 6px 0;
+  }
+  .pp-finding {
+    padding: 7px 14px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .pp-finding.active {
+    background: rgba(96,165,250,0.06);
+    border-left-color: var(--accent);
+  }
+  .pp-finding:hover:not(.active) { background: var(--surface-2); }
+  .pp-finding-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+  }
+  .pp-sev-chip {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    padding: 1px 6px;
+    border: 1px solid;
+    flex-shrink: 0;
+    line-height: 1.5;
+  }
+  .pp-sev-chip.critical {
+    color: var(--sev-critical);
+    background: rgba(244,63,94,0.1);
+    border-color: rgba(244,63,94,0.28);
+  }
+  .pp-sev-chip.high {
+    color: var(--sev-high);
+    background: rgba(251,146,60,0.1);
+    border-color: rgba(251,146,60,0.28);
+  }
+  .pp-sev-chip.medium {
+    color: var(--sev-medium);
+    background: rgba(251,191,36,0.1);
+    border-color: rgba(251,191,36,0.28);
+  }
+  .pp-sev-chip.low {
+    color: var(--sev-low);
+    background: rgba(45,212,191,0.1);
+    border-color: rgba(45,212,191,0.28);
+  }
+  .pp-sev-chip.info {
+    color: var(--sev-info);
+    background: rgba(56,189,248,0.1);
+    border-color: rgba(56,189,248,0.28);
+  }
+  .pp-finding-name {
+    font-size: 12px;
+    color: var(--text);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-finding-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-finding-mitre {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-faint);
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-finding-more {
+    padding: 8px 14px 4px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    opacity: 0.7;
+  }
+  /* stat tiles in sidebar */
+  .pp-stat-tiles {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .pp-stat-tile {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 9px;
+  }
+  .pp-stat-val {
+    font-family: var(--mono);
+    font-size: 16px;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .pp-stat-val.critical { color: var(--sev-critical); }
+  .pp-stat-label {
+    font-size: 9px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+  }
+  /* main panel */
+  .pp-main-panel {
+    background: var(--surface-2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .pp-panel-tabs {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+    background: var(--surface);
+    gap: 0;
+  }
+  .pp-tab {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text-faint);
+    padding: 10px 14px;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+  .pp-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .pp-tab:hover:not(.active) { color: var(--text-dim); }
+  /* flows table */
+  .pp-flows-table {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .pp-table-head {
+    display: grid;
+    grid-template-columns: 28px 1fr 90px 80px 80px 64px 96px;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    gap: 8px;
+  }
+  .pp-th {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-table-body { flex: 1; overflow: hidden; }
+  .pp-flow-row {
+    display: grid;
+    grid-template-columns: 28px 1fr 90px 80px 80px 64px 96px;
+    padding: 5px 16px;
+    border-bottom: 1px solid rgba(34,48,73,0.5);
+    gap: 8px;
+    align-items: center;
+    transition: background 0.1s;
+  }
+  .pp-flow-row:hover { background: rgba(96,165,250,0.04); }
+  .pp-flow-row.flagged { background: rgba(244,63,94,0.04); }
+  .pp-flow-row.flagged:hover { background: rgba(244,63,94,0.07); }
+  .pp-td {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pp-td.src { color: var(--text); }
+  .pp-td.proto-tls { color: var(--sev-info); }
+  .pp-td.proto-dns { color: var(--sev-low); }
+  .pp-td.proto-http { color: var(--accent); }
+  .pp-flow-flag {
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--sev-critical);
+  }
+  .pp-flow-flag svg { width: 12px; height: 12px; }
+  /* panel info row */
+  .pp-panel-info {
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .pp-panel-info-item {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .pp-panel-info-item svg { color: var(--text-faint); flex-shrink: 0; }
+  .pp-panel-info-item strong {
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  /* floating protocol nodes */
+  .pp-float-nodes {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .pp-float-node {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 8px;
+    opacity: 0.82;
+    white-space: nowrap;
+  }
+
+  /* ── DASHBOARD SVG (second visual) ── */
+  .pp-dash {
+    padding: 0 0 72px;
+  }
+  .pp-dash .inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  .pp-dash-caption {
+    text-align: center;
+    max-width: 560px;
+  }
+  .pp-dash-caption .pp-section-eyebrow { margin-bottom: 10px; }
+  .pp-dash-caption h2 {
+    font-size: clamp(22px, 3vw, 30px);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 10px;
+    line-height: 1.2;
+  }
+  .pp-dash-caption p {
+    font-size: 15px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .pp-dash-frame {
+    position: relative;
+    width: 100%;
+    max-width: 1000px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+  }
+  .pp-dash-frame svg { display: block; width: 100%; height: auto; }
+
+  /* ── TRUST STRIP ── */
+  .pp-trust {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 16px 0;
+  }
+  .pp-trust .inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+  .pp-trust-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: var(--text-dim);
+    padding: 6px 20px;
+    white-space: nowrap;
+  }
+  .pp-trust-item svg { color: var(--accent); flex-shrink: 0; }
+  .pp-trust-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+  }
+
+  /* ── SECTION HEADERS ── */
+  .pp-section-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  .pp-section-title {
+    font-size: clamp(24px, 3.5vw, 36px);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 12px;
+    line-height: 1.2;
+  }
+  .pp-section-sub {
+    font-size: 16px;
+    color: var(--text-dim);
+    max-width: 540px;
+    margin-bottom: 52px;
+    line-height: 1.6;
+  }
+
+  /* ── FEATURES (B's bordered card grid) ── */
+  .pp-features {
+    padding: 88px 0;
+  }
+  .pp-features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .pp-feat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px 26px;
+    transition: border-color 0.18s;
+  }
+  .pp-feat-card:hover { border-color: rgba(96,165,250,0.35); }
+  .pp-feat-icon {
+    width: 40px; height: 40px;
+    background: rgba(29,78,216,0.15);
+    border: 1px solid rgba(96,165,250,0.2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    margin-bottom: 18px;
+  }
+  .pp-feat-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .pp-feat-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  /* ── HOW IT WORKS ── */
+  .pp-how {
+    padding: 88px 0;
+    border-top: 1px solid var(--border);
+  }
+  .pp-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 52px;
+    position: relative;
+  }
+  .pp-steps::before {
+    content: '';
+    position: absolute;
+    top: 22px;
+    left: calc(16.667% + 22px);
+    right: calc(16.667% + 22px);
+    height: 1px;
+    background: linear-gradient(90deg, var(--accent-deep), var(--border), var(--accent-deep));
+    opacity: 0.5;
+  }
+  .pp-step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+  }
+  .pp-step-num {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 16px;
+    color: var(--accent);
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+  }
+  .pp-step-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .pp-step-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    max-width: 260px;
+  }
+  .pp-step-code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+  }
+
+  /* ── PRIVACY ── */
+  .pp-privacy {
+    padding: 88px 0;
+    border-top: 1px solid var(--border);
+  }
+  .pp-privacy-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 52px 48px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: start;
+    position: relative;
+    overflow: hidden;
+  }
+  .pp-privacy-panel::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -80px;
+    width: 320px;
+    height: 320px;
+    background: radial-gradient(circle, rgba(29,78,216,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .pp-privacy-left { position: relative; z-index: 1; }
+  .pp-privacy-right {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .pp-privacy-shield {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    background: rgba(45,212,191,0.1);
+    border: 1px solid rgba(45,212,191,0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sev-low);
+    margin-bottom: 18px;
+  }
+  .pp-privacy-headline {
+    font-size: clamp(22px, 3vw, 32px);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    line-height: 1.2;
+    margin-bottom: 16px;
+  }
+  .pp-privacy-body {
+    font-size: 15px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    margin-bottom: 22px;
+  }
+  .pp-privacy-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+  .pp-privacy-fact {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .pp-privacy-fact svg { color: var(--sev-low); flex-shrink: 0; margin-top: 2px; }
+  .pp-privacy-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .pp-privacy-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .pp-privacy-row.yes {
+    background: rgba(45,212,191,0.05);
+    border-color: rgba(45,212,191,0.22);
+    color: var(--text);
+  }
+  .pp-privacy-row.no {
+    background: rgba(244,63,94,0.04);
+    border-color: rgba(244,63,94,0.14);
+    color: var(--text-dim);
+    opacity: 0.85;
+  }
+  .pp-privacy-row-icon {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .pp-privacy-row.yes .pp-privacy-row-icon { background: rgba(45,212,191,0.12); color: var(--sev-low); }
+  .pp-privacy-row.no .pp-privacy-row-icon { background: rgba(244,63,94,0.1); color: var(--sev-critical); }
+  .pp-privacy-row-label { font-size: 13px; color: var(--text); margin-bottom: 2px; }
+  .pp-privacy-row.no .pp-privacy-row-label { color: var(--text-dim); }
+  .pp-privacy-row-sub { font-size: 11px; font-family: var(--mono); color: var(--text-faint); }
+  .pp-privacy-row-badge {
+    margin-left: auto;
+    font-size: 11px;
+    font-family: var(--mono);
+    padding: 2px 8px;
+    border-radius: 100px;
+    flex-shrink: 0;
+  }
+  .pp-privacy-row.yes .pp-privacy-row-badge { color: var(--sev-low); background: rgba(45,212,191,0.12); border: 1px solid rgba(45,212,191,0.25); }
+  .pp-privacy-row.no .pp-privacy-row-badge { color: var(--sev-critical); background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.2); }
+  .pp-privacy-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+  }
+  .pp-privacy-divider span:first-child, .pp-privacy-divider span:last-child { flex: 1; height: 1px; background: var(--border); }
+  .pp-privacy-divider .vs { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+  .pp-privacy-proof {
+    margin-top: 4px;
+    padding: 16px;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .pp-privacy-proof-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .pp-privacy-proof-val {
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--accent);
+    line-height: 1.1;
+  }
+  .pp-privacy-proof-note {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 4px;
+  }
+  .pp-privacy-ai {
+    padding: 14px 16px;
+    background: rgba(96,165,250,0.06);
+    border: 1px solid rgba(96,165,250,0.16);
+    border-radius: 10px;
+  }
+  .pp-privacy-ai-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .pp-privacy-ai-body {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+
+  /* ── FINAL CTA ── */
+  .pp-cta-band {
+    padding: 88px 0;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .pp-cta-band::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 700px;
+    height: 400px;
+    max-width: 100%;
+    background: radial-gradient(ellipse at center, rgba(29,78,216,0.16) 0%, transparent 65%);
+    pointer-events: none;
+  }
+  .pp-cta-band .inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+  }
+  .pp-cta-headline {
+    font-size: clamp(24px, 4vw, 42px);
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    color: var(--text);
+    max-width: 640px;
+    line-height: 1.15;
+  }
+  .pp-cta-sub {
+    font-size: 15px;
+    color: var(--text-dim);
+    max-width: 440px;
+    line-height: 1.6;
+  }
+  .pp-cta-band .pp-btn-primary { font-size: 16px; padding: 12px 28px; }
+
+  /* ── FOOTER ── */
+  .pp-footer {
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    padding: 48px 0 32px;
+  }
+  .pp-footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+    margin-bottom: 40px;
+  }
+  .pp-footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    text-decoration: none;
+    color: var(--text);
+    font-size: 15px;
+  }
+  .pp-footer-brand svg { color: var(--accent); }
+  .pp-footer-tagline {
+    font-size: 13px;
+    color: var(--text-faint);
+    line-height: 1.6;
+    max-width: 280px;
+  }
+  .pp-footer-col-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-faint);
+    margin-bottom: 14px;
+  }
+  .pp-footer-links {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .pp-footer-links a {
+    font-size: 13px;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.12s;
+  }
+  .pp-footer-links a:hover { color: var(--text); }
+  .pp-footer-bottom {
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pp-footer-copy {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .pp-footer-note {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 860px) {
+    .pp-nav-links { display: none; }
+    .pp-hero { padding: 48px 0 56px; }
+    .pp-features-grid { grid-template-columns: 1fr 1fr; }
+    .pp-steps { grid-template-columns: 1fr; gap: 32px; }
+    .pp-steps::before { display: none; }
+    .pp-privacy-panel { grid-template-columns: 1fr; gap: 36px; padding: 32px 24px; }
+    .pp-footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
+    .pp-app-layout { grid-template-columns: 48px 1fr; }
+    .pp-main-panel { display: none; }
+    .pp-mockup { max-width: 100%; }
+    .pp-float-node { display: none; }
+  }
+  @media (max-width: 540px) {
+    .pp-features-grid { grid-template-columns: 1fr; }
+    .pp-footer-grid { grid-template-columns: 1fr; }
+    .pp-trust-sep { display: none; }
+  }
+</style>
+
+<!-- ═══════════════════════════════════════════ NAV ═══════════════════════════════════════════ -->
+<nav class="pp-nav">
+  <div class="inner">
+    <a class="pp-nav-brand" href="#">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="11" cy="11" r="10" stroke="currentColor" stroke-width="1.2" opacity="0.3"/>
+        <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+        <circle cx="11" cy="11" r="3" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="11" y1="1" x2="11" y2="21" stroke="currentColor" stroke-width="1" opacity="0.2"/>
+        <line x1="1" y1="11" x2="21" y2="11" stroke="currentColor" stroke-width="1" opacity="0.2"/>
+        <circle cx="11" cy="4" r="1.5" fill="currentColor"/>
+        <circle cx="11" cy="11" r="1.5" fill="currentColor"/>
+      </svg>
+      PacketPilot
+    </a>
+    <div class="pp-nav-links">
+      <a href="#features">Features</a>
+      <a href="#detections">Detections</a>
+      <a href="#privacy">Privacy</a>
+      <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">Docs</a>
+    </div>
+    <div class="pp-nav-actions">
+      <a class="pp-btn-ghost" href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">GitHub</a>
+      <a class="pp-btn-primary" href="/app">Launch app&nbsp;&#8594;</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════ HERO ════════════════════════════════════════════ -->
+<section class="pp-hero">
+  <div class="pp-hero-bg" aria-hidden="true"></div>
+  <div class="pp-hero-glow" aria-hidden="true"></div>
+  <div class="inner">
+    <div class="pp-hero-content">
+      <div class="pp-eyebrow">
+        <span class="pp-eyebrow-dot"></span>
+        Runs 100% in your browser
+      </div>
+      <h1 class="pp-hero-headline">
+        Network forensics. Zero uploads.<br>
+        <em>Real answers.</em>
+      </h1>
+      <p class="pp-hero-sub">
+        Drop a .pcap and get severity-ranked threat intelligence in seconds — powered by a Rust/WASM engine that never sends a packet off your device. 20+ detectors, MITRE ATT&amp;CK mapped, no account required.
+      </p>
+      <div class="pp-hero-ctas">
+        <a class="pp-btn-primary" href="/app">Launch PacketPilot&nbsp;&#8594;</a>
+        <a class="pp-btn-secondary" href="/app">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/>
+            <polygon points="5.5,4.5 10,7 5.5,9.5" fill="currentColor"/>
+          </svg>
+          See a live capture
+        </a>
+      </div>
+
+      <!-- PRODUCT MOCKUP: dense SOC console -->
+      <div class="pp-mockup-wrap">
+        <div class="pp-mockup-glow" aria-hidden="true"></div>
+
+        <!-- floating protocol nodes (B's placement) -->
+        <div class="pp-float-nodes" aria-hidden="true">
+          <div class="pp-float-node" style="top:11%;left:-3%;">TLS 1.3</div>
+          <div class="pp-float-node" style="top:34%;left:-5%;">QUIC</div>
+          <div class="pp-float-node" style="top:60%;left:-3%;">DNS</div>
+          <div class="pp-float-node" style="top:11%;right:-3%;">STIX 2.1</div>
+          <div class="pp-float-node" style="top:37%;right:-4%;">MISP</div>
+          <div class="pp-float-node" style="top:62%;right:-3%;">Sigma</div>
+        </div>
+
+        <div class="pp-mockup">
+          <!-- titlebar -->
+          <div class="pp-titlebar">
+            <div class="pp-titlebar-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <div class="pp-titlebar-title">PacketPilot &mdash; suspicious_traffic_2026-06-14.pcapng</div>
+            <div class="pp-titlebar-badge">LIVE</div>
+          </div>
+
+          <!-- app layout -->
+          <div class="pp-app-layout">
+            <!-- rail -->
+            <div class="pp-rail" aria-hidden="true">
+              <div class="pp-rail-icon active" title="Dashboard">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                  <rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                  <rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                  <rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+              </div>
+              <div class="pp-rail-icon" title="Flows">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="2" y1="12" x2="10" y2="12" stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+              </div>
+              <div class="pp-rail-sep"></div>
+              <div class="pp-rail-icon" title="Threats">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 2L14 5V9C14 12.3 11.3 14.9 8 15C4.7 14.9 2 12.3 2 9V5L8 2Z" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="8" y1="7" x2="8" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <circle cx="8" cy="11" r="0.7" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="pp-rail-icon" title="Graph">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="3.5" r="2.2" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="3" cy="12.5" r="2.2" stroke="currentColor" stroke-width="1.2"/>
+                  <circle cx="13" cy="12.5" r="2.2" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="8" y1="5.7" x2="4" y2="10.6" stroke="currentColor" stroke-width="1.2"/>
+                  <line x1="8" y1="5.7" x2="12" y2="10.6" stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+              </div>
+              <div class="pp-rail-icon" title="Export">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 10V2M5 5L8 2L11 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M3 11V13H13V11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </div>
+            </div>
+
+            <!-- sidebar: findings (full sev ladder from C) -->
+            <div class="pp-sidebar">
+              <div class="pp-sidebar-header">
+                <span class="pp-sidebar-title">Threats</span>
+                <span class="pp-sidebar-count">12 findings</span>
+              </div>
+              <div class="pp-findings">
+                <div class="pp-finding active">
+                  <div class="pp-finding-top">
+                    <span class="pp-sev-chip critical">CRIT</span>
+                    <span class="pp-finding-name">Malware Download</span>
+                  </div>
+                  <div class="pp-finding-meta">SHA-256 IOC match</div>
+                  <div class="pp-finding-mitre">T1105 &middot; Ingress Transfer</div>
+                </div>
+                <div class="pp-finding">
+                  <div class="pp-finding-top">
+                    <span class="pp-sev-chip high">HIGH</span>
+                    <span class="pp-finding-name">C2 Beaconing</span>
+                  </div>
+                  <div class="pp-finding-meta">185.220.101.47 &middot; 30s interval</div>
+                  <div class="pp-finding-mitre">T1071 &middot; App Layer Protocol</div>
+                </div>
+                <div class="pp-finding">
+                  <div class="pp-finding-top">
+                    <span class="pp-sev-chip medium">MED</span>
+                    <span class="pp-finding-name">DGA Domains</span>
+                  </div>
+                  <div class="pp-finding-meta">34 random domains resolved</div>
+                  <div class="pp-finding-mitre">T1568.002 &middot; Dynamic Resolution</div>
+                </div>
+                <div class="pp-finding">
+                  <div class="pp-finding-top">
+                    <span class="pp-sev-chip low">LOW</span>
+                    <span class="pp-finding-name">Weak TLS</span>
+                  </div>
+                  <div class="pp-finding-meta">3 flows using TLS 1.0</div>
+                  <div class="pp-finding-mitre">T1040 &middot; Network Sniffing</div>
+                </div>
+                <div class="pp-finding">
+                  <div class="pp-finding-top">
+                    <span class="pp-sev-chip info">INFO</span>
+                    <span class="pp-finding-name">Encrypted DNS</span>
+                  </div>
+                  <div class="pp-finding-meta">18 DoH queries observed</div>
+                  <div class="pp-finding-mitre">T1572 &middot; Protocol Tunneling</div>
+                </div>
+                <div class="pp-finding-more">+ 6 more findings</div>
+              </div>
+              <div class="pp-stat-tiles">
+                <div class="pp-stat-tile">
+                  <div class="pp-stat-val critical">2</div>
+                  <div class="pp-stat-label">Critical</div>
+                </div>
+                <div class="pp-stat-tile">
+                  <div class="pp-stat-val">14.2k</div>
+                  <div class="pp-stat-label">Flows</div>
+                </div>
+                <div class="pp-stat-tile">
+                  <div class="pp-stat-val">3</div>
+                  <div class="pp-stat-label">High</div>
+                </div>
+                <div class="pp-stat-tile">
+                  <div class="pp-stat-val">187</div>
+                  <div class="pp-stat-label">Hosts</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- main panel: flows table -->
+            <div class="pp-main-panel">
+              <div class="pp-panel-tabs">
+                <div class="pp-tab">Overview</div>
+                <div class="pp-tab active">Flows</div>
+                <div class="pp-tab">Hosts</div>
+                <div class="pp-tab">Export</div>
+              </div>
+              <div class="pp-flows-table">
+                <div class="pp-table-head">
+                  <div class="pp-th"></div>
+                  <div class="pp-th">SRC &rarr; DST</div>
+                  <div class="pp-th">PROTO</div>
+                  <div class="pp-th">DST PORT</div>
+                  <div class="pp-th">BYTES</div>
+                  <div class="pp-th">PKTS</div>
+                  <div class="pp-th">JA3</div>
+                </div>
+                <div class="pp-table-body">
+                  <div class="pp-flow-row flagged">
+                    <div class="pp-flow-flag">
+                      <svg viewBox="0 0 12 12" fill="none"><path d="M6 2v4M6 8v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1"/></svg>
+                    </div>
+                    <div class="pp-td src">10.0.0.54 &rarr; 185.220.101.47</div>
+                    <div class="pp-td proto-tls">TLS</div>
+                    <div class="pp-td">443</div>
+                    <div class="pp-td">2.1 MB</div>
+                    <div class="pp-td">4,821</div>
+                    <div class="pp-td">a1b2c3&hellip;</div>
+                  </div>
+                  <div class="pp-flow-row">
+                    <div class="pp-flow-flag"></div>
+                    <div class="pp-td src">10.0.0.12 &rarr; 8.8.8.8</div>
+                    <div class="pp-td proto-dns">DNS</div>
+                    <div class="pp-td">53</div>
+                    <div class="pp-td">4.2 KB</div>
+                    <div class="pp-td">38</div>
+                    <div class="pp-td dim">&mdash;</div>
+                  </div>
+                  <div class="pp-flow-row flagged">
+                    <div class="pp-flow-flag">
+                      <svg viewBox="0 0 12 12" fill="none"><path d="M6 2v4M6 8v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1"/></svg>
+                    </div>
+                    <div class="pp-td src">10.0.0.54 &rarr; 91.108.56.181</div>
+                    <div class="pp-td proto-http">HTTP</div>
+                    <div class="pp-td">80</div>
+                    <div class="pp-td">842 KB</div>
+                    <div class="pp-td">1,205</div>
+                    <div class="pp-td dim">&mdash;</div>
+                  </div>
+                  <div class="pp-flow-row">
+                    <div class="pp-flow-flag"></div>
+                    <div class="pp-td src">10.0.0.1 &rarr; 172.217.14.196</div>
+                    <div class="pp-td proto-tls">TLS</div>
+                    <div class="pp-td">443</div>
+                    <div class="pp-td">156 KB</div>
+                    <div class="pp-td">302</div>
+                    <div class="pp-td">f7e8d9&hellip;</div>
+                  </div>
+                  <div class="pp-flow-row">
+                    <div class="pp-flow-flag"></div>
+                    <div class="pp-td src">10.0.0.23 &rarr; 1.1.1.1</div>
+                    <div class="pp-td proto-dns">DNS</div>
+                    <div class="pp-td">53</div>
+                    <div class="pp-td">8.7 KB</div>
+                    <div class="pp-td">72</div>
+                    <div class="pp-td dim">&mdash;</div>
+                  </div>
+                  <div class="pp-flow-row">
+                    <div class="pp-flow-flag"></div>
+                    <div class="pp-td src">10.0.0.5 &rarr; 104.26.10.229</div>
+                    <div class="pp-td proto-tls">TLS</div>
+                    <div class="pp-td">443</div>
+                    <div class="pp-td">48.2 KB</div>
+                    <div class="pp-td">89</div>
+                    <div class="pp-td">3c4d5e&hellip;</div>
+                  </div>
+                  <div class="pp-flow-row">
+                    <div class="pp-flow-flag"></div>
+                    <div class="pp-td src">10.0.0.12 &rarr; 10.0.0.254</div>
+                    <div class="pp-td proto-http">HTTP</div>
+                    <div class="pp-td">8080</div>
+                    <div class="pp-td">12.3 KB</div>
+                    <div class="pp-td">24</div>
+                    <div class="pp-td dim">&mdash;</div>
+                  </div>
+                  <div class="pp-flow-row">
+                    <div class="pp-flow-flag"></div>
+                    <div class="pp-td src">192.168.1.42 &rarr; 34.120.54.230</div>
+                    <div class="pp-td proto-tls">TLS</div>
+                    <div class="pp-td">443</div>
+                    <div class="pp-td">91.7 KB</div>
+                    <div class="pp-td">178</div>
+                    <div class="pp-td">9b8c7d&hellip;</div>
+                  </div>
+                </div>
+              </div>
+              <!-- panel-info bar -->
+              <div class="pp-panel-info">
+                <div class="pp-panel-info-item">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/></svg>
+                  <strong>14,281</strong>&nbsp;flows
+                </div>
+                <div class="pp-panel-info-item">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+                  <strong>187</strong>&nbsp;hosts
+                </div>
+                <div class="pp-panel-info-item">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 8L8 2M2 2l6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                  <strong>2</strong>&nbsp;IOC matches
+                </div>
+                <div class="pp-panel-info-item" style="margin-left:auto;">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M5 3v2l1.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                  <strong>analyzed in 0.8s</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ DASHBOARD VISUAL (C's full SVG) ═══════════════ -->
+<section class="pp-dash">
+  <div class="inner">
+    <div class="pp-dash-caption">
+      <div class="pp-section-eyebrow">Inside the dashboard</div>
+      <h2>Severity, scored and explained</h2>
+      <p>Every finding rolls up into a transparent risk score — see exactly which detections drove it, and how hosts, IOCs, and C2 relate.</p>
+    </div>
+    <div class="pp-dash-frame">
+      <svg viewBox="0 0 1000 470" xmlns="http://www.w3.org/2000/svg" aria-label="PacketPilot score waterfall and threat relationship graph">
+        <defs>
+          <linearGradient id="ppDashBg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0f1828"/>
+            <stop offset="100%" stop-color="#0b1220"/>
+          </linearGradient>
+        </defs>
+        <rect width="1000" height="470" fill="url(#ppDashBg)"/>
+
+        <!-- top chrome -->
+        <rect width="1000" height="40" fill="#0e1a2c"/>
+        <rect width="1000" height="1" y="40" fill="#223049"/>
+        <circle cx="22" cy="20" r="4.5" fill="#f43f5e" opacity="0.5"/>
+        <circle cx="38" cy="20" r="4.5" fill="#fbbf24" opacity="0.5"/>
+        <circle cx="54" cy="20" r="4.5" fill="#2dd4bf" opacity="0.5"/>
+        <text x="500" y="24" fill="#8b98ad" font-size="11" font-family="ui-monospace,monospace" text-anchor="middle">PacketPilot — Overview</text>
+
+        <!-- stat tiles row -->
+        <rect x="24" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
+        <text x="40" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Total flows</text>
+        <text x="40" y="103" fill="#e7edf7" font-size="22" font-family="ui-monospace,monospace">48,291</text>
+
+        <rect x="256" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
+        <text x="272" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Unique hosts</text>
+        <text x="272" y="103" fill="#e7edf7" font-size="22" font-family="ui-monospace,monospace">127</text>
+
+        <rect x="488" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
+        <text x="504" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Capture duration</text>
+        <text x="504" y="103" fill="#e7edf7" font-size="22" font-family="ui-monospace,monospace">4h 12m</text>
+
+        <rect x="720" y="58" width="256" height="60" rx="8" fill="#0f1828" stroke="#223049" stroke-width="1"/>
+        <text x="736" y="80" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Risk score</text>
+        <text x="736" y="103" fill="#f43f5e" font-size="22" font-family="ui-monospace,monospace">87 / 100</text>
+
+        <!-- ── SCORE WATERFALL panel ── -->
+        <rect x="24" y="138" width="466" height="308" rx="10" fill="#0f1828" stroke="#223049" stroke-width="1"/>
+        <text x="44" y="168" fill="#e7edf7" font-size="13" font-family="system-ui,sans-serif">Score waterfall</text>
+        <text x="44" y="186" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">How each detection contributes to the risk score</text>
+
+        <!-- waterfall bars (baseline at x=200) -->
+        <!-- +42 Malware -->
+        <rect x="200" y="206" width="210" height="26" rx="4" fill="rgba(244,63,94,0.18)" stroke="#f43f5e" stroke-width="1"/>
+        <text x="44" y="223" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">Malware DL</text>
+        <text x="412" y="223" fill="#f43f5e" font-size="10.5" font-family="ui-monospace,monospace">+42</text>
+        <!-- +25 Beaconing -->
+        <rect x="200" y="240" width="125" height="26" rx="4" fill="rgba(251,146,60,0.18)" stroke="#fb923c" stroke-width="1"/>
+        <text x="44" y="257" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">Beaconing</text>
+        <text x="333" y="257" fill="#fb923c" font-size="10.5" font-family="ui-monospace,monospace">+25</text>
+        <!-- +14 DGA -->
+        <rect x="200" y="274" width="70" height="26" rx="4" fill="rgba(251,191,36,0.16)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="44" y="291" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">DGA</text>
+        <text x="278" y="291" fill="#fbbf24" font-size="10.5" font-family="ui-monospace,monospace">+14</text>
+        <!-- +6 PortScan -->
+        <rect x="200" y="308" width="30" height="26" rx="4" fill="rgba(45,212,191,0.16)" stroke="#2dd4bf" stroke-width="1"/>
+        <text x="44" y="325" fill="#93a1b7" font-size="10.5" font-family="ui-monospace,monospace">Port scan</text>
+        <text x="238" y="325" fill="#2dd4bf" font-size="10.5" font-family="ui-monospace,monospace">+6</text>
+
+        <!-- waterfall total line -->
+        <line x1="44" y1="352" x2="470" y2="352" stroke="#223049" stroke-width="1"/>
+        <text x="44" y="375" fill="#e7edf7" font-size="11" font-family="ui-monospace,monospace">Total risk</text>
+        <text x="470" y="375" fill="#f43f5e" font-size="13" font-family="ui-monospace,monospace" text-anchor="end">87</text>
+
+        <!-- export buttons -->
+        <rect x="44" y="396" width="124" height="30" rx="7" fill="#1d4ed8"/>
+        <text x="106" y="415" fill="#ffffff" font-size="11" text-anchor="middle" font-family="system-ui,sans-serif">Export STIX &#8594;</text>
+        <rect x="178" y="396" width="120" height="30" rx="7" fill="none" stroke="#223049" stroke-width="1"/>
+        <text x="238" y="415" fill="#93a1b7" font-size="11" text-anchor="middle" font-family="system-ui,sans-serif">HTML report</text>
+
+        <!-- ── THREAT GRAPH panel ── -->
+        <rect x="510" y="138" width="466" height="308" rx="10" fill="#0f1828" stroke="#223049" stroke-width="1"/>
+        <text x="530" y="168" fill="#e7edf7" font-size="13" font-family="system-ui,sans-serif">Threat relationship graph</text>
+        <text x="530" y="186" fill="#8b98ad" font-size="10" font-family="system-ui,sans-serif">Central host and its associated indicators</text>
+
+        <!-- edges -->
+        <line x1="743" y1="310" x2="640" y2="240" stroke="#f43f5e" stroke-width="1.1" opacity="0.5"/>
+        <line x1="743" y1="310" x2="846" y2="240" stroke="#fb923c" stroke-width="1.1" opacity="0.5"/>
+        <line x1="743" y1="310" x2="640" y2="380" stroke="#fbbf24" stroke-width="1.1" opacity="0.5"/>
+        <line x1="743" y1="310" x2="846" y2="380" stroke="#8b98ad" stroke-width="1.1" opacity="0.45"/>
+
+        <!-- central host node -->
+        <circle cx="743" cy="310" r="30" fill="#1b2740" stroke="#60a5fa" stroke-width="1.4"/>
+        <text x="743" y="307" fill="#93c5fd" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">10.0.1.42</text>
+        <text x="743" y="320" fill="#8b98ad" font-size="8" text-anchor="middle" font-family="system-ui,sans-serif">host</text>
+
+        <!-- IOC node -->
+        <circle cx="640" cy="240" r="20" fill="#141e30" stroke="#f43f5e" stroke-width="1.2"/>
+        <text x="640" y="244" fill="#f43f5e" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">IOC</text>
+        <!-- C2 node -->
+        <circle cx="846" cy="240" r="20" fill="#141e30" stroke="#fb923c" stroke-width="1.2"/>
+        <text x="846" y="244" fill="#fb923c" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">C2</text>
+        <!-- DGA node -->
+        <circle cx="640" cy="380" r="20" fill="#141e30" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="640" y="384" fill="#fbbf24" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">DGA</text>
+        <!-- DNS node -->
+        <circle cx="846" cy="380" r="20" fill="#141e30" stroke="#8b98ad" stroke-width="1.2"/>
+        <text x="846" y="384" fill="#93a1b7" font-size="9" text-anchor="middle" font-family="system-ui,sans-serif">DNS</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ TRUST STRIP ══════════════════════════════════════ -->
+<div class="pp-trust">
+  <div class="inner">
+    <div class="pp-trust-item">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 1L13 4V8C13 11.3 10.5 13.9 7.5 14C4.5 13.9 2 11.3 2 8V4L7.5 1Z" stroke="currentColor" stroke-width="1.2"/><path d="M5 7.5L6.8 9.3L10 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      No upload, ever
+    </div>
+    <div class="pp-trust-sep"></div>
+    <div class="pp-trust-item">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><rect x="1.5" y="4" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 4V3C5 1.9 5.9 1 7 1H8C9.1 1 10 1.9 10 3V4" stroke="currentColor" stroke-width="1.2"/><circle cx="7.5" cy="8.5" r="1" fill="currentColor"/></svg>
+      MITRE ATT&amp;CK mapped
+    </div>
+    <div class="pp-trust-sep"></div>
+    <div class="pp-trust-item">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><rect x="1" y="3" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="7" x2="11" y2="7" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="9.5" x2="8" y2="9.5" stroke="currentColor" stroke-width="1.2"/></svg>
+      STIX &middot; MISP &middot; Sigma &middot; CEF
+    </div>
+    <div class="pp-trust-sep"></div>
+    <div class="pp-trust-item">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><rect x="2" y="2" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 13H10M7.5 10V13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Web + Desktop (Tauri)
+    </div>
+    <div class="pp-trust-sep"></div>
+    <div class="pp-trust-item">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 1C4 1 1 4 1 7.5S4 14 7.5 14 14 11 14 7.5 11 1 7.5 1Z" stroke="currentColor" stroke-width="1.2"/><path d="M7.5 4v3.5l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Works offline &middot; air-gapped
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ FEATURES (B's grid) ══════════════════════════════ -->
+<section class="pp-features" id="features">
+  <div class="inner">
+    <div class="pp-section-eyebrow">Capabilities</div>
+    <h2 class="pp-section-title">Everything a SOC analyst needs, nothing they don't.</h2>
+    <p class="pp-section-sub">From raw pcap to structured, MITRE-mapped evidence in under a second — in the browser, on your machine.</p>
+    <div class="pp-features-grid">
+      <!-- 1 -->
+      <div class="pp-feat-card">
+        <div class="pp-feat-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="10" cy="10" r="8.5" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="10" cy="10" r="4" stroke="currentColor" stroke-width="1.1" stroke-dasharray="1.5 2"/>
+            <circle cx="10" cy="10" r="1.5" fill="currentColor"/>
+            <line x1="10" y1="1.5" x2="10" y2="4.5" stroke="currentColor" stroke-width="1.2"/>
+            <line x1="10" y1="15.5" x2="10" y2="18.5" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </div>
+        <div class="pp-feat-title">100% In-Browser Analysis</div>
+        <div class="pp-feat-desc">Rust compiled to WASM runs entirely on your CPU. No server, no cloud, no account. Works air-gapped. Your captures are private by design.</div>
+      </div>
+      <!-- 2 -->
+      <div class="pp-feat-card">
+        <div class="pp-feat-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M10 2L17 5.5V10C17 13.9 13.9 17.2 10 18C6.1 17.2 3 13.9 3 10V5.5L10 2Z" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M7 10L9 12L13 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="pp-feat-title">20+ Threat Detectors</div>
+        <div class="pp-feat-desc">Behavioral and signature detection: port scans, C2 beaconing, DGA, ARP spoofing, SYN floods, lateral movement, exfiltration, cryptomining, cleartext credentials &mdash; each mapped to MITRE ATT&amp;CK.</div>
+      </div>
+      <!-- 3 -->
+      <div class="pp-feat-card">
+        <div class="pp-feat-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="10" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="3.5" cy="15" r="3" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="16.5" cy="15" r="3" stroke="currentColor" stroke-width="1.3"/>
+            <line x1="10" y1="8" x2="5" y2="12.7" stroke="currentColor" stroke-width="1.2"/>
+            <line x1="10" y1="8" x2="15" y2="12.7" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </div>
+        <div class="pp-feat-title">Deep Protocol Intelligence</div>
+        <div class="pp-feat-desc">TLS fingerprinting (JA3/JA4/JA3S/HASSH), SNI from TLS and QUIC/HTTP3, passive DNS, HTTP metadata, DoH/DoT visibility, and file carving with SHA-256 IOC matching.</div>
+      </div>
+      <!-- 4 -->
+      <div class="pp-feat-card">
+        <div class="pp-feat-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <rect x="2" y="2" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.3"/>
+            <rect x="5" y="5" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1"/>
+            <rect x="11" y="5" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1"/>
+            <rect x="5" y="11" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1"/>
+            <rect x="11" y="11" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1"/>
+          </svg>
+        </div>
+        <div class="pp-feat-title">One-Click Triage Dashboard</div>
+        <div class="pp-feat-desc">Severity-ranked findings, a virtualized flows grid handling millions of rows, a threat relationship graph, protocol sunburst, and score waterfall &mdash; all rendered in the browser.</div>
+      </div>
+      <!-- 5 -->
+      <div class="pp-feat-card">
+        <div class="pp-feat-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M10 3v2M10 15v2M3 10h2M15 10h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M5.64 5.64l1.41 1.41M12.95 12.95l1.41 1.41M5.64 14.36l1.41-1.41M12.95 7.05l1.41-1.41" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="pp-feat-title">AI Analyst (Privacy-Preserving)</div>
+        <div class="pp-feat-desc">Optional natural-language executive summary and chat. Sends only a derived statistical summary to the model &mdash; raw packets never leave your device. Requires explicit consent.</div>
+      </div>
+      <!-- 6 -->
+      <div class="pp-feat-card">
+        <div class="pp-feat-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M10 13V5M7 8l3-3 3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 14v2h12v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="pp-feat-title">Open &amp; Interoperable</div>
+        <div class="pp-feat-desc">Export STIX 2.1, MISP events, CEF, Sigma rules, and CSV. Import Suricata rules and apply them in-app. Generate standalone HTML reports that share without dependencies.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ HOW IT WORKS ═════════════════════════════════════ -->
+<section class="pp-how" id="detections">
+  <div class="inner">
+    <div class="pp-section-eyebrow">Workflow</div>
+    <h2 class="pp-section-title">From capture to evidence in three steps</h2>
+    <div class="pp-steps">
+      <div class="pp-step">
+        <div class="pp-step-num">01</div>
+        <div class="pp-step-title">Drop a .pcap</div>
+        <div class="pp-step-desc">Drag-and-drop or open a .pcap, .pcapng, or .gz file. Works on any modern browser &mdash; Chrome, Firefox, Safari. Nothing is uploaded.</div>
+        <div class="pp-step-code mono">.pcap &middot; .pcapng &middot; .pcap.gz</div>
+      </div>
+      <div class="pp-step">
+        <div class="pp-step-num">02</div>
+        <div class="pp-step-title">Instant triage</div>
+        <div class="pp-step-desc">The Rust/WASM engine decodes packets, runs 20+ detectors, fingerprints TLS flows, and surfaces findings ranked by severity &mdash; typically under a second.</div>
+        <div class="pp-step-code mono">20+ detectors &middot; MITRE mapped</div>
+      </div>
+      <div class="pp-step">
+        <div class="pp-step-num">03</div>
+        <div class="pp-step-title">Export evidence</div>
+        <div class="pp-step-desc">Download findings as STIX 2.1, MISP, Sigma, CEF, or CSV. Share a self-contained HTML report. Feed Suricata rules back into the next analysis.</div>
+        <div class="pp-step-code mono">STIX &middot; MISP &middot; Sigma &middot; CEF &middot; CSV</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ PRIVACY ══════════════════════════════════════════ -->
+<section class="pp-privacy" id="privacy">
+  <div class="inner">
+    <div class="pp-privacy-panel">
+      <div class="pp-privacy-left">
+        <div class="pp-privacy-shield">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+            <path d="M11 2L18 5V10C18 14.4 14.7 18.1 11 19C7.3 18.1 4 14.4 4 10V5L11 2Z" stroke="currentColor" stroke-width="1.3"/>
+            <rect x="8" y="9.5" width="6" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M9.2 9.5V8.2C9.2 7.2 10 6.5 11 6.5C12 6.5 12.8 7.2 12.8 8.2V9.5" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+        </div>
+        <div class="pp-section-eyebrow">Privacy by architecture</div>
+        <div class="pp-privacy-headline">Your packets never leave your device</div>
+        <p class="pp-privacy-body">
+          Most network analysis tools require you to upload capture files to a cloud server. PacketPilot is built differently: the entire analysis engine is compiled to WebAssembly and runs inside your browser tab. Your captures stay exactly where they are &mdash; on your disk.
+        </p>
+        <div class="pp-privacy-facts">
+          <div class="pp-privacy-fact">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="1.3"/><polyline points="4.5,7.5 6.7,9.7 11,5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+            Analysis runs 100% in the browser &mdash; no server-side processing.
+          </div>
+          <div class="pp-privacy-fact">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="1.3"/><polyline points="4.5,7.5 6.7,9.7 11,5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+            Fully functional offline and in air-gapped environments.
+          </div>
+          <div class="pp-privacy-fact">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="1.3"/><polyline points="4.5,7.5 6.7,9.7 11,5" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+            No telemetry, no analytics, no account required.
+          </div>
+        </div>
+      </div>
+      <div class="pp-privacy-right">
+        <div class="pp-section-eyebrow">Where analysis happens</div>
+        <div class="pp-privacy-diagram">
+          <div class="pp-privacy-row yes">
+            <div class="pp-privacy-row-icon">
+              <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2" y="3.5" width="13" height="9.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M6 3.5V2.5a2.5 2.5 0 015 0v1" stroke="currentColor" stroke-width="1.2"/><circle cx="8.5" cy="8.2" r="1.3" fill="currentColor"/></svg>
+            </div>
+            <div>
+              <div class="pp-privacy-row-label">Your browser</div>
+              <div class="pp-privacy-row-sub">Rust/WASM engine &middot; all packet data</div>
+            </div>
+            <span class="pp-privacy-row-badge">&#10003; Private</span>
+          </div>
+          <div class="pp-privacy-divider"><span></span><span class="vs">vs</span><span></span></div>
+          <div class="pp-privacy-row no">
+            <div class="pp-privacy-row-icon">
+              <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M5 12.5C3 12.5 1.5 11 1.5 9.2 1.5 7.6 2.7 6.3 4.2 6 4.4 4 6.2 2.5 8.3 2.5 10 2.5 11.5 3.5 12.2 5 13.8 5.1 15 6.4 15 8" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M6 10l5 5M11 10l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <div class="pp-privacy-row-label">Any cloud server</div>
+              <div class="pp-privacy-row-sub">Nothing is sent here</div>
+            </div>
+            <span class="pp-privacy-row-badge">&#10007; Never</span>
+          </div>
+        </div>
+        <div class="pp-privacy-proof">
+          <div class="pp-privacy-proof-label">Network requests during analysis</div>
+          <div class="pp-privacy-proof-val">0</div>
+          <div class="pp-privacy-proof-note">Open devtools &rarr; Network and verify. Packet bytes never leave your machine &mdash; suitable for classified and sensitive environments.</div>
+        </div>
+        <div class="pp-privacy-ai">
+          <div class="pp-privacy-ai-label">AI Analyst &mdash; optional</div>
+          <div class="pp-privacy-ai-body">When you opt in, only a derived statistical summary (flow counts, finding types, scores) is sent &mdash; never packet payloads, IPs, or raw capture data. Consent required each session.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ FINAL CTA ═════════════════════════════════════════ -->
+<section class="pp-cta-band">
+  <div class="inner">
+    <h2 class="pp-cta-headline">Ready to triage your first capture?</h2>
+    <p class="pp-cta-sub">Drop a .pcap and get severity-ranked findings in seconds. No sign-up. No upload. No data leaves your device.</p>
+    <a class="pp-btn-primary" href="/app">Launch PacketPilot&nbsp;&#8594;</a>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ FOOTER ═══════════════════════════════════════════ -->
+<footer class="pp-footer">
+  <div class="inner">
+    <div class="pp-footer-grid">
+      <div>
+        <a class="pp-footer-brand" href="#">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <circle cx="9" cy="9" r="8" stroke="currentColor" stroke-width="1.2" opacity="0.3"/>
+            <circle cx="9" cy="9" r="5" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+            <circle cx="9" cy="9" r="2.2" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="9" cy="3.2" r="1.2" fill="currentColor"/>
+          </svg>
+          PacketPilot
+        </a>
+        <div class="pp-footer-tagline">Network forensics triage that runs entirely in your browser. Your captures stay yours.</div>
+      </div>
+      <div>
+        <div class="pp-footer-col-title">Product</div>
+        <div class="pp-footer-links">
+          <a href="#features">Features</a>
+          <a href="#detections">Detections</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#">Desktop app</a>
+        </div>
+      </div>
+      <div>
+        <div class="pp-footer-col-title">Resources</div>
+        <div class="pp-footer-links">
+          <a href="#">Documentation</a>
+          <a href="#">MITRE coverage</a>
+          <a href="#">Export formats</a>
+          <a href="#">Sample captures</a>
+        </div>
+      </div>
+      <div>
+        <div class="pp-footer-col-title">Project</div>
+        <div class="pp-footer-links">
+          <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">GitHub</a>
+          <a href="#">Releases</a>
+          <a href="#">Report an issue</a>
+        </div>
+      </div>
+    </div>
+    <div class="pp-footer-bottom">
+      <div class="pp-footer-copy mono">&copy; 2026 PacketPilot</div>
+      <div class="pp-footer-note mono">Runs locally &nbsp;&middot;&nbsp; Your captures stay yours</div>
+    </div>
+  </div>
+</footer>
+
+</div>
