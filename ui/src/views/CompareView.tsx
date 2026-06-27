@@ -4,6 +4,7 @@ import type { RecentEntry, IpThreat, Incident, Severity } from "../types";
 import { diffSummaries } from "../lib/diff";
 import type { Changed, DiffResult, FieldDelta } from "../lib/diff";
 import { severityColor } from "../lib/palette";
+import { Panel, Card, SectionHeader } from "../cockpit/primitives";
 
 /** A signed delta number, colored: increases (worse) red, decreases green. */
 function Signed({ n }: { n: number }) {
@@ -40,32 +41,37 @@ function DiffSection<T extends IpThreat | Incident>({
   const total = result.added.length + result.removed.length + result.changed.length;
   if (total === 0) return null;
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-sm font-semibold text-[var(--color-text)]">{title} <span className="text-[var(--color-text-faint)]">({total})</span></h2>
-      {result.added.length > 0 && (
-        <div className="flex flex-col gap-1">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-high)]">Added · {result.added.length}</div>
-          {result.added.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="+" />)}
-        </div>
-      )}
-      {result.removed.length > 0 && (
-        <div className="flex flex-col gap-1">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-low)]">Removed · {result.removed.length}</div>
-          {result.removed.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="−" />)}
-        </div>
-      )}
-      {result.changed.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">Changed · {result.changed.length}</div>
-          {result.changed.map((c: Changed<T>, i) => (
-            <div key={i} className="flex flex-col gap-0.5">
-              <EntityRow ipOrHost={c.key} severity={c.after.severity} kind="~" />
-              <div className="pl-5"><DeltaRow deltas={c.deltas} /></div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+    <Card>
+      <SectionHeader
+        title={title}
+        count={total}
+      />
+      <div className="flex flex-col gap-3">
+        {result.added.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-high)]">Added · {result.added.length}</div>
+            {result.added.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="+" />)}
+          </div>
+        )}
+        {result.removed.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-low)]">Removed · {result.removed.length}</div>
+            {result.removed.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="−" />)}
+          </div>
+        )}
+        {result.changed.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">Changed · {result.changed.length}</div>
+            {result.changed.map((c: Changed<T>, i) => (
+              <div key={i} className="flex flex-col gap-0.5">
+                <EntityRow ipOrHost={c.key} severity={c.after.severity} kind="~" />
+                <div className="pl-5"><DeltaRow deltas={c.deltas} /></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -92,8 +98,9 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
 
   return (
     <div data-component="CompareView" className="flex h-full min-h-0 flex-col gap-4 overflow-auto">
+      {/* Header */}
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-base font-semibold text-[var(--color-text)]">Compare captures</h1>
+        <h1 className="text-base font-medium text-[var(--color-text)]">Compare captures</h1>
         <div className="flex items-center gap-2 text-xs text-[var(--color-text-dim)]">
           <span className="font-mono-num truncate">{before.name}</span>
           <span aria-hidden>→</span>
@@ -102,14 +109,15 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
         <button
           type="button"
           onClick={onSwap}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
         >
           <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden /> Swap
         </button>
       </div>
 
+      {/* Unrelated-captures banner */}
       {unrelated && !bannerDismissed && (
-        <div className="flex items-start gap-2 rounded-md border border-[var(--color-sev-medium)] bg-[color-mix(in_srgb,var(--color-sev-medium)_12%,transparent)] px-3 py-2 text-xs text-[var(--color-text-dim)]">
+        <div className="flex items-start gap-2 rounded-[var(--r-card)] border border-[var(--color-sev-medium)] bg-[color-mix(in_srgb,var(--color-sev-medium)_10%,transparent)] px-3 py-2 text-xs text-[var(--color-text-dim)]">
           <span className="min-w-0 flex-1">These captures share no threat IPs or hosts; they may be unrelated.</span>
           <button
             type="button"
@@ -122,21 +130,32 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
         </div>
       )}
 
-      <div className="flex flex-wrap gap-3">
-        {diff.severity.map((b) => (
-          <div key={b.band} className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs">
-            <span className="capitalize text-[var(--color-text-dim)]">{b.band}</span>{" "}
-            <span className="font-mono-num"><Signed n={b.delta} /></span>
+      {/* Severity delta chips */}
+      {diff.severity.length > 0 && (
+        <Panel label="Severity delta">
+          <div className="flex flex-wrap gap-2 px-3.5 pb-3">
+            {diff.severity.map((b) => (
+              <div
+                key={b.band}
+                className="rounded-[var(--r-chip)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs"
+              >
+                <span className="capitalize text-[var(--color-text-dim)]">{b.band}</span>{" "}
+                <span className="font-mono-num font-medium"><Signed n={b.delta} /></span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </Panel>
+      )}
 
+      {/* Diff content */}
       {noDiff ? (
-        <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border p-10 text-sm text-[var(--color-text-dim)]">
-          No differences between these captures.
-        </div>
+        <Panel className="flex-1">
+          <div className="flex h-full items-center justify-center p-10 text-sm text-[var(--color-text-dim)]">
+            No differences between these captures.
+          </div>
+        </Panel>
       ) : (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-4">
           <DiffSection title="Threat IPs" result={diff.threats} label={(t: IpThreat) => t.ip} />
           <DiffSection title="Incidents" result={diff.incidents} label={(i: Incident) => i.host} />
         </div>
