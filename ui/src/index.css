@@ -191,6 +191,15 @@ body {
   box-shadow: var(--sh-rest), inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
 }
 
+/* ---- Enterprise data-grid table utilities --------------------------------- */
+.pp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+.pp-table thead th { position: sticky; top: 0; z-index: 1; background: var(--color-surface-2);
+  color: var(--color-text-faint); font-weight: 400; text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--fs-label); text-align: left; padding: 7px 10px; }
+.pp-table tbody tr { border-top: 1px solid var(--color-border); }
+.pp-table tbody tr:hover { background: var(--color-surface-2); }
+.pp-table td { padding: 7px 10px; color: var(--color-text); }
+
 /* One static radial wash on the canvas (no nested/animated blurs — webkit perf) */
 .app-bg {
   background:

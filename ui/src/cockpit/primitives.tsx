@@ -176,6 +176,22 @@ export function ProvenanceChip({ provider }: { provider: string }) {
   );
 }
 
+/** Section toolbar — search / filters / actions row above a data grid. */
+export function Toolbar({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn("flex flex-wrap items-center gap-2", className)}>{children}</div>;
+}
+
+/** Consistent section title + count + right actions. */
+export function SectionHeader({ title, count, right }: { title: string; count?: string | number; right?: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 pb-2">
+      <h2 className="t-title text-[var(--color-text)]">{title}</h2>
+      {count !== undefined && <span className="font-mono-num t-tag text-[var(--color-text-faint)]">{count}</span>}
+      {right && <span className="ml-auto">{right}</span>}
+    </div>
+  );
+}
+
 /** Inline micro-sparkline (area + line + endpoint dot). */
 export function Sparkline({
   values,
