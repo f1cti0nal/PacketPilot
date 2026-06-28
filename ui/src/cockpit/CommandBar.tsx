@@ -44,6 +44,7 @@ export function CommandBar({
   onOpenSettings,
   onOpenAiChat,
   rulesMenu,
+  accountMenu,
   showTabs = true,
 }: {
   captureName: string;
@@ -68,6 +69,8 @@ export function CommandBar({
   onOpenAiChat?: () => void;
   /** Slot for the RuleSetsMenu dropdown (or any rules affordance). */
   rulesMenu?: ReactNode;
+  /** Slot for the end-user account control (Sign in / account popover). */
+  accountMenu?: ReactNode;
 }) {
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3">
@@ -197,6 +200,7 @@ export function CommandBar({
         </button>
         {/* Density is a dashboard power-tweak — hide it (and Rules below) on phones
             so the action cluster fits; both return at md+. */}
+        {accountMenu}
         <span className="hidden md:contents"><DensityToggle /></span>
         <ThemeToggle />
         {onOpenSettings && (

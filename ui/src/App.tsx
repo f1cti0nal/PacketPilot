@@ -73,6 +73,9 @@ import { getAiSummary, captureKey } from "./lib/ai/cache";
 import { pickRuleBase } from "./lib/ruleBase";
 import { saveRuleSet, type RuleSet } from "./lib/ruleSets";
 import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
+import { useSession } from "./auth/useSession";
+import { AuthDialog } from "./auth/AuthDialog";
+import { AccountMenu } from "./auth/AccountMenu";
 
 const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
@@ -113,6 +116,8 @@ export function App() {
   // resolves a CSS var to a literal hex at render time (for SVG/recharts), so without a
   // re-render severity colours would stay the previous theme's palette after a toggle.
   useTheme();
+  const session = useSession();
+  const [authOpen, setAuthOpen] = useState(false);
   const [tab, setTab] = useState<TabId>("dashboard");
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
@@ -665,6 +670,7 @@ export function App() {
       onOpenAiChat={summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
+      accountMenu={<AccountMenu session={session} onOpenAuth={() => setAuthOpen(true)} />}
     >
       <ErrorBoundary resetKey={`${activeId ?? ""}:${tab}`}>
       {tab === "compare" ? (
@@ -748,6 +754,9 @@ export function App() {
     )}
     {settingsOpen && (
       <SettingsDialog onClose={() => setSettingsOpen(false)} />
+    )}
+    {authOpen && session.status === "anon" && (
+      <AuthDialog session={session} onClose={() => setAuthOpen(false)} />
     )}
     {summary.status === "ready" && summary.data && (
       <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} />

@@ -75,6 +75,8 @@ export interface AppShellProps {
   onLoadRules?: () => void;
   /** Slot rendered in the CommandBar in place of the old ShieldAlert button (e.g. RuleSetsMenu). */
   rulesMenu?: ReactNode;
+  /** End-user account control rendered in the command bar. */
+  accountMenu?: ReactNode;
   /** Whether a capture comparison is active (shows the Compare tab). */
   compareActive?: boolean;
   /** Return to the Home overview (unloads the active capture). Wires the clickable wordmark + palette action. */
@@ -124,6 +126,7 @@ export function AppShell({
   onOpenAiChat,
   onLoadRules,
   rulesMenu,
+  accountMenu,
   compareActive = false,
   onGoHome,
   children,
@@ -300,6 +303,7 @@ export function AppShell({
         onOpenSettings={onOpenSettings}
         onOpenAiChat={onOpenAiChat}
         rulesMenu={rulesMenu}
+        accountMenu={accountMenu}
         showTabs={!isMobile}
       />
       <div className="flex min-h-0 flex-1">
