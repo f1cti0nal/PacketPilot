@@ -198,9 +198,10 @@ export function CommandBar({
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
         </button>
+        {/* Account control is always visible (incl. phones). */}
+        {accountMenu}
         {/* Density is a dashboard power-tweak — hide it (and Rules below) on phones
             so the action cluster fits; both return at md+. */}
-        {accountMenu}
         <span className="hidden md:contents"><DensityToggle /></span>
         <ThemeToggle />
         {onOpenSettings && (
