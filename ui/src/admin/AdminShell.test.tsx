@@ -5,6 +5,7 @@ import { AdminShell } from "./AdminShell";
 
 vi.mock("./dashboard/AdminDashboard", () => ({ AdminDashboard: () => <div>DASHBOARD_STUB</div> }));
 vi.mock("./users/UsersView", () => ({ UsersView: () => <div>USERS_STUB</div> }));
+vi.mock("./payments/PaymentsView", () => ({ PaymentsView: () => <div>PAYMENTS_STUB</div> }));
 
 afterEach(() => {
   window.location.hash = "";
@@ -33,6 +34,13 @@ describe("AdminShell", () => {
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
     await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
     expect(onSignOut).toHaveBeenCalled();
+  });
+
+  it("routes the Payments section to the payments view", async () => {
+    render(<AdminShell email="a@b.com" onSignOut={vi.fn()} />);
+    await userEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "Payments" }));
+    expect(screen.getByText("PAYMENTS_STUB")).toBeInTheDocument();
+    expect(window.location.hash).toBe("#payments");
   });
 
   it("exposes the theme and density toggles in the top bar", () => {

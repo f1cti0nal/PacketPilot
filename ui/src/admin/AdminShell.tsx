@@ -4,6 +4,7 @@ import { AdminTopBar } from "./AdminTopBar";
 import { AdminDashboard } from "./dashboard/AdminDashboard";
 import { Placeholder } from "./views/Placeholder";
 import { UsersView } from "./users/UsersView";
+import { PaymentsView } from "./payments/PaymentsView";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
 
 const VALID = new Set<string>(ADMIN_SECTIONS.map((s) => s.id));
@@ -42,6 +43,8 @@ export function AdminShell({ email, onSignOut }: { email: string; onSignOut: () 
             <AdminDashboard />
           ) : active === "users" ? (
             <UsersView adminEmail={email} />
+          ) : active === "payments" ? (
+            <PaymentsView />
           ) : (
             <Placeholder title={title} phase={section?.phase ?? 0} />
           )}
