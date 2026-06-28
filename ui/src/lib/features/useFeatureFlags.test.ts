@@ -41,4 +41,14 @@ describe("useFeatureFlags", () => {
     await waitFor(() => expect(selectSpy).toHaveBeenCalled());
     expect(h.current.gate("ai_assist")).toBe("on");
   });
+
+  it("resets to DEFAULTS when authed flips to false (sign-out)", async () => {
+    result = { data: [{ key: "ai_assist", enabled: false, plan_gate: null }], error: null };
+    const { result: h, rerender } = renderHook(({ a }: { a: boolean }) => useFeatureFlags(a, "free"), {
+      initialProps: { a: true },
+    });
+    await waitFor(() => expect(h.current.gate("ai_assist")).toBe("off"));
+    rerender({ a: false });
+    expect(h.current.gate("ai_assist")).toBe("on");
+  });
 });

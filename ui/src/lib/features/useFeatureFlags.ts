@@ -6,7 +6,12 @@ export function useFeatureFlags(authed: boolean, plan: string): { gate: (key: Fl
   const [flags, setFlags] = useState<Record<string, FlagState>>({});
 
   useEffect(() => {
-    if (!supabaseConfigured || !supabase || !authed) return;
+    // Offline / anon / signed-out → fall back to DEFAULTS (clear any flags from a prior
+    // authed session so signing out restores defaults without a reload).
+    if (!supabaseConfigured || !supabase || !authed) {
+      setFlags((f) => (Object.keys(f).length ? {} : f));
+      return;
+    }
     const client = supabase;
     let cancelled = false;
     void (async () => {
