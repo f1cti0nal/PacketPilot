@@ -50,10 +50,14 @@ export function useAdminUsers(search: string): { state: AdminUsersState; reload:
   return { state, reload: () => setNonce((n) => n + 1) };
 }
 
-async function patch(id: string, fields: Record<string, string>): Promise<{ ok: boolean; error?: string }> {
+// Only these three columns are ever written here; constraining the keys keeps typos
+// caught at the call site while the value-enum check is bypassed below.
+type ProfileWritable = Partial<Record<"plan" | "role" | "status", string>>;
+
+async function patch(id: string, fields: ProfileWritable): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Backend not configured" };
-  // `fields` holds dynamic plan/role/status strings; the typed client constrains those
-  // columns to enum literals, so cast through `never` to bypass the literal check.
+  // The typed client constrains plan/role/status to enum literals; our values are dynamic
+  // strings, so cast through `never` to bypass only the literal check (keys stay checked).
   const { error } = await supabase.from("profiles").update(fields as never).eq("id", id);
   return error ? { ok: false, error: (error as { message?: string }).message ?? "Update failed" } : { ok: true };
 }
