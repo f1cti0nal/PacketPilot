@@ -6,6 +6,7 @@ import { Placeholder } from "./views/Placeholder";
 import { UsersView } from "./users/UsersView";
 import { PaymentsView } from "./payments/PaymentsView";
 import { TrafficView } from "./traffic/TrafficView";
+import { FeatureFlagsView } from "./features/FeatureFlagsView";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
 import { trackPageView } from "../lib/analytics/track";
 
@@ -53,6 +54,8 @@ export function AdminShell({ email, onSignOut }: { email: string; onSignOut: () 
             <PaymentsView />
           ) : active === "traffic" ? (
             <TrafficView />
+          ) : active === "features" ? (
+            <FeatureFlagsView />
           ) : (
             <Placeholder title={title} phase={section?.phase ?? 0} />
           )}
