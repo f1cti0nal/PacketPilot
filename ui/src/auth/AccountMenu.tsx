@@ -28,6 +28,7 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
     return (
       <button
         type="button"
+        aria-label="Sign in"
         onClick={onOpenAuth}
         className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
       >
