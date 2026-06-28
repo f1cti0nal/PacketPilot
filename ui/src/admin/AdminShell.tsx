@@ -3,6 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { AdminTopBar } from "./AdminTopBar";
 import { AdminDashboard } from "./dashboard/AdminDashboard";
 import { Placeholder } from "./views/Placeholder";
+import { UsersView } from "./users/UsersView";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
 
 const VALID = new Set<string>(ADMIN_SECTIONS.map((s) => s.id));
@@ -39,6 +40,8 @@ export function AdminShell({ email, onSignOut }: { email: string; onSignOut: () 
         <main className="min-h-0 flex-1 overflow-y-auto p-4">
           {active === "dashboard" ? (
             <AdminDashboard />
+          ) : active === "users" ? (
+            <UsersView adminEmail={email} />
           ) : (
             <Placeholder title={title} phase={section?.phase ?? 0} />
           )}

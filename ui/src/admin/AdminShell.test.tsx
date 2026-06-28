@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { AdminShell } from "./AdminShell";
 
 vi.mock("./dashboard/AdminDashboard", () => ({ AdminDashboard: () => <div>DASHBOARD_STUB</div> }));
+vi.mock("./users/UsersView", () => ({ UsersView: () => <div>USERS_STUB</div> }));
 
 afterEach(() => {
   window.location.hash = "";
@@ -22,7 +23,7 @@ describe("AdminShell", () => {
   it("switches content when a nav item is clicked and reflects it in the hash", async () => {
     render(<AdminShell email="a@b.com" onSignOut={vi.fn()} />);
     await userEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "Users" }));
-    expect(screen.getByText(/coming in phase 5/i)).toBeInTheDocument();
+    expect(screen.getByText("USERS_STUB")).toBeInTheDocument();
     expect(window.location.hash).toBe("#users");
   });
 
