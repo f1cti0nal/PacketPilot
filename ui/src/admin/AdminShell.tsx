@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { AdminTopBar } from "./AdminTopBar";
-import { AdminDashboard } from "./views/AdminDashboard";
+import { AdminDashboard } from "./dashboard/AdminDashboard";
 import { Placeholder } from "./views/Placeholder";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
 

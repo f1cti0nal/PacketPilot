@@ -3,6 +3,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminShell } from "./AdminShell";
 
+vi.mock("./dashboard/AdminDashboard", () => ({ AdminDashboard: () => <div>DASHBOARD_STUB</div> }));
+
 afterEach(() => {
   window.location.hash = "";
 });
@@ -14,7 +16,7 @@ describe("AdminShell", () => {
     for (const label of ["Dashboard", "Users", "Payments", "Live Traffic", "App Features", "Settings", "Environment"]) {
       expect(within(nav).getByRole("button", { name: label })).toBeInTheDocument();
     }
-    expect(screen.getByText(/overview metrics arrive in phase 4/i)).toBeInTheDocument();
+    expect(screen.getByText("DASHBOARD_STUB")).toBeInTheDocument();
   });
 
   it("switches content when a nav item is clicked and reflects it in the hash", async () => {
