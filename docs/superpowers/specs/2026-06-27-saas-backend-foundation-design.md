@@ -147,7 +147,7 @@ RLS **enabled on every table**. The SPA only ever uses the **anon key under a lo
 | `audit_log` | `is_admin()` | `is_admin()` (or service-role) | — | — |
 
 Notes:
-- A user must **not** be able to change their own `role`/`plan`/`status` (privilege escalation). **Chosen approach:** a `BEFORE UPDATE` trigger on `profiles` that rejects any change to `role`/`plan`/`status` unless `is_admin()` (raises an exception). This is more robust than column-scoped `WITH CHECK` and keeps the self-update policy simple (own row, authenticated).
+- A user must **not** be able to change their own `role`/`plan`/`status` (privilege escalation). **Chosen approach:** a `BEFORE UPDATE` trigger on `profiles` that raises when those columns change **and** `auth.uid() is not null` **and** `not is_admin()`. The `auth.uid() is null` carve-out lets service-role/migration contexts (seeding, admin bootstrap, Phase-2 webhooks) set roles/plans; admins can too; only authenticated non-admins are blocked. More robust than column-scoped `WITH CHECK`, and keeps the self-update policy simple (own row, authenticated).
 - `analytics_events` insert is intentionally open to anonymous visitors (that's how page views are recorded in Phase 7), but **read is admin-only** so visitor data isn't exposed.
 
 ## Migration & types workflow
