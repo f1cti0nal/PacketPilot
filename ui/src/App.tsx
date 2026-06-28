@@ -78,6 +78,7 @@ import { AuthDialog } from "./auth/AuthDialog";
 import { AccountMenu } from "./auth/AccountMenu";
 import { reconcileAfterCheckout } from "./auth/billing";
 import { trackPageView } from "./lib/analytics/track";
+import { useFeatureFlags } from "./lib/features/useFeatureFlags";
 
 const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
@@ -119,6 +120,10 @@ export function App() {
   // re-render severity colours would stay the previous theme's palette after a toggle.
   useTheme();
   const session = useSession();
+  const aiGate = useFeatureFlags(
+    session.status === "authed",
+    session.status === "authed" ? session.profile.plan : "free",
+  ).gate("ai_assist");
   const [authOpen, setAuthOpen] = useState(false);
 
   // After returning from Stripe Checkout, refresh the session so the upgraded plan shows.
@@ -677,7 +682,7 @@ export function App() {
       paletteOpen={paletteOpen}
       onPaletteOpenChange={setPaletteOpen}
       onOpenSettings={() => setSettingsOpen(true)}
-      onOpenAiChat={summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
+      onOpenAiChat={aiGate === "on" && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
       accountMenu={<AccountMenu session={session} onOpenAuth={() => setAuthOpen(true)} />}
@@ -733,6 +738,7 @@ export function App() {
           selectedIncident={selectedIncident}
           onSelectIncident={setSelectedIncident}
           activeSource={activeSource}
+          aiGate={aiGate}
         />
       )}
       </ErrorBoundary>
