@@ -76,6 +76,7 @@ import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
 import { useSession } from "./auth/useSession";
 import { AuthDialog } from "./auth/AuthDialog";
 import { AccountMenu } from "./auth/AccountMenu";
+import { reconcileAfterCheckout } from "./auth/billing";
 
 const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
@@ -118,6 +119,11 @@ export function App() {
   useTheme();
   const session = useSession();
   const [authOpen, setAuthOpen] = useState(false);
+
+  // After returning from Stripe Checkout, refresh the session so the upgraded plan shows.
+  useEffect(() => {
+    void reconcileAfterCheckout();
+  }, []);
   const [tab, setTab] = useState<TabId>("dashboard");
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
