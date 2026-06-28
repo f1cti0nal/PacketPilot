@@ -3,10 +3,10 @@
 create or replace view public.admin_traffic_stats
 with (security_invoker = true) as
 select
-  count(distinct session_id) filter (where created_at > now() - interval '24 hours') as active_today,
-  count(*) filter (where created_at > now() - interval '24 hours') as pageviews_today,
-  count(distinct session_id) filter (where created_at > now() - interval '24 hours' and user_id is not null) as authed_today,
-  count(distinct session_id) filter (where created_at > now() - interval '24 hours' and user_id is null) as anon_today
+  count(distinct session_id) filter (where created_at >= now() - interval '24 hours') as active_today,
+  count(*) filter (where created_at >= now() - interval '24 hours') as pageviews_today,
+  count(distinct session_id) filter (where created_at >= now() - interval '24 hours' and user_id is not null) as authed_today,
+  count(distinct session_id) filter (where created_at >= now() - interval '24 hours' and user_id is null) as anon_today
 from public.analytics_events;
 
 create or replace function public.admin_pageviews_by_day(days integer)

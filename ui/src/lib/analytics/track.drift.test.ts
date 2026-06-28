@@ -9,4 +9,8 @@ describe("tracker route allowlist drift guard", () => {
     for (const s of ADMIN_SECTIONS) expect(ROUTES_FOR_TESTS.has(`/admin#${s.id}`)).toBe(true);
     expect(ROUTES_FOR_TESTS.has("/")).toBe(true);
   });
+
+  it("has no stale/extra tokens (exactly tabs + sections + root)", () => {
+    expect(ROUTES_FOR_TESTS.size).toBe(TAB_IDS.length + ADMIN_SECTIONS.length + 1);
+  });
 });
