@@ -6,6 +6,7 @@ import { AdminShell } from "./AdminShell";
 vi.mock("./dashboard/AdminDashboard", () => ({ AdminDashboard: () => <div>DASHBOARD_STUB</div> }));
 vi.mock("./users/UsersView", () => ({ UsersView: () => <div>USERS_STUB</div> }));
 vi.mock("./payments/PaymentsView", () => ({ PaymentsView: () => <div>PAYMENTS_STUB</div> }));
+vi.mock("./traffic/TrafficView", () => ({ TrafficView: () => <div>TRAFFIC_STUB</div> }));
 
 afterEach(() => {
   window.location.hash = "";
@@ -47,5 +48,12 @@ describe("AdminShell", () => {
     render(<AdminShell email="a@b.com" onSignOut={vi.fn()} />);
     expect(screen.getByRole("button", { name: /switch to (light|dark) theme/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /switch to (comfortable|compact) density/i })).toBeInTheDocument();
+  });
+
+  it("routes the Live Traffic section to the traffic view", async () => {
+    render(<AdminShell email="a@b.com" onSignOut={vi.fn()} />);
+    await userEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "Live Traffic" }));
+    expect(screen.getByText("TRAFFIC_STUB")).toBeInTheDocument();
+    expect(window.location.hash).toBe("#traffic");
   });
 });
