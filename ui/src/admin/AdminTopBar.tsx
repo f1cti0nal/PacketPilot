@@ -20,8 +20,15 @@ export function AdminTopBar({
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   return (
@@ -35,6 +42,7 @@ export function AdminTopBar({
             type="button"
             aria-label="Account menu"
             aria-expanded={open}
+            aria-haspopup="true"
             onClick={() => setOpen((o) => !o)}
             className="flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-sm text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
           >
@@ -43,7 +51,6 @@ export function AdminTopBar({
           </button>
           {open && (
             <div
-              role="menu"
               className="absolute right-0 z-10 mt-1 w-40 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1 shadow-[var(--sh-float)]"
             >
               <button
