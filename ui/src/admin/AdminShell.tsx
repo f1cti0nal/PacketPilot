@@ -8,6 +8,7 @@ import { PaymentsView } from "./payments/PaymentsView";
 import { TrafficView } from "./traffic/TrafficView";
 import { FeatureFlagsView } from "./features/FeatureFlagsView";
 import { SettingsView } from "./settings/SettingsView";
+import { EnvironmentView } from "./environment/EnvironmentView";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
 import { trackPageView } from "../lib/analytics/track";
 
@@ -59,6 +60,8 @@ export function AdminShell({ email, onSignOut }: { email: string; onSignOut: () 
             <FeatureFlagsView />
           ) : active === "settings" ? (
             <SettingsView />
+          ) : active === "env" ? (
+            <EnvironmentView />
           ) : (
             <Placeholder title={title} phase={section?.phase ?? 0} />
           )}
