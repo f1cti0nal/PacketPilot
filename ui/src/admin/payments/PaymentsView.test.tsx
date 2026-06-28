@@ -18,7 +18,7 @@ const PAYMENTS = [
 ];
 
 beforeEach(() => {
-  hookState.mockReturnValue({ status: "ready", payments: PAYMENTS });
+  hookState.mockReturnValue({ status: "ready", payments: PAYMENTS, mrrCents: 1900 });
   reload.mockClear();
 });
 
@@ -52,7 +52,7 @@ describe("PaymentsView", () => {
   });
 
   it("renders the empty and error states", () => {
-    hookState.mockReturnValue({ status: "ready", payments: [] });
+    hookState.mockReturnValue({ status: "ready", payments: [], mrrCents: 0 });
     const { rerender } = render(<PaymentsView />);
     expect(screen.getByText(/no subscriptions yet/i)).toBeInTheDocument();
     hookState.mockReturnValue({ status: "error", error: "backend down" });

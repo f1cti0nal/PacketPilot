@@ -19,7 +19,7 @@ export interface AdminPayment {
 export type AdminPaymentsState =
   | { status: "loading" }
   | { status: "error"; error: string }
-  | { status: "ready"; payments: AdminPayment[] };
+  | { status: "ready"; payments: AdminPayment[]; mrrCents: number };
 
 const SEL =
   "id,status,amount_cents,currency,price_id,current_period_end,cancel_at_period_end,created_at,stripe_subscription_id,stripe_customer_id,profiles(email,full_name)";
@@ -73,15 +73,20 @@ export function useAdminPayments(): { state: AdminPaymentsState; reload: () => v
     let cancelled = false;
     void (async () => {
       try {
-        const { data, error } = await client
-          .from("subscriptions")
-          .select(SEL)
-          .order("created_at", { ascending: false })
-          .limit(100);
-        if (error) throw new Error((error as { message?: string }).message ?? "Query failed");
+        const [page, stats] = await Promise.all([
+          client.from("subscriptions").select(SEL).order("created_at", { ascending: false }).limit(100),
+          // Headline MRR comes from the SAME view the dashboard uses, so the number matches
+          // the dashboard at any scale — not just the fetched page.
+          client.from("admin_dashboard_stats").select("mrr_cents").single(),
+        ]);
+        if (page.error) throw new Error((page.error as { message?: string }).message ?? "Query failed");
         if (cancelled) return;
-        const payments = ((data ?? []) as unknown as RawRow[]).map(toPayment);
-        setState({ status: "ready", payments });
+        const payments = ((page.data ?? []) as unknown as RawRow[]).map(toPayment);
+        // Fall back to summing the fetched page only if the stats view read fails.
+        const mrrCents = stats.error
+          ? payments.reduce((s, p) => (p.status === "active" ? s + p.amount_cents : s), 0)
+          : Number((stats.data as { mrr_cents?: number } | null)?.mrr_cents ?? 0);
+        setState({ status: "ready", payments, mrrCents });
       } catch (e) {
         if (!cancelled) setState({ status: "error", error: e instanceof Error ? e.message : String(e) });
       }

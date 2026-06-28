@@ -26,7 +26,7 @@ Give an admin a Payments view at `/admin` → Payments: a searchable table of ev
 
 - **No new write path, no Edge Function, no migration.** Reads are RLS-gated admin SELECTs on existing tables.
 - **Secrets stay server-side.** The browser makes no Stripe call; the Stripe secret is never in scope.
-- **Numerically consistent with the dashboard:** Active MRR is `SUM(amount_cents)` over rows where `status === "active"`, formatted with the SAME `money()` helper.
+- **Numerically consistent with the dashboard:** the headline Active MRR is read from the **same `admin_dashboard_stats.mrr_cents`** the dashboard uses (single source of truth), formatted with the SAME `money()` helper — so it matches at any scale, independent of the ≤100-row page. (If that view read fails, the hook falls back to summing the fetched page's active rows.) Page-derived secondary counts are honestly captioned "latest 100" when the page is capped.
 - **Privacy/engine untouched:** no `/app`, WASM, or capture change. No new SPA deps.
 
 ## Architecture

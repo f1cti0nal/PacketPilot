@@ -21,6 +21,8 @@ export function PaymentsView() {
   const [search, setSearch] = useState("");
 
   const payments = state.status === "ready" ? state.payments : [];
+  const mrrCents = state.status === "ready" ? state.mrrCents : 0;
+  const capped = payments.length === 100;
   const summary = useMemo(() => paymentsSummary(payments), [payments]);
   const anyNonUsd = payments.some((p) => p.currency !== "usd");
   const term = search.trim().toLowerCase();
@@ -33,7 +35,7 @@ export function PaymentsView() {
   return (
     <div className="flex flex-col gap-[var(--density-gap)]">
       <div className="flex flex-wrap items-end gap-3">
-        <Kpi label="Active MRR" value={money(summary.activeMrrCents)} />
+        <Kpi label="Active MRR" value={money(mrrCents)} />
         <Kpi label="Active subs" value={String(summary.activeCount)} />
         <Kpi label="Past due" value={String(summary.statusCounts.past_due ?? 0)} />
         <Kpi label="Canceled" value={String(summary.statusCounts.canceled ?? 0)} />
@@ -79,7 +81,10 @@ export function PaymentsView() {
           </tbody>
         </table>
       )}
-      <p className="t-tag text-[var(--color-text-dim)]">Reflects the latest Stripe sync.</p>
+      <p className="t-tag text-[var(--color-text-dim)]">
+        Reflects the latest Stripe sync.
+        {capped && " Showing the latest 100 subscriptions; the counts above describe this page (Active MRR is global)."}
+      </p>
     </div>
   );
 }
