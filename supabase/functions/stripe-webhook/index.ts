@@ -25,24 +25,36 @@ Deno.serve(async (req) => {
     const handled = ["checkout.session.completed", "customer.subscription.updated", "customer.subscription.deleted"];
     if (handled.includes(event.type)) {
       let sub: Stripe.Subscription;
+      // Prefer the user id baked into the (Stripe-signed) Checkout session.
+      let userId: string | null = null;
       if (event.type === "checkout.session.completed") {
         const s = event.data.object as Stripe.Checkout.Session;
+        userId = (s.client_reference_id as string | null) ?? null;
+        if (!s.subscription) return new Response("ok (no subscription on session)", { status: 200 });
         sub = await stripe.subscriptions.retrieve(s.subscription as string);
       } else {
         sub = event.data.object as Stripe.Subscription;
       }
       const customerId = sub.customer as string;
 
-      let userId: string | null = null;
-      const { data: existing } = await admin
-        .from("subscriptions").select("user_id").eq("stripe_customer_id", customerId).limit(1).maybeSingle();
-      userId = (existing?.user_id as string | undefined) ?? null;
+      // Fall back to the existing row, then the customer's metadata, if no client_reference_id.
+      if (!userId) {
+        const { data: existing } = await admin
+          .from("subscriptions").select("user_id").eq("stripe_customer_id", customerId).limit(1).maybeSingle();
+        userId = (existing?.user_id as string | undefined) ?? null;
+      }
       if (!userId) {
         const customer = (await stripe.customers.retrieve(customerId)) as Stripe.Customer;
         userId = (customer.metadata?.supabase_user_id as string | undefined) ?? null;
       }
 
-      if (userId) {
+      if (!userId) {
+        // Don't 500 (Stripe would retry forever); ack but log so it surfaces in get_logs.
+        console.error(`stripe-webhook: unresolved user for customer ${customerId} (sub ${sub.id}, ${event.type})`);
+        return new Response("ok (unresolved user)", { status: 200 });
+      }
+
+      {
         const item = sub.items.data[0];
         await admin.from("subscriptions").upsert(
           {
