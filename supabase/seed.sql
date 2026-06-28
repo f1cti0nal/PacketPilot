@@ -1,4 +1,7 @@
 -- PacketPilot demo seed data (NON-PRODUCTION).
+-- !! TARGET: the packetpilot DEV project (ref brkztcfhmrjjnbjzycie). NEVER run this
+-- !! against a production project — it creates demo login accounts. Confirm the
+-- !! selected Supabase project before applying.
 -- Idempotent: re-running skips rows that already exist. Apply via the Supabase MCP
 -- execute_sql, `supabase db reset` (which runs this file), or psql. Requires the
 -- pgcrypto functions crypt()/gen_salt() (available by default on Supabase).
