@@ -10,7 +10,7 @@ import { RecentUsersTable } from "./RecentUsersTable";
 export function AdminDashboard() {
   const state = useAdminDashboard();
   if (state.status === "loading") return <LoadingState label="Loading dashboard…" />;
-  if (state.status === "error") return <ErrorState message={state.error} />;
+  if (state.status === "error") return <ErrorState title="Couldn't load the dashboard" message={state.error} />;
   const { stats, recentUsers, signups, subscriptions } = state.data;
   return (
     <div className="flex flex-col gap-[var(--density-gap)]">

@@ -9,6 +9,13 @@ describe("ErrorState", () => {
     expect(screen.getByText("network error")).toBeInTheDocument();
   });
 
+  it("defaults the heading to the capture copy, and accepts an override", () => {
+    const { rerender } = render(<ErrorState message="x" />);
+    expect(screen.getByText("Couldn't load the capture")).toBeInTheDocument();
+    rerender(<ErrorState message="x" title="Couldn't load the dashboard" />);
+    expect(screen.getByText("Couldn't load the dashboard")).toBeInTheDocument();
+  });
+
   it("renders no retry button without onRetry", () => {
     render(<ErrorState message="x" />);
     expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
