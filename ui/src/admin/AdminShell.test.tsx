@@ -8,6 +8,7 @@ vi.mock("./users/UsersView", () => ({ UsersView: () => <div>USERS_STUB</div> }))
 vi.mock("./payments/PaymentsView", () => ({ PaymentsView: () => <div>PAYMENTS_STUB</div> }));
 vi.mock("./traffic/TrafficView", () => ({ TrafficView: () => <div>TRAFFIC_STUB</div> }));
 vi.mock("./features/FeatureFlagsView", () => ({ FeatureFlagsView: () => <div>FEATURES_STUB</div> }));
+vi.mock("./settings/SettingsView", () => ({ SettingsView: () => <div>SETTINGS_STUB</div> }));
 
 afterEach(() => {
   window.location.hash = "";
@@ -63,5 +64,12 @@ describe("AdminShell", () => {
     await userEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "App Features" }));
     expect(screen.getByText("FEATURES_STUB")).toBeInTheDocument();
     expect(window.location.hash).toBe("#features");
+  });
+
+  it("routes the Settings section to the settings view", async () => {
+    render(<AdminShell email="a@b.com" onSignOut={vi.fn()} />);
+    await userEvent.click(within(screen.getByRole("navigation")).getByRole("button", { name: "Settings" }));
+    expect(screen.getByText("SETTINGS_STUB")).toBeInTheDocument();
+    expect(window.location.hash).toBe("#settings");
   });
 });
