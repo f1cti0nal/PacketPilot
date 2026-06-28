@@ -1,0 +1,7 @@
+# Supabase CLI config. The cloud project is the source of truth for Phase 0;
+# the local Docker stack is optional and not required to apply migrations
+# (the Supabase MCP applies them to the cloud project directly).
+project_id = "brkztcfhmrjjnbjzycie"
+
+[db]
+major_version = 17
