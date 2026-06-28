@@ -56,6 +56,11 @@ Deno.serve(async (req) => {
 
       {
         const item = sub.items.data[0];
+        // current_period_end moved from the subscription to the item in recent Stripe
+        // API versions; read the item first, fall back to the (older) subscription field.
+        const periodEnd =
+          (item as { current_period_end?: number } | undefined)?.current_period_end ??
+          (sub as { current_period_end?: number }).current_period_end ?? null;
         await admin.from("subscriptions").upsert(
           {
             user_id: userId,
@@ -65,7 +70,7 @@ Deno.serve(async (req) => {
             status: sub.status,
             amount_cents: item?.price?.unit_amount ?? null,
             currency: item?.price?.currency ?? "usd",
-            current_period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
+            current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
             cancel_at_period_end: sub.cancel_at_period_end ?? false,
           },
           { onConflict: "stripe_subscription_id" },
