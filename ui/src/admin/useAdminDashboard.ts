@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 
 export interface RecentUser {
@@ -59,9 +58,7 @@ export function useAdminDashboard(): AdminDashboardState {
       setState({ status: "error", error: "Backend not configured" });
       return;
     }
-    // Cast to untyped client so callers of new RPCs not yet in types.ts compile cleanly.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = supabase as SupabaseClient<any>;
+    const client = supabase;
     let cancelled = false;
     void (async () => {
       try {

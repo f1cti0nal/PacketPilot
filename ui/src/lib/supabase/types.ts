@@ -261,6 +261,20 @@ export type Database = {
       }
     }
     Functions: {
+      admin_signups_by_day: {
+        Args: { days?: number }
+        Returns: {
+          count: number
+          day: string
+        }[]
+      }
+      admin_subscriptions_by_day: {
+        Args: { days?: number }
+        Returns: {
+          count: number
+          day: string
+        }[]
+      }
       is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
