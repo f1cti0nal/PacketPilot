@@ -79,6 +79,8 @@ import { AccountMenu } from "./auth/AccountMenu";
 import { reconcileAfterCheckout } from "./auth/billing";
 import { trackPageView } from "./lib/analytics/track";
 import { useFeatureFlags } from "./lib/features/useFeatureFlags";
+import { useAppSettings } from "./lib/settings/useAppSettings";
+import { AnnouncementBanner } from "./cockpit/AnnouncementBanner";
 
 const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
@@ -120,6 +122,7 @@ export function App() {
   // re-render severity colours would stay the previous theme's palette after a toggle.
   useTheme();
   const session = useSession();
+  const { announcement_banner } = useAppSettings();
   const aiGate = useFeatureFlags(
     session.status === "authed",
     session.status === "authed" ? session.profile.plan : "free",
@@ -638,6 +641,7 @@ export function App() {
 
   return (
     <>
+    <AnnouncementBanner banner={announcement_banner} />
     {/* Hidden file input for "Load detection rules" — triggered via rulesInputRef.current.click() */}
     <input
       ref={rulesInputRef}
