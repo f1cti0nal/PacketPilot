@@ -259,8 +259,24 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_traffic_stats: {
+        Row: {
+          active_today: number | null
+          anon_today: number | null
+          authed_today: number | null
+          pageviews_today: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      admin_pageviews_by_day: {
+        Args: { days: number }
+        Returns: {
+          count: number
+          day: string
+        }[]
+      }
       admin_signups_by_day: {
         Args: { days?: number }
         Returns: {
@@ -273,6 +289,13 @@ export type Database = {
         Returns: {
           count: number
           day: string
+        }[]
+      }
+      admin_top_paths: {
+        Args: { days: number; lim: number }
+        Returns: {
+          count: number
+          path: string
         }[]
       }
       is_admin: { Args: never; Returns: boolean }
