@@ -31,4 +31,10 @@ describe("AdminShell", () => {
     await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
     expect(onSignOut).toHaveBeenCalled();
   });
+
+  it("exposes the theme and density toggles in the top bar", () => {
+    render(<AdminShell email="a@b.com" onSignOut={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /switch to (light|dark) theme/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /switch to (comfortable|compact) density/i })).toBeInTheDocument();
+  });
 });

@@ -77,4 +77,26 @@ describe("useAdminSession", () => {
     });
     expect(h.signInWithPassword).toHaveBeenCalledWith({ email: "x@y.com", password: "pw" });
   });
+
+  it("falls back to forbidden (never admin) when the role query errors", async () => {
+    h.getSession.mockResolvedValue({ data: { session: session() } });
+    h.single.mockResolvedValue({ data: null, error: { message: "boom" } });
+    const { result } = renderHook(() => useAdminSession());
+    await waitFor(() => expect(result.current.status).toBe("forbidden"));
+  });
+
+  it("re-derives the session on an auth state change", async () => {
+    let cb: ((event: string, s: unknown) => void) | undefined;
+    h.onAuthStateChange.mockImplementation((fn: (event: string, s: unknown) => void) => {
+      cb = fn;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    const { result } = renderHook(() => useAdminSession());
+    await waitFor(() => expect(result.current.status).toBe("anon"));
+    h.single.mockResolvedValue({ data: { email: "a@b.com", role: "admin", full_name: "A" }, error: null });
+    await act(async () => {
+      cb?.("SIGNED_IN", session());
+    });
+    await waitFor(() => expect(result.current.status).toBe("admin"));
+  });
 });
