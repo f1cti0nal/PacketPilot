@@ -77,6 +77,7 @@ import { useSession } from "./auth/useSession";
 import { AuthDialog } from "./auth/AuthDialog";
 import { AccountMenu } from "./auth/AccountMenu";
 import { reconcileAfterCheckout } from "./auth/billing";
+import { trackPageView } from "./lib/analytics/track";
 
 const repCaptureKey = (o: AnalysisOutput): string | undefined => o.source_sha256 ?? o.source_path;
 
@@ -125,6 +126,9 @@ export function App() {
     void reconcileAfterCheckout();
   }, []);
   const [tab, setTab] = useState<TabId>("dashboard");
+  useEffect(() => {
+    trackPageView(`/app#${tab}`);
+  }, [tab]);
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
   );

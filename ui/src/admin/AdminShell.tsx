@@ -6,6 +6,7 @@ import { Placeholder } from "./views/Placeholder";
 import { UsersView } from "./users/UsersView";
 import { PaymentsView } from "./payments/PaymentsView";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
+import { trackPageView } from "../lib/analytics/track";
 
 const VALID = new Set<string>(ADMIN_SECTIONS.map((s) => s.id));
 
@@ -24,6 +25,10 @@ export function AdminShell({ email, onSignOut }: { email: string; onSignOut: () 
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  useEffect(() => {
+    trackPageView(`/admin#${active}`);
+  }, [active]);
 
   const select = (id: AdminSectionId) => {
     setActive(id);
