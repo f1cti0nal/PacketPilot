@@ -52,7 +52,9 @@ export function useAdminUsers(search: string): { state: AdminUsersState; reload:
 
 async function patch(id: string, fields: Record<string, string>): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Backend not configured" };
-  const { error } = await supabase.from("profiles").update(fields as unknown as Parameters<ReturnType<typeof supabase.from>["update"]>[0]).eq("id", id);
+  // `fields` holds dynamic plan/role/status strings; the typed client constrains those
+  // columns to enum literals, so cast through `never` to bypass the literal check.
+  const { error } = await supabase.from("profiles").update(fields as never).eq("id", id);
   return error ? { ok: false, error: (error as { message?: string }).message ?? "Update failed" } : { ok: true };
 }
 
