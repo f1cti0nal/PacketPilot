@@ -5,7 +5,7 @@ import { AdminDashboard } from "./views/AdminDashboard";
 import { Placeholder } from "./views/Placeholder";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
 
-const VALID = new Set(ADMIN_SECTIONS.map((s) => s.id));
+const VALID = new Set<string>(ADMIN_SECTIONS.map((s) => s.id));
 
 function sectionFromHash(): AdminSectionId {
   const id = window.location.hash.replace(/^#/, "");

@@ -37,7 +37,9 @@ beforeEach(() => {
   h.signOut.mockResolvedValue({ error: null });
   h.single.mockResolvedValue({ data: null, error: null });
 });
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 const session = (uid = "u1", email = "a@b.com") => ({ user: { id: uid, email } });
 
