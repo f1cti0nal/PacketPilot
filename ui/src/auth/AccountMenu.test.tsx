@@ -51,4 +51,17 @@ describe("AccountMenu", () => {
     await userEvent.click(screen.getByRole("button", { name: /manage billing/i }));
     expect(billing.openPortal).toHaveBeenCalled();
   });
+
+  it("surfaces a billing error when the action fails", async () => {
+    billing.startCheckout.mockResolvedValueOnce({ ok: false, error: "Checkout unavailable" });
+    render(
+      <AccountMenu
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free" }, signOut: vi.fn() }}
+        onOpenAuth={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    await userEvent.click(screen.getByRole("button", { name: /upgrade to pro/i }));
+    expect(await screen.findByText(/checkout unavailable/i)).toBeInTheDocument();
+  });
 });

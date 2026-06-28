@@ -5,7 +5,22 @@ import { startCheckout, openPortal } from "./billing";
 
 export function AccountMenu({ session, onOpenAuth }: { session: SessionState; onOpenAuth: () => void }) {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Run a billing action (checkout/portal). On success the page redirects to Stripe, so
+  // we only clear `busy` on failure — and surface the error inline.
+  const runBilling = async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
+    if (busy) return;
+    setBusy(true);
+    setBillingError(null);
+    const r = await fn();
+    if (!r?.ok) {
+      setBillingError(r?.error ?? "Something went wrong");
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -64,19 +79,26 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
           {session.profile.plan === "pro" ? (
             <button
               type="button"
-              onClick={() => void openPortal()}
-              className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-text-dim)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+              disabled={busy}
+              onClick={() => void runBilling(openPortal)}
+              className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-text-dim)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-60"
             >
-              Manage billing
+              {busy ? "Opening…" : "Manage billing"}
             </button>
           ) : (
             <button
               type="button"
-              onClick={() => void startCheckout()}
-              className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-2)]"
+              disabled={busy}
+              onClick={() => void runBilling(startCheckout)}
+              className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-2)] disabled:opacity-60"
             >
-              Upgrade to Pro
+              {busy ? "Starting…" : "Upgrade to Pro"}
             </button>
+          )}
+          {billingError && (
+            <p role="alert" className="px-1 pt-1 t-tag text-[var(--color-sev-critical)]">
+              {billingError}
+            </p>
           )}
           <button
             type="button"
