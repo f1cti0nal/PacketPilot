@@ -144,6 +144,17 @@ describe("PacketInspector", () => {
     expect(screen.getByText(/first.*of.*5,000/i)).toBeInTheDocument();
   });
 
+  it("Stream view reassembles the conversation into client/server segments", async () => {
+    const u = userEvent.setup();
+    render(<PacketInspector flow={flow} packets={makePackets()} loading={false} error={null} onClose={() => {}} />);
+    await u.click(screen.getByRole("button", { name: "stream" }));
+    // Two segments from the fixture: client request, then server response (empty packet skipped).
+    expect(screen.getByText(/client → server/)).toBeInTheDocument();
+    expect(screen.getByText(/server → client/)).toBeInTheDocument();
+    // The reassembled client bytes contain the GET request line.
+    expect(screen.getByText(/GET \/ HTTP/)).toBeInTheDocument();
+  });
+
   it("resets selection to row 0 when packets prop changes", async () => {
     // Render with first packet set.
     const firstPackets = makePackets();
