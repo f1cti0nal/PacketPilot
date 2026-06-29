@@ -65,7 +65,7 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
         className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
       >
         <User size={14} aria-hidden />
-        <span className="hidden max-w-[10rem] truncate sm:inline">{session.email}</span>
+        <span className="hidden max-w-[10rem] truncate lg:inline">{session.email}</span>
         <ChevronDown size={13} aria-hidden />
       </button>
       {open && (

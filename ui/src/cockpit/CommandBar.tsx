@@ -197,9 +197,10 @@ export function CommandBar({
         </button>
         {/* Account control is always visible (incl. phones). */}
         {accountMenu}
-        {/* Density is a dashboard power-tweak — hide it (and Rules below) on phones
-            so the action cluster fits; both return at md+. */}
-        <span className="hidden md:contents"><DensityToggle /></span>
+        {/* Density is a dashboard power-tweak — hide it (and Rules below) until lg so
+            the action cluster fits the tablet range with the larger type scale; both
+            return at lg+. (Still reachable via the ⌘K palette.) */}
+        <span className="hidden lg:contents"><DensityToggle /></span>
         <ThemeToggle />
         {onOpenAiChat && (
           <button
@@ -211,7 +212,7 @@ export function CommandBar({
             <Sparkles size={14} />
           </button>
         )}
-        {rulesMenu && <span className="hidden md:contents">{rulesMenu}</span>}
+        {rulesMenu && <span className="hidden lg:contents">{rulesMenu}</span>}
       </div>
     </header>
   );
