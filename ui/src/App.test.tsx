@@ -24,6 +24,7 @@ vi.mock("./lib/wasmEngine", () => ({
 vi.mock("./lib/recent", () => ({
   listRecent: vi.fn(() => []),
   recordRecent: vi.fn(() => []),
+  updateRecentSummary: vi.fn(() => []),
   getFlows: vi.fn(async () => null),
   putFlows: vi.fn(async () => false),
   entryId: vi.fn(() => "test-entry-id"),
