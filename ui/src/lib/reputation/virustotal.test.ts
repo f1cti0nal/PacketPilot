@@ -15,25 +15,25 @@ const vtBody = (m: number) =>
 describe("virustotalVerdictIp", () => {
   it("parses a malicious IP", async () => {
     const http = async () => ({ status: 200, body: vtBody(3) });
-    const v = await virustotalVerdictIp(http, "k", "1.2.3.4", 0);
+    const v = await virustotalVerdictIp(http, "1.2.3.4", 0);
     expect(v.status).toBe("malicious");
     expect(v.link).toContain("/ip-address/1.2.3.4");
   });
   it("maps 404 to notfound", async () => {
     const http = async () => ({ status: 404, body: "" });
-    expect((await virustotalVerdictIp(http, "k", "1.2.3.4", 0)).status).toBe("notfound");
+    expect((await virustotalVerdictIp(http, "1.2.3.4", 0)).status).toBe("notfound");
   });
 });
 
 describe("virustotalVerdictDomain", () => {
   it("parses a malicious domain", async () => {
     const http = async () => ({ status: 200, body: vtBody(3) });
-    const v = await virustotalVerdictDomain(http, "k", "evil.example", 0);
+    const v = await virustotalVerdictDomain(http, "evil.example", 0);
     expect(v.status).toBe("malicious");
     expect(v.link).toContain("/domain/evil.example");
   });
   it("maps 404 to notfound", async () => {
     const http = async () => ({ status: 404, body: "" });
-    expect((await virustotalVerdictDomain(http, "k", "x.example", 0)).status).toBe("notfound");
+    expect((await virustotalVerdictDomain(http, "x.example", 0)).status).toBe("notfound");
   });
 });

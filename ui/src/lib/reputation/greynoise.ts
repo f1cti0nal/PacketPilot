@@ -1,9 +1,9 @@
 import type { ReputationVerdict, RepStatus } from "../../types";
 import { type HttpGet, unavailable } from "./http";
 
-export async function greynoiseVerdict(http: HttpGet, key: string, ip: string, now: number): Promise<ReputationVerdict> {
+export async function greynoiseVerdict(http: HttpGet, ip: string, now: number): Promise<ReputationVerdict> {
   const url = `https://api.greynoise.io/v3/community/${ip}`;
-  const res = await http(url, { key });
+  const res = await http(url, {});
   if (res.status === 404) {
     return { source: "greynoise", status: "notfound", malicious: false, score: 0, tags: [], link: `https://viz.greynoise.io/ip/${ip}`, fetched_at: now };
   }

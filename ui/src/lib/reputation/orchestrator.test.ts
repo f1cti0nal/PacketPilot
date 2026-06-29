@@ -9,7 +9,7 @@ const fakeAbuse: HttpGet = async () => ({ status: 200, body: JSON.stringify({ da
 describe("lookupReputation", () => {
   it("only active providers run; keyed by ip; private IPs skipped", async () => {
     // 8.8.8.8 is a real public IP; 10.0.0.5 is private.
-    const out = await lookupReputation(fakeAbuse, ["8.8.8.8", "10.0.0.5"], { abuseipdb: "k" }, 1000);
+    const out = await lookupReputation(fakeAbuse, ["8.8.8.8", "10.0.0.5"], ["abuseipdb"], 1000);
     expect(Object.keys(out)).toEqual(["8.8.8.8"]);
     expect(out["8.8.8.8"][0].source).toBe("abuseipdb");
     expect(out["8.8.8.8"][0].status).toBe("malicious");
@@ -21,7 +21,7 @@ describe("lookupReputation", () => {
 
     const fetchSpy = vi.fn(async (_url: string, _headers: Record<string, string>) => ({ status: 200, body: JSON.stringify({ data: { abuseConfidenceScore: 10, totalReports: 1 } }) })) satisfies HttpGet;
     // Use a different public IP not already in the fake-indexeddb cache from the previous test.
-    const out = await lookupReputation(fetchSpy, ["1.1.1.1"], { abuseipdb: "k" }, 7000);
+    const out = await lookupReputation(fetchSpy, ["1.1.1.1"], ["abuseipdb"], 7000);
 
     expect(out["1.1.1.1"]).toBeDefined();
     const v = out["1.1.1.1"][0];
@@ -35,16 +35,22 @@ describe("lookupReputation", () => {
   });
 
   it("no providers configured: returns empty verdicts for public IPs", async () => {
-    const out = await lookupReputation(fakeAbuse, ["8.8.8.8"], {}, 2000);
-    // No keys means no providers — public IP gets an empty verdicts array, so not included in output.
+    const out = await lookupReputation(fakeAbuse, ["8.8.8.8"], [], 2000);
+    // No providers means no lookups — public IP gets no verdicts, not included in output.
     expect(out["8.8.8.8"]).toBeUndefined();
+  });
+
+  it("unknown providers are ignored (only valid intersection)", async () => {
+    const out = await lookupReputation(fakeAbuse, ["8.8.8.8"], ["badprovider", "abuseipdb"], 3000);
+    expect(Object.keys(out)).toContain("8.8.8.8");
+    expect(out["8.8.8.8"][0].source).toBe("abuseipdb");
   });
 });
 
 describe("lookupDomainReputation", () => {
-  it("returns empty without a VT key", async () => {
+  it("returns empty when hosts list is empty", async () => {
     const http = async () => ({ status: 200, body: "{}" });
-    expect(await lookupDomainReputation(http, ["a.example"], "", 0)).toEqual({});
+    expect(await lookupDomainReputation(http, [], 0)).toEqual({});
   });
 
   it("looks up each host via VT (cache miss → fetch)", async () => {
@@ -58,7 +64,7 @@ describe("lookupDomainReputation", () => {
     });
     const http = vi.fn(async () => ({ status: 200, body: vtDomainBody })) satisfies HttpGet;
     // Use a unique now timestamp to avoid cache hits from other tests.
-    const out = await lookupDomainReputation(http, ["evil.example"], "k", 99000);
+    const out = await lookupDomainReputation(http, ["evil.example"], 99000);
     expect(out["evil.example"][0].status).toBe("malicious");
     expect(http).toHaveBeenCalledTimes(1);
   });

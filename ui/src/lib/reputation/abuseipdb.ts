@@ -1,9 +1,9 @@
 import type { ReputationVerdict, RepStatus } from "../../types";
 import { type HttpGet, unavailable } from "./http";
 
-export async function abuseipdbVerdict(http: HttpGet, key: string, ip: string, now: number): Promise<ReputationVerdict> {
+export async function abuseipdbVerdict(http: HttpGet, ip: string, now: number): Promise<ReputationVerdict> {
   const url = `https://api.abuseipdb.com/api/v2/check?ipAddress=${ip}&maxAgeInDays=90`;
-  const res = await http(url, { Key: key, Accept: "application/json" });
+  const res = await http(url, { Accept: "application/json" });
   if (res.status !== 200) return unavailable("abuseipdb", now);
   let d: any;
   try { d = JSON.parse(res.body).data; } catch { return unavailable("abuseipdb", now); }

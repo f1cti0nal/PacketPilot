@@ -20,12 +20,12 @@ function parse(body: string, status: number, link: string, now: number): Reputat
   return { source: "virustotal", status: s, malicious: s === "malicious", score, tags, link, fetched_at: now };
 }
 
-export async function virustotalVerdictIp(http: HttpGet, key: string, ip: string, now: number): Promise<ReputationVerdict> {
-  const res = await http(`https://www.virustotal.com/api/v3/ip_addresses/${ip}`, { "x-apikey": key });
+export async function virustotalVerdictIp(http: HttpGet, ip: string, now: number): Promise<ReputationVerdict> {
+  const res = await http(`https://www.virustotal.com/api/v3/ip_addresses/${ip}`, {});
   return parse(res.body, res.status, `https://www.virustotal.com/gui/ip-address/${ip}`, now);
 }
 
-export async function virustotalVerdictDomain(http: HttpGet, key: string, domain: string, now: number): Promise<ReputationVerdict> {
-  const res = await http(`https://www.virustotal.com/api/v3/domains/${domain}`, { "x-apikey": key });
+export async function virustotalVerdictDomain(http: HttpGet, domain: string, now: number): Promise<ReputationVerdict> {
+  const res = await http(`https://www.virustotal.com/api/v3/domains/${domain}`, {});
   return parse(res.body, res.status, `https://www.virustotal.com/gui/domain/${domain}`, now);
 }
