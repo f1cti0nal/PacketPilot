@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/gen-seo-html.mjs",
     "build:wasm": "node scripts/build-wasm.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",

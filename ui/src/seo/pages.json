@@ -1,0 +1,578 @@
+[
+  {
+    "slug": "analyze-pcap-online",
+    "metaTitle": "Analyze PCAP Online — Free, Nothing Uploaded",
+    "metaDescription": "Analyze a PCAP online in your browser. Drag in a .pcap and get a MITRE-mapped, severity-scored threat verdict in seconds. Nothing is uploaded. Free, no install.",
+    "h1": "Analyze PCAP Online — In Your Browser, Nothing Uploaded",
+    "lead": "Drop a capture into PacketPilot and analyze your PCAP online in seconds: ~20 behavioral detectors run, findings get severity-scored and mapped to MITRE ATT&CK, and you get a triage verdict without ever sending a packet to a server. The entire engine is a Rust-to-WebAssembly module that runs locally in the tab — your .pcap never leaves the browser and is never uploaded. The full analyzer is free, no signup, no install.",
+    "sections": [
+      {
+        "heading": "How it works: a real analysis engine, running in your tab",
+        "blocks": [
+          {
+            "p": "PacketPilot is not a thin front-end to a cloud parser. The analysis engine is written in Rust and compiled to WebAssembly, so when you drop a capture in, the parsing, flow reconstruction, and detection all execute inside your browser's sandbox on your machine. There is no upload step and no round-trip to a backend for the analysis itself."
+          },
+          {
+            "p": "Open the app, drag a .pcap onto the page, and the engine decodes frames, reassembles flows, and runs every detector against the traffic locally. Within seconds you land on a triage dashboard with scored findings instead of a raw packet list. The privacy guarantee is structural, not a policy promise: the capture bytes are processed in WebAssembly memory and are never serialized to any network request."
+          },
+          {
+            "bullets": [
+              "Client-side Rust → WebAssembly engine — the capture is decoded and analyzed in the tab",
+              "Accepts .pcap, .pcapng, .cap, and gzip-compressed .pcap.gz / .pcapng.gz captures",
+              "No upload, no account, no install — open the URL and drag a file in",
+              "Works offline once the page has loaded, because the analyzer is the page"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "What you get from a single capture",
+        "blocks": [
+          {
+            "p": "Every flagged behavior is severity-scored and mapped to MITRE ATT&CK techniques, so you triage by risk instead of scrolling packets. Around 20 behavioral detectors run on each capture, covering credential, lateral, exfil, malware, TLS, DNS, and L2/DoS threat classes."
+          },
+          {
+            "bullets": [
+              "Threat detection: brute-force, port scan, lateral movement, exposed remote access, cleartext credentials, PII exposure, data exfiltration, DNS tunneling, DGA, cryptomining, ARP spoof, SYN flood, suspicious user-agents",
+              "Malware delivery: SHA-256 file carving from cleartext HTTP, known-bad hash matching, and disguised-download (file-type masquerade) detection",
+              "TLS posture: weak/deprecated TLS and certificate-health findings, plus per-flow negotiated version and cipher",
+              "Fingerprints: JA3, JA4, JA4-Q, JA3S, and HASSH for SSH and TLS client/server identification",
+              "Investigation views: triage dashboard, threat graph, protocol sunburst, top ports, HTTP overview, a findings table, a filterable flows table, and on-demand per-flow packet drill-down",
+              "Exports: a polished HTML report, STIX 2.1, CSV, MISP, CEF, and Sigma rules — plus PCAP flow/host carving and multi-capture diff"
+            ]
+          },
+          {
+            "p": "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) is opt-in and login-gated, and it only ever sends a derived summary and public IPs — never the capture. You can also import Suricata-style rules to match your own content signatures against the traffic."
+          }
+        ]
+      },
+      {
+        "heading": "Why in-browser beats cloud PCAP uploaders",
+        "blocks": [
+          {
+            "p": "Cloud PCAP tools like CloudShark and A-Packets ship your packets offsite to analyze them. A capture is some of the most sensitive data you own — it can contain internal IPs, hostnames, credentials sent in the clear, session tokens, and PII. Uploading it to a third party means trusting their retention, access controls, and jurisdiction with exactly the data you are trying to investigate."
+          },
+          {
+            "p": "PacketPilot inverts that. Because the engine runs as WebAssembly in your browser, the bytes stay on your machine and the analysis happens locally. There is no transfer to wait on for large captures, nothing to scrub from someone else's storage afterward, and no upload to clear with your security or compliance team before you can triage an incident."
+          },
+          {
+            "bullets": [
+              "Privacy by construction — the capture is never uploaded, so there is nothing to leak, retain, or subpoena",
+              "No size-limited upload queue — analysis starts as soon as the file is read locally",
+              "Safe for sensitive captures — internal hosts, credentials, and PII never transit a third party",
+              "Same engine, free tier — the full analyzer works anonymously; Pro ($19/mo) adds login-gated extras"
+            ]
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "q": "Is my PCAP uploaded anywhere?",
+        "a": "No. The analysis engine is compiled to WebAssembly and runs entirely inside your browser, so the capture is decoded and analyzed locally on your machine. The .pcap bytes are never serialized into a network request and never leave the tab. The only optional feature that touches a server is reputation enrichment, which is off by default, login-gated, and sends only a derived summary plus public IPs — never the capture itself."
+      },
+      {
+        "q": "What capture formats are supported?",
+        "a": "PacketPilot reads .pcap, .pcapng, and .cap files, plus gzip-compressed captures (.pcap.gz and .pcapng.gz) which are inflated and analyzed in the browser. You can also import Suricata-style rules to run your own content signatures against the traffic."
+      },
+      {
+        "q": "Is it free?",
+        "a": "Yes. The full analyzer — all ~20 detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows views, and exports — works on the free tier with no signup. Pro is $19/mo and adds login-gated extras such as reputation enrichment from AbuseIPDB, GreyNoise, and VirusTotal."
+      },
+      {
+        "q": "Do I need to install anything?",
+        "a": "No. There is nothing to download or install and no account required to analyze a capture. Open the app in a modern browser, drag your .pcap onto the page, and the in-browser engine produces a scored, MITRE-mapped verdict in seconds."
+      },
+      {
+        "q": "How fast is the analysis?",
+        "a": "For typical triage captures you get a scored verdict in seconds. Because the Rust-to-WebAssembly engine runs locally, there is no upload wait — analysis begins the moment the file is read from disk, and larger captures stay on your machine instead of crawling through an upload queue."
+      }
+    ]
+  },
+  {
+    "slug": "wireshark-alternative",
+    "metaTitle": "Wireshark Alternative for Fast PCAP Triage | PacketPilot",
+    "metaDescription": "A Wireshark alternative that triages PCAPs in your browser: automated verdict, ~20 detectors, MITRE ATT&CK. Carve the right flows, then pivot to Wireshark.",
+    "h1": "PacketPilot: The Wireshark Alternative for First-Pass PCAP Triage",
+    "lead": "PacketPilot is a Wireshark alternative built for the part Wireshark was never meant to do quickly: telling you what's worth looking at. Drop a .pcap, .pcapng, .cap, or .gz file into your browser and a Rust/WebAssembly engine returns a severity-ranked verdict — ~20 behavioral detectors mapped to MITRE ATT&CK — without uploading a single packet or installing anything. It doesn't replace Wireshark; it tells you which flows to open in it.",
+    "sections": [
+      {
+        "heading": "Triage before Wireshark, not instead of it",
+        "blocks": [
+          {
+            "p": "Wireshark is the right tool for ground-truth packet decoding — there's nothing better for reading a single conversation byte by byte. The slow part is the step before that: opening a capture cold, eyeballing thousands of conversations, and guessing which one matters. That guess is what PacketPilot automates."
+          },
+          {
+            "p": "Open a capture in PacketPilot and the engine runs every flow through ~20 behavioral detectors, scores incident severity, and maps each finding to a MITRE ATT&CK technique. You start from a ranked answer instead of a blank display filter. Then you carve the exact flows or hosts that earned the verdict to a fresh .pcap and pivot into Wireshark for the deep decode — with the noise already removed."
+          },
+          {
+            "bullets": [
+              "Automated first pass: severity-ranked findings across brute-force, port scan, lateral movement, DGA, malware download, data exfil, ARP spoof, SYN flood, cryptomining, DNS tunneling, weak/deprecated TLS, and more.",
+              "MITRE ATT&CK mapping on every finding, so the verdict reads as technique IDs, not raw packet counts.",
+              "Zero install, zero account: it runs in a browser tab on any machine, including ones you can't put Wireshark on.",
+              "Hand off cleanly: PCAP flow and host carving exports just the relevant packets for Wireshark."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Wireshark vs PacketPilot",
+        "blocks": [
+          {
+            "p": "These are complementary tools, not competitors. Wireshark answers \"what exactly happened in this packet?\" PacketPilot answers \"which packets should I even be looking at, and why?\" The honest framing:"
+          },
+          {
+            "bullets": [
+              "Primary job — Wireshark: exhaustive packet and protocol dissection. PacketPilot: automated threat triage and a severity verdict over the whole capture.",
+              "Setup — Wireshark: a local install with capture privileges. PacketPilot: a browser tab, nothing to install, works on locked-down machines.",
+              "Output — Wireshark: every field of every packet, on demand. PacketPilot: ranked findings, MITRE ATT&CK techniques, a threat graph, protocol sunburst, top ports, and an HTTP overview.",
+              "Where the data goes — Wireshark: stays on your machine. PacketPilot: also stays on your machine — analysis runs client-side in WebAssembly and the capture is never uploaded.",
+              "Decode depth — Wireshark wins, decisively. PacketPilot surfaces flows, fingerprints, and metadata, then hands you the carved packets to open in Wireshark.",
+              "Best together: let PacketPilot find the needle and carve it out, then use Wireshark to read every byte of it."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "What you actually get on the first pass",
+        "blocks": [
+          {
+            "p": "PacketPilot is opinionated about evidence, not just visualization. The dashboard ranks findings by severity; a flows table with filters and on-demand packet drill-down lets you pivot from a verdict down to the conversation behind it."
+          },
+          {
+            "bullets": [
+              "Protocol intelligence: JA3, JA4, JA4-Q, JA3S, and HASSH fingerprints; SNI from TLS and QUIC/HTTP3; passive DNS; HTTP metadata; and DoH/DoT visibility.",
+              "File awareness: SHA-256 file carving from HTTP transfers, with disguised-download and malware-download detection.",
+              "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) that is opt-in and login-gated, and sends only a derived summary plus public IPs — never your capture.",
+              "Share and integrate: export a polished HTML report, STIX 2.1, CSV, MISP, CEF, or Sigma rules; import Suricata rules; diff multiple captures."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Your capture never leaves the browser",
+        "blocks": [
+          {
+            "p": "The reason a browser-based analyzer is even credible for security work is the privacy model. PacketPilot analyzes .pcap, .pcapng, .cap, and .gz files entirely client-side via a Rust→WebAssembly engine. The capture is never uploaded to any server — it stays in the tab, on your machine, the same as it would in Wireshark."
+          },
+          {
+            "p": "That's the real distinction from cloud PCAP uploaders like CloudShark or A-Packets, which ship your packets offsite to analyze them. With PacketPilot the analysis comes to the data, not the other way around. The full analyzer is free with no signup; Pro is $19/mo for teams that want more."
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "q": "Does PacketPilot replace Wireshark?",
+        "a": "No, and it isn't trying to. Wireshark is the gold standard for deep packet decoding and PacketPilot doesn't match its dissection depth. PacketPilot replaces the slow first pass — opening a capture cold and guessing what matters — by returning an automated, severity-ranked verdict with MITRE ATT&CK mapping. Think of it as the triage step that tells you which flows are worth opening in Wireshark."
+      },
+      {
+        "q": "Can I still use Wireshark after PacketPilot?",
+        "a": "Yes — that's the intended workflow. Once PacketPilot ranks the findings, use PCAP flow or host carving to export just the relevant packets to a fresh .pcap, then open that in Wireshark for full byte-level analysis. You arrive in Wireshark already knowing which conversation to look at and why it was flagged."
+      },
+      {
+        "q": "Is PacketPilot as deep as Wireshark?",
+        "a": "For packet-by-packet protocol dissection, no — Wireshark goes deeper, and that's exactly why you'd pivot to it. PacketPilot's depth is in automated detection and metadata: ~20 behavioral detectors, TLS/SSH fingerprints (JA3/JA4/JA4-Q/JA3S/HASSH), passive DNS, SHA-256 file carving, and a filterable flows table with on-demand packet drill-down. It's built to find the needle, not to replace the magnifying glass."
+      },
+      {
+        "q": "Is my capture uploaded anywhere?",
+        "a": "No. Analysis runs entirely client-side in your browser via a Rust/WebAssembly engine, so your .pcap, .pcapng, .cap, or .gz never leaves your device — it's never sent to any server. That's the core difference from cloud PCAP uploaders. The only optional exception is reputation enrichment, which is opt-in, login-gated, and sends just a derived summary and public IPs, never the capture itself."
+      },
+      {
+        "q": "Do I need to install anything or create an account?",
+        "a": "No. PacketPilot runs in any modern browser with nothing to install, which means you can triage captures on machines where you can't or shouldn't install Wireshark. The full analyzer is free with no signup; a Pro tier exists at $19/mo for added capabilities."
+      }
+    ]
+  },
+  {
+    "slug": "pcap-viewer",
+    "metaTitle": "Online PCAP Viewer — Open .pcap in Your Browser | PacketPilot",
+    "metaDescription": "A free online PCAP viewer that opens .pcap, .pcapng, .cap and .gz captures in your browser. View flows and packets, inspect payloads — nothing is uploaded.",
+    "h1": "Online PCAP Viewer That Gives You a Verdict, Not Just a Packet List",
+    "lead": "PacketPilot is an online PCAP viewer that opens .pcap, .pcapng, .cap and .gz captures directly in your browser — no install, no signup, and nothing uploaded. A Rust-to-WebAssembly engine parses the capture entirely client-side, so you get the familiar flows table and on-demand packet inspector you'd expect from Wireshark, plus something most viewers skip: a scored threat verdict with MITRE ATT&CK context.",
+    "sections": [
+      {
+        "heading": "Open a capture in the browser — nothing leaves your machine",
+        "blocks": [
+          {
+            "p": "Most online PCAP viewers (CloudShark, A-Packets, and similar) work by uploading your packets to their servers. That is a problem when a capture contains credentials, internal hostnames, customer data, or evidence you cannot legally move off-site. PacketPilot inverts the model: the analysis engine is compiled to WebAssembly and runs inside the page, so the capture file is read locally and never transmitted to any server."
+          },
+          {
+            "bullets": [
+              "Drag in a .pcap, .pcapng, .cap, or gzip-compressed .pcap.gz / .pcapng.gz file",
+              "Parsing and detection run in the browser tab via a Rust/WASM engine — no backend round-trip",
+              "The capture is never uploaded; close the tab and nothing persists server-side",
+              "Works on the free tier with no account — open a file and start reading immediately"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Flows table and on-demand packet drill-down",
+        "blocks": [
+          {
+            "p": "Start at the flows table: every conversation in the capture, with source and destination IP and port, protocol, byte and packet counts, and per-flow TLS and fingerprint metadata. Filter and sort to narrow thousands of flows down to the handful that matter, then pivot from any finding straight to the flows behind it."
+          },
+          {
+            "p": "When you need packet-level detail, open the inspector on a single flow on demand. It lists each packet with direction (client-to-server or server-to-server), relative timestamp, wire length, TCP flags, and payload size, with an ASCII preview inline."
+          },
+          {
+            "bullets": [
+              "Per-flow packet list with direction, timing, TCP flags, and payload length",
+              "A hex view (offset / hex / ASCII) of the actual payload bytes for the selected packet",
+              "Fingerprints surfaced per flow: JA3, JA4, JA4-Q, JA3S, and HASSH for SSH",
+              "Export a single flow or an entire host back out as a .pcap for use in other tools"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "The difference: a scored verdict, not just a list",
+        "blocks": [
+          {
+            "p": "A raw packet list tells you what is in the capture; it does not tell you what is wrong. PacketPilot runs roughly 20 behavioral detectors over the traffic and produces incident severity scores mapped to MITRE ATT&CK techniques — so opening a capture answers \"is this bad, and why\" instead of leaving you to read frames by hand."
+          },
+          {
+            "bullets": [
+              "Detectors for port scans, brute force, lateral movement, cleartext credentials, PII exposure, DGA, data exfiltration, and exposed remote access",
+              "Malware-download detection with SHA-256 file carving, plus disguised-download and suspicious user-agent checks",
+              "TLS hygiene: weak/deprecated TLS, certificate health, and encrypted DNS (DoH/DoT) visibility",
+              "Network attacks: ARP spoofing, SYN flood, DNS tunneling, and cryptomining",
+              "Findings carry a severity score and ATT&CK mapping, viewable as a triage dashboard, threat graph, protocol sunburst, top ports, HTTP overview, and findings table"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Take findings out of the browser",
+        "blocks": [
+          {
+            "p": "Reading a capture is the start; the output has to fit your workflow. PacketPilot exports the analysis in the formats SOC and IR teams already use, all generated client-side from the same in-browser engine."
+          },
+          {
+            "bullets": [
+              "Polished HTML report, STIX 2.1, CSV, MISP, CEF, and Sigma rules",
+              "PCAP flow and host carving to hand a scoped capture to another analyst",
+              "Multi-capture diff to compare two captures and spot what changed",
+              "Optional, opt-in, login-gated reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) that sends only a derived summary plus public IPs — never the capture itself",
+              "Suricata rule import to run your own signatures against the traffic"
+            ]
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "q": "Can I view individual packets and their payloads?",
+        "a": "Yes. Beyond the flows table, the packet inspector opens on a single flow on demand and lists every packet with direction, relative timestamp, TCP flags, wire length, and payload size. Selecting a packet shows a hex dump (offset, hex, and ASCII columns) of its actual payload bytes, so you can read cleartext content and protocol details without leaving the browser."
+      },
+      {
+        "q": "What capture formats are supported?",
+        "a": "PacketPilot opens .pcap, .pcapng, and .cap files, plus gzip-compressed captures (.pcap.gz and .pcapng.gz), which are inflated and parsed in the browser. You can also export a flow or host back out as a .pcap, and import Suricata rules to match against the traffic."
+      },
+      {
+        "q": "Is my capture uploaded anywhere?",
+        "a": "No. The analysis engine is compiled to WebAssembly and runs entirely inside your browser tab, so the capture file is read locally and is never sent to any server. The only optional exception is reputation enrichment, which is opt-in and login-gated and transmits only a derived summary plus public IP addresses — never the packets themselves."
+      },
+      {
+        "q": "Is it free?",
+        "a": "Yes. The full analyzer — opening captures, the flows table, packet inspector, all of the detectors, the dashboards, and exports — works on the free tier with no signup. A Pro plan ($19/month) is available, but you can open and triage a capture without creating an account."
+      },
+      {
+        "q": "How is this different from Wireshark or other online PCAP viewers?",
+        "a": "Other online viewers typically upload your packets and then show you a packet list. PacketPilot keeps the capture in your browser and adds a verdict on top of the list: roughly 20 behavioral detectors produce scored findings mapped to MITRE ATT&CK, so you see which conversations are suspicious and why before you ever read a single frame."
+      }
+    ]
+  },
+  {
+    "slug": "pcapng-analyzer",
+    "metaTitle": "Pcapng Analyzer — In-Browser, No Upload | PacketPilot",
+    "metaDescription": "Analyze a .pcapng (or gzipped .pcapng.gz) capture entirely in your browser. ~20 detectors, severity scoring, MITRE ATT&CK mapping, exports. Nothing uploaded. Free.",
+    "h1": "Pcapng analyzer that runs in your browser — nothing uploaded",
+    "lead": "PacketPilot is a pcapng analyzer that parses your .pcapng capture entirely client-side, in the browser tab, via a Rust-to-WebAssembly engine. The file never leaves your machine — there is no upload, no server-side storage, and no account required to run the full analysis. Drop a capture and get behavioral detections, severity-scored incidents, and MITRE ATT&CK mapping in seconds.",
+    "sections": [
+      {
+        "heading": "Analyze a .pcapng file without it leaving the browser",
+        "blocks": [
+          {
+            "p": "Most online pcapng tools work by uploading your capture to their servers. PacketPilot does the opposite: the same Rust engine that powers the desktop analyzer is compiled to WebAssembly and runs inside your browser tab. Your .pcapng file is read, decoded, and analyzed locally — it is never transmitted to any backend and never persisted off-device."
+          },
+          {
+            "p": "That privacy model is the whole point. Captures routinely contain internal IPs, hostnames, credentials in cleartext protocols, and other material you should not be shipping to a third party just to triage it. Here, the packets stay put."
+          },
+          {
+            "bullets": [
+              "Drag and drop a .pcapng (or .pcap / .cap) file, or click to browse — analysis starts immediately.",
+              "No signup needed: the complete analyzer is free and works anonymously.",
+              "Works offline once loaded — the engine is local WebAssembly, not a remote API."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Pcapng vs pcap — and gzipped .pcapng.gz",
+        "blocks": [
+          {
+            "p": "pcapng (PCAP Next Generation, the modern Wireshark default) is a block-structured container: section header blocks, per-interface description blocks, and enhanced packet blocks. It carries richer metadata than the older classic pcap format — multiple capture interfaces with their own link types, nanosecond timestamp resolution, and per-interface timestamp scaling. Classic pcap is a flat, single-interface header followed by packet records."
+          },
+          {
+            "p": "PacketPilot has a dedicated pcapng container reader. It sniffs the file's magic bytes to choose the right parser, walks section and interface-description blocks, and applies each interface's timestamp resolution so nanosecond timestamps are preserved correctly. Classic pcap (little- and big-endian, microsecond or nanosecond) is handled by the same pipeline, so you can throw either format at it."
+          },
+          {
+            "p": "Gzipped captures are first-class. A .pcapng.gz (or .pcap.gz) is inflated in-browser by a pure-Rust gzip decoder — including multi-member gzip streams — and then re-parsed as a normal capture. You don't need to decompress it first."
+          }
+        ]
+      },
+      {
+        "heading": "Same triage, scoring, MITRE mapping, and exports",
+        "blocks": [
+          {
+            "p": "A .pcapng capture gets the identical analysis as any other format — the container is just the wrapper. Roughly 20 behavioral detectors run over the reconstructed flows, each contributing to a severity-scored incident view with MITRE ATT&CK technique mapping so you can see where activity lands in the kill chain."
+          },
+          {
+            "bullets": [
+              "Detectors: brute-force, port scan, lateral movement, cleartext credentials, PII exposure, DGA, malware download with SHA-256 file carving, weak/deprecated TLS, TLS cert health, ARP spoof, SYN flood, cryptomining, DNS tunneling, data exfiltration, suspicious user-agents, disguised downloads, exposed remote access, and encrypted DNS (DoH/DoT).",
+              "Views: triage dashboard, threat graph, protocol sunburst, top ports, HTTP overview, a findings table, a filterable flows table, and on-demand packet drill-down with a packet inspector.",
+              "Fingerprints: JA3, JA4, JA4-Q, JA3S, and HASSH (SSH).",
+              "Exports: polished HTML report, STIX 2.1, CSV, MISP, CEF, and Sigma rules; plus PCAP flow/host carving and multi-capture diff."
+            ]
+          },
+          {
+            "p": "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) is opt-in and login-gated. Even then, only a derived summary plus public IP addresses are sent for lookup — the capture itself never goes anywhere."
+          }
+        ]
+      },
+      {
+        "heading": "Open a pcapng capture now",
+        "blocks": [
+          {
+            "p": "There is nothing to install and no account to create. Open the app, drop your .pcapng (or .pcapng.gz) file, and read the scored findings. If you decide you want reputation enrichment or Pro exports later, that's there too — but the full pcapng analysis is free and runs without ever uploading a packet."
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "q": "What's the difference between pcapng and pcap, and does PacketPilot handle both?",
+        "a": "pcapng is the modern, block-structured capture format (Wireshark's default) that supports multiple interfaces, per-interface link types, and nanosecond timestamp resolution; classic pcap is the older flat single-interface format. PacketPilot has a dedicated pcapng reader and also parses classic pcap (little- and big-endian, microsecond or nanosecond). It detects the format from the file's magic bytes, so you can load either."
+      },
+      {
+        "q": "Can I analyze a gzipped .pcapng.gz file?",
+        "a": "Yes. Gzipped captures (.pcapng.gz or .pcap.gz) are inflated in the browser by a pure-Rust gzip decoder — including multi-member gzip — and then analyzed like any other capture. You don't need to decompress the file first."
+      },
+      {
+        "q": "Is my pcapng file uploaded to a server?",
+        "a": "No. The capture is parsed and analyzed entirely client-side via a Rust-to-WebAssembly engine running in your browser tab. The file is never uploaded or stored on any server. If you opt in to reputation enrichment, only a derived summary plus public IP addresses are sent for lookup — never the capture itself."
+      },
+      {
+        "q": "Is it free?",
+        "a": "Yes. The full pcapng analyzer — all detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows/packet views, and exports — works free with no signup. There's an optional Pro tier ($19/mo) and opt-in, login-gated reputation enrichment, but the core analysis is free and anonymous."
+      },
+      {
+        "q": "How large a capture can I analyze in the browser?",
+        "a": "The engine streams through the capture rather than buffering whole files, and runs locally as WebAssembly, so performance depends on your own machine's memory and CPU rather than a server quota. Since nothing is uploaded, there's no transfer step or per-file upload limit to wait on."
+      }
+    ]
+  },
+  {
+    "slug": "pcap-to-csv",
+    "metaTitle": "PCAP to CSV — Convert Captures in Your Browser | PacketPilot",
+    "metaDescription": "Convert a PCAP to CSV entirely in your browser — flows, fingerprints, and severity per row. Nothing is uploaded. Free, no signup. Also exports STIX, MISP, CEF, Sigma.",
+    "h1": "PCAP to CSV — convert captures to flow rows in your browser",
+    "lead": "PacketPilot turns a .pcap, .pcapng, .cap, or .gz capture into a structured CSV of network flows without uploading a single packet. The analysis runs entirely client-side in a Rust-to-WebAssembly engine, so your capture stays on your machine — there is no server round-trip, no account required, and no packets leaving the browser. Drop a file in, filter the flows you care about, and export them as CSV (or STIX, MISP, CEF, or Sigma).",
+    "sections": [
+      {
+        "heading": "Why convert PCAP to CSV in the browser",
+        "blocks": [
+          {
+            "p": "Most online PCAP-to-CSV converters ship your packets to a cloud backend to parse them. PacketPilot does the opposite: the WebAssembly engine reassembles flows locally, so the raw capture never touches a server. That matters when the trace contains credentials, internal IP ranges, customer data, or anything you can't legally or contractually upload to a third party."
+          },
+          {
+            "bullets": [
+              "Runs client-side via a Rust→WASM engine — the capture is parsed in the tab, not on a host you don't control.",
+              "Accepts .pcap, .pcapng, .cap, and gzip-compressed .pcap.gz / .pcapng.gz directly.",
+              "No signup needed for the core analyzer and CSV export — it works anonymously.",
+              "No upload step means no file-size queue, no offsite copy, and no retention to reason about."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "What the flows CSV contains",
+        "blocks": [
+          {
+            "p": "The export is one row per reassembled flow, not raw per-packet dumps, so it's immediately usable in a spreadsheet, pandas, or a SIEM import. Each row carries the connection 5-tuple, volume and timing, a category and severity score, and any fingerprints the engine extracted from the handshake."
+          },
+          {
+            "bullets": [
+              "Connection identity: flow_id, src_ip, src_port, dst_ip, dst_port, proto, app_proto.",
+              "Triage fields: category, severity, threat_score, and an ioc flag for known indicators.",
+              "Volume and timing: bytes_c2s, bytes_s2c, bytes_total, pkts, start, end, duration_ms.",
+              "Application metadata: sni, http_host, http_ua.",
+              "Fingerprints: ja3, ja4, ja3s, hassh, hassh_server, plus negotiated tls_version and tls_cipher.",
+              "Header row is RFC-4180 escaped, so commas and quotes inside fields parse cleanly."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Export only the flows you filtered",
+        "blocks": [
+          {
+            "p": "The Flows view has filters and a live summary bar showing flow count, total bytes, packets, IOC count, and the top categories in the current selection. \"Export filtered flows to CSV\" writes exactly the rows that match your current filter — so you can isolate, say, every flagged TLS flow to one external host and export just that subset, rather than the whole capture."
+          },
+          {
+            "p": "Because the filter and the export share the same flow rows, the CSV always reflects what's on screen. There's also a separate capture-level CSV export over the full analysis summary if you want everything at once."
+          }
+        ]
+      },
+      {
+        "heading": "Beyond CSV — STIX, MISP, CEF, Sigma, and HTML",
+        "blocks": [
+          {
+            "p": "CSV is the right format for analysis in a spreadsheet or notebook, but PacketPilot generates threat-intel and detection formats from the same in-browser analysis when you need to push findings downstream."
+          },
+          {
+            "bullets": [
+              "STIX 2.1 — structured threat-intel objects for a TIP.",
+              "MISP event JSON and CEF records — for sharing communities and SIEM ingestion.",
+              "Sigma rules — YAML detection rules generated from the findings.",
+              "Polished HTML report — a shareable, human-readable triage write-up.",
+              "PCAP flow/host carving — extract a per-flow or per-host capture back out as PCAP.",
+              "Every format is produced client-side; none of them upload your capture."
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "What runs alongside the export",
+        "blocks": [
+          {
+            "p": "The CSV isn't just a protocol decode — the severity and category columns come from roughly 20 behavioral detectors with MITRE ATT&CK mapping, so the rows you export already carry triage context. Detectors include port scan, brute force, lateral movement, cleartext credentials, PII exposure, DGA, malware download with SHA-256 file carving, weak/deprecated TLS, ARP spoof, SYN flood, cryptomining, DNS tunneling, and more."
+          },
+          {
+            "p": "Open the app, drop in a capture, and you get the triage dashboard, threat graph, findings table, and the filterable Flows view that drives the CSV export — all without an account."
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "q": "What columns are in the PCAP-to-CSV export?",
+        "a": "One row per network flow with 28 columns: flow_id, the 5-tuple (src_ip, src_port, dst_ip, dst_port, proto, app_proto), triage fields (category, severity, threat_score, ioc), volume and timing (bytes_c2s, bytes_s2c, bytes_total, pkts, start, end, duration_ms), application metadata (sni, http_host, http_ua), and fingerprints (ja3, ja4, ja3s, hassh, hassh_server) plus negotiated tls_version and tls_cipher. Fields are RFC-4180 escaped."
+      },
+      {
+        "q": "Is my capture uploaded anywhere?",
+        "a": "No. The PCAP is parsed entirely in your browser by a Rust-to-WebAssembly engine. The raw capture is never sent to any server — there is no upload step at all. Only opt-in, login-gated reputation enrichment ever sends anything outbound, and even then it's a derived summary plus public IPs, never the capture."
+      },
+      {
+        "q": "Is the PCAP-to-CSV converter free?",
+        "a": "Yes. The full analyzer and CSV export work for free with no signup. Pro ($19/mo) adds extra capabilities, but converting a capture to CSV and exporting filtered flows is part of the free tier."
+      },
+      {
+        "q": "Can I export only certain flows instead of the whole capture?",
+        "a": "Yes. The Flows view lets you filter by the fields you care about and shows a live summary (flows, bytes, packets, IOCs, top categories). \"Export filtered flows to CSV\" writes exactly the rows matching your current filter. A separate capture-level CSV export covers the entire analysis when you want everything."
+      },
+      {
+        "q": "What other formats can I export besides CSV?",
+        "a": "PacketPilot also exports a polished HTML report, STIX 2.1, MISP event JSON, CEF records, and Sigma detection rules — all generated client-side. It can additionally carve a per-flow or per-host PCAP back out of the capture."
+      }
+    ]
+  },
+  {
+    "slug": "extract-files-from-pcap",
+    "metaTitle": "Extract Files From PCAP — In-Browser, SHA-256",
+    "metaDescription": "Extract files from a PCAP in your browser. Carve HTTP downloads, hash them with SHA-256, flag malware downloads, and slice flow/host sub-pcaps. Nothing uploads.",
+    "h1": "Extract Files From PCAP — Carve, Hash, and Flag Downloads In Your Browser",
+    "lead": "PacketPilot lets you extract files from a PCAP without sending a single packet to a server. Open a .pcap, .pcapng, .cap, or .gz capture and a Rust-to-WebAssembly engine reassembles cleartext HTTP downloads in TCP-sequence order, hashes each one with streaming SHA-256, and flags known-bad transfers as malware-download findings — all client-side, with the capture never leaving the tab.",
+    "sections": [
+      {
+        "heading": "Carve transferred files straight from the capture",
+        "blocks": [
+          {
+            "p": "PacketPilot reassembles HTTP response bodies directly from the wire and reconstructs the transferred file, so you see what actually moved across the network — not just a flow summary. Reassembly is strict and order-aware, which means the bytes you get are the bytes that were sent, not a best-effort guess."
+          },
+          {
+            "bullets": [
+              "Reassembles cleartext HTTP downloads in TCP-sequence order, skipping retransmits and aborting on gaps so a partial or tampered stream never produces a wrong file",
+              "Handles Content-Length, uncompressed responses — chunked or Content-Encoding bodies are deliberately not hashed rather than hashed incorrectly",
+              "Attributes every carved file to its client and server endpoints so you know who pulled what from where",
+              "Reassembly is resistant to attacker-steerable TCP segmentation, so a crafted stream can't clobber an in-flight carve and poison the result"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Every carved file gets a streaming SHA-256",
+        "blocks": [
+          {
+            "p": "As each file is reassembled, its bytes are folded through a streaming SHA-256 in constant memory — the full body is never buffered, so large transfers don't blow up your tab. The resulting hash is surfaced as an indicator of compromise (IOC) you can pivot on, drop into a ticket, or check against your own threat intel."
+          },
+          {
+            "p": "The hash is computed exactly as a downstream tool would compute it, so a value you copy out of PacketPilot matches what you'd get from sha256sum on the recovered file. The carved-files view lists each file with its client, server, size, and SHA-256, sorted known-bad-first."
+          }
+        ]
+      },
+      {
+        "heading": "Malware-download detection on known-bad hashes",
+        "blocks": [
+          {
+            "p": "When a carved file's SHA-256 matches PacketPilot's curated known-bad set, it raises a Critical Malware Download finding mapped to MITRE ATT&CK T1105 (Ingress Tool Transfer), attributed client-to-server. The finding lands in the same triage workflow as the rest of the engine's roughly 20 behavioral detectors — incident severity scoring, the findings table, the threat graph, and the MITRE ATT&CK matrix — so a malicious download shows up next to brute-force, port-scan, data-exfil, and disguised-download signals instead of in isolation."
+          },
+          {
+            "p": "Detection runs against the file's content hash, not its URL or filename, so a binary renamed to look benign is still caught on the bytes that crossed the wire."
+          }
+        ]
+      },
+      {
+        "heading": "Slice the raw packets out, too: flow and host carving",
+        "blocks": [
+          {
+            "p": "File carving recovers what was transferred; PCAP carving recovers the raw frames so you can hand a focused capture to another tool. PacketPilot can export a sub-pcap scoped to a single flow or a single host, emitting the original frame bytes — not a re-encoding — ready to open in Wireshark or feed to your own pipeline."
+          },
+          {
+            "bullets": [
+              "Flow carve: export the bidirectional 5-tuple conversation behind any flow from the flow detail view",
+              "Host carve: one click on a host card exports every frame touching that IP across the whole capture",
+              "Output is a valid pcap built from the source's link type, bounded so a browser export stays manageable",
+              "Pair carving with on-demand packet drill-down, the flows table with filters, and per-flow fingerprints (JA3 / JA4 / JA4-Q / JA3S / HASSH) to confirm exactly what you're slicing out"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Nothing uploads — the analysis runs in your browser",
+        "blocks": [
+          {
+            "p": "This is the line that matters for anyone handling sensitive captures: your PCAP is parsed and carved entirely client-side by the WebAssembly engine. It is never uploaded, never staged on a server, and never leaves the browser tab. That's the deliberate difference from cloud PCAP tools like CloudShark or A-Packets, which ship your packets offsite to analyze them."
+          },
+          {
+            "p": "The full analyzer — carving, hashing, malware-download detection, detectors, fingerprints, flows, and exports to HTML, STIX 2.1, CSV, MISP, CEF, and Sigma — works on the free tier with no signup. Only optional IP reputation enrichment is login-gated, and even then it sends a derived summary plus public IPs, never the capture. Drop a PCAP in and pull the files out — free, in your browser, right now."
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "q": "What files can it carve from a PCAP?",
+        "a": "Cleartext HTTP downloads. PacketPilot reassembles HTTP response bodies in TCP-sequence order and reconstructs the transferred file regardless of type — executables, archives, documents, images, scripts, anything sent over plain HTTP. It carves Content-Length, uncompressed responses; chunked-transfer and Content-Encoding (compressed) bodies are deliberately skipped rather than carved incorrectly, and TLS-encrypted downloads can't be carved because the bytes are encrypted on the wire."
+      },
+      {
+        "q": "Does it hash the files with SHA-256?",
+        "a": "Yes. Every carved file is folded through a streaming SHA-256 as it reassembles, in constant memory with no full-body buffering. The hash is surfaced as an IOC in the carved-files view alongside the file's client, server, and size, and it matches what sha256sum would produce on the recovered file — so you can pivot on it or check it against your own intel."
+      },
+      {
+        "q": "Is my capture uploaded anywhere?",
+        "a": "No. The capture is parsed, carved, and hashed entirely in your browser by a Rust-to-WebAssembly engine. It is never uploaded, never stored on a server, and never leaves the tab. That's the core difference from cloud PCAP analyzers that send your packets offsite."
+      },
+      {
+        "q": "Is it free?",
+        "a": "Yes. The full analyzer — HTTP file carving, SHA-256 hashing, malware-download detection, the roughly 20 behavioral detectors, flow/host PCAP carving, fingerprints, and all exports — runs on the free tier with no signup. A $19/mo Pro tier adds extras, and optional IP-reputation enrichment is login-gated, but file extraction itself costs nothing."
+      },
+      {
+        "q": "How does it flag malicious downloads?",
+        "a": "When a carved file's SHA-256 matches PacketPilot's curated known-bad hash set, it raises a Critical Malware Download finding mapped to MITRE ATT&CK T1105 (Ingress Tool Transfer), attributed from client to server. Because detection is on the content hash rather than the filename or URL, a renamed or disguised binary is still caught on the bytes that actually crossed the wire."
+      }
+    ]
+  }
+]

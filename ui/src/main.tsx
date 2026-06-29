@@ -14,6 +14,7 @@ const AdminApp = React.lazy(() => import("./admin/AdminApp"));
 const AccountApp = React.lazy(() => import("./account/AccountApp"));
 const LegalApp = React.lazy(() => import("./legal/LegalApp"));
 const PricingApp = React.lazy(() => import("./pricing/PricingApp"));
+const ToolApp = React.lazy(() => import("./seo/ToolApp"));
 const route = resolveRoute(window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -34,6 +35,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       ) : route === "pricing" ? (
         <Suspense fallback={<LoadingState label="Loading…" />}>
           <PricingApp />
+        </Suspense>
+      ) : route === "tool" ? (
+        <Suspense fallback={<LoadingState label="Loading…" />}>
+          <ToolApp />
         </Suspense>
       ) : route === "app" ? (
         <App />
