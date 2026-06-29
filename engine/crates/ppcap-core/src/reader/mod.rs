@@ -234,10 +234,10 @@ pub fn open(path: &std::path::Path) -> Result<Box<dyn PacketSource>> {
 /// Nested gzip (gzip-inside-gzip) is rejected with a clear error. Constructs
 /// `pcap-parser`'s bounded reader directly so the 64 KiB refill buffer is the only large
 /// allocation regardless of capture size.
-pub fn open_reader<R: std::io::Read + 'static>(
+pub fn open_reader<'a, R: std::io::Read + 'a>(
     reader: R,
     size_hint: Option<u64>,
-) -> Result<Box<dyn PacketSource>> {
+) -> Result<Box<dyn PacketSource + 'a>> {
     open_reader_depth(reader, size_hint, 0)
 }
 
@@ -245,11 +245,11 @@ pub fn open_reader<R: std::io::Read + 'static>(
 /// nested gzip (gzip-inside-gzip) can be detected and rejected without unbounded recursion.
 /// `gzip_depth` is 0 on the first call and 1 after the first inflate step; any value ≥ 1
 /// entering the gzip arm is a nested-gzip error.
-fn open_reader_depth<R: std::io::Read + 'static>(
+fn open_reader_depth<'a, R: std::io::Read + 'a>(
     reader: R,
     size_hint: Option<u64>,
     gzip_depth: u8,
-) -> Result<Box<dyn PacketSource>> {
+) -> Result<Box<dyn PacketSource + 'a>> {
     let (head, filled, prefixed) =
         peek4(reader).map_err(|e| PpError::io("sniff container magic", e))?;
 
@@ -274,7 +274,7 @@ fn open_reader_depth<R: std::io::Read + 'static>(
             // pcap/pcapng). Box the inflated reader before recursing so the recursive call
             // sees a concrete `Box<dyn Read>` rather than an ever-growing
             // `GunzipReader<PrefixReader<GunzipReader<...>>>` monomorphization.
-            let inflated: Box<dyn std::io::Read + 'static> =
+            let inflated: Box<dyn std::io::Read + 'a> =
                 Box::new(gzip::GunzipReader::new(prefixed));
             open_reader_depth(inflated, None, gzip_depth + 1)
         }

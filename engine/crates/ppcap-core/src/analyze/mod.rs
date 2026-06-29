@@ -194,8 +194,8 @@ pub fn run_source(
 /// This is the seam for filesystem-free consumers (e.g. the WebAssembly build) that need
 /// the per-flow rows in memory rather than written to a Parquet path. `on_flow` runs in
 /// addition to the optional `cfg.flows_parquet` writer, so a native caller can do both.
-pub fn run_source_visiting(
-    source: Box<dyn PacketSource>,
+pub fn run_source_visiting<'a>(
+    source: Box<dyn PacketSource + 'a>,
     source_label: &str,
     source_bytes: u64,
     cfg: &PipelineConfig,

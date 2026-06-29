@@ -565,9 +565,11 @@ pub fn render_report(
 pub fn analyze(bytes: &[u8], name: String) -> Result<String, JsValue> {
     let len = bytes.len() as u64;
 
-    // Build a streaming source over the owned bytes (the reader keeps only a bounded refill
-    // buffer regardless of capture size — same memory discipline as the file path).
-    let source = ppcap_core::reader::open_reader(Cursor::new(bytes.to_vec()), Some(len))
+    // Build a streaming source by BORROWING the wasm-bindgen-provided slice (no extra owned
+    // copy — open_reader is lifetime-generic, so the reader keeps only its bounded refill buffer).
+    // This drops one full-file copy from the linear memory: peak was ~2x the capture (the bindgen
+    // copy + this clone), now ~1x. The reader still streams; memory stays bounded by file size.
+    let source = ppcap_core::reader::open_reader(Cursor::new(bytes), Some(len))
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     let cfg = PipelineConfig::default();
