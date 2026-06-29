@@ -99,6 +99,8 @@ function SettingRow({ s, run }: { s: AdminSetting; run: (fn: Mutator) => void })
           <BannerEditor s={s} run={run} />
         ) : settingKind(s.key) === "ai" ? (
           <AiConfigEditor s={s} run={run} />
+        ) : settingKind(s.key) === "rep" ? (
+          <RepConfigEditor s={s} run={run} />
         ) : (
           <JsonEditor s={s} run={run} />
         )}
@@ -221,6 +223,70 @@ function AiConfigEditor({ s, run }: { s: AdminSetting; run: (fn: Mutator) => voi
       />
       <span className="w-full t-tag text-[var(--color-text-dim)]">
         API key is set as a server secret (Environment).
+      </span>
+    </div>
+  );
+}
+
+const REP_PROVIDERS = ["abuseipdb", "greynoise", "virustotal"] as const;
+
+function RepConfigEditor({ s, run }: { s: AdminSetting; run: (fn: Mutator) => void }) {
+  const v = (s.value && typeof s.value === "object" ? s.value : {}) as Record<string, unknown>;
+  const rawProviders = Array.isArray(v.providers) ? (v.providers as unknown[]).filter((p): p is string => typeof p === "string") : [];
+  const [enabled, setEnabled] = useState(v.enabled === true);
+  const [domainEnabled, setDomainEnabled] = useState(v.domain_enabled === true);
+  const [providers, setProviders] = useState<string[]>(rawProviders);
+
+  const save = (next: { enabled?: boolean; domain_enabled?: boolean; providers?: string[] }) =>
+    run(() =>
+      updateValue(s.key, {
+        enabled: next.enabled ?? enabled,
+        domain_enabled: next.domain_enabled ?? domainEnabled,
+        providers: next.providers ?? providers,
+      } as Json),
+    );
+
+  const toggleProvider = (p: string, checked: boolean) => {
+    const next = checked ? [...providers, p] : providers.filter((x) => x !== p);
+    setProviders(next);
+    save({ providers: next });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1 t-tag text-[var(--color-text-dim)]">
+        <input
+          type="checkbox"
+          checked={enabled}
+          aria-label="Reputation enabled"
+          onChange={(e) => { setEnabled(e.target.checked); save({ enabled: e.target.checked }); }}
+        />
+        enabled
+      </label>
+      <label className="flex items-center gap-1 t-tag text-[var(--color-text-dim)]">
+        <input
+          type="checkbox"
+          checked={domainEnabled}
+          aria-label="Domain reputation enabled"
+          onChange={(e) => { setDomainEnabled(e.target.checked); save({ domain_enabled: e.target.checked }); }}
+        />
+        domain_enabled
+      </label>
+      <span className="flex items-center gap-2 t-tag text-[var(--color-text-dim)]">
+        {REP_PROVIDERS.map((p) => (
+          <label key={p} className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={providers.includes(p)}
+              aria-label={`Provider ${p}`}
+              onChange={(e) => toggleProvider(p, e.target.checked)}
+            />
+            {p}
+          </label>
+        ))}
+      </span>
+      <span className="w-full t-tag text-[var(--color-text-dim)]">
+        API keys are server secrets (Environment).
       </span>
     </div>
   );

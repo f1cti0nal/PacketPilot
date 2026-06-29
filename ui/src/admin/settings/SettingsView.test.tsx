@@ -24,6 +24,11 @@ const SETTINGS = [
   { key: "ai_config", value: { enabled: false, provider: "anthropic", model: "claude-opus-4-8" }, description: "AI config", updated_at: "2026-06-22T00:00:00Z" },
 ];
 
+const SETTINGS_WITH_REP = [
+  ...SETTINGS,
+  { key: "rep_config", value: { enabled: false, domain_enabled: false, providers: [] }, description: "Rep config", updated_at: "2026-06-23T00:00:00Z" },
+];
+
 beforeEach(() => {
   hookState.mockReturnValue({ status: "ready", settings: SETTINGS });
   reload.mockClear();
@@ -94,5 +99,18 @@ describe("SettingsView", () => {
     hookState.mockReturnValue({ status: "error", error: "backend down" });
     rerender(<SettingsView />);
     expect(screen.getByText(/backend down/i)).toBeInTheDocument();
+  });
+  it("toggling a rep_config provider calls updateValue with the updated providers array", async () => {
+    hookState.mockReturnValue({ status: "ready", settings: SETTINGS_WITH_REP });
+    render(<SettingsView />);
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("rep_config")).toBeInTheDocument();
+    // Toggle the abuseipdb provider checkbox
+    const abuseipdbCheckbox = screen.getByRole("checkbox", { name: /provider abuseipdb/i });
+    await userEvent.click(abuseipdbCheckbox);
+    await waitFor(() => expect(updateValue).toHaveBeenCalledWith(
+      "rep_config",
+      expect.objectContaining({ providers: expect.arrayContaining(["abuseipdb"]) }),
+    ));
   });
 });
