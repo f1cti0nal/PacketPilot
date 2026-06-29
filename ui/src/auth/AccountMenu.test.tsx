@@ -28,6 +28,23 @@ describe("AccountMenu", () => {
     expect(signOut).toHaveBeenCalled();
   });
 
+  it("authed menu links to the /account page", async () => {
+    render(
+      <AccountMenu
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free" }, signOut: vi.fn() }}
+        onOpenAuth={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    const link = screen.getByRole("link", { name: /profile & account/i });
+    expect(link).toHaveAttribute("href", "/account");
+  });
+
+  it("anon menu has no Profile & account link", () => {
+    render(<AccountMenu session={{ status: "anon", signIn: vi.fn(), signUp: vi.fn() }} onOpenAuth={vi.fn()} />);
+    expect(screen.queryByRole("link", { name: /profile & account/i })).not.toBeInTheDocument();
+  });
+
   it("free authed user can upgrade to Pro", async () => {
     render(
       <AccountMenu

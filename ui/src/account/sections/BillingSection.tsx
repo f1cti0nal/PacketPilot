@@ -1,0 +1,75 @@
+import { useState } from "react";
+import { startCheckout, openPortal } from "../../auth/billing";
+import type { AccountSubscription } from "../useAccount";
+import { Card, btnCls, btnGhost } from "./ui";
+
+const money = (cents: number | null, currency: string) =>
+  cents == null
+    ? "—"
+    : new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
+const day = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : null;
+
+export function BillingSection({ plan, subscription }: { plan: string; subscription: AccountSubscription | null }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isPro = plan === "pro";
+
+  const run = async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const r = await fn();
+    if (!r?.ok) {
+      setError(r?.error ?? "Something went wrong");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Plan & billing" desc="Your subscription and payment details.">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center rounded-[var(--r-chip)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 t-tag uppercase text-[var(--color-text)]">
+          {plan}
+        </span>
+        {subscription && <span className="t-tag text-[var(--color-text-dim)]">· {subscription.status}</span>}
+      </div>
+
+      {subscription ? (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+          <dt className="text-[var(--color-text-dim)]">Price</dt>
+          <dd className="font-mono-num text-[var(--color-text)]">{money(subscription.amount_cents, subscription.currency)}/mo</dd>
+          {subscription.current_period_end && (
+            <>
+              <dt className="text-[var(--color-text-dim)]">{subscription.cancel_at_period_end ? "Cancels on" : "Renews on"}</dt>
+              <dd className="text-[var(--color-text)]">{day(subscription.current_period_end)}</dd>
+            </>
+          )}
+        </dl>
+      ) : (
+        <p className="text-sm text-[var(--color-text-dim)]">
+          {isPro ? "Pro access is active on your account." : "You're on the Free plan."}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        {isPro ? (
+          <button type="button" disabled={busy} onClick={() => void run(openPortal)} className={btnGhost}>
+            {busy ? "Opening…" : "Manage billing"}
+          </button>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => void run(startCheckout)} className={btnCls}>
+            {busy ? "Starting…" : "Upgrade to Pro"}
+          </button>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="t-tag text-[var(--color-sev-critical)]">
+          {error}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+export default BillingSection;

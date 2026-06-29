@@ -11,6 +11,7 @@ import "./index.css";
 // (lazy-loaded, role-gated) admin panel. On Vercel, /app and /admin are rewritten
 // to /index.html (see vercel.json) so this same bundle loads and branches here.
 const AdminApp = React.lazy(() => import("./admin/AdminApp"));
+const AccountApp = React.lazy(() => import("./account/AccountApp"));
 const route = resolveRoute(window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -19,6 +20,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       {route === "admin" ? (
         <Suspense fallback={<LoadingState label="Loading admin…" />}>
           <AdminApp />
+        </Suspense>
+      ) : route === "account" ? (
+        <Suspense fallback={<LoadingState label="Loading account…" />}>
+          <AccountApp />
         </Suspense>
       ) : route === "app" ? (
         <App />
