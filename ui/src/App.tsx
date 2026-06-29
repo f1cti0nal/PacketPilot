@@ -745,7 +745,7 @@ export function App() {
           selectedIncident={selectedIncident}
           onSelectIncident={setSelectedIncident}
           activeSource={activeSource}
-          aiGate={aiOn ? "on" : aiGate}
+          aiGate={aiOn ? "on" : aiGate === "upsell" ? "upsell" : "off"}
           aiModel={aiModel}
         />
       )}
