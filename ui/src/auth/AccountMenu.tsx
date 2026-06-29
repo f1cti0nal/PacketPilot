@@ -82,7 +82,16 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
           >
             Profile &amp; account
           </a>
-          {session.profile.plan === "pro" ? (
+          {session.profile.plan !== "pro" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runBilling(startCheckout)}
+              className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-2)] disabled:opacity-60"
+            >
+              {busy ? "Starting…" : "Upgrade to Pro"}
+            </button>
+          ) : session.profile.hasBilling ? (
             <button
               type="button"
               disabled={busy}
@@ -92,14 +101,9 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
               {busy ? "Opening…" : "Manage billing"}
             </button>
           ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void runBilling(startCheckout)}
-              className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-2)] disabled:opacity-60"
-            >
-              {busy ? "Starting…" : "Upgrade to Pro"}
-            </button>
+            // Comped Pro (no Stripe customer): nothing to manage — explain instead of offering
+            // a button that would only error. /account → Plan & billing says the same.
+            <p className="px-2 py-1.5 text-xs text-[var(--color-text-dim)]">Managed by your administrator</p>
           )}
           {billingError && (
             <p role="alert" className="px-1 pt-1 t-tag text-[var(--color-sev-critical)]">

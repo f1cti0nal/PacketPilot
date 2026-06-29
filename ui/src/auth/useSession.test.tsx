@@ -9,6 +9,7 @@ const h = {
   signOut: vi.fn(),
   onAuthStateChange: vi.fn(),
   single: vi.fn(),
+  maybeSingle: vi.fn(),
 };
 
 vi.mock("../lib/supabase", () => ({
@@ -24,7 +25,13 @@ vi.mock("../lib/supabase", () => ({
       onAuthStateChange: (...a: unknown[]) => h.onAuthStateChange(...a),
     },
     from: () => ({
-      select: () => ({ eq: () => ({ single: (...a: unknown[]) => h.single(...a) }) }),
+      select: () => ({
+        eq: () => ({
+          // profiles: .single(); subscriptions: .not().limit().maybeSingle()
+          single: (...a: unknown[]) => h.single(...a),
+          not: () => ({ limit: () => ({ maybeSingle: (...a: unknown[]) => h.maybeSingle(...a) }) }),
+        }),
+      }),
     }),
   },
 }));
@@ -39,6 +46,7 @@ beforeEach(() => {
   h.signUp.mockResolvedValue({ data: { session: null }, error: null });
   h.signOut.mockResolvedValue({ error: null });
   h.single.mockResolvedValue({ data: { email: "a@b.com", full_name: "A", plan: "pro" }, error: null });
+  h.maybeSingle.mockResolvedValue({ data: null, error: null });
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -65,6 +73,16 @@ describe("useSession", () => {
     if (result.current.status !== "authed") throw new Error("not authed");
     expect(result.current.profile.plan).toBe("pro");
     expect(result.current.email).toBe("a@b.com");
+    expect(result.current.profile.hasBilling).toBe(false); // no Stripe customer by default
+  });
+
+  it("sets hasBilling true when a Stripe customer exists", async () => {
+    h.getSession.mockResolvedValue({ data: { session: session() } });
+    h.maybeSingle.mockResolvedValue({ data: { stripe_customer_id: "cus_1" }, error: null });
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("authed"));
+    if (result.current.status !== "authed") throw new Error("not authed");
+    expect(result.current.profile.hasBilling).toBe(true);
   });
 
   it("signIn delegates to supabase.auth.signInWithPassword", async () => {

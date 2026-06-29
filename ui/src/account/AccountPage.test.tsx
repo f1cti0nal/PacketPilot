@@ -15,7 +15,7 @@ import type { SessionState } from "../auth/useSession";
 const session = {
   status: "authed",
   email: "a@b.com",
-  profile: { email: "a@b.com", full_name: "A", plan: "pro" },
+  profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true },
   signOut: vi.fn(),
 } as Extract<SessionState, { status: "authed" }>;
 

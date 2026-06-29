@@ -5,6 +5,9 @@ export interface UserProfile {
   email: string;
   full_name: string | null;
   plan: string;
+  /** True only when a real Stripe customer exists (so "Manage billing" can open the portal).
+   *  A Pro plan without one is an admin comp — there's nothing to manage. */
+  hasBilling: boolean;
 }
 
 export type SessionState =
@@ -61,11 +64,19 @@ export function useSession(): SessionState {
         return;
       }
       const email = session.user.email ?? "";
-      const { data } = await client
-        .from("profiles")
-        .select("email,full_name,plan")
-        .eq("id", session.user.id)
-        .single();
+      // Profile (plan/name) + whether a real Stripe customer exists, in parallel. Both are
+      // RLS-scoped to the caller's own row; supabase reads resolve (never throw) so Promise.all
+      // is safe. A failed read just leaves the field at its safe default.
+      const [{ data }, { data: sub }] = await Promise.all([
+        client.from("profiles").select("email,full_name,plan").eq("id", session.user.id).single(),
+        client
+          .from("subscriptions")
+          .select("stripe_customer_id")
+          .eq("user_id", session.user.id)
+          .not("stripe_customer_id", "is", null)
+          .limit(1)
+          .maybeSingle(),
+      ]);
       if (cancelled) return;
       // Best-effort: a failed profile read still leaves the user authed (email from the
       // session, plan defaulting to free) rather than bouncing them out.
@@ -76,6 +87,7 @@ export function useSession(): SessionState {
           email: (data?.email as string) ?? email,
           full_name: (data?.full_name as string | null) ?? null,
           plan: (data?.plan as string) ?? "free",
+          hasBilling: !!(sub as { stripe_customer_id?: string | null } | null)?.stripe_customer_id,
         },
       });
     };

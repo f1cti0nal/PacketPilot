@@ -18,7 +18,7 @@ describe("AccountMenu", () => {
     const signOut = vi.fn().mockResolvedValue(undefined);
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro" }, signOut }}
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true }, signOut }}
         onOpenAuth={vi.fn()}
       />,
     );
@@ -31,7 +31,7 @@ describe("AccountMenu", () => {
   it("authed menu links to the /account page", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free" }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false }, signOut: vi.fn() }}
         onOpenAuth={vi.fn()}
       />,
     );
@@ -48,7 +48,7 @@ describe("AccountMenu", () => {
   it("free authed user can upgrade to Pro", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free" }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false }, signOut: vi.fn() }}
         onOpenAuth={vi.fn()}
       />,
     );
@@ -60,7 +60,7 @@ describe("AccountMenu", () => {
   it("pro authed user can manage billing", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro" }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true }, signOut: vi.fn() }}
         onOpenAuth={vi.fn()}
       />,
     );
@@ -69,11 +69,23 @@ describe("AccountMenu", () => {
     expect(billing.openPortal).toHaveBeenCalled();
   });
 
+  it("comped Pro (no Stripe customer) shows no Manage billing button", async () => {
+    render(
+      <AccountMenu
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false }, signOut: vi.fn() }}
+        onOpenAuth={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    expect(screen.queryByRole("button", { name: /manage billing/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/managed by your administrator/i)).toBeInTheDocument();
+  });
+
   it("surfaces a billing error when the action fails", async () => {
     billing.startCheckout.mockResolvedValueOnce({ ok: false, error: "Checkout unavailable" });
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free" }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false }, signOut: vi.fn() }}
         onOpenAuth={vi.fn()}
       />,
     );
