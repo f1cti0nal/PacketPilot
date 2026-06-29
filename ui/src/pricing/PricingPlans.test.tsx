@@ -71,10 +71,20 @@ describe("PricingPlans", () => {
     expect(billing.startCheckout).not.toHaveBeenCalled();
   });
 
-  it("shows a manage-billing link (not Get Pro) for an existing Pro user", () => {
-    sess.useSession.mockReturnValue({ ...authedFree, profile: { ...authedFree.profile, plan: "pro" } });
+  it("shows a manage-billing link (not Get Pro) for a paying customer", () => {
+    sess.useSession.mockReturnValue({ ...authedFree, profile: { ...authedFree.profile, plan: "pro", hasBilling: true } });
     render(<PricingPlans />);
     expect(screen.getByRole("link", { name: /manage billing/i })).toHaveAttribute("href", "/account");
     expect(screen.queryByRole("button", { name: /get pro/i })).not.toBeInTheDocument();
+  });
+
+  it("lets a trial user (effective Pro, no billing) still convert", () => {
+    sess.useSession.mockReturnValue({
+      ...authedFree,
+      profile: { ...authedFree.profile, plan: "pro", hasBilling: false, trialEndsAt: new Date(Date.now() + 5 * 86_400_000).toISOString() },
+    });
+    render(<PricingPlans />);
+    expect(screen.getByRole("button", { name: /get pro/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /manage billing/i })).not.toBeInTheDocument();
   });
 });

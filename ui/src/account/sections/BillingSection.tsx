@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { openPortal } from "../../auth/billing";
+import { isOnTrial, trialDaysLeft } from "../../auth/trial";
 import type { AccountSubscription } from "../useAccount";
 import { Card, btnCls, btnGhost } from "./ui";
 
@@ -10,13 +11,22 @@ const money = (cents: number | null, currency: string) =>
 const day = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : null;
 
-export function BillingSection({ plan, subscription }: { plan: string; subscription: AccountSubscription | null }) {
+export function BillingSection({
+  plan,
+  subscription,
+  trialEndsAt = null,
+}: {
+  plan: string;
+  subscription: AccountSubscription | null;
+  trialEndsAt?: string | null;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isPro = plan === "pro";
   // "Real" billing means an actual Stripe customer. A Pro plan without one is an
   // admin comp (or seed/demo) — there's no portal to open, so show a note instead.
   const hasBilling = isPro && !!subscription?.stripe_customer_id;
+  const onTrial = isOnTrial({ plan, trialEndsAt, hasBilling });
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     if (busy) return;
@@ -51,9 +61,15 @@ export function BillingSection({ plan, subscription }: { plan: string; subscript
             </>
           )}
         </dl>
+      ) : onTrial ? (
+        <p className="text-sm text-[var(--color-text-dim)]">
+          You're on a Pro trial —{" "}
+          <span className="text-[var(--color-accent)]">{trialDaysLeft(trialEndsAt)} days left</span>. Upgrade to keep
+          Pro features when it ends.
+        </p>
       ) : (
         <p className="text-sm text-[var(--color-text-dim)]">
-          {/* Pro without a Stripe customer = access granted by an admin (comp), not a
+          {/* Pro without a Stripe customer or trial = access granted by an admin (comp), not a
               purchase — there is no billing portal to open, so don't offer one below. */}
           {isPro
             ? "Your Pro plan was granted by an administrator — there's no billing to manage here."
@@ -62,9 +78,9 @@ export function BillingSection({ plan, subscription }: { plan: string; subscript
       )}
 
       <div className="flex items-center gap-2 empty:hidden">
-        {!isPro && (
+        {(!isPro || onTrial) && (
           <a href="/pricing" className={btnCls}>
-            Upgrade to Pro
+            {onTrial ? "Upgrade to keep Pro" : "Upgrade to Pro"}
           </a>
         )}
         {hasBilling && (

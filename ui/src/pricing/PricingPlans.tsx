@@ -31,7 +31,8 @@ export function PricingPlans() {
     if (!loading && !status.annual_available) setPeriod("monthly");
   }, [loading, status.annual_available]);
 
-  const isPro = session.status === "authed" && session.profile.plan === "pro";
+  // Only a real Stripe customer "manages billing"; trial/comp/free users can still upgrade.
+  const hasBilling = session.status === "authed" && session.profile.hasBilling;
 
   const subscribe = async (plan: PlanChoice) => {
     if (busy) return;
@@ -98,7 +99,7 @@ export function PricingPlans() {
               </li>
             ))}
           </ul>
-          {isPro ? (
+          {hasBilling ? (
             <a href="/account" className={ctaGhost}>
               You're on Pro — manage billing
             </a>
@@ -132,8 +133,8 @@ export function PricingPlans() {
                 Back an indie tool early + help shape the roadmap
               </li>
             </ul>
-            <button type="button" disabled={busy || founderOut || isPro} onClick={() => onChoose("founder")} className={ctaPrimary}>
-              {founderOut ? "Sold out" : isPro ? "You're on Pro" : busy ? "Starting…" : "Claim a founder seat"}
+            <button type="button" disabled={busy || founderOut || hasBilling} onClick={() => onChoose("founder")} className={ctaPrimary}>
+              {founderOut ? "Sold out" : hasBilling ? "You're on Pro" : busy ? "Starting…" : "Claim a founder seat"}
             </button>
           </section>
         ) : (

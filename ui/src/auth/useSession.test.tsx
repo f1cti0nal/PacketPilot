@@ -85,6 +85,29 @@ describe("useSession", () => {
     expect(result.current.profile.hasBilling).toBe(true);
   });
 
+  it("keeps an active reverse-trial as Pro and exposes trialEndsAt", async () => {
+    const t = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    h.getSession.mockResolvedValue({ data: { session: session() } });
+    h.single.mockResolvedValue({ data: { email: "a@b.com", full_name: "A", plan: "pro", trial_ends_at: t }, error: null });
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("authed"));
+    if (result.current.status !== "authed") throw new Error("not authed");
+    expect(result.current.profile.plan).toBe("pro");
+    expect(result.current.profile.trialEndsAt).toBe(t);
+  });
+
+  it("downgrades an expired trial to effective free", async () => {
+    h.getSession.mockResolvedValue({ data: { session: session() } });
+    h.single.mockResolvedValue({
+      data: { email: "a@b.com", full_name: "A", plan: "pro", trial_ends_at: new Date(Date.now() - 1000).toISOString() },
+      error: null,
+    });
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("authed"));
+    if (result.current.status !== "authed") throw new Error("not authed");
+    expect(result.current.profile.plan).toBe("free");
+  });
+
   it("signIn delegates to supabase.auth.signInWithPassword", async () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("anon"));

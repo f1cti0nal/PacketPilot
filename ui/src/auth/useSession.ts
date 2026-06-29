@@ -4,10 +4,13 @@ import { supabase, supabaseConfigured } from "../lib/supabase";
 export interface UserProfile {
   email: string;
   full_name: string | null;
+  /** Effective plan — already downgraded to "free" if a reverse-trial has expired. */
   plan: string;
   /** True only when a real Stripe customer exists (so "Manage billing" can open the portal).
-   *  A Pro plan without one is an admin comp — there's nothing to manage. */
+   *  A Pro plan without one is an admin comp or an active trial — there's nothing to manage. */
   hasBilling: boolean;
+  /** When the reverse-trial ends (ISO), or null if not on a trial. Use for "N days left". */
+  trialEndsAt: string | null;
 }
 
 export type SessionState =
@@ -68,7 +71,7 @@ export function useSession(): SessionState {
       // RLS-scoped to the caller's own row; supabase reads resolve (never throw) so Promise.all
       // is safe. A failed read just leaves the field at its safe default.
       const [{ data }, { data: sub }] = await Promise.all([
-        client.from("profiles").select("email,full_name,plan").eq("id", session.user.id).single(),
+        client.from("profiles").select("email,full_name,plan,trial_ends_at").eq("id", session.user.id).single(),
         client
           .from("subscriptions")
           .select("stripe_customer_id")
@@ -80,14 +83,22 @@ export function useSession(): SessionState {
       if (cancelled) return;
       // Best-effort: a failed profile read still leaves the user authed (email from the
       // session, plan defaulting to free) rather than bouncing them out.
+      const rawPlan = (data?.plan as string) ?? "free";
+      const hasBilling = !!(sub as { stripe_customer_id?: string | null } | null)?.stripe_customer_id;
+      const trialEndsAt = (data?.trial_ends_at as string | null) ?? null;
+      // Reverse-trial: a Pro plan that is past its trial end with no real billing has effectively
+      // lapsed — gate as free immediately (the pg_cron downgrade catches up in the DB).
+      const trialExpired = !!trialEndsAt && Date.parse(trialEndsAt) < Date.now();
+      const plan = rawPlan === "pro" && trialExpired && !hasBilling ? "free" : rawPlan;
       setState({
         status: "authed",
         email: (data?.email as string) ?? email,
         profile: {
           email: (data?.email as string) ?? email,
           full_name: (data?.full_name as string | null) ?? null,
-          plan: (data?.plan as string) ?? "free",
-          hasBilling: !!(sub as { stripe_customer_id?: string | null } | null)?.stripe_customer_id,
+          plan,
+          hasBilling,
+          trialEndsAt,
         },
       });
     };

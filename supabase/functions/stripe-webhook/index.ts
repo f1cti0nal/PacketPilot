@@ -75,7 +75,11 @@ Deno.serve(async (req) => {
           },
           { onConflict: "stripe_subscription_id" },
         );
-        await admin.from("profiles").update({ plan: planForStatus(sub.status) }).eq("id", userId);
+        // A real Stripe event means this user has a billing relationship — clear any reverse-trial.
+        await admin
+          .from("profiles")
+          .update({ plan: planForStatus(sub.status), trial_ends_at: null })
+          .eq("id", userId);
       }
     }
     return new Response("ok", { status: 200 });

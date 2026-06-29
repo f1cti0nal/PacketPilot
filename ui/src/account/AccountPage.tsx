@@ -17,7 +17,7 @@ export function AccountPage({ session }: { session: Authed }) {
     <div className="flex flex-col gap-6">
       <AccountSection profile={state.profile} onChanged={reload} />
       <SecuritySection email={state.profile.email} />
-      <BillingSection plan={session.profile.plan} subscription={state.subscription} />
+      <BillingSection plan={session.profile.plan} subscription={state.subscription} trialEndsAt={session.profile.trialEndsAt} />
       <PreferencesSection />
     </div>
   );
