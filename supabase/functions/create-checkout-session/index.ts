@@ -32,10 +32,21 @@ Deno.serve(async (req) => {
       .maybeSingle();
     let customerId = existing?.stripe_customer_id as string | undefined;
     if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email ?? undefined,
-        metadata: { supabase_user_id: user.id },
+      // No mirrored customer yet (e.g. a never-completed prior checkout). Search Stripe by the
+      // canonical key so we reuse an existing customer instead of orphaning a duplicate.
+      const found = await stripe.customers.search({
+        query: `metadata['supabase_user_id']:'${user.id}'`,
+        limit: 1,
       });
+      customerId = found.data[0]?.id;
+    }
+    if (!customerId) {
+      // Idempotency key keyed on the user makes two concurrent first-time checkouts converge on
+      // ONE customer (Stripe dedupes by key for 24h) — closes the customer-dedup race (I-3).
+      const customer = await stripe.customers.create(
+        { email: user.email ?? undefined, metadata: { supabase_user_id: user.id } },
+        { idempotencyKey: `customer_${user.id}` },
+      );
       customerId = customer.id;
     }
 

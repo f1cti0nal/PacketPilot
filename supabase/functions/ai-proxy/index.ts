@@ -52,11 +52,20 @@ Deno.serve(async (req) => {
   if (!Array.isArray(messages) || messages.length === 0 || messages.length > 40) {
     return json({ error: "bad messages" }, 400);
   }
+  // Per-element shape check — each message must be {role: system|user|assistant, content: string}.
+  const ROLES = new Set(["system", "user", "assistant"]);
+  for (const m of messages as unknown[]) {
+    const mm = m as { role?: unknown; content?: unknown };
+    if (!mm || typeof mm !== "object" || !ROLES.has(mm.role as string) || typeof mm.content !== "string") {
+      return json({ error: "bad messages" }, 400);
+    }
+  }
 
   const upstream = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${aiKey}` },
     body: JSON.stringify({ model, messages, stream: true }),
+    redirect: "manual", // a 3xx must not carry the operator key to a redirect target
   });
   if (!upstream.ok || !upstream.body) {
     return json({ error: "ai upstream error", status: upstream.status }, 502);
