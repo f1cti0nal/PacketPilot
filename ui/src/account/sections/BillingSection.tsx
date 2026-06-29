@@ -14,6 +14,9 @@ export function BillingSection({ plan, subscription }: { plan: string; subscript
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isPro = plan === "pro";
+  // "Real" billing means an actual Stripe customer. A Pro plan without one is an
+  // admin comp (or seed/demo) — there's no portal to open, so show a note instead.
+  const hasBilling = isPro && !!subscription?.stripe_customer_id;
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     if (busy) return;
@@ -32,10 +35,12 @@ export function BillingSection({ plan, subscription }: { plan: string; subscript
         <span className="inline-flex items-center rounded-[var(--r-chip)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 t-tag uppercase text-[var(--color-text)]">
           {plan}
         </span>
-        {subscription && <span className="t-tag text-[var(--color-text-dim)]">· {subscription.status}</span>}
+        {hasBilling && subscription && (
+          <span className="t-tag text-[var(--color-text-dim)]">· {subscription.status}</span>
+        )}
       </div>
 
-      {subscription ? (
+      {hasBilling && subscription ? (
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <dt className="text-[var(--color-text-dim)]">Price</dt>
           <dd className="font-mono-num text-[var(--color-text)]">{money(subscription.amount_cents, subscription.currency)}/mo</dd>
@@ -48,18 +53,23 @@ export function BillingSection({ plan, subscription }: { plan: string; subscript
         </dl>
       ) : (
         <p className="text-sm text-[var(--color-text-dim)]">
-          {isPro ? "Pro access is active on your account." : "You're on the Free plan."}
+          {/* Pro without a Stripe customer = access granted by an admin (comp), not a
+              purchase — there is no billing portal to open, so don't offer one below. */}
+          {isPro
+            ? "Your Pro plan was granted by an administrator — there's no billing to manage here."
+            : "You're on the Free plan."}
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        {isPro ? (
-          <button type="button" disabled={busy} onClick={() => void run(openPortal)} className={btnGhost}>
-            {busy ? "Opening…" : "Manage billing"}
-          </button>
-        ) : (
+      <div className="flex items-center gap-2 empty:hidden">
+        {!isPro && (
           <button type="button" disabled={busy} onClick={() => void run(startCheckout)} className={btnCls}>
             {busy ? "Starting…" : "Upgrade to Pro"}
+          </button>
+        )}
+        {hasBilling && (
+          <button type="button" disabled={busy} onClick={() => void run(openPortal)} className={btnGhost}>
+            {busy ? "Opening…" : "Manage billing"}
           </button>
         )}
       </div>

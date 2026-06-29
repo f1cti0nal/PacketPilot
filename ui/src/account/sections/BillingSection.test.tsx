@@ -39,6 +39,19 @@ describe("BillingSection", () => {
     expect(billing.startCheckout).toHaveBeenCalled();
   });
 
+  it("explains comped Pro (no subscription) and offers no billing button", () => {
+    render(<BillingSection plan="pro" subscription={null} />);
+    expect(screen.getByText(/granted by an administrator/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /manage billing/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /upgrade to pro/i })).not.toBeInTheDocument();
+  });
+
+  it("treats a Pro with a subscription row but no Stripe customer as comped", () => {
+    render(<BillingSection plan="pro" subscription={{ ...sub, stripe_customer_id: null }} />);
+    expect(screen.getByText(/granted by an administrator/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /manage billing/i })).not.toBeInTheDocument();
+  });
+
   it("surfaces a billing error inline", async () => {
     billing.openPortal.mockResolvedValue({ ok: false, error: "No billing account yet" });
     render(<BillingSection plan="pro" subscription={sub} />);
