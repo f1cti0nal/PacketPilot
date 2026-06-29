@@ -4,7 +4,7 @@ export interface AnnouncementBanner {
   dismissible: boolean;
 }
 export interface AiAppConfig { enabled: boolean; provider: string; model: string }
-export interface RepAppConfig { enabled: boolean; domain_enabled: boolean; providers: string[] }
+export interface RepAppConfig { enabled: boolean; domain_enabled: boolean; file_enabled: boolean; providers: string[] }
 export interface PublicSettings {
   announcement_banner: AnnouncementBanner | null;
   ai: AiAppConfig;
@@ -13,7 +13,7 @@ export interface PublicSettings {
 export const SETTINGS_DEFAULTS: PublicSettings = {
   announcement_banner: null,
   ai: { enabled: false, provider: "anthropic", model: "claude-opus-4-8" },
-  rep: { enabled: false, domain_enabled: false, providers: [] },
+  rep: { enabled: false, domain_enabled: false, file_enabled: false, providers: [] },
 };
 
 const SEVERITIES: AnnouncementBanner["severity"][] = ["info", "warning", "critical"];
@@ -43,6 +43,7 @@ export function parsePublicSettings(raw: unknown): PublicSettings {
   const rep: RepAppConfig = {
     enabled: rc.enabled === true,
     domain_enabled: rc.domain_enabled === true,
+    file_enabled: rc.file_enabled === true,
     providers: Array.isArray(rc.providers)
       ? (rc.providers as unknown[]).filter((p): p is string => typeof p === "string" && VALID_PROVIDERS.includes(p))
       : [],

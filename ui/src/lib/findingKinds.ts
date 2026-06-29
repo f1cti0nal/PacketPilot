@@ -10,6 +10,7 @@ import {
   ScreenShare,
   Unlock,
   Crosshair,
+  Fingerprint,
   FileWarning,
   Pickaxe,
   VenetianMask,
@@ -56,6 +57,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   cryptomining: { label: "Cryptomining", Icon: Pickaxe },
   malware_download: { label: "Malware Download", Icon: FileWarning },
   exposed_remote_access: { label: "Exposed Remote Access", Icon: ScreenShare },
+  ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 
 /** Title-case a raw kind token, e.g. "pii_exposure" → "Pii Exposure" (fallback only). */

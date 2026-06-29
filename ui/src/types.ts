@@ -234,6 +234,8 @@ export interface CarvedFile {
   sha256: string;
   size: number;
   known_bad: boolean;
+  /** VirusTotal file-hash verdict, attached client-side post-analysis (the engine never sets this). */
+  reputation?: ReputationVerdict[];
 }
 
 /** One downloads-overview row: a client that received a notable file class over HTTP from a server. */
@@ -267,7 +269,8 @@ export type FindingKind =
   | "disguised_download"
   | "cryptomining"
   | "malware_download"
-  | "exposed_remote_access";
+  | "exposed_remote_access"
+  | "ioc_match";
 
 /**
  * A cross-flow behavioral finding (engine `detect` stage). Unlike a per-IP threat card, a

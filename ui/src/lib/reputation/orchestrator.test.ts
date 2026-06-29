@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import "fake-indexeddb/auto";
 import type { HttpGet } from "./http";
-import { lookupReputation, lookupDomainReputation } from "./orchestrator";
+import { lookupReputation, lookupDomainReputation, lookupFileReputation } from "./orchestrator";
 import * as budgetModule from "./budget";
 
 const fakeAbuse: HttpGet = async () => ({ status: 200, body: JSON.stringify({ data: { abuseConfidenceScore: 96, totalReports: 3 } }) });
@@ -67,5 +67,54 @@ describe("lookupDomainReputation", () => {
     const out = await lookupDomainReputation(http, ["evil.example"], 99000);
     expect(out["evil.example"][0].status).toBe("malicious");
     expect(http).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("lookupFileReputation", () => {
+  const sha = "a".repeat(64);
+  const vtFileBody = JSON.stringify({
+    data: {
+      attributes: {
+        last_analysis_stats: { malicious: 42, suspicious: 3, harmless: 5, undetected: 20 },
+        tags: ["peexe"],
+        meaningful_name: "invoice.exe",
+        popular_threat_classification: { suggested_threat_label: "trojan.emotet/x" },
+      },
+    },
+  });
+
+  it("looks up each well-formed sha256 via VT and folds the threat label into tags", async () => {
+    const http = vi.fn(async () => ({ status: 200, body: vtFileBody })) satisfies HttpGet;
+    const out = await lookupFileReputation(http, [sha], 123000);
+    expect(out[sha][0].status).toBe("malicious");
+    expect(out[sha][0].malicious).toBe(true);
+    expect(http).toHaveBeenCalledTimes(1);
+    expect(out[sha][0].tags[0]).toBe("trojan.emotet/x"); // file-only threat label, surfaced first
+    expect(out[sha][0].tags).toContain("invoice.exe");
+  });
+
+  it("skips malformed (non-64-hex) inputs without a fetch", async () => {
+    const http = vi.fn(async () => ({ status: 200, body: vtFileBody })) satisfies HttpGet;
+    const out = await lookupFileReputation(http, ["not-a-hash", "ABC", "g".repeat(64)], 124000);
+    expect(out).toEqual({});
+    expect(http).not.toHaveBeenCalled();
+  });
+
+  it("normalizes the hash key to lowercase", async () => {
+    const http = vi.fn(async () => ({ status: 404, body: "" })) satisfies HttpGet;
+    const upper = "B".repeat(64);
+    const out = await lookupFileReputation(http, [upper], 125000);
+    expect(out[upper.toLowerCase()][0].status).toBe("notfound");
+  });
+
+  it("returns 'unavailable' tagged 'quota' and does NOT fetch when the VT budget is drained", async () => {
+    vi.spyOn(budgetModule, "makeBudget").mockReturnValue({ abuseipdb: 0, greynoise: 0, virustotal: 0 });
+    const http = vi.fn(async () => ({ status: 200, body: vtFileBody })) satisfies HttpGet;
+    const out = await lookupFileReputation(http, ["d".repeat(64)], 126000);
+    const v = out["d".repeat(64)][0];
+    expect(v.status).toBe("unavailable");
+    expect(v.tags).toContain("quota");
+    expect(http).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

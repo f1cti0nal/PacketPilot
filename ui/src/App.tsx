@@ -57,8 +57,11 @@ import {
   giveConsent,
   domainConsentGiven,
   giveDomainConsent,
+  fileConsentGiven,
+  giveFileConsent,
 } from "./lib/reputation/settings";
-import { lookupReputation, lookupDomainReputation } from "./lib/reputation/orchestrator";
+import { lookupReputation, lookupDomainReputation, lookupFileReputation } from "./lib/reputation/orchestrator";
+import { applyFileReputation } from "./lib/reputation/applyFile";
 import { edgeRepHttp } from "./lib/reputation/edgeHttp";
 import { ReputationConsent } from "./cockpit/ReputationConsent";
 import { DomainConsent } from "./cockpit/DomainConsent";
@@ -67,6 +70,8 @@ import { getAiSummary, captureKey } from "./lib/ai/cache";
 import { pickRuleBase } from "./lib/ruleBase";
 import { saveRuleSet, type RuleSet } from "./lib/ruleSets";
 import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
+import { IocDialog } from "./cockpit/IocDialog";
+import { matchIocs, parseIocs } from "./lib/ioc/ioc";
 import { useSession } from "./auth/useSession";
 import { AuthDialog } from "./auth/AuthDialog";
 import { AccountMenu } from "./auth/AccountMenu";
@@ -185,7 +190,7 @@ export function App() {
   // been given yet; cleared when the user proceeds or cancels.
   const [consentPrompt, setConsentPrompt] = useState<{ output: AnalysisOutput; ipCount: number; providers: string[] } | null>(null);
   // Domain consent prompt: set when a capture has domain threats but domain consent hasn't been given.
-  const [domainConsentPrompt, setDomainConsentPrompt] = useState<{ output: AnalysisOutput; domainCount: number } | null>(null);
+  const [domainConsentPrompt, setDomainConsentPrompt] = useState<{ output: AnalysisOutput; domainCount: number; fileCount: number } | null>(null);
   // Tracks the source identity of the last capture we ran (or offered to run) the reputation
   // pass on, preventing double-triggers when summary state re-renders.
   const lastRepSourceRef = useRef<string | null>(null);
@@ -199,6 +204,7 @@ export function App() {
   const ruleBaseRef = useRef<{ key: string; data: AnalysisOutput } | null>(null);
   const [ruleNotice, setRuleNotice] = useState<string | null>(null);
   const rulesInputRef = useRef<HTMLInputElement | null>(null);
+  const [iocDialogOpen, setIocDialogOpen] = useState(false);
 
   // The app no longer auto-loads the bundled sample — launch lands on the Home surface
   // (upload-first hero for new visitors, workspace overview for returning ones). The sample
@@ -339,27 +345,52 @@ export function App() {
   }, [rep.enabled, rep.providers, runReputation]);
 
   // Perform domain reputation lookup and apply enriched results to the current summary IN PLACE.
+  // Login + master-switch gates are stated here (not just relied on downstream), matching runReputation.
   const runDomainReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (!rep.domain_enabled || !rep.providers.includes("virustotal")) return;
+    if (session.status !== "authed" || !rep.enabled || !rep.domain_enabled || !rep.providers.includes("virustotal")) return;
     const hosts = (output.summary.domain_threats ?? []).slice(0, 15).map((d) => d.host);
     if (hosts.length === 0) return;
     const now = Math.floor(Date.now() / 1000);
     const verdicts = await lookupDomainReputation(edgeRepHttp(), hosts, now);
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyDomainReputationWasm);
-  }, [rep.domain_enabled, rep.providers, enrichAndCommit]);
+  }, [session.status, rep.enabled, rep.domain_enabled, rep.providers, enrichAndCommit]);
 
-  // Open the domain consent gate or fire the domain reputation pass immediately.
+  // Perform file-hash reputation lookup (VirusTotal only) and apply IN PLACE. Composed entirely in
+  // TS (applyFileReputation) since carved-file verdicts are display-only — no engine/WASM rebuild.
+  const runFileReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
+    if (session.status !== "authed" || !rep.enabled || !rep.file_enabled || !rep.providers.includes("virustotal")) return;
+    const hashes = (output.summary.carved_files ?? []).slice(0, 15).map((f) => f.sha256);
+    if (hashes.length === 0) return;
+    const now = Math.floor(Date.now() / 1000);
+    const verdicts = await lookupFileReputation(edgeRepHttp(), hashes, now);
+    if (Object.keys(verdicts).length === 0) return;
+    await enrichAndCommit(output, verdicts, applyFileReputation);
+  }, [session.status, rep.enabled, rep.file_enabled, rep.providers, enrichAndCommit]);
+
+  // Gate the two VirusTotal enrichment passes that send capture-derived indicators offsite — SNI
+  // domains and carved-file SHA-256 hashes. These are DISTINCT indicator classes with SEPARATE
+  // consent flags: a domain-only "Proceed" must never silently authorize sending file hashes (and
+  // vice-versa). Whatever still needs consent is shown in the dialog and authorized only on Proceed.
   const triggerDomainReputationGate = useCallback((output: AnalysisOutput) => {
-    if (!rep.domain_enabled || !rep.providers.includes("virustotal")) return;
-    const domains = output.summary.domain_threats ?? [];
-    if (domains.length === 0) return;
-    if (domainConsentGiven()) {
-      void runDomainReputation(output);
-    } else {
-      setDomainConsentPrompt({ output, domainCount: Math.min(15, domains.length) });
+    const vt = rep.enabled && rep.providers.includes("virustotal");
+    const domainCount = vt && rep.domain_enabled ? (output.summary.domain_threats ?? []).length : 0;
+    const fileCount = vt && rep.file_enabled ? (output.summary.carved_files ?? []).length : 0;
+    if (domainCount === 0 && fileCount === 0) return;
+    const needDomainConsent = domainCount > 0 && !domainConsentGiven();
+    const needFileConsent = fileCount > 0 && !fileConsentGiven();
+    // Already-consented passes fire immediately.
+    if (domainCount > 0 && !needDomainConsent) void runDomainReputation(output);
+    if (fileCount > 0 && !needFileConsent) void runFileReputation(output);
+    // Prompt only for what still needs consent — the dialog discloses exactly those indicators.
+    if (needDomainConsent || needFileConsent) {
+      setDomainConsentPrompt({
+        output,
+        domainCount: needDomainConsent ? Math.min(15, domainCount) : 0,
+        fileCount: needFileConsent ? Math.min(15, fileCount) : 0,
+      });
     }
-  }, [rep.domain_enabled, rep.providers, runDomainReputation]);
+  }, [rep.enabled, rep.domain_enabled, rep.file_enabled, rep.providers, runDomainReputation, runFileReputation]);
 
   // Replace the active capture with a user-imported summary.json + flows.parquet (either may
   // be supplied). A summary turns it into a Recent entry; flows-only just updates the table.
@@ -627,6 +658,25 @@ export function App() {
 
   const applyRuleSet = useCallback((rs: RuleSet) => { void applyRuleText(rs.text); }, [applyRuleText]);
 
+  // Match a user-supplied IOC list against the loaded capture's extracted indicators. Runs over
+  // the computed summary (no packets, no network), composing `ioc_match` findings — so it works on
+  // any ready capture, including the sample. Queued on the SAME repChainRef the reputation passes
+  // use and reads the freshest summaryDataRef, so an in-flight reputation commit can neither clobber
+  // the ioc_match findings nor be clobbered by them (both serialize through one chain).
+  const applyIocs = useCallback((text: string) => {
+    if (summary.status !== "ready" || !summary.data) return;
+    const iocs = parseIocs(text);
+    const run = repChainRef.current.then(() => {
+      const cur = summaryDataRef.current;
+      if (!cur) return;
+      const { output, matches } = matchIocs(cur, iocs);
+      summaryDataRef.current = output;
+      setSummary({ status: "ready", data: output });
+      setRuleNotice(`IOCs: ${iocs.count} loaded, ${matches} match${matches === 1 ? "" : "es"}`);
+    });
+    repChainRef.current = run.catch(() => {});
+  }, [summary]);
+
   return (
     <>
     <AnnouncementBanner banner={announcement_banner} />
@@ -675,6 +725,7 @@ export function App() {
       onPaletteOpenChange={setPaletteOpen}
       onOpenAiChat={aiOn && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
+      onMatchIocs={summary.status === "ready" && summary.data ? () => setIocDialogOpen(true) : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
       accountMenu={<AccountMenu session={session} onOpenAuth={() => setAuthOpen(true)} />}
     >
@@ -752,11 +803,13 @@ export function App() {
     {domainConsentPrompt && (
       <DomainConsent
         domainCount={domainConsentPrompt.domainCount}
+        fileCount={domainConsentPrompt.fileCount}
         onProceed={() => {
-          giveDomainConsent();
-          const out = domainConsentPrompt.output;
+          const { output: out, domainCount: dc, fileCount: fc } = domainConsentPrompt;
           setDomainConsentPrompt(null);
-          void runDomainReputation(out);
+          // Authorize + run ONLY the indicator classes the dialog actually disclosed.
+          if (dc > 0) { giveDomainConsent(); void runDomainReputation(out); }
+          if (fc > 0) { giveFileConsent(); void runFileReputation(out); }
         }}
         onCancel={() => setDomainConsentPrompt(null)}
       />
@@ -766,6 +819,9 @@ export function App() {
     )}
     {summary.status === "ready" && summary.data && (
       <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} model={aiModel} />
+    )}
+    {iocDialogOpen && (
+      <IocDialog onMatch={applyIocs} onClose={() => setIocDialogOpen(false)} />
     )}
     {ruleNotice && (
       <div

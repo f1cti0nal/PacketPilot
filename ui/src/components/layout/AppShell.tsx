@@ -71,6 +71,8 @@ export interface AppShellProps {
   onOpenAiChat?: () => void;
   /** Trigger the "Load detection rules" file picker. Only provided when packets are available. */
   onLoadRules?: () => void;
+  /** Open the "Match IOCs" dialog. Only provided when a capture is ready. */
+  onMatchIocs?: () => void;
   /** Slot rendered in the CommandBar in place of the old ShieldAlert button (e.g. RuleSetsMenu). */
   rulesMenu?: ReactNode;
   /** End-user account control rendered in the command bar. */
@@ -122,6 +124,7 @@ export function AppShell({
   onPaletteOpenChange,
   onOpenAiChat,
   onLoadRules,
+  onMatchIocs,
   rulesMenu,
   accountMenu,
   compareActive = false,
@@ -264,6 +267,9 @@ export function AppShell({
     ...(onLoadRules ? [
       { id: "load-rules", label: "Load detection rules…", hint: "action", run: onLoadRules },
     ] : []),
+    ...(onMatchIocs ? [
+      { id: "match-iocs", label: "Match IOCs…", hint: "action", run: onMatchIocs },
+    ] : []),
     ...(canExport ? [
       { id: "export", label: "Export report", hint: "action", run: () => void runExport(onExport) },
       { id: "export-csv", label: "Export CSV", hint: "action", run: () => void runExport(onExportCsv) },
@@ -277,7 +283,7 @@ export function AppShell({
       { id: "export-sigma", label: "Export Sigma rules", hint: "action", run: () => void runExport(onExportSigma) },
       { id: "export-sigma-copy", label: "Copy Sigma rules", hint: "action", run: () => void runExport(onCopySigma) },
     ] : []),
-  ], [onGoHome, onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma]);
+  ], [onGoHome, onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, onMatchIocs, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">

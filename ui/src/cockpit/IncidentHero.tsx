@@ -31,6 +31,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   cryptomining: "Impact",
   malware_download: "Command & Control",
   exposed_remote_access: "Lateral Movement",
+  ioc_match: "Detection",
 };
 
 const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {

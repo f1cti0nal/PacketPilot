@@ -73,7 +73,7 @@ export function buildThreatGraph(
     cur.score = Math.max(cur.score, score);
   };
   for (const f of findings ?? []) {
-    bump(f.src_ip, f.severity, f.score);
+    if (f.src_ip) bump(f.src_ip, f.severity, f.score); // ioc_match domain hits may carry no src IP
     if (f.dst_ip) bump(f.dst_ip, f.severity, f.score);
   }
   // Fold in the authoritative per-IP threat-card severity/score for involved hosts.

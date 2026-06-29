@@ -34,4 +34,51 @@ describe("CarvedFilesCard", () => {
     render(<CarvedFilesCard files={[]} />);
     expect(screen.queryByText("Carved files")).toBeNull();
   });
+
+  it("shows a malicious VirusTotal badge with the threat label, linking to the report", () => {
+    render(
+      <CarvedFilesCard
+        files={[{
+          client: "10.0.0.9", server: "1.2.3.4", sha256: "f".repeat(64), size: 2048, known_bad: false,
+          reputation: [{ source: "virustotal", status: "malicious", malicious: true, score: 60, tags: ["trojan.emotet"], link: "https://www.virustotal.com/gui/file/abc", fetched_at: 1 }],
+        }]}
+      />,
+    );
+    const badge = screen.getByRole("link", { name: /trojan\.emotet/i });
+    expect(badge.getAttribute("href")).toContain("virustotal.com");
+  });
+
+  it("shows a faint clean VirusTotal badge (no link) when there are no detections", () => {
+    render(
+      <CarvedFilesCard
+        files={[{
+          client: "10.0.0.9", server: "1.2.3.4", sha256: "f".repeat(64), size: 2048, known_bad: false,
+          reputation: [{ source: "virustotal", status: "clean", malicious: false, score: 0, tags: [], link: null, fetched_at: 1 }],
+        }]}
+      />,
+    );
+    expect(screen.getByText(/VT/)).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("renders no VirusTotal badge when there is no reputation verdict", () => {
+    render(
+      <CarvedFilesCard
+        files={[{ client: "10.0.0.9", server: "1.2.3.4", sha256: "f".repeat(64), size: 2048, known_bad: false }]}
+      />,
+    );
+    expect(screen.queryByText(/VT/)).toBeNull();
+  });
+
+  it("renders no badge for an inconclusive (suspicious-only / unknown) verdict — only confirmed-malicious gets a chip", () => {
+    render(
+      <CarvedFilesCard
+        files={[{
+          client: "10.0.0.9", server: "1.2.3.4", sha256: "f".repeat(64), size: 2048, known_bad: false,
+          reputation: [{ source: "virustotal", status: "unknown", malicious: false, score: 0, tags: [], link: null, fetched_at: 1 }],
+        }]}
+      />,
+    );
+    expect(screen.queryByText(/VT/)).toBeNull();
+  });
 });

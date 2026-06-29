@@ -235,13 +235,15 @@ function RepConfigEditor({ s, run }: { s: AdminSetting; run: (fn: Mutator) => vo
   const rawProviders = Array.isArray(v.providers) ? (v.providers as unknown[]).filter((p): p is string => typeof p === "string") : [];
   const [enabled, setEnabled] = useState(v.enabled === true);
   const [domainEnabled, setDomainEnabled] = useState(v.domain_enabled === true);
+  const [fileEnabled, setFileEnabled] = useState(v.file_enabled === true);
   const [providers, setProviders] = useState<string[]>(rawProviders);
 
-  const save = (next: { enabled?: boolean; domain_enabled?: boolean; providers?: string[] }) =>
+  const save = (next: { enabled?: boolean; domain_enabled?: boolean; file_enabled?: boolean; providers?: string[] }) =>
     run(() =>
       updateValue(s.key, {
         enabled: next.enabled ?? enabled,
         domain_enabled: next.domain_enabled ?? domainEnabled,
+        file_enabled: next.file_enabled ?? fileEnabled,
         providers: next.providers ?? providers,
       } as Json),
     );
@@ -271,6 +273,15 @@ function RepConfigEditor({ s, run }: { s: AdminSetting; run: (fn: Mutator) => vo
           onChange={(e) => { setDomainEnabled(e.target.checked); save({ domain_enabled: e.target.checked }); }}
         />
         domain_enabled
+      </label>
+      <label className="flex items-center gap-1 t-tag text-[var(--color-text-dim)]">
+        <input
+          type="checkbox"
+          checked={fileEnabled}
+          aria-label="File-hash reputation enabled"
+          onChange={(e) => { setFileEnabled(e.target.checked); save({ file_enabled: e.target.checked }); }}
+        />
+        file_enabled
       </label>
       <span className="flex items-center gap-2 t-tag text-[var(--color-text-dim)]">
         {REP_PROVIDERS.map((p) => (

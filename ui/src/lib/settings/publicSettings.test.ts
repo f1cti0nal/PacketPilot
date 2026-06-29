@@ -55,7 +55,12 @@ describe("parsePublicSettings", () => {
       const s = parsePublicSettings({
         rep_config: { enabled: true, domain_enabled: true, providers: ["abuseipdb", "virustotal"] },
       });
-      expect(s.rep).toEqual<RepAppConfig>({ enabled: true, domain_enabled: true, providers: ["abuseipdb", "virustotal"] });
+      expect(s.rep).toEqual<RepAppConfig>({ enabled: true, domain_enabled: true, file_enabled: false, providers: ["abuseipdb", "virustotal"] });
+    });
+    it("parses file_enabled (true only when exactly true)", () => {
+      expect(parsePublicSettings({ rep_config: { file_enabled: true, providers: [] } }).rep.file_enabled).toBe(true);
+      expect(parsePublicSettings({ rep_config: { file_enabled: "true", providers: [] } }).rep.file_enabled).toBe(false);
+      expect(parsePublicSettings({ rep_config: { providers: [] } }).rep.file_enabled).toBe(false);
     });
     it("enabled and domain_enabled are false when not exactly true", () => {
       expect(parsePublicSettings({ rep_config: { enabled: false, domain_enabled: false, providers: [] } }).rep.enabled).toBe(false);
@@ -80,8 +85,8 @@ describe("parsePublicSettings", () => {
       expect(parsePublicSettings({ rep_config: { enabled: true } }).rep.providers).toEqual([]);
       expect(parsePublicSettings({ rep_config: { enabled: true, providers: "abuseipdb" } }).rep.providers).toEqual([]);
     });
-    it("rep defaults include enabled:false, domain_enabled:false, providers:[]", () => {
-      expect(SETTINGS_DEFAULTS.rep).toEqual({ enabled: false, domain_enabled: false, providers: [] });
+    it("rep defaults include enabled:false, domain_enabled:false, file_enabled:false, providers:[]", () => {
+      expect(SETTINGS_DEFAULTS.rep).toEqual({ enabled: false, domain_enabled: false, file_enabled: false, providers: [] });
     });
   });
 });

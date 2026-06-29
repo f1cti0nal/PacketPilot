@@ -3,7 +3,7 @@ import { isPublicIp } from "../data"; // see note below
 import type { HttpGet } from "./http";
 import { abuseipdbVerdict } from "./abuseipdb";
 import { greynoiseVerdict } from "./greynoise";
-import { virustotalVerdictIp, virustotalVerdictDomain } from "./virustotal";
+import { virustotalVerdictIp, virustotalVerdictDomain, virustotalVerdictFile } from "./virustotal";
 import { getReputation, putReputation } from "../recent";
 import { makeBudget, trySpend } from "./budget";
 
@@ -46,6 +46,35 @@ export async function lookupDomainReputation(
       v = quotaUnavailable("virustotal", now);
     }
     out[host] = [v];
+  }
+  return out;
+}
+
+/** File-hash reputation — VirusTotal only, keyed on the SHA-256. `hashes` should already be
+ *  capped/deduped by the caller (e.g. summary.carved_files[].sha256). Cache-first under the
+ *  "virustotal-file" source so file hashes never collide with IP/domain cache entries; budget-bounded.
+ *  A SHA-256 leaks nothing about the capture, so there's no privacy guard — only a format check. */
+export async function lookupFileReputation(
+  http: HttpGet,
+  hashes: string[],
+  now: number,
+): Promise<Record<string, ReputationVerdict[]>> {
+  const out: Record<string, ReputationVerdict[]> = {};
+  const budget = makeBudget();
+  for (const hash of hashes) {
+    const h = hash.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(h)) continue; // only well-formed SHA-256 hits VT
+    const cached = await getReputation("virustotal-file", h, now, TTL.virustotal);
+    let v: ReputationVerdict;
+    if (cached) {
+      v = cached;
+    } else if (trySpend(budget, "virustotal")) {
+      v = await virustotalVerdictFile(http, h, now);
+      await putReputation("virustotal-file", h, v);
+    } else {
+      v = quotaUnavailable("virustotal", now);
+    }
+    out[h] = [v];
   }
   return out;
 }

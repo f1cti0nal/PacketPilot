@@ -219,7 +219,7 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
                 const color = sevColor(f.severity);
                 const { Icon } = kindMeta(f.kind);
                 const target = f.dst_ip ? `${f.dst_ip}${f.dst_port ? `:${f.dst_port}` : ""}` : "—";
-                const clickable = !!onJumpToFlows;
+                const clickable = !!onJumpToFlows && !!f.src_ip; // no pivot when there's no source IP (e.g. a domain IOC)
                 return (
                   <tr
                     key={`${f.kind}-${f.src_ip}-${i}`}
