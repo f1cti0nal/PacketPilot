@@ -26,9 +26,14 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/security-policy")).toBe("landing");
     expect(resolveRoute("/privacy/extra")).toBe("landing");
   });
+  it("maps /pricing to pricing (exact only)", () => {
+    expect(resolveRoute("/pricing")).toBe("pricing");
+    expect(resolveRoute("/pricing/")).toBe("pricing");
+    expect(resolveRoute("/pricing-plans")).toBe("landing");
+  });
   it("maps everything else to landing", () => {
     expect(resolveRoute("/")).toBe("landing");
-    expect(resolveRoute("/pricing")).toBe("landing");
+    expect(resolveRoute("/features")).toBe("landing");
     expect(resolveRoute("/administrator")).toBe("landing");
     expect(resolveRoute("/accounts")).toBe("landing");
   });

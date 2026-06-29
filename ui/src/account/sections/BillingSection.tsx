@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { startCheckout, openPortal } from "../../auth/billing";
+import { openPortal } from "../../auth/billing";
 import type { AccountSubscription } from "../useAccount";
 import { Card, btnCls, btnGhost } from "./ui";
 
@@ -63,9 +63,9 @@ export function BillingSection({ plan, subscription }: { plan: string; subscript
 
       <div className="flex items-center gap-2 empty:hidden">
         {!isPro && (
-          <button type="button" disabled={busy} onClick={() => void run(startCheckout)} className={btnCls}>
-            {busy ? "Starting…" : "Upgrade to Pro"}
-          </button>
+          <a href="/pricing" className={btnCls}>
+            Upgrade to Pro
+          </a>
         )}
         {hasBilling && (
           <button type="button" disabled={busy} onClick={() => void run(openPortal)} className={btnGhost}>

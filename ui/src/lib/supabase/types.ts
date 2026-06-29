@@ -298,6 +298,7 @@ export type Database = {
           path: string
         }[]
       }
+      get_pricing_status: { Args: never; Returns: Json }
       get_public_settings: { Args: never; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
     }

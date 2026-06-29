@@ -9,6 +9,9 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
+type Plan = "monthly" | "annual" | "founder";
+const PLANS: Plan[] = ["monthly", "annual", "founder"];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -20,7 +23,39 @@ Deno.serve(async (req) => {
     const { data: { user }, error: uerr } = await userClient.auth.getUser();
     if (uerr || !user) return json({ error: "Unauthorized" }, 401);
 
+    // Which plan? Default monthly (back-compat: an empty/legacy body → monthly).
+    const body = await req.json().catch(() => ({}));
+    const plan: Plan = PLANS.includes(body?.plan) ? body.plan : "monthly";
+
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    // Resolve the Stripe price id from the admin-editable pricing config. Monthly falls back
+    // to the STRIPE_PRICE_PRO env var so the original single-price setup keeps working.
+    const { data: settingRow } = await admin
+      .from("app_settings")
+      .select("value")
+      .eq("key", "pricing")
+      .maybeSingle();
+    const pricing = (settingRow?.value ?? {}) as Record<string, string | number | null>;
+    const priceId =
+      plan === "annual"
+        ? (pricing.annual_price_id as string | null)
+        : plan === "founder"
+          ? (pricing.founder_price_id as string | null)
+          : ((pricing.monthly_price_id as string | null) ?? Deno.env.get("STRIPE_PRICE_PRO") ?? null);
+    if (!priceId) return json({ error: "That plan isn't available yet." }, 400);
+
+    // Founder is a capped, limited offer — enforce the cap server-side so it can't be oversold.
+    if (plan === "founder") {
+      const cap = Number(pricing.founder_cap ?? 200) || 200;
+      const { count } = await admin
+        .from("subscriptions")
+        .select("id", { count: "exact", head: true })
+        .eq("price_id", priceId)
+        .in("status", ["active", "trialing"]);
+      if ((count ?? 0) >= cap) return json({ error: "Founder seats are sold out." }, 400);
+    }
+
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!);
 
     const { data: existing } = await admin
@@ -54,10 +89,10 @@ Deno.serve(async (req) => {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
-      line_items: [{ price: Deno.env.get("STRIPE_PRICE_PRO")!, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: user.id,
       success_url: `${origin}/app?checkout=success`,
-      cancel_url: `${origin}/app?checkout=cancel`,
+      cancel_url: `${origin}/pricing?checkout=cancel`,
     });
     return json({ url: session.url });
   } catch (e) {

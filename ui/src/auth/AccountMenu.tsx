@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, User } from "lucide-react";
 import type { SessionState } from "./useSession";
-import { startCheckout, openPortal } from "./billing";
+import { openPortal } from "./billing";
 
 export function AccountMenu({ session, onOpenAuth }: { session: SessionState; onOpenAuth: () => void }) {
   const [open, setOpen] = useState(false);
@@ -83,14 +83,12 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
             Profile &amp; account
           </a>
           {session.profile.plan !== "pro" ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void runBilling(startCheckout)}
-              className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-2)] disabled:opacity-60"
+            <a
+              href="/pricing"
+              className="block w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-2)]"
             >
-              {busy ? "Starting…" : "Upgrade to Pro"}
-            </button>
+              Upgrade to Pro
+            </a>
           ) : session.profile.hasBilling ? (
             <button
               type="button"

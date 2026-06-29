@@ -21,9 +21,17 @@ async function readInvokeError(error: { message?: string; context?: unknown } | 
   }
 }
 
-async function invokeRedirect(name: string): Promise<{ ok: boolean; error?: string }> {
+/** Which paid plan a checkout targets (resolved to a Stripe price server-side). */
+export type PlanChoice = "monthly" | "annual" | "founder";
+
+async function invokeRedirect(
+  name: string,
+  body?: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
   if (!supabase) return { ok: false, error: "Accounts are unavailable" };
-  const { data, error } = await supabase.functions.invoke(name);
+  const { data, error } = body
+    ? await supabase.functions.invoke(name, { body })
+    : await supabase.functions.invoke(name);
   if (error) return { ok: false, error: await readInvokeError(error) };
   const url = (data as { url?: string } | null)?.url;
   if (!url) return { ok: false, error: "No redirect URL returned" };
@@ -31,9 +39,9 @@ async function invokeRedirect(name: string): Promise<{ ok: boolean; error?: stri
   return { ok: true };
 }
 
-/** Start a Stripe Checkout for the Pro subscription (redirects to Stripe). */
-export const startCheckout = (): Promise<{ ok: boolean; error?: string }> =>
-  invokeRedirect("create-checkout-session");
+/** Start a Stripe Checkout for the chosen Pro plan (redirects to Stripe). */
+export const startCheckout = (plan: PlanChoice = "monthly"): Promise<{ ok: boolean; error?: string }> =>
+  invokeRedirect("create-checkout-session", { plan });
 
 /** Open the Stripe Billing Portal (manage/cancel; redirects to Stripe). */
 export const openPortal = (): Promise<{ ok: boolean; error?: string }> =>

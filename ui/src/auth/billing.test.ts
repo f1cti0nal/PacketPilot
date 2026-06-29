@@ -31,11 +31,16 @@ afterEach(() => {
 });
 
 describe("billing", () => {
-  it("startCheckout invokes the checkout function and redirects to the url", async () => {
-    const res = await startCheckout();
-    expect(h.invoke).toHaveBeenCalledWith("create-checkout-session");
+  it("startCheckout invokes the checkout function with the plan and redirects", async () => {
+    const res = await startCheckout("annual");
+    expect(h.invoke).toHaveBeenCalledWith("create-checkout-session", { body: { plan: "annual" } });
     expect(window.location.assign).toHaveBeenCalledWith("https://stripe.test/cs");
     expect(res.ok).toBe(true);
+  });
+
+  it("startCheckout defaults to the monthly plan", async () => {
+    await startCheckout();
+    expect(h.invoke).toHaveBeenCalledWith("create-checkout-session", { body: { plan: "monthly" } });
   });
 
   it("openPortal invokes the portal function and redirects", async () => {

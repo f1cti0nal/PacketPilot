@@ -13,6 +13,7 @@ import "./index.css";
 const AdminApp = React.lazy(() => import("./admin/AdminApp"));
 const AccountApp = React.lazy(() => import("./account/AccountApp"));
 const LegalApp = React.lazy(() => import("./legal/LegalApp"));
+const PricingApp = React.lazy(() => import("./pricing/PricingApp"));
 const route = resolveRoute(window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -29,6 +30,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       ) : route === "legal" ? (
         <Suspense fallback={<LoadingState label="Loading…" />}>
           <LegalApp />
+        </Suspense>
+      ) : route === "pricing" ? (
+        <Suspense fallback={<LoadingState label="Loading…" />}>
+          <PricingApp />
         </Suspense>
       ) : route === "app" ? (
         <App />

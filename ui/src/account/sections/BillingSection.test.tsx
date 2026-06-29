@@ -32,11 +32,10 @@ describe("BillingSection", () => {
     expect(billing.openPortal).toHaveBeenCalled();
   });
 
-  it("shows Upgrade for a free user with no subscription", () => {
+  it("shows an Upgrade link to /pricing for a free user", () => {
     render(<BillingSection plan="free" subscription={null} />);
     expect(screen.getByText(/Free plan/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /upgrade to pro/i }));
-    expect(billing.startCheckout).toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: /upgrade to pro/i })).toHaveAttribute("href", "/pricing");
   });
 
   it("explains comped Pro (no subscription) and offers no billing button", () => {

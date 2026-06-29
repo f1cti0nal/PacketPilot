@@ -45,7 +45,7 @@ describe("AccountMenu", () => {
     expect(screen.queryByRole("link", { name: /profile & account/i })).not.toBeInTheDocument();
   });
 
-  it("free authed user can upgrade to Pro", async () => {
+  it("free authed user sees an Upgrade link to /pricing", async () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false }, signOut: vi.fn() }}
@@ -53,8 +53,7 @@ describe("AccountMenu", () => {
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
-    await userEvent.click(screen.getByRole("button", { name: /upgrade to pro/i }));
-    expect(billing.startCheckout).toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: /upgrade to pro/i })).toHaveAttribute("href", "/pricing");
   });
 
   it("pro authed user can manage billing", async () => {
@@ -81,16 +80,16 @@ describe("AccountMenu", () => {
     expect(screen.getByText(/managed by your administrator/i)).toBeInTheDocument();
   });
 
-  it("surfaces a billing error when the action fails", async () => {
-    billing.startCheckout.mockResolvedValueOnce({ ok: false, error: "Checkout unavailable" });
+  it("surfaces a billing error when Manage billing fails", async () => {
+    billing.openPortal.mockResolvedValueOnce({ ok: false, error: "No billing account yet" });
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true }, signOut: vi.fn() }}
         onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
-    await userEvent.click(screen.getByRole("button", { name: /upgrade to pro/i }));
-    expect(await screen.findByText(/checkout unavailable/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /manage billing/i }));
+    expect(await screen.findByText(/no billing account yet/i)).toBeInTheDocument();
   });
 });

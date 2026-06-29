@@ -1,4 +1,4 @@
-export type Route = "landing" | "app" | "admin" | "account" | "legal";
+export type Route = "landing" | "app" | "admin" | "account" | "legal" | "pricing";
 
 /** Static legal/trust pages, served by the same SPA bundle (see main.tsx). */
 const LEGAL_PATHS = new Set(["/security", "/privacy", "/terms"]);
@@ -11,6 +11,7 @@ export function resolveRoute(pathname: string): Route {
   if (path === "/admin" || path.startsWith("/admin/")) return "admin";
   if (path === "/account" || path.startsWith("/account/")) return "account";
   if (LEGAL_PATHS.has(path)) return "legal";
+  if (path === "/pricing") return "pricing";
   if (path === "/app" || path.startsWith("/app/")) return "app";
   return "landing";
 }

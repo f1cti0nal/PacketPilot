@@ -14,7 +14,8 @@
     { "source": "/account/(.*)", "destination": "/" },
     { "source": "/security", "destination": "/" },
     { "source": "/privacy", "destination": "/" },
-    { "source": "/terms", "destination": "/" }
+    { "source": "/terms", "destination": "/" },
+    { "source": "/pricing", "destination": "/" }
   ],
   "headers": [
     {
