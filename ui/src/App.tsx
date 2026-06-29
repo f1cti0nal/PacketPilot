@@ -122,11 +122,14 @@ export function App() {
   // re-render severity colours would stay the previous theme's palette after a toggle.
   useTheme();
   const session = useSession();
-  const { announcement_banner } = useAppSettings();
+  const appSettings = useAppSettings();
+  const { announcement_banner } = appSettings;
   const aiGate = useFeatureFlags(
     session.status === "authed",
     session.status === "authed" ? session.profile.plan : "free",
   ).gate("ai_assist");
+  const aiOn = session.status === "authed" && appSettings.ai.enabled && aiGate === "on";
+  const aiModel = appSettings.ai.model;
   const [authOpen, setAuthOpen] = useState(false);
 
   // After returning from Stripe Checkout, refresh the session so the upgraded plan shows.
@@ -686,7 +689,7 @@ export function App() {
       paletteOpen={paletteOpen}
       onPaletteOpenChange={setPaletteOpen}
       onOpenSettings={() => setSettingsOpen(true)}
-      onOpenAiChat={aiGate === "on" && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
+      onOpenAiChat={aiOn && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
       accountMenu={<AccountMenu session={session} onOpenAuth={() => setAuthOpen(true)} />}
@@ -742,7 +745,8 @@ export function App() {
           selectedIncident={selectedIncident}
           onSelectIncident={setSelectedIncident}
           activeSource={activeSource}
-          aiGate={aiGate}
+          aiGate={aiOn ? "on" : aiGate}
+          aiModel={aiModel}
         />
       )}
       </ErrorBoundary>
@@ -779,7 +783,7 @@ export function App() {
       <AuthDialog session={session} onClose={() => setAuthOpen(false)} />
     )}
     {summary.status === "ready" && summary.data && (
-      <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} model="" />
+      <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} model={aiModel} />
     )}
     {ruleNotice && (
       <div

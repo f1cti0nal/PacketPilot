@@ -65,6 +65,8 @@ export interface DashboardProps {
   activeSource?: ActiveSource;
   /** Gate for the AI assist surfaces (default on). */
   aiGate?: FeatureGate;
+  /** Admin-managed AI model name, forwarded to AiSummaryCard for cache + consent display. */
+  aiModel?: string;
 }
 
 const worstFirst = (
@@ -85,6 +87,7 @@ export function Dashboard({
   onSelectIncident,
   activeSource,
   aiGate = "on",
+  aiModel = "",
 }: DashboardProps) {
   const s = output.summary;
 
@@ -135,7 +138,7 @@ export function Dashboard({
         {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
         <KpiCluster output={output} />
         {aiGate === "on" ? (
-          <AiSummaryCard output={output} captureId={captureKey(output)} model="" />
+          <AiSummaryCard output={output} captureId={captureKey(output)} model={aiModel} />
         ) : aiGate === "upsell" ? (
           <AiUpsellCard />
         ) : null}

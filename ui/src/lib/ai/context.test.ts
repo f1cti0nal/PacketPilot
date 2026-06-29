@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { buildContext } from "./context";
 import { makeOutput } from "../../test/fixtures";
 import type { DomainThreat, RepStatus } from "../../types";
 import { humanBytes, humanNumber, compactNumber, shortHash, basename, durationHumanMs } from "../../lib/format";
 import { rollupSeverity } from "../../lib/severity";
-import { getProxyUrl, setProxyUrl } from "./settings";
+
 
 describe("buildContext", () => {
   it("includes capture metadata, severity, and top incidents/threats; never raw flows", () => {
@@ -209,16 +209,6 @@ describe("severity helpers — branch coverage", () => {
   });
 });
 
-describe("ai/settings proxy URL — branch coverage", () => {
-  beforeEach(() => localStorage.clear());
-  it("getProxyUrl returns empty string when not set (null-coalesce default)", () => {
-    expect(getProxyUrl()).toBe("");
-  });
-  it("getProxyUrl returns stored value after setProxyUrl", () => {
-    setProxyUrl("http://localhost:8788");
-    expect(getProxyUrl()).toBe("http://localhost:8788");
-  });
-});
 
 const vt = (status: RepStatus) => ({
   source: "virustotal", status, malicious: status === "malicious",

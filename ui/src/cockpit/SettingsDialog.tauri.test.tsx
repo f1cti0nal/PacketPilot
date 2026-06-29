@@ -8,10 +8,6 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsDialog } from "./SettingsDialog";
 
-const mockSetAiEnabled = vi.fn();
-const mockSetAiBaseUrl = vi.fn();
-const mockSetAiModel = vi.fn();
-
 vi.mock("../lib/reputation/settings", () => ({
   // isTauri === true in this suite
   isTauri: () => true,
@@ -23,23 +19,6 @@ vi.mock("../lib/reputation/settings", () => ({
   setProxyUrl: vi.fn(),
   getKey: () => "",
   setKey: vi.fn(),
-}));
-
-vi.mock("../lib/ai/settings", () => ({
-  AI_PRESETS: [
-    { id: "anthropic", label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-opus-4-8" },
-    { id: "custom", label: "Custom", baseUrl: "", model: "" },
-  ],
-  getAiEnabled: () => false,
-  setAiEnabled: (...args: any[]) => mockSetAiEnabled(...args),
-  getAiBaseUrl: () => "https://api.anthropic.com/v1",
-  setAiBaseUrl: (...args: any[]) => mockSetAiBaseUrl(...args),
-  getAiModel: () => "claude-opus-4-8",
-  setAiModel: (...args: any[]) => mockSetAiModel(...args),
-  getAiKey: () => "",
-  setAiKey: vi.fn(),
-  getProxyUrl: () => "",
-  setProxyUrl: vi.fn(),
 }));
 
 // Mock @tauri-apps/api/core for keychain save
@@ -58,40 +37,33 @@ describe("SettingsDialog — Tauri (desktop) surface", () => {
     render(<SettingsDialog onClose={vi.fn()} />);
     // On Tauri the reputation proxy field is hidden (!isTauri guard)
     const proxyFields = screen.queryAllByLabelText(/proxy url/i);
-    // The AI proxy field is also hidden on Tauri
     expect(proxyFields.length).toBe(0);
   });
 
-  it("saves AI base settings via setAiEnabled/setAiBaseUrl on Save", async () => {
+  it("does NOT render any AI fields", () => {
+    render(<SettingsDialog onClose={vi.fn()} />);
+    expect(screen.queryByText(/AI Analyst/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/api key/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the reputation section", () => {
+    render(<SettingsDialog onClose={vi.fn()} />);
+    expect(screen.getByText(/online reputation/i)).toBeInTheDocument();
+  });
+
+  it("calls onClose when Cancel is clicked", async () => {
+    const u = userEvent.setup();
+    const onClose = vi.fn();
+    render(<SettingsDialog onClose={onClose} />);
+    await u.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("saves reputation settings on Save", async () => {
     const u = userEvent.setup();
     const onClose = vi.fn();
     render(<SettingsDialog onClose={onClose} />);
     await u.click(screen.getByRole("button", { name: /save/i }));
-    expect(mockSetAiEnabled).toHaveBeenCalled();
-    expect(mockSetAiBaseUrl).toHaveBeenCalled();
-    expect(mockSetAiModel).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
-  });
-
-  it("calls tauri invoke set_ai_key when AI key is entered on Tauri", async () => {
-    const u = userEvent.setup();
-    render(<SettingsDialog onClose={vi.fn()} />);
-    const keyInput = screen.getByLabelText(/api key/i);
-    await u.type(keyInput, "sk-tauri-key");
-    await u.click(screen.getByRole("button", { name: /save/i }));
-    expect(mockTauriInvoke).toHaveBeenCalledWith(
-      "set_ai_key",
-      expect.objectContaining({ provider: "default", key: "sk-tauri-key" }),
-    );
-  });
-
-  it("shows error when tauri invoke for AI key fails", async () => {
-    mockTauriInvoke.mockRejectedValueOnce(new Error("keychain locked"));
-    const u = userEvent.setup();
-    render(<SettingsDialog onClose={vi.fn()} />);
-    const keyInput = screen.getByLabelText(/api key/i);
-    await u.type(keyInput, "sk-fail");
-    await u.click(screen.getByRole("button", { name: /save/i }));
-    expect(await screen.findByText(/Failed to save AI key.*keychain locked/i)).toBeInTheDocument();
   });
 });
