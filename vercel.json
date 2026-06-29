@@ -9,7 +9,9 @@
     { "source": "/app", "destination": "/" },
     { "source": "/app/(.*)", "destination": "/" },
     { "source": "/admin", "destination": "/" },
-    { "source": "/admin/(.*)", "destination": "/" }
+    { "source": "/admin/(.*)", "destination": "/" },
+    { "source": "/account", "destination": "/" },
+    { "source": "/account/(.*)", "destination": "/" }
   ],
   "headers": [
     {

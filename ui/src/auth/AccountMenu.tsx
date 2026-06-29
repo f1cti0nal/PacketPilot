@@ -76,6 +76,12 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
               {session.profile.plan}
             </span>
           </div>
+          <a
+            href="/account"
+            className="block w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-text-dim)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+          >
+            Profile &amp; account
+          </a>
           {session.profile.plan === "pro" ? (
             <button
               type="button"

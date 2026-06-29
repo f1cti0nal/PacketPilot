@@ -22,7 +22,9 @@ beforeEach(() => {
     getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: "https://cdn/x.png" } }),
   });
 });
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("account api", () => {
   it("updateName trims + updates full_name", async () => {
