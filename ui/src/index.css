@@ -42,9 +42,9 @@
 
   /* Density — spacing only (text never changes). Comfortable is the breathable
      default; [data-density="compact"] tightens whitespace for power analysts. */
-  --density-gap: 0.75rem;
-  --density-gap-sm: 0.5rem;
-  --density-pad: 0.625rem;
+  --density-gap: 0.875rem;
+  --density-gap-sm: 0.625rem;
+  --density-pad: 0.75rem;
 
   /* Radius scale */
   --r-card: 12px;
@@ -53,12 +53,12 @@
   --r-micro: 4px;
 
   /* Type scale (px) — apply via .t-* utilities + primitives */
-  --fs-display: 22px;
-  --fs-title: 18px;
-  --fs-heading: 15px;
-  --fs-body: 13px;
-  --fs-label: 12px;
-  --fs-micro: 11px;
+  --fs-display: 24px;
+  --fs-title: 20px;
+  --fs-heading: 16px;
+  --fs-body: 14px;
+  --fs-label: 13px;
+  --fs-micro: 12px;
 
   /* Elevation */
   --sh-rest: 0 1px 2px rgba(2, 6, 16, 0.35);
@@ -71,9 +71,9 @@
 /* Compact density — reduces dashboard whitespace only; text is untouched. Set
    via data-density on <html> (see lib/density.ts). Comfortable = the :root values. */
 [data-density="compact"] {
-  --density-gap: 0.5rem;
-  --density-gap-sm: 0.375rem;
-  --density-pad: 0.4375rem;
+  --density-gap: 0.625rem;
+  --density-gap-sm: 0.5rem;
+  --density-pad: 0.5625rem;
 }
 
 /* ----------------------------------------------------------------------------
@@ -129,6 +129,13 @@ body,
   height: 100%;
 }
 
+/* Global type/space scale-up: a larger root makes every rem-based Tailwind
+   utility (text + padding + gap) one step bigger and more breathable at once.
+   The hardcoded-px type roles + --fs-* tokens are bumped to match. */
+html {
+  font-size: 17px;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
@@ -155,19 +162,19 @@ body {
 }
 
 /* ---- Type scale (1.20 ratio, weight carries hierarchy) ------------------- */
-.t-score { font-family: "Geist", sans-serif; font-weight: 500; font-size: 56px; line-height: 1; }
-.t-kpi   { font-family: "Geist", sans-serif; font-weight: 500; font-size: 28px; line-height: 1.1; }
-.t-host  { font-family: "Geist", sans-serif; font-weight: 500; font-size: 20px; line-height: 1.15; }
-.t-title { font-family: "Geist", sans-serif; font-weight: 500; font-size: 15px; line-height: 1.3; }
-.t-body  { font-family: "Geist", sans-serif; font-weight: 400; font-size: 13px; line-height: 1.45; }
-.t-row   { font-weight: 400; font-size: 12px; line-height: 1.25; }
+.t-score { font-family: "Geist", sans-serif; font-weight: 500; font-size: 60px; line-height: 1; }
+.t-kpi   { font-family: "Geist", sans-serif; font-weight: 500; font-size: 31px; line-height: 1.1; }
+.t-host  { font-family: "Geist", sans-serif; font-weight: 500; font-size: 22px; line-height: 1.15; }
+.t-title { font-family: "Geist", sans-serif; font-weight: 500; font-size: 17px; line-height: 1.3; }
+.t-body  { font-family: "Geist", sans-serif; font-weight: 400; font-size: 15px; line-height: 1.45; }
+.t-row   { font-weight: 400; font-size: 13px; line-height: 1.25; }
 .t-label {
-  font-family: "Geist Mono", monospace; font-weight: 500; font-size: 11px;
+  font-family: "Geist Mono", monospace; font-weight: 500; font-size: 12px;
   line-height: 1.2; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--color-text-faint);
 }
 .t-tag {
-  font-family: "Geist Mono", monospace; font-weight: 500; font-size: 10px;
+  font-family: "Geist Mono", monospace; font-weight: 500; font-size: 11px;
   line-height: 1.2; font-variant-numeric: tabular-nums;
 }
 
@@ -190,10 +197,10 @@ body {
 .pp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
 .pp-table thead th { position: sticky; top: 0; z-index: 1; background: var(--color-surface-2);
   color: var(--color-text-faint); font-weight: 400; text-transform: uppercase; letter-spacing: .04em;
-  font-size: var(--fs-label); text-align: left; padding: 7px 10px; }
+  font-size: var(--fs-label); text-align: left; padding: 9px 13px; }
 .pp-table tbody tr { border-top: 1px solid var(--color-border); }
 .pp-table tbody tr:hover { background: var(--color-surface-2); }
-.pp-table td { padding: 7px 10px; color: var(--color-text); }
+.pp-table td { padding: 9px 13px; color: var(--color-text); }
 
 /* One static radial wash on the canvas (no nested/animated blurs — webkit perf) */
 .app-bg {
