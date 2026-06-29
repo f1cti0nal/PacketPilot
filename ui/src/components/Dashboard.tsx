@@ -67,6 +67,11 @@ export interface DashboardProps {
   aiGate?: FeatureGate;
   /** Admin-managed AI model name, forwarded to AiSummaryCard for cache + consent display. */
   aiModel?: string;
+  /**
+   * When false the per-host PCAP carve button is hidden (Pro flag gate, online authed only).
+   * Defaults to true so offline/anon users always have carve available (offline invariant).
+   */
+  pcapExport?: boolean;
 }
 
 const worstFirst = (
@@ -88,6 +93,7 @@ export function Dashboard({
   activeSource,
   aiGate = "on",
   aiModel = "",
+  pcapExport = true,
 }: DashboardProps) {
   const s = output.summary;
 
@@ -176,7 +182,7 @@ export function Dashboard({
         <ThreatWatchlist
           threats={s.ip_threats ?? []}
           onSelect={openHost}
-          onCarveHost={carveHost}
+          onCarveHost={pcapExport ? carveHost : undefined}
           canCarve={canCarve}
           captureKey={captureKey(output)}
         />

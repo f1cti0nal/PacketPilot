@@ -151,6 +151,20 @@ describe("Dashboard host carve", () => {
     vi.mocked(carveSubPcap).mockClear();
   });
 
+  it("carve button is present by default (pcapExport defaults to true)", () => {
+    render(
+      <Dashboard
+        output={makeOutput()}
+        activeSource={null}
+        selectedIncident={null}
+        onSelectIncident={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /Carve 10\.13\.37\.7 host/i }),
+    ).toBeInTheDocument();
+  });
+
   it("carve button is disabled when no source is retained", () => {
     render(
       <Dashboard
@@ -163,6 +177,21 @@ describe("Dashboard host carve", () => {
     expect(
       screen.getByRole("button", { name: /Carve 10\.13\.37\.7 host/i }),
     ).toBeDisabled();
+  });
+
+  it("carve button is hidden when pcapExport={false}", () => {
+    render(
+      <Dashboard
+        output={makeOutput()}
+        activeSource={{ kind: "bytes", bytes: new ArrayBuffer(8) }}
+        selectedIncident={null}
+        onSelectIncident={vi.fn()}
+        pcapExport={false}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /Carve 10\.13\.37\.7 host/i }),
+    ).toBeNull();
   });
 
   it("clicking the carve button calls carveSubPcap with the host ip + whole-capture window", async () => {

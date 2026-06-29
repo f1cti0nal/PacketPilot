@@ -119,10 +119,13 @@ export function App() {
   const appSettings = useAppSettings();
   const { announcement_banner } = appSettings;
   const rep = appSettings.rep;
-  const aiGate = useFeatureFlags(
+  const { gate } = useFeatureFlags(
     session.status === "authed",
     session.status === "authed" ? session.profile.plan : "free",
-  ).gate("ai_assist");
+  );
+  const aiGate = gate("ai_assist");
+  const pcapGate = gate("pcap_export");
+  const compareGate = gate("multi_capture_diff");
   const aiOn = session.status === "authed" && appSettings.ai.enabled && aiGate === "on";
   const aiModel = appSettings.ai.model;
   const [authOpen, setAuthOpen] = useState(false);
@@ -516,9 +519,9 @@ export function App() {
 
   const handleExport = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
-    const ai = await getAiSummary(captureKey(summary.data));
+    const ai = aiOn ? await getAiSummary(captureKey(summary.data)) : null;
     return exportReport(summary.data, ai?.text);
-  }, [summary]);
+  }, [summary, aiOn]);
 
   const handleExportCsv = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
@@ -630,7 +633,7 @@ export function App() {
       activeTab={tab}
       onTabChange={setTab}
       onGoHome={goHome}
-      compareActive={compareIds !== null}
+      compareActive={compareIds !== null && compareGate === "on"}
       summary={summary}
       recentCount={recent.length}
       onReplaceData={handleReplaceData}
@@ -689,7 +692,7 @@ export function App() {
           onRemove={handleRemoveRecent}
           onClear={handleClearRecent}
           onLoadNew={handleRequestLoad}
-          onCompare={startCompare}
+          onCompare={compareGate === "on" ? startCompare : undefined}
         />
       ) : summary.status === "idle" ? (
         <HomeView
@@ -698,7 +701,7 @@ export function App() {
           onOpen={(e) => void handleSelectRecent(e)}
           onLoadNew={handleRequestLoad}
           onLoadSample={loadSample}
-          onCompare={startCompare}
+          onCompare={compareGate === "on" ? startCompare : undefined}
           onViewAll={() => setTab("recent")}
           sampleAvailable={!IS_TAURI}
         />
@@ -715,6 +718,7 @@ export function App() {
           activeSource={activeSource}
           aiGate={aiOn ? "on" : aiGate === "upsell" ? "upsell" : "off"}
           aiModel={aiModel}
+          pcapExport={pcapGate === "on"}
         />
       )}
       </ErrorBoundary>
