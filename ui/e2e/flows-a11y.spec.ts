@@ -11,6 +11,14 @@ async function uploadAndOpenFlows(page: Page) {
   await page.getByRole("button", { name: "Load capture", exact: true }).click();
   await dialog.locator('input[type="file"]').setInputFiles(PCAP);
   await expect(dialog).toBeHidden({ timeout: 30_000 });
+  // A capture with TLS SNI hostnames pops a one-time domain-reputation consent dialog
+  // (full-screen overlay); decline it so the Flows click isn't intercepted.
+  const consent = page.getByRole("dialog", { name: "Domain reputation consent" });
+  await consent
+    .getByRole("button", { name: "Cancel" })
+    .click({ timeout: 5_000 })
+    .catch(() => {});
+  await expect(consent).toBeHidden();
   await page.getByRole("button", { name: "Flows", exact: true }).click();
   await expect(page.getByLabel("Filter flows")).toBeVisible();
 }

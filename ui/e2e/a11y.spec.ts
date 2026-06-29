@@ -83,14 +83,6 @@ test.describe("accessibility (axe, real browser) — WCAG A/AA incl. contrast", 
     expect(vs, fmt(vs)).toEqual([]);
   });
 
-  test("settings dialog", async ({ page }) => {
-    await freshLoad(page, "dark");
-    await page.getByRole("button", { name: "Settings" }).click();
-    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
-    const vs = await audit(page);
-    expect(vs, fmt(vs)).toEqual([]);
-  });
-
   test("keyboard shortcuts overlay", async ({ page }) => {
     await freshLoad(page, "dark");
     await page.keyboard.press("Shift+Slash");

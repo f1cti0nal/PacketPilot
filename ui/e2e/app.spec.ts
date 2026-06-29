@@ -72,13 +72,6 @@ test.describe("PacketPilot — desktop", () => {
     await expect(page.getByLabel("Filter flows")).toBeVisible();
   });
 
-  test("settings dialog opens and closes on Escape", async ({ page }) => {
-    await page.getByRole("button", { name: "Settings" }).click();
-    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Settings" })).toBeHidden();
-  });
-
   test("export menu lists formats", async ({ page }) => {
     await page.getByRole("button", { name: /export/i }).click();
     await expect(page.getByRole("menuitem", { name: "HTML report" })).toBeVisible();

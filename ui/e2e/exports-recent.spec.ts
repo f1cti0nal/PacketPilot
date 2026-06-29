@@ -20,6 +20,15 @@ async function uploadPcap(page: Page) {
   await expect(dialog).toBeVisible();
   await dialog.locator('input[type="file"]').setInputFiles(PCAP);
   await expect(dialog).toBeHidden({ timeout: 30_000 });
+  // A capture with TLS SNI hostnames pops a one-time domain-reputation consent dialog
+  // (full-screen overlay); decline it so later clicks aren't intercepted. Tolerant of
+  // captures that don't trigger it.
+  const consent = page.getByRole("dialog", { name: "Domain reputation consent" });
+  await consent
+    .getByRole("button", { name: "Cancel" })
+    .click({ timeout: 5_000 })
+    .catch(() => {});
+  await expect(consent).toBeHidden();
 }
 
 // Every "download" export format goes through the WASM exporters + downloadText/downloadBinary.
