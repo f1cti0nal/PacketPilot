@@ -94,7 +94,15 @@ function SettingRow({ s, run }: { s: AdminSetting; run: (fn: Mutator) => void })
   return (
     <tr>
       <td className="font-mono-num align-top">{s.key}</td>
-      <td>{settingKind(s.key) === "banner" ? <BannerEditor s={s} run={run} /> : <JsonEditor s={s} run={run} />}</td>
+      <td>
+        {settingKind(s.key) === "banner" ? (
+          <BannerEditor s={s} run={run} />
+        ) : settingKind(s.key) === "ai" ? (
+          <AiConfigEditor s={s} run={run} />
+        ) : (
+          <JsonEditor s={s} run={run} />
+        )}
+      </td>
       <td className="align-top">
         <input
           type="text"
@@ -160,6 +168,60 @@ function BannerEditor({ s, run }: { s: AdminSetting; run: (fn: Mutator) => void 
         <input type="checkbox" checked={dismissible} aria-label="Announcement dismissible" onChange={(e) => save({ dismissible: e.target.checked })} />
         dismissible
       </label>
+    </div>
+  );
+}
+
+const AI_PROVIDERS = ["anthropic", "openai", "openrouter", "ollama"] as const;
+
+function AiConfigEditor({ s, run }: { s: AdminSetting; run: (fn: Mutator) => void }) {
+  const v = (s.value && typeof s.value === "object" ? s.value : {}) as Record<string, unknown>;
+  const [enabled, setEnabled] = useState(v.enabled === true);
+  const [provider, setProvider] = useState(typeof v.provider === "string" ? v.provider : "anthropic");
+  const [model, setModel] = useState(typeof v.model === "string" ? v.model : "");
+
+  const save = (next: { enabled?: boolean; provider?: string; model?: string }) =>
+    run(() =>
+      updateValue(s.key, {
+        enabled: next.enabled ?? enabled,
+        provider: next.provider ?? provider,
+        model: next.model ?? model,
+      } as Json),
+    );
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1 t-tag text-[var(--color-text-dim)]">
+        <input
+          type="checkbox"
+          checked={enabled}
+          aria-label="AI enabled"
+          onChange={(e) => { setEnabled(e.target.checked); save({ enabled: e.target.checked }); }}
+        />
+        enabled
+      </label>
+      <select
+        aria-label="AI provider"
+        value={provider}
+        onChange={(e) => { setProvider(e.target.value); save({ provider: e.target.value }); }}
+        className="rounded-[var(--r-micro)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 t-tag text-[var(--color-text-dim)]"
+      >
+        {AI_PROVIDERS.map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+      </select>
+      <input
+        type="text"
+        value={model}
+        onChange={(e) => setModel(e.target.value)}
+        onBlur={() => model !== (typeof v.model === "string" ? v.model : "") && save({ model })}
+        placeholder="model name"
+        aria-label="AI model"
+        className="min-w-[12rem] flex-1 rounded-[var(--r-micro)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-sm text-[var(--color-text)]"
+      />
+      <span className="w-full t-tag text-[var(--color-text-dim)]">
+        API key is set as a server secret (Environment).
+      </span>
     </div>
   );
 }

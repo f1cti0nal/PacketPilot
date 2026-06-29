@@ -1,6 +1,8 @@
-export type SettingKind = "banner" | "json";
+export type SettingKind = "banner" | "ai" | "json";
 
 /** Known keys get a typed editor; everything else uses the validated raw-JSON editor. */
 export function settingKind(key: string): SettingKind {
-  return key === "announcement_banner" ? "banner" : "json";
+  if (key === "announcement_banner") return "banner";
+  if (key === "ai_config") return "ai";
+  return "json";
 }

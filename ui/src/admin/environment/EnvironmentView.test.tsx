@@ -17,6 +17,7 @@ describe("EnvironmentView", () => {
     // Server secrets listed by name with a 'Server-managed' label and NO value
     const secrets = screen.getByRole("table", { name: /server secrets/i });
     expect(within(secrets).getByText("STRIPE_SECRET_KEY")).toBeInTheDocument();
+    expect(within(secrets).getByText("AI_API_KEY")).toBeInTheDocument();
     expect(within(secrets).getAllByText(/server-managed/i).length).toBeGreaterThan(0);
     // No raw secret value is ever rendered (key names like SUPABASE_SERVICE_ROLE_KEY are expected; actual values are not)
     expect(screen.queryByText(/^sk_live|^sk_test|^whsec_/i)).not.toBeInTheDocument();

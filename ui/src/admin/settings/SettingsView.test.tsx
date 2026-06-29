@@ -21,6 +21,7 @@ import { SettingsView } from "./SettingsView";
 const SETTINGS = [
   { key: "branding", value: { product_name: "PacketPilot" }, description: "Branding", updated_at: "2026-06-20T00:00:00Z" },
   { key: "announcement_banner", value: { text: "", severity: "info", dismissible: true }, description: "Banner", updated_at: "2026-06-21T00:00:00Z" },
+  { key: "ai_config", value: { enabled: false, provider: "anthropic", model: "claude-opus-4-8" }, description: "AI config", updated_at: "2026-06-22T00:00:00Z" },
 ];
 
 beforeEach(() => {
@@ -63,6 +64,28 @@ describe("SettingsView", () => {
     expect(createSetting).toHaveBeenCalledWith("new_key", "");
     await userEvent.click(screen.getByRole("button", { name: /delete branding/i }));
     expect(deleteSetting).toHaveBeenCalledWith("branding");
+  });
+  it("renders the AI config editor for ai_config key", async () => {
+    render(<SettingsView />);
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("ai_config")).toBeInTheDocument();
+    // AI editor has enabled checkbox, provider select, model input
+    expect(screen.getByRole("checkbox", { name: /ai enabled/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /ai provider/i })).toBeInTheDocument();
+    const modelInput = screen.getByRole("textbox", { name: /ai model/i }) as HTMLInputElement;
+    expect(modelInput.value).toBe("claude-opus-4-8");
+    expect(screen.getByText(/API key is set as a server secret/i)).toBeInTheDocument();
+  });
+  it("changing the AI model calls updateValue with ai_config object", async () => {
+    render(<SettingsView />);
+    const modelInput = screen.getByRole("textbox", { name: /ai model/i });
+    await userEvent.clear(modelInput);
+    await userEvent.type(modelInput, "claude-sonnet-4-5");
+    await userEvent.tab();
+    await waitFor(() => expect(updateValue).toHaveBeenCalledWith(
+      "ai_config",
+      expect.objectContaining({ model: "claude-sonnet-4-5" }),
+    ));
   });
   it("renders empty and error states", () => {
     hookState.mockReturnValue({ status: "ready", settings: [] });
