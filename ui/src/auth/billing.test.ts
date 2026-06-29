@@ -51,6 +51,37 @@ describe("billing", () => {
     expect(window.location.assign).not.toHaveBeenCalled();
   });
 
+  it("surfaces the function's JSON error body over the generic non-2xx message", async () => {
+    // supabase-js wraps a non-2xx as FunctionsHttpError: generic .message + the
+    // unconsumed Response on .context whose body carries the real reason.
+    h.invoke.mockResolvedValue({
+      data: null,
+      error: {
+        message: "Edge Function returned a non-2xx status code",
+        context: { json: async () => ({ error: "No billing account yet" }) },
+      },
+    });
+    const res = await openPortal();
+    expect(res).toEqual({ ok: false, error: "No billing account yet" });
+    expect(window.location.assign).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the generic message when the error body has no usable reason", async () => {
+    h.invoke.mockResolvedValue({
+      data: null,
+      error: {
+        message: "Edge Function returned a non-2xx status code",
+        context: {
+          json: async () => {
+            throw new Error("not json");
+          },
+        },
+      },
+    });
+    const res = await openPortal();
+    expect(res).toEqual({ ok: false, error: "Edge Function returned a non-2xx status code" });
+  });
+
   it("reconcileAfterCheckout refreshes + strips the param only on checkout=success", async () => {
     window.location.search = "?checkout=success&x=1";
     await reconcileAfterCheckout();
