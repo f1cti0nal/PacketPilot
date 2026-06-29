@@ -12,6 +12,7 @@ import "./index.css";
 // to /index.html (see vercel.json) so this same bundle loads and branches here.
 const AdminApp = React.lazy(() => import("./admin/AdminApp"));
 const AccountApp = React.lazy(() => import("./account/AccountApp"));
+const LegalApp = React.lazy(() => import("./legal/LegalApp"));
 const route = resolveRoute(window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -24,6 +25,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       ) : route === "account" ? (
         <Suspense fallback={<LoadingState label="Loading account…" />}>
           <AccountApp />
+        </Suspense>
+      ) : route === "legal" ? (
+        <Suspense fallback={<LoadingState label="Loading…" />}>
+          <LegalApp />
         </Suspense>
       ) : route === "app" ? (
         <App />

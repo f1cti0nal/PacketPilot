@@ -16,6 +16,16 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/account/")).toBe("account");
     expect(resolveRoute("/account/billing")).toBe("account");
   });
+  it("maps the legal paths to legal", () => {
+    expect(resolveRoute("/security")).toBe("legal");
+    expect(resolveRoute("/privacy")).toBe("legal");
+    expect(resolveRoute("/terms")).toBe("legal");
+    expect(resolveRoute("/terms/")).toBe("legal");
+  });
+  it("does not match near-misses of the legal paths", () => {
+    expect(resolveRoute("/security-policy")).toBe("landing");
+    expect(resolveRoute("/privacy/extra")).toBe("landing");
+  });
   it("maps everything else to landing", () => {
     expect(resolveRoute("/")).toBe("landing");
     expect(resolveRoute("/pricing")).toBe("landing");
