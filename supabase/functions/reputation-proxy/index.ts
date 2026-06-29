@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
   try {
     const u = new URL(target);
     if (u.protocol !== "https:") return json({ error: "https only" }, 400);
-    host = u.host;
+    host = u.hostname; // hostname (no port) — exact allowlist match
   } catch {
     return json({ error: "bad url" }, 400);
   }
@@ -60,10 +60,12 @@ Deno.serve(async (req) => {
   const key = Deno.env.get(provider.env) ?? "";
   if (!key) return json({ status: 0, body: "" }); // unconfigured provider → adapter maps to "unavailable"
 
-  // Forward a GET with the client's (non-key) headers + the injected provider key.
-  const fwdHeaders: Record<string, string> = { ...headers, [provider.header]: key };
-  delete fwdHeaders.authorization; // never forward the user's Supabase JWT upstream
-  const upstream = await fetch(target, { method: "GET", headers: fwdHeaders });
+  // Forward a GET with the injected provider key + ONLY an allowlisted Accept header (never the
+  // client's other headers — so the user's JWT or any injected header can't ride upstream).
+  // redirect:"manual" prevents a 3xx from carrying the key to a redirect target.
+  const fwdHeaders: Record<string, string> = { [provider.header]: key };
+  if (typeof headers["Accept"] === "string") fwdHeaders["Accept"] = headers["Accept"];
+  const upstream = await fetch(target, { method: "GET", headers: fwdHeaders, redirect: "manual" });
   const body = await upstream.text();
   return json({ status: upstream.status, body });
 });
