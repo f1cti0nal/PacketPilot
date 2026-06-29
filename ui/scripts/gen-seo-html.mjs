@@ -60,4 +60,21 @@ for (const p of pages) {
   writeFileSync(join(dist, `${p.slug}.html`), html, "utf8");
 }
 
-console.log(`gen-seo-html: generated ${pages.length} SEO pages`);
+// sitemap.xml — public, indexable routes (the marketing/content pages + the SEO pages).
+// /admin and /account are intentionally excluded (non-public / authed).
+const STATIC_ROUTES = ["", "app", "pricing", "security", "privacy", "terms"];
+const routes = [...STATIC_ROUTES, ...pages.map((p) => p.slug)];
+const sitemap =
+  `<?xml version="1.0" encoding="UTF-8"?>\n` +
+  `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+  routes.map((r) => `  <url><loc>${SITE}/${r}</loc></url>`).join("\n") +
+  `\n</urlset>\n`;
+writeFileSync(join(dist, "sitemap.xml"), sitemap, "utf8");
+
+writeFileSync(
+  join(dist, "robots.txt"),
+  `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /account\n\nSitemap: ${SITE}/sitemap.xml\n`,
+  "utf8",
+);
+
+console.log(`gen-seo-html: generated ${pages.length} SEO pages + sitemap.xml + robots.txt`);

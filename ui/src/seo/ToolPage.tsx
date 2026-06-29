@@ -20,6 +20,9 @@ export function ToolPage({ page }: { page: SeoPage }) {
             Analyze a PCAP — free
             <ArrowRight size={15} aria-hidden />
           </a>
+          <a href="/app?sample=1" className="text-sm text-[var(--color-accent-strong)] hover:underline">
+            or try a sample capture
+          </a>
           <span className="t-tag text-[var(--color-text-faint)]">No signup · nothing uploaded</span>
         </div>
       </header>

@@ -134,6 +134,19 @@ export function App() {
   useEffect(() => {
     void reconcileAfterCheckout();
   }, []);
+
+  // Cold traffic from the SEO/marketing pages can deep-link to /app?sample=1 to drop straight
+  // into a live demo (no file needed). Load the bundled sample once, then strip the param.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("sample") !== "1") return;
+    loadSample();
+    params.delete("sample");
+    const qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [tab, setTab] = useState<TabId>("dashboard");
   useEffect(() => {
     trackPageView(`/app#${tab}`);
