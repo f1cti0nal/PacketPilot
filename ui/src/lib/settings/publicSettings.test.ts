@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePublicSettings, SETTINGS_DEFAULTS } from "./publicSettings";
+import { parsePublicSettings, SETTINGS_DEFAULTS, type RepAppConfig } from "./publicSettings";
 
 describe("parsePublicSettings", () => {
   it("parses a valid banner", () => {
@@ -47,6 +47,41 @@ describe("parsePublicSettings", () => {
     });
     it("ai defaults include enabled:false", () => {
       expect(SETTINGS_DEFAULTS.ai).toEqual({ enabled: false, provider: "anthropic", model: "claude-opus-4-8" });
+    });
+  });
+
+  describe("rep_config parsing", () => {
+    it("parses a valid rep_config into rep", () => {
+      const s = parsePublicSettings({
+        rep_config: { enabled: true, domain_enabled: true, providers: ["abuseipdb", "virustotal"] },
+      });
+      expect(s.rep).toEqual<RepAppConfig>({ enabled: true, domain_enabled: true, providers: ["abuseipdb", "virustotal"] });
+    });
+    it("enabled and domain_enabled are false when not exactly true", () => {
+      expect(parsePublicSettings({ rep_config: { enabled: false, domain_enabled: false, providers: [] } }).rep.enabled).toBe(false);
+      expect(parsePublicSettings({ rep_config: { enabled: 1, domain_enabled: "true", providers: [] } }).rep.enabled).toBe(false);
+      expect(parsePublicSettings({ rep_config: { enabled: 1, domain_enabled: "true", providers: [] } }).rep.domain_enabled).toBe(false);
+    });
+    it("filters providers to valid values only", () => {
+      const s = parsePublicSettings({
+        rep_config: { enabled: true, domain_enabled: false, providers: ["abuseipdb", "badprovider", "virustotal", 42] },
+      });
+      expect(s.rep.providers).toEqual(["abuseipdb", "virustotal"]);
+    });
+    it("falls back to defaults when rep_config is missing", () => {
+      expect(parsePublicSettings({}).rep).toEqual(SETTINGS_DEFAULTS.rep);
+    });
+    it("falls back to defaults when rep_config is junk (non-object)", () => {
+      expect(parsePublicSettings({ rep_config: "bad" }).rep).toEqual(SETTINGS_DEFAULTS.rep);
+      expect(parsePublicSettings({ rep_config: 42 }).rep).toEqual(SETTINGS_DEFAULTS.rep);
+      expect(parsePublicSettings({ rep_config: null }).rep).toEqual(SETTINGS_DEFAULTS.rep);
+    });
+    it("providers defaults to empty array when missing or non-array", () => {
+      expect(parsePublicSettings({ rep_config: { enabled: true } }).rep.providers).toEqual([]);
+      expect(parsePublicSettings({ rep_config: { enabled: true, providers: "abuseipdb" } }).rep.providers).toEqual([]);
+    });
+    it("rep defaults include enabled:false, domain_enabled:false, providers:[]", () => {
+      expect(SETTINGS_DEFAULTS.rep).toEqual({ enabled: false, domain_enabled: false, providers: [] });
     });
   });
 });
