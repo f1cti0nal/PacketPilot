@@ -454,15 +454,17 @@ export function App() {
     async (file: File) => {
       const bytes = await file.arrayBuffer();
       const { summary: nextSummary, rows } = await analyzeViaWasm(bytes, file.name);
+      // analyzeViaWasm runs in a Web Worker and TRANSFERS `bytes` away (so the heavy analysis can't
+      // freeze the UI). Re-read the File to retain a copy for in-browser packet extraction — only
+      // under the size cap, so we never pin a huge capture in memory.
+      const retained = file.size <= MAX_RETAIN_BYTES ? await file.arrayBuffer() : null;
       await applyCapture({
         summary: nextSummary,
         flows: rows,
         fileName: file.name,
         sizeBytes: file.size,
         origin: "wasm",
-        // Retain the pcap bytes for in-browser packet extraction, but only under the size
-        // cap so we don't pin huge captures in memory.
-        source: bytes.byteLength <= MAX_RETAIN_BYTES ? { kind: "bytes", bytes } : null,
+        source: retained ? { kind: "bytes", bytes: retained } : null,
       });
       setTab("dashboard");
       const key = nextSummary.source_sha256 ?? nextSummary.source_path;
