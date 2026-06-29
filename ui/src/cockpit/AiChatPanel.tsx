@@ -1,14 +1,13 @@
 import { useRef, useState } from "react";
 import type { AnalysisOutput } from "../types";
 import type { AiMessage } from "../lib/ai/client";
-import { getAiConfig, getAiEnabled, aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
+import { aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
 import { askChat } from "../lib/ai/run";
-import { aiNeedsRelay } from "../lib/ai/loopback";
 import { Markdown } from "../lib/markdown";
 import { useDialogA11y } from "../lib/useDialogA11y";
 import { AiConsent } from "./AiConsent";
 
-export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose: () => void; output: AnalysisOutput }) {
+export function AiChatPanel({ open, onClose, output, model }: { open: boolean; onClose: () => void; output: AnalysisOutput; model: string }) {
   const [msgs, setMsgs] = useState<AiMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -21,7 +20,7 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
 
   if (!open) return null;
 
-  // Performs the actual egress — only ever called once enabled + consent are satisfied.
+  // Performs the actual egress — only ever called once consent is satisfied.
   async function runSend(q: string) {
     const history = [...msgs, { role: "user" as const, content: q }];
     setMsgs(history);
@@ -30,7 +29,7 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
     setError(null);
     try {
       let acc = "";
-      const full = await askChat(output, msgs, q, getAiConfig(), (t) => { acc += t; setStreaming(acc); });
+      const full = await askChat(output, msgs, q, (t) => { acc += t; setStreaming(acc); });
       setMsgs([...history, { role: "assistant", content: full }]);
     } catch (e) {
       // Surface failures as a real alert (not a faint assistant bubble that assistive tech / a
@@ -42,16 +41,11 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
     }
   }
 
-  // Gate every send behind the same enabled + consent boundary AiSummaryCard enforces —
-  // the chat path must never ship the analysis summary to a remote model without consent.
+  // Gate every send behind the consent boundary — the chat path must never ship the analysis
+  // summary to a remote model without consent.
   function send() {
     const q = input.trim();
     if (!q || busy) return;
-    if (!getAiEnabled()) {
-      setError("AI is off — enable it in Settings.");
-      setInput("");
-      return;
-    }
     setError(null);
     setInput("");
     if (!aiConsentGiven()) {
@@ -75,9 +69,6 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
     pendingQ.current = null;
   }
 
-  const cfg = getAiConfig();
-  const needsRelay = getAiEnabled() && aiNeedsRelay(cfg.baseUrl);
-
   return (
     <>
       <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="AI chat" className="fixed inset-y-0 right-0 z-50 flex w-[28rem] max-w-full flex-col bg-[var(--color-surface)] shadow-xl">
@@ -96,12 +87,6 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
           ))}
           {streaming && <div className="text-[var(--color-text-faint)]"><Markdown text={streaming} /></div>}
         </div>
-        {needsRelay && (
-          <p className="mx-3 mb-1 rounded border border-[var(--color-sev-medium)] p-2 text-[0.7rem] text-[var(--color-text-dim)]">
-            ⚠ This cloud endpoint needs a <b>relay URL</b> in the browser — set a Proxy URL in Settings,
-            use a localhost model (Ollama), or the desktop app.
-          </p>
-        )}
         {error && (
           <p role="alert" className="mx-3 mb-1 text-xs text-[var(--color-sev-critical)]">{error}</p>
         )}
@@ -115,8 +100,7 @@ export function AiChatPanel({ open, onClose, output }: { open: boolean; onClose:
       </div>
       {showConsent && (
         <AiConsent
-          baseUrl={cfg.baseUrl}
-          model={cfg.model}
+          model={model}
           onProceed={handleConsentProceed}
           onCancel={handleConsentCancel}
         />

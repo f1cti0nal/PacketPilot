@@ -135,7 +135,7 @@ export function Dashboard({
         {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
         <KpiCluster output={output} />
         {aiGate === "on" ? (
-          <AiSummaryCard output={output} captureId={captureKey(output)} />
+          <AiSummaryCard output={output} captureId={captureKey(output)} model="" />
         ) : aiGate === "upsell" ? (
           <AiUpsellCard />
         ) : null}

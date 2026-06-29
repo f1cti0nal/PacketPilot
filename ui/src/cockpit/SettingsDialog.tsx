@@ -10,7 +10,12 @@ import {
   getProxyUrl as getAiProxyUrl,
   setProxyUrl as setAiProxyUrl,
 } from "../lib/ai/settings";
-import { isLoopbackUrl } from "../lib/ai/loopback";
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch { return false; }
+}
 
 const PROVIDERS: Provider[] = ["abuseipdb", "greynoise", "virustotal"];
 

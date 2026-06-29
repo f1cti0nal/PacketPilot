@@ -779,7 +779,7 @@ export function App() {
       <AuthDialog session={session} onClose={() => setAuthOpen(false)} />
     )}
     {summary.status === "ready" && summary.data && (
-      <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} />
+      <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} model="" />
     )}
     {ruleNotice && (
       <div

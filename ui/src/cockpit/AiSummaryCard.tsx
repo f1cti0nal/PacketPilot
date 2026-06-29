@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnalysisOutput } from "../types";
-import { getAiEnabled, aiConsentGiven, giveAiConsent, getAiConfig } from "../lib/ai/settings";
+import { aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
 import { getAiSummary, putAiSummary } from "../lib/ai/cache";
 import { generateSummary } from "../lib/ai/run";
-import { aiNeedsRelay } from "../lib/ai/loopback";
 import { Markdown } from "../lib/markdown";
 import { AiConsent } from "./AiConsent";
 
 type State = { status: "idle" | "loading" | "ready" | "error"; text: string; error?: string };
 
-export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; captureId: string }) {
+export function AiSummaryCard({ output, captureId, model }: { output: AnalysisOutput; captureId: string; model: string }) {
   const [st, setSt] = useState<State>({ status: "idle", text: "" });
   const [showConsent, setShowConsent] = useState(false);
   // Store the pending action so we can re-run it after consent is given
@@ -31,18 +30,16 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
   async function doRun() {
     setSt({ status: "loading", text: "" });
     try {
-      const cfg = getAiConfig();
       let acc = "";
-      const full = await generateSummary(output, cfg, (t) => { acc += t; setSt({ status: "loading", text: acc }); });
+      const full = await generateSummary(output, (t) => { acc += t; setSt({ status: "loading", text: acc }); });
       setSt({ status: "ready", text: full });
-      await putAiSummary(captureId, full, cfg.model, Math.floor(Date.now() / 1000));
+      await putAiSummary(captureId, full, model, Math.floor(Date.now() / 1000));
     } catch (e) {
       setSt({ status: "error", text: "", error: `AI request failed: ${e instanceof Error ? e.message : String(e)}` });
     }
   }
 
   function run() {
-    if (!getAiEnabled()) { setSt({ status: "error", text: "", error: "AI is off — enable it in Settings." }); return; }
     if (!aiConsentGiven()) {
       // Store the action and show the consent dialog
       pendingRun.current = () => void doRun();
@@ -65,10 +62,6 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
     pendingRun.current = null;
   }
 
-  const cfg = getAiConfig();
-  // Browser + cloud endpoint + no relay → Generate will fail at egress; warn up front.
-  const needsRelay = getAiEnabled() && aiNeedsRelay(cfg.baseUrl);
-
   return (
     <>
       <section className="rounded-lg bg-[var(--color-surface)] p-4">
@@ -78,12 +71,6 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
             {st.status === "ready" ? "Regenerate" : st.status === "loading" ? "Generating…" : "Generate"}
           </button>
         </div>
-        {needsRelay && (
-          <p className="mt-2 rounded border border-[var(--color-sev-medium)] p-2 text-xs text-[var(--color-text-dim)]">
-            ⚠ This cloud endpoint needs a <b>relay URL</b> in the browser — set a Proxy URL in Settings,
-            switch to a localhost model (Ollama), or use the desktop app.
-          </p>
-        )}
         {st.error && <p role="alert" className="mt-2 text-xs text-[var(--color-sev-critical)]">{st.error}</p>}
         {st.text && (
           <div aria-live="polite" aria-busy={st.status === "loading"} className="mt-2 text-xs text-[var(--color-text)]">
@@ -93,8 +80,7 @@ export function AiSummaryCard({ output, captureId }: { output: AnalysisOutput; c
       </section>
       {showConsent && (
         <AiConsent
-          baseUrl={cfg.baseUrl}
-          model={cfg.model}
+          model={model}
           onProceed={handleConsentProceed}
           onCancel={handleConsentCancel}
         />

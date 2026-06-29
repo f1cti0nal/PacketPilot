@@ -5,38 +5,34 @@ import { AiSummaryCard } from "./AiSummaryCard";
 import { makeOutput } from "../test/fixtures";
 import type { AiSummaryEntry } from "../types";
 
-// Default: consent given, AI enabled
+// Default: consent given
 const mockAiConsentGiven = vi.fn(() => true);
-const mockGetAiEnabled = vi.fn(() => true);
 const mockGiveAiConsent = vi.fn();
 const mockGetAiSummary = vi.fn<[string], Promise<AiSummaryEntry | null>>(async () => null);
 const mockPutAiSummary = vi.fn<[string, string, string, number], Promise<boolean>>(async () => true);
-const mockGenerateSummary = vi.fn<[any, any, (t: string) => void], Promise<string>>(async (_o, _c, onToken) => {
+const mockGenerateSummary = vi.fn<[any, (t: string) => void], Promise<string>>(async (_o, onToken) => {
   onToken("Generated brief.");
   return "Generated brief.";
 });
 
 vi.mock("../lib/ai/settings", () => ({
-  getAiEnabled: () => mockGetAiEnabled(),
   aiConsentGiven: () => mockAiConsentGiven(),
   giveAiConsent: () => mockGiveAiConsent(),
-  getAiConfig: () => ({ enabled: true, baseUrl: "https://api.anthropic.com/v1", model: "claude-opus-4-8", apiKey: "k" }),
 }));
 vi.mock("../lib/ai/cache", () => ({
   getAiSummary: (...args: any[]) => mockGetAiSummary(...(args as [string])),
   putAiSummary: (...args: any[]) => mockPutAiSummary(...(args as [string, string, string, number])),
 }));
 vi.mock("../lib/ai/run", () => ({
-  generateSummary: (...args: any[]) => mockGenerateSummary(...(args as [any, any, (t: string) => void])),
+  generateSummary: (...args: any[]) => mockGenerateSummary(...(args as [any, (t: string) => void])),
 }));
 
 describe("AiSummaryCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAiConsentGiven.mockReturnValue(true);
-    mockGetAiEnabled.mockReturnValue(true);
     mockGetAiSummary.mockResolvedValue(null);
-    mockGenerateSummary.mockImplementation(async (_o, _c, onToken) => {
+    mockGenerateSummary.mockImplementation(async (_o, onToken) => {
       onToken("Generated brief.");
       return "Generated brief.";
     });
@@ -44,7 +40,7 @@ describe("AiSummaryCard", () => {
 
   it("generates and renders the brief on click", async () => {
     const u = userEvent.setup();
-    render(<AiSummaryCard output={makeOutput()} captureId="cap-1" />);
+    render(<AiSummaryCard output={makeOutput()} captureId="cap-1" model="claude-opus-4-8" />);
     await u.click(screen.getByRole("button", { name: /generate/i }));
     expect(await screen.findByText(/Generated brief\./)).toBeInTheDocument();
   });
@@ -52,7 +48,7 @@ describe("AiSummaryCard", () => {
   it("opens consent dialog when consent not yet given", async () => {
     mockAiConsentGiven.mockReturnValue(false);
     const u = userEvent.setup();
-    render(<AiSummaryCard output={makeOutput()} captureId="cap-2" />);
+    render(<AiSummaryCard output={makeOutput()} captureId="cap-2" model="claude-opus-4-8" />);
     await u.click(screen.getByRole("button", { name: /generate/i }));
     expect(await screen.findByRole("dialog", { name: /AI consent/i })).toBeInTheDocument();
   });
@@ -60,7 +56,7 @@ describe("AiSummaryCard", () => {
   it("proceeds after consent is given — calls giveAiConsent and generates", async () => {
     mockAiConsentGiven.mockReturnValue(false);
     const u = userEvent.setup();
-    render(<AiSummaryCard output={makeOutput()} captureId="cap-3" />);
+    render(<AiSummaryCard output={makeOutput()} captureId="cap-3" model="claude-opus-4-8" />);
     await u.click(screen.getByRole("button", { name: /generate/i }));
     // Consent dialog should open
     expect(await screen.findByRole("dialog", { name: /AI consent/i })).toBeInTheDocument();
@@ -70,27 +66,18 @@ describe("AiSummaryCard", () => {
     expect(await screen.findByText(/Generated brief\./)).toBeInTheDocument();
   });
 
-  it("shows error message when AI is disabled", async () => {
-    mockGetAiEnabled.mockReturnValue(false);
-    const u = userEvent.setup();
-    render(<AiSummaryCard output={makeOutput()} captureId="cap-disabled" />);
-    await u.click(screen.getByRole("button", { name: /generate/i }));
-    expect(await screen.findByText(/AI is off/i)).toBeInTheDocument();
-  });
-
   it("pre-populates text from cache on mount", async () => {
     mockGetAiSummary.mockResolvedValue({ text: "Cached brief.", model: "m", cached_at: 1000 });
-    render(<AiSummaryCard output={makeOutput()} captureId="cap-cached" />);
+    render(<AiSummaryCard output={makeOutput()} captureId="cap-cached" model="claude-opus-4-8" />);
     // Wait for cache load effect to set ready state
     expect(await screen.findByText(/Cached brief\./)).toBeInTheDocument();
   });
 
   it("shows error state when generateSummary rejects", async () => {
-    mockGetAiEnabled.mockReturnValue(true);
     mockAiConsentGiven.mockReturnValue(true);
     mockGenerateSummary.mockRejectedValue(new Error("network failure"));
     const u = userEvent.setup();
-    render(<AiSummaryCard output={makeOutput()} captureId="cap-err" />);
+    render(<AiSummaryCard output={makeOutput()} captureId="cap-err" model="claude-opus-4-8" />);
     await u.click(screen.getByRole("button", { name: /generate/i }));
     expect(await screen.findByText(/AI request failed.*network failure/i)).toBeInTheDocument();
   });
@@ -98,7 +85,7 @@ describe("AiSummaryCard", () => {
   it("dismisses consent dialog on cancel without generating", async () => {
     mockAiConsentGiven.mockReturnValue(false);
     const u = userEvent.setup();
-    render(<AiSummaryCard output={makeOutput()} captureId="cap-cancel" />);
+    render(<AiSummaryCard output={makeOutput()} captureId="cap-cancel" model="claude-opus-4-8" />);
     await u.click(screen.getByRole("button", { name: /generate/i }));
     await screen.findByRole("dialog", { name: /AI consent/i });
     await u.click(screen.getByRole("button", { name: /cancel/i }));

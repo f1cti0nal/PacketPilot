@@ -56,7 +56,7 @@ describe("accessibility (axe)", () => {
 
   it("AiConsent has no violations", async () => {
     const { container } = render(
-      <AiConsent baseUrl="http://localhost:1234" model="claude-opus-4-8" onProceed={noop} onCancel={noop} />,
+      <AiConsent model="claude-opus-4-8" onProceed={noop} onCancel={noop} />,
     );
     await expectNoA11yViolations(container);
   });
@@ -79,7 +79,7 @@ describe("accessibility (axe)", () => {
   });
 
   it("AiChatPanel has no violations", async () => {
-    const { container } = render(<AiChatPanel open onClose={noop} output={makeOutput()} />);
+    const { container } = render(<AiChatPanel open onClose={noop} output={makeOutput()} model="claude-opus-4-8" />);
     await expectNoA11yViolations(container);
   });
 
