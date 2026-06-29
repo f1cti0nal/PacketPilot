@@ -53,21 +53,15 @@ import { packetsAvailable } from "./lib/packets";
 import { analyzeViaWasm, applyReputationWasm, applyDomainReputationWasm } from "./lib/wasmEngine";
 import { HomeView } from "./components/home/HomeView";
 import {
-  repEnabled,
-  getProxyUrl,
-  browserKeys,
   consentGiven,
   giveConsent,
-  domainEnabled,
   domainConsentGiven,
   giveDomainConsent,
-  getKey,
 } from "./lib/reputation/settings";
 import { lookupReputation, lookupDomainReputation } from "./lib/reputation/orchestrator";
-import { proxyHttp } from "./lib/reputation/http";
+import { edgeRepHttp } from "./lib/reputation/edgeHttp";
 import { ReputationConsent } from "./cockpit/ReputationConsent";
 import { DomainConsent } from "./cockpit/DomainConsent";
-import { SettingsDialog } from "./cockpit/SettingsDialog";
 import { AiChatPanel } from "./cockpit/AiChatPanel";
 import { getAiSummary, captureKey } from "./lib/ai/cache";
 import { pickRuleBase } from "./lib/ruleBase";
@@ -124,6 +118,7 @@ export function App() {
   const session = useSession();
   const appSettings = useAppSettings();
   const { announcement_banner } = appSettings;
+  const rep = appSettings.rep;
   const aiGate = useFeatureFlags(
     session.status === "authed",
     session.status === "authed" ? session.profile.plan : "free",
@@ -169,7 +164,6 @@ export function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [activeIp, setActiveIp] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   // Consent prompt state: set when a newly-loaded capture has public IPs but consent hasn't
   // been given yet; cleared when the user proceeds or cancels.
@@ -302,71 +296,46 @@ export function App() {
   // Perform the reputation lookup and apply enriched results to the current summary IN PLACE.
   // Does NOT call applyCapture again — that would re-record to Recent and reset activeSource.
   const runReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (!repEnabled()) return;
+    if (session.status !== "authed" || !rep.enabled) return;
     const ips = (output.summary.ip_threats ?? [])
       .filter((t) => t.ip_class === "public")
       .map((t) => t.ip);
     if (ips.length === 0) return;
 
-    let verdicts: Record<string, import("./types").ReputationVerdict[]> = {};
     const now = Math.floor(Date.now() / 1000);
-    if (IS_TAURI) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      verdicts = JSON.parse(await invoke<string>("reputation_lookup", { ips })) as typeof verdicts;
-    } else {
-      const proxy = getProxyUrl();
-      const keys = browserKeys();
-      if (!proxy || Object.keys(keys).length === 0) return;
-      verdicts = await lookupReputation(proxyHttp(proxy), ips, keys, now);
-    }
+    const verdicts = await lookupReputation(edgeRepHttp(), ips, rep.providers, now);
 
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyReputationWasm);
-  }, [enrichAndCommit]);
+  }, [session.status, rep.enabled, rep.providers, enrichAndCommit]);
 
   // Open the consent gate or fire the reputation pass immediately, depending on whether
   // consent has already been given. Should be called once per new capture (after applyCapture).
   const triggerReputationGate = useCallback((output: AnalysisOutput) => {
-    if (!repEnabled()) return;
+    if (!rep.enabled) return;
     const publicIps = (output.summary.ip_threats ?? []).filter((t) => t.ip_class === "public");
     if (publicIps.length === 0) return;
     if (consentGiven()) {
       void runReputation(output);
     } else {
-      // Fetch the actual configured provider list so the consent dialog names only
-      // providers the user has set up (desktop: keychain; browser: localStorage keys).
-      const fetchProviders = IS_TAURI
-        ? import("@tauri-apps/api/core").then(({ invoke }) => invoke<string[]>("reputation_key_status"))
-        : Promise.resolve(Object.keys(browserKeys()));
-      void fetchProviders.then((providers) => {
-        setConsentPrompt({ output, ipCount: publicIps.length, providers });
-      });
+      setConsentPrompt({ output, ipCount: publicIps.length, providers: rep.providers });
     }
-  }, [runReputation]);
+  }, [rep.enabled, rep.providers, runReputation]);
 
   // Perform domain reputation lookup and apply enriched results to the current summary IN PLACE.
   const runDomainReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (!domainEnabled()) return;
+    if (!rep.domain_enabled || !rep.providers.includes("virustotal")) return;
     const hosts = (output.summary.domain_threats ?? []).slice(0, 15).map((d) => d.host);
     if (hosts.length === 0) return;
-    let verdicts: Record<string, import("./types").ReputationVerdict[]> = {};
-    if (IS_TAURI) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      verdicts = JSON.parse(await invoke<string>("domain_reputation_lookup", { hosts })) as typeof verdicts;
-    } else {
-      const proxy = getProxyUrl();
-      const vtKey = getKey("virustotal");
-      if (!proxy || !vtKey) return;
-      const now = Math.floor(Date.now() / 1000);
-      verdicts = await lookupDomainReputation(proxyHttp(proxy), hosts, vtKey, now);
-    }
+    const now = Math.floor(Date.now() / 1000);
+    const verdicts = await lookupDomainReputation(edgeRepHttp(), hosts, now);
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyDomainReputationWasm);
-  }, [enrichAndCommit]);
+  }, [rep.domain_enabled, rep.providers, enrichAndCommit]);
 
   // Open the domain consent gate or fire the domain reputation pass immediately.
   const triggerDomainReputationGate = useCallback((output: AnalysisOutput) => {
-    if (!domainEnabled()) return;
+    if (!rep.domain_enabled || !rep.providers.includes("virustotal")) return;
     const domains = output.summary.domain_threats ?? [];
     if (domains.length === 0) return;
     if (domainConsentGiven()) {
@@ -374,7 +343,7 @@ export function App() {
     } else {
       setDomainConsentPrompt({ output, domainCount: Math.min(15, domains.length) });
     }
-  }, [runDomainReputation]);
+  }, [rep.domain_enabled, rep.providers, runDomainReputation]);
 
   // Replace the active capture with a user-imported summary.json + flows.parquet (either may
   // be supplied). A summary turns it into a Recent entry; flows-only just updates the table.
@@ -688,7 +657,6 @@ export function App() {
       onOpenPalette={() => setPaletteOpen(true)}
       paletteOpen={paletteOpen}
       onPaletteOpenChange={setPaletteOpen}
-      onOpenSettings={() => setSettingsOpen(true)}
       onOpenAiChat={aiOn && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
@@ -775,9 +743,6 @@ export function App() {
         }}
         onCancel={() => setDomainConsentPrompt(null)}
       />
-    )}
-    {settingsOpen && (
-      <SettingsDialog onClose={() => setSettingsOpen(false)} />
     )}
     {authOpen && session.status === "anon" && (
       <AuthDialog session={session} onClose={() => setAuthOpen(false)} />

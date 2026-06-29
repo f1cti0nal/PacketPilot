@@ -9,7 +9,6 @@ import {
   Loader2,
   Command as CommandIcon,
   CheckCircle2,
-  Settings,
   Sparkles,
 } from "lucide-react";
 import { cn } from "../lib/cn";
@@ -41,7 +40,6 @@ export function CommandBar({
   exporting = false,
   exportHint,
   onOpenPalette,
-  onOpenSettings,
   onOpenAiChat,
   rulesMenu,
   accountMenu,
@@ -65,7 +63,6 @@ export function CommandBar({
   exporting?: boolean;
   exportHint?: string;
   onOpenPalette?: () => void;
-  onOpenSettings?: () => void;
   onOpenAiChat?: () => void;
   /** Slot for the RuleSetsMenu dropdown (or any rules affordance). */
   rulesMenu?: ReactNode;
@@ -204,16 +201,6 @@ export function CommandBar({
             so the action cluster fits; both return at md+. */}
         <span className="hidden md:contents"><DensityToggle /></span>
         <ThemeToggle />
-        {onOpenSettings && (
-          <button
-            type="button"
-            aria-label="Settings"
-            onClick={onOpenSettings}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
-          >
-            <Settings size={14} />
-          </button>
-        )}
         {onOpenAiChat && (
           <button
             type="button"

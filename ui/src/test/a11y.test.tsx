@@ -8,7 +8,6 @@ import { RuleSetsMenu } from "../components/flows/RuleSetsMenu";
 import { AiConsent } from "../cockpit/AiConsent";
 import { DomainConsent } from "../cockpit/DomainConsent";
 import { ReputationConsent } from "../cockpit/ReputationConsent";
-import { SettingsDialog } from "../cockpit/SettingsDialog";
 import { AiChatPanel } from "../cockpit/AiChatPanel";
 import { ThreatRail } from "../cockpit/ThreatRail";
 import { ShortcutsOverlay } from "../cockpit/ShortcutsOverlay";
@@ -70,11 +69,6 @@ describe("accessibility (axe)", () => {
     const { container } = render(
       <ReputationConsent ipCount={2} providers={["AbuseIPDB", "GreyNoise"]} onProceed={noop} onCancel={noop} />,
     );
-    await expectNoA11yViolations(container);
-  });
-
-  it("SettingsDialog has no violations", async () => {
-    const { container } = render(<SettingsDialog onClose={noop} />);
     await expectNoA11yViolations(container);
   });
 

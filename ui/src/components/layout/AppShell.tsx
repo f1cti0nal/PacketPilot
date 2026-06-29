@@ -67,8 +67,6 @@ export interface AppShellProps {
   paletteOpen: boolean;
   /** Called to change the palette open state. */
   onPaletteOpenChange: (open: boolean) => void;
-  /** Open the reputation settings dialog. */
-  onOpenSettings?: () => void;
   /** Open the AI chat panel. Only provided when a capture is ready. */
   onOpenAiChat?: () => void;
   /** Trigger the "Load detection rules" file picker. Only provided when packets are available. */
@@ -122,7 +120,6 @@ export function AppShell({
   onOpenPalette,
   paletteOpen,
   onPaletteOpenChange,
-  onOpenSettings,
   onOpenAiChat,
   onLoadRules,
   rulesMenu,
@@ -300,7 +297,6 @@ export function AppShell({
         onOpenPalette={onOpenPalette}
         collapsed={collapsed}
         onToggleCollapse={onToggleCollapse}
-        onOpenSettings={onOpenSettings}
         onOpenAiChat={onOpenAiChat}
         rulesMenu={rulesMenu}
         accountMenu={accountMenu}

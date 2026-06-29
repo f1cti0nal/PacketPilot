@@ -11,7 +11,7 @@ export function ReputationConsent({ ipCount, providers, onProceed, onCancel }:
         </div>
         <div className="px-5 py-4">
           <p className="text-xs text-[var(--color-text-dim)]">
-            {ipCount} public IP{ipCount === 1 ? "" : "s"} will be sent to {providers.join(", ")} to check reputation.
+            {ipCount} public IP{ipCount === 1 ? "" : "s"} will be sent <strong>via PacketPilot's servers</strong> to {providers.join(", ")} to check reputation.
             Internal IPs, payloads, and the capture itself never leave this device.
           </p>
         </div>

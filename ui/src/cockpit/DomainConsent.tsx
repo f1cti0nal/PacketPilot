@@ -11,8 +11,8 @@ export function DomainConsent({ domainCount, onProceed, onCancel }:
         </div>
         <div className="px-5 py-4">
           <p className="text-xs text-[var(--color-text-dim)]">
-            The top {domainCount} TLS SNI hostname{domainCount === 1 ? "" : "s"} this capture contacted will be sent to VirusTotal
-            to check reputation. Payloads and the capture itself never leave this device.
+            The top {domainCount} TLS SNI hostname{domainCount === 1 ? "" : "s"} this capture contacted will be sent <strong>via PacketPilot's servers</strong> to VirusTotal
+            to check reputation. Internal IPs, payloads, and the capture itself never leave this device.
           </p>
         </div>
         <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
