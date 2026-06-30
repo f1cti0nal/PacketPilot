@@ -154,11 +154,68 @@ impl Aes128 {
 
     /// AddRoundKey: XOR the state (column-major) with round-key words.
     fn add_round_key(&self, state: &mut [u8; 16], round: usize) {
-        for c in 0..4 {
-            let w = self.rk[round * 4 + c];
-            for r in 0..4 {
-                state[4 * c + r] ^= w[r];
+        add_round_key(state, &self.rk, round);
+    }
+}
+
+/// AES-256 cipher with a precomputed key schedule (15 round keys = 60 words).
+/// Used for TLS 1.3 `TLS_AES_256_GCM_SHA384` key-log decryption.
+pub(crate) struct Aes256 {
+    rk: [[u8; 4]; 60],
+}
+
+impl Aes256 {
+    /// KeyExpansion (FIPS-197 §5.2) from a 32-byte key (Nk = 8, Nr = 14). Differs from AES-128 by
+    /// the extra SubWord applied every fourth word within an 8-word run (`i % 8 == 4`).
+    pub(crate) fn new(key: &[u8; 32]) -> Self {
+        let mut rk = [[0u8; 4]; 60];
+        for i in 0..8 {
+            rk[i] = [key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3]];
+        }
+        for i in 8..60 {
+            let mut temp = rk[i - 1];
+            if i % 8 == 0 {
+                temp = [temp[1], temp[2], temp[3], temp[0]]; // RotWord
+                for b in temp.iter_mut() {
+                    *b = SBOX[*b as usize]; // SubWord
+                }
+                temp[0] ^= RCON[i / 8 - 1];
+            } else if i % 8 == 4 {
+                for b in temp.iter_mut() {
+                    *b = SBOX[*b as usize]; // SubWord only (AES-256 extra step)
+                }
             }
+            for j in 0..4 {
+                rk[i][j] = rk[i - 8][j] ^ temp[j];
+            }
+        }
+        Aes256 { rk }
+    }
+
+    /// Encrypt one 16-byte block (FIPS-197 §5.1, 14 rounds).
+    pub(crate) fn encrypt_block(&self, input: &[u8; 16]) -> [u8; 16] {
+        let mut state = *input;
+        add_round_key(&mut state, &self.rk, 0);
+        for round in 1..14 {
+            sub_bytes(&mut state);
+            shift_rows(&mut state);
+            mix_columns(&mut state);
+            add_round_key(&mut state, &self.rk, round);
+        }
+        sub_bytes(&mut state);
+        shift_rows(&mut state);
+        add_round_key(&mut state, &self.rk, 14);
+        state
+    }
+}
+
+/// AddRoundKey over an explicit round-key schedule: XOR the column-major state with the four
+/// round-key words for `round`. Shared by [`Aes128`] and [`Aes256`].
+fn add_round_key(state: &mut [u8; 16], rk: &[[u8; 4]], round: usize) {
+    for c in 0..4 {
+        let w = rk[round * 4 + c];
+        for r in 0..4 {
+            state[4 * c + r] ^= w[r];
         }
     }
 }
@@ -282,12 +339,11 @@ fn incr32(block: &mut [u8; 16]) {
     block[12..].copy_from_slice(&ctr.to_be_bytes());
 }
 
-/// AES-128-GCM authenticated decryption (SP 800-38D §7.2 / RFC 5116).
-///
-/// `ct_and_tag` is ciphertext followed by the 16-byte tag. Returns the
-/// plaintext only if the tag verifies; otherwise `None`.
-pub(crate) fn aes128_gcm_open(
-    key: &[u8; 16],
+/// AES-GCM authenticated decryption core, generic over the block cipher (SP 800-38D §7.2 /
+/// RFC 5116). `encrypt_block` is the AES block function for the chosen key size; `ct_and_tag` is
+/// the ciphertext followed by the 16-byte tag. Returns the plaintext only if the tag verifies.
+fn gcm_open(
+    encrypt_block: impl Fn(&[u8; 16]) -> [u8; 16],
     nonce: &[u8; 12],
     aad: &[u8],
     ct_and_tag: &[u8],
@@ -297,8 +353,7 @@ pub(crate) fn aes128_gcm_open(
     }
     let (ct, tag) = ct_and_tag.split_at(ct_and_tag.len() - 16);
 
-    let aes = Aes128::new(key);
-    let h = aes.encrypt_block(&[0u8; 16]);
+    let h = encrypt_block(&[0u8; 16]);
 
     // J0 = nonce(12) || 0x00000001  (only valid for 96-bit nonces).
     let mut j0 = [0u8; 16];
@@ -307,12 +362,12 @@ pub(crate) fn aes128_gcm_open(
 
     // Expected tag = GHASH(aad, ct) XOR E(K, J0).
     let s = ghash(&h, aad, ct);
-    let ej0 = aes.encrypt_block(&j0);
+    let ej0 = encrypt_block(&j0);
     let mut expected = [0u8; 16];
     for i in 0..16 {
         expected[i] = s[i] ^ ej0[i];
     }
-    if expected != tag[..16] {
+    if !tags_eq(&expected, tag) {
         return None;
     }
 
@@ -321,13 +376,458 @@ pub(crate) fn aes128_gcm_open(
     incr32(&mut counter);
     let mut out = Vec::with_capacity(ct.len());
     for chunk in ct.chunks(16) {
-        let ks = aes.encrypt_block(&counter);
+        let ks = encrypt_block(&counter);
         for (i, &b) in chunk.iter().enumerate() {
             out.push(b ^ ks[i]);
         }
         incr32(&mut counter);
     }
     Some(out)
+}
+
+/// AES-128-GCM authenticated decryption. `ct_and_tag` is ciphertext + the 16-byte tag; returns the
+/// plaintext only if the tag verifies, else `None`.
+pub(crate) fn aes128_gcm_open(
+    key: &[u8; 16],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    ct_and_tag: &[u8],
+) -> Option<Vec<u8>> {
+    let aes = Aes128::new(key);
+    gcm_open(|b| aes.encrypt_block(b), nonce, aad, ct_and_tag)
+}
+
+/// AES-256-GCM authenticated decryption (TLS 1.3 `TLS_AES_256_GCM_SHA384`).
+pub(crate) fn aes256_gcm_open(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    ct_and_tag: &[u8],
+) -> Option<Vec<u8>> {
+    let aes = Aes256::new(key);
+    gcm_open(|b| aes.encrypt_block(b), nonce, aad, ct_and_tag)
+}
+
+// ---------------------------------------------------------------------------
+// Vendored SHA-384 + HMAC-SHA384 + HKDF-Expand-Label-SHA384.
+//
+// TLS 1.3 `TLS_AES_256_GCM_SHA384` runs its key schedule over SHA-384, so the AEAD key/iv come
+// from HKDF-Expand-Label with SHA-384 (the SHA-256 path above is wrong for this suite). SHA-384 is
+// SHA-512 with different initial values, truncated to 48 bytes.
+//
+// References: FIPS 180-4 (SHA-384/512), RFC 2104 (HMAC), RFC 5869 (HKDF), RFC 8446 §7.1.
+// ---------------------------------------------------------------------------
+
+/// SHA-512 round constants (FIPS 180-4 §4.2.3): first 64 bits of the fractional parts of the cube
+/// roots of the first 80 primes.
+#[rustfmt::skip]
+const SHA512_K: [u64; 80] = [
+    0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
+    0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
+    0xd807aa98a3030242, 0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,
+    0x72be5d74f27b896f, 0x80deb1fe3b1696b1, 0x9bdc06a725c71235, 0xc19bf174cf692694,
+    0xe49b69c19ef14ad2, 0xefbe4786384f25e3, 0x0fc19dc68b8cd5b5, 0x240ca1cc77ac9c65,
+    0x2de92c6f592b0275, 0x4a7484aa6ea6e483, 0x5cb0a9dcbd41fbd4, 0x76f988da831153b5,
+    0x983e5152ee66dfab, 0xa831c66d2db43210, 0xb00327c898fb213f, 0xbf597fc7beef0ee4,
+    0xc6e00bf33da88fc2, 0xd5a79147930aa725, 0x06ca6351e003826f, 0x142929670a0e6e70,
+    0x27b70a8546d22ffc, 0x2e1b21385c26c926, 0x4d2c6dfc5ac42aed, 0x53380d139d95b3df,
+    0x650a73548baf63de, 0x766a0abb3c77b2a8, 0x81c2c92e47edaee6, 0x92722c851482353b,
+    0xa2bfe8a14cf10364, 0xa81a664bbc423001, 0xc24b8b70d0f89791, 0xc76c51a30654be30,
+    0xd192e819d6ef5218, 0xd69906245565a910, 0xf40e35855771202a, 0x106aa07032bbd1b8,
+    0x19a4c116b8d2d0c8, 0x1e376c085141ab53, 0x2748774cdf8eeb99, 0x34b0bcb5e19b48a8,
+    0x391c0cb3c5c95a63, 0x4ed8aa4ae3418acb, 0x5b9cca4f7763e373, 0x682e6ff3d6b2b8a3,
+    0x748f82ee5defb2fc, 0x78a5636f43172f60, 0x84c87814a1f0ab72, 0x8cc702081a6439ec,
+    0x90befffa23631e28, 0xa4506cebde82bde9, 0xbef9a3f7b2c67915, 0xc67178f2e372532b,
+    0xca273eceea26619c, 0xd186b8c721c0c207, 0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178,
+    0x06f067aa72176fba, 0x0a637dc5a2c898a6, 0x113f9804bef90dae, 0x1b710b35131c471b,
+    0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc, 0x431d67c49c100d4c,
+    0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817,
+];
+
+/// SHA-384 initial hash values (FIPS 180-4 §5.3.4).
+#[rustfmt::skip]
+const SHA384_H0: [u64; 8] = [
+    0xcbbb9d5dc1059ed8, 0x629a292a367cd507, 0x9159015a3070dd17, 0x152fecd8f70e5939,
+    0x67332667ffc00b31, 0x8eb44a8768581511, 0xdb0c2e0d64f98fa7, 0x47b5481dbefa4fa4,
+];
+
+const BLOCK384: usize = 128;
+
+/// One SHA-512 compression over a 128-byte block (FIPS 180-4 §6.4).
+fn sha512_compress(state: &mut [u64; 8], block: &[u8; 128]) {
+    let mut w = [0u64; 80];
+    for i in 0..16 {
+        w[i] = u64::from_be_bytes(block[i * 8..i * 8 + 8].try_into().unwrap());
+    }
+    for i in 16..80 {
+        let s0 = w[i - 15].rotate_right(1) ^ w[i - 15].rotate_right(8) ^ (w[i - 15] >> 7);
+        let s1 = w[i - 2].rotate_right(19) ^ w[i - 2].rotate_right(61) ^ (w[i - 2] >> 6);
+        w[i] = w[i - 16]
+            .wrapping_add(s0)
+            .wrapping_add(w[i - 7])
+            .wrapping_add(s1);
+    }
+    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
+    for i in 0..80 {
+        let s1 = e.rotate_right(14) ^ e.rotate_right(18) ^ e.rotate_right(41);
+        let ch = (e & f) ^ ((!e) & g);
+        let t1 = h
+            .wrapping_add(s1)
+            .wrapping_add(ch)
+            .wrapping_add(SHA512_K[i])
+            .wrapping_add(w[i]);
+        let s0 = a.rotate_right(28) ^ a.rotate_right(34) ^ a.rotate_right(39);
+        let maj = (a & b) ^ (a & c) ^ (b & c);
+        let t2 = s0.wrapping_add(maj);
+        h = g;
+        g = f;
+        f = e;
+        e = d.wrapping_add(t1);
+        d = c;
+        c = b;
+        b = a;
+        a = t1.wrapping_add(t2);
+    }
+    state[0] = state[0].wrapping_add(a);
+    state[1] = state[1].wrapping_add(b);
+    state[2] = state[2].wrapping_add(c);
+    state[3] = state[3].wrapping_add(d);
+    state[4] = state[4].wrapping_add(e);
+    state[5] = state[5].wrapping_add(f);
+    state[6] = state[6].wrapping_add(g);
+    state[7] = state[7].wrapping_add(h);
+}
+
+/// SHA-384 digest (FIPS 180-4): SHA-512 with the SHA-384 IV, truncated to 48 bytes. The padding
+/// length field is 128-bit; capture inputs are far below 2^64 bytes so the high half is always 0.
+pub(crate) fn sha384(msg: &[u8]) -> [u8; 48] {
+    let mut state = SHA384_H0;
+    let bitlen = (msg.len() as u128) * 8;
+    let mut data = msg.to_vec();
+    data.push(0x80);
+    while data.len() % BLOCK384 != BLOCK384 - 16 {
+        data.push(0);
+    }
+    data.extend_from_slice(&bitlen.to_be_bytes()); // 16-byte big-endian length
+    for chunk in data.chunks_exact(BLOCK384) {
+        sha512_compress(&mut state, chunk.try_into().unwrap());
+    }
+    let mut out = [0u8; 48];
+    for i in 0..6 {
+        out[i * 8..i * 8 + 8].copy_from_slice(&state[i].to_be_bytes());
+    }
+    out
+}
+
+/// HMAC-SHA384 per RFC 2104 (block size 128, digest 48).
+pub(crate) fn hmac_sha384(key: &[u8], msg: &[u8]) -> [u8; 48] {
+    let mut k = [0u8; BLOCK384];
+    if key.len() > BLOCK384 {
+        k[..48].copy_from_slice(&sha384(key));
+    } else {
+        k[..key.len()].copy_from_slice(key);
+    }
+    let mut ipad = [0x36u8; BLOCK384];
+    let mut opad = [0x5cu8; BLOCK384];
+    for i in 0..BLOCK384 {
+        ipad[i] ^= k[i];
+        opad[i] ^= k[i];
+    }
+    let mut inner = Vec::with_capacity(BLOCK384 + msg.len());
+    inner.extend_from_slice(&ipad);
+    inner.extend_from_slice(msg);
+    let inner_hash = sha384(&inner);
+    let mut outer = Vec::with_capacity(BLOCK384 + 48);
+    outer.extend_from_slice(&opad);
+    outer.extend_from_slice(&inner_hash);
+    sha384(&outer)
+}
+
+/// HKDF-Expand (RFC 5869 §2.3) with SHA-384 (48-byte PRK / `T(n)` blocks).
+fn hkdf_expand384(prk: &[u8; 48], info: &[u8], out_len: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(out_len);
+    let mut t: Vec<u8> = Vec::new();
+    let mut counter: u8 = 1;
+    while out.len() < out_len {
+        let mut data = Vec::with_capacity(t.len() + info.len() + 1);
+        data.extend_from_slice(&t);
+        data.extend_from_slice(info);
+        data.push(counter);
+        t = hmac_sha384(prk, &data).to_vec();
+        out.extend_from_slice(&t);
+        counter = counter.wrapping_add(1);
+    }
+    out.truncate(out_len);
+    out
+}
+
+/// TLS 1.3 HKDF-Expand-Label (RFC 8446 §7.1) with SHA-384, empty context. The traffic `secret` is
+/// the 48-byte SHA-384-length secret from the key-log.
+pub(crate) fn hkdf_expand_label_sha384(secret: &[u8; 48], label: &str, out_len: usize) -> Vec<u8> {
+    let full = format!("tls13 {label}");
+    let mut info = Vec::with_capacity(2 + 1 + full.len() + 1);
+    info.extend_from_slice(&(out_len as u16).to_be_bytes());
+    info.push(full.len() as u8);
+    info.extend_from_slice(full.as_bytes());
+    info.push(0u8); // empty context
+    hkdf_expand384(secret, &info, out_len)
+}
+
+// ---------------------------------------------------------------------------
+// Vendored ChaCha20-Poly1305 AEAD (RFC 8439).
+//
+// TLS 1.3 `TLS_CHACHA20_POLY1305_SHA256`. Stream cipher + one-time Poly1305 MAC, both from scratch
+// (no GCM/GF(2^128) reuse). Pure compute; wasm-safe.
+// ---------------------------------------------------------------------------
+
+/// ChaCha20 quarter-round (RFC 8439 §2.1) over four state words.
+fn chacha_qr(s: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) {
+    s[a] = s[a].wrapping_add(s[b]);
+    s[d] = (s[d] ^ s[a]).rotate_left(16);
+    s[c] = s[c].wrapping_add(s[d]);
+    s[b] = (s[b] ^ s[c]).rotate_left(12);
+    s[a] = s[a].wrapping_add(s[b]);
+    s[d] = (s[d] ^ s[a]).rotate_left(8);
+    s[c] = s[c].wrapping_add(s[d]);
+    s[b] = (s[b] ^ s[c]).rotate_left(7);
+}
+
+/// The ChaCha20 block function (RFC 8439 §2.3): 64-byte keystream block for `counter`/`nonce`.
+fn chacha20_block(key: &[u8; 32], counter: u32, nonce: &[u8; 12]) -> [u8; 64] {
+    let mut state = [0u32; 16];
+    state[0] = 0x6170_7865;
+    state[1] = 0x3320_646e;
+    state[2] = 0x7962_2d32;
+    state[3] = 0x6b20_6574;
+    for i in 0..8 {
+        state[4 + i] = u32::from_le_bytes(key[i * 4..i * 4 + 4].try_into().unwrap());
+    }
+    state[12] = counter;
+    for i in 0..3 {
+        state[13 + i] = u32::from_le_bytes(nonce[i * 4..i * 4 + 4].try_into().unwrap());
+    }
+    let mut w = state;
+    for _ in 0..10 {
+        // Column rounds, then diagonal rounds (RFC 8439 §2.3.1).
+        chacha_qr(&mut w, 0, 4, 8, 12);
+        chacha_qr(&mut w, 1, 5, 9, 13);
+        chacha_qr(&mut w, 2, 6, 10, 14);
+        chacha_qr(&mut w, 3, 7, 11, 15);
+        chacha_qr(&mut w, 0, 5, 10, 15);
+        chacha_qr(&mut w, 1, 6, 11, 12);
+        chacha_qr(&mut w, 2, 7, 8, 13);
+        chacha_qr(&mut w, 3, 4, 9, 14);
+    }
+    let mut out = [0u8; 64];
+    for i in 0..16 {
+        let v = w[i].wrapping_add(state[i]);
+        out[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+/// ChaCha20 keystream XOR (RFC 8439 §2.4) starting from block counter `counter0`.
+fn chacha20_xor(key: &[u8; 32], counter0: u32, nonce: &[u8; 12], data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len());
+    let mut counter = counter0;
+    for chunk in data.chunks(64) {
+        let ks = chacha20_block(key, counter, nonce);
+        for (i, &b) in chunk.iter().enumerate() {
+            out.push(b ^ ks[i]);
+        }
+        counter = counter.wrapping_add(1);
+    }
+    out
+}
+
+/// Poly1305 one-time authenticator (RFC 8439 §2.5) over `msg` with a 32-byte one-time key.
+/// Radix-2^26 (5 limbs), the classic "donna32" arithmetic mod 2^130 − 5.
+fn poly1305(key: &[u8; 32], msg: &[u8]) -> [u8; 16] {
+    // Clamp r and split into 26-bit limbs.
+    let t0 = u32::from_le_bytes(key[0..4].try_into().unwrap());
+    let t1 = u32::from_le_bytes(key[4..8].try_into().unwrap());
+    let t2 = u32::from_le_bytes(key[8..12].try_into().unwrap());
+    let t3 = u32::from_le_bytes(key[12..16].try_into().unwrap());
+    let r0 = (t0) & 0x3ff_ffff;
+    let r1 = ((t0 >> 26) | (t1 << 6)) & 0x3ff_ff03;
+    let r2 = ((t1 >> 20) | (t2 << 12)) & 0x3ff_c0ff;
+    let r3 = ((t2 >> 14) | (t3 << 18)) & 0x3f0_3fff;
+    let r4 = (t3 >> 8) & 0x00f_ffff;
+    let s1 = r1 * 5;
+    let s2 = r2 * 5;
+    let s3 = r3 * 5;
+    let s4 = r4 * 5;
+
+    let mut h = [0u32; 5];
+    let mut chunks = msg.chunks(16).peekable();
+    while let Some(chunk) = chunks.next() {
+        // Load the block as a 17-byte little-endian number: the bytes, then a 1 bit at position
+        // 8*len (a full 16-byte block sets bit 128 via `hibit`; a short final block embeds the
+        // 0x01 byte directly).
+        let mut blk = [0u8; 16];
+        blk[..chunk.len()].copy_from_slice(chunk);
+        let last = chunks.peek().is_none() && chunk.len() < 16;
+        if last {
+            blk[chunk.len()] = 1;
+        }
+        let hibit: u32 = if last { 0 } else { 1 << 24 };
+        let b0 = u32::from_le_bytes(blk[0..4].try_into().unwrap());
+        let b1 = u32::from_le_bytes(blk[4..8].try_into().unwrap());
+        let b2 = u32::from_le_bytes(blk[8..12].try_into().unwrap());
+        let b3 = u32::from_le_bytes(blk[12..16].try_into().unwrap());
+        h[0] = h[0].wrapping_add(b0 & 0x3ff_ffff);
+        h[1] = h[1].wrapping_add(((b0 >> 26) | (b1 << 6)) & 0x3ff_ffff);
+        h[2] = h[2].wrapping_add(((b1 >> 20) | (b2 << 12)) & 0x3ff_ffff);
+        h[3] = h[3].wrapping_add(((b2 >> 14) | (b3 << 18)) & 0x3ff_ffff);
+        h[4] = h[4].wrapping_add((b3 >> 8) | hibit);
+
+        // h = (h * r) mod (2^130 - 5)
+        let d0 = (h[0] as u64) * (r0 as u64)
+            + (h[1] as u64) * (s4 as u64)
+            + (h[2] as u64) * (s3 as u64)
+            + (h[3] as u64) * (s2 as u64)
+            + (h[4] as u64) * (s1 as u64);
+        let d1 = (h[0] as u64) * (r1 as u64)
+            + (h[1] as u64) * (r0 as u64)
+            + (h[2] as u64) * (s4 as u64)
+            + (h[3] as u64) * (s3 as u64)
+            + (h[4] as u64) * (s2 as u64);
+        let d2 = (h[0] as u64) * (r2 as u64)
+            + (h[1] as u64) * (r1 as u64)
+            + (h[2] as u64) * (r0 as u64)
+            + (h[3] as u64) * (s4 as u64)
+            + (h[4] as u64) * (s3 as u64);
+        let d3 = (h[0] as u64) * (r3 as u64)
+            + (h[1] as u64) * (r2 as u64)
+            + (h[2] as u64) * (r1 as u64)
+            + (h[3] as u64) * (r0 as u64)
+            + (h[4] as u64) * (s4 as u64);
+        let d4 = (h[0] as u64) * (r4 as u64)
+            + (h[1] as u64) * (r3 as u64)
+            + (h[2] as u64) * (r2 as u64)
+            + (h[3] as u64) * (r1 as u64)
+            + (h[4] as u64) * (r0 as u64);
+
+        let mut c = (d0 >> 26) as u32;
+        h[0] = (d0 as u32) & 0x3ff_ffff;
+        let d1 = d1 + c as u64;
+        c = (d1 >> 26) as u32;
+        h[1] = (d1 as u32) & 0x3ff_ffff;
+        let d2 = d2 + c as u64;
+        c = (d2 >> 26) as u32;
+        h[2] = (d2 as u32) & 0x3ff_ffff;
+        let d3 = d3 + c as u64;
+        c = (d3 >> 26) as u32;
+        h[3] = (d3 as u32) & 0x3ff_ffff;
+        let d4 = d4 + c as u64;
+        c = (d4 >> 26) as u32;
+        h[4] = (d4 as u32) & 0x3ff_ffff;
+        h[0] = h[0].wrapping_add(c * 5);
+        c = h[0] >> 26;
+        h[0] &= 0x3ff_ffff;
+        h[1] = h[1].wrapping_add(c);
+    }
+
+    // Final reduction: fully carry, then conditionally subtract p = 2^130 - 5.
+    let mut c = h[1] >> 26;
+    h[1] &= 0x3ff_ffff;
+    h[2] = h[2].wrapping_add(c);
+    c = h[2] >> 26;
+    h[2] &= 0x3ff_ffff;
+    h[3] = h[3].wrapping_add(c);
+    c = h[3] >> 26;
+    h[3] &= 0x3ff_ffff;
+    h[4] = h[4].wrapping_add(c);
+    c = h[4] >> 26;
+    h[4] &= 0x3ff_ffff;
+    h[0] = h[0].wrapping_add(c * 5);
+    c = h[0] >> 26;
+    h[0] &= 0x3ff_ffff;
+    h[1] = h[1].wrapping_add(c);
+
+    // g = h - p (p = 2^130 - 5): add 5, then test the carry out of bit 130.
+    let mut g = [0u32; 5];
+    let mut gc = 5u32;
+    for i in 0..5 {
+        g[i] = h[i].wrapping_add(gc);
+        gc = g[i] >> 26;
+        g[i] &= 0x3ff_ffff;
+    }
+    g[4] = g[4].wrapping_sub(1 << 26);
+    // If g[4] did NOT borrow (top bit clear), h >= p, so use g; else keep h.
+    let mask = (g[4] >> 31).wrapping_sub(1); // 0xffffffff when g is valid (no borrow), else 0
+    for i in 0..5 {
+        h[i] = (h[i] & !mask) | (g[i] & mask);
+    }
+
+    // Serialize h to a 128-bit little-endian number, then add s (the high 16 key bytes).
+    let h0 = h[0] | (h[1] << 26);
+    let h1 = (h[1] >> 6) | (h[2] << 20);
+    let h2 = (h[2] >> 12) | (h[3] << 14);
+    let h3 = (h[3] >> 18) | (h[4] << 8);
+    let mut acc = [h0, h1, h2, h3];
+    let mut carry = 0u64;
+    for (i, a) in acc.iter_mut().enumerate() {
+        let s = u32::from_le_bytes(key[16 + i * 4..16 + i * 4 + 4].try_into().unwrap());
+        let sum = (*a as u64) + (s as u64) + carry;
+        *a = sum as u32;
+        carry = sum >> 32;
+    }
+    let mut tag = [0u8; 16];
+    for i in 0..4 {
+        tag[i * 4..i * 4 + 4].copy_from_slice(&acc[i].to_le_bytes());
+    }
+    tag
+}
+
+/// Constant-time 16-byte equality (tag comparison).
+fn tags_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// AEAD_CHACHA20_POLY1305 authenticated decryption (RFC 8439 §2.8). `ct_and_tag` is ciphertext +
+/// the 16-byte Poly1305 tag. Returns the plaintext only if the tag verifies, else `None`.
+pub(crate) fn chacha20_poly1305_open(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    ct_and_tag: &[u8],
+) -> Option<Vec<u8>> {
+    if ct_and_tag.len() < 16 {
+        return None;
+    }
+    let (ct, tag) = ct_and_tag.split_at(ct_and_tag.len() - 16);
+
+    // One-time Poly1305 key = first 32 bytes of ChaCha20 block 0.
+    let block0 = chacha20_block(key, 0, nonce);
+    let mut poly_key = [0u8; 32];
+    poly_key.copy_from_slice(&block0[..32]);
+
+    // MAC input: AAD || pad16 || ciphertext || pad16 || le64(aad_len) || le64(ct_len).
+    let mut mac = Vec::with_capacity(aad.len() + ct.len() + 64);
+    mac.extend_from_slice(aad);
+    while mac.len() % 16 != 0 {
+        mac.push(0);
+    }
+    mac.extend_from_slice(ct);
+    while mac.len() % 16 != 0 {
+        mac.push(0);
+    }
+    mac.extend_from_slice(&(aad.len() as u64).to_le_bytes());
+    mac.extend_from_slice(&(ct.len() as u64).to_le_bytes());
+
+    if !tags_eq(&poly1305(&poly_key, &mac), tag) {
+        return None;
+    }
+    // Payload encryption uses counter 1 onward (block 0 made the Poly key).
+    Some(chacha20_xor(key, 1, nonce, ct))
 }
 
 #[cfg(test)]
@@ -515,5 +1015,203 @@ mod tests {
             &bad_tag,
         );
         assert_eq!(bad, None, "tampered empty-ct tag must fail");
+    }
+
+    // ── SHA-384 / HMAC-SHA384 (for TLS_AES_256_GCM_SHA384 HKDF) ──────────────────
+
+    /// SHA-384("abc") — FIPS 180-4 / NIST CAVP known answer.
+    #[test]
+    fn sha384_fips180_abc() {
+        assert_eq!(
+            to_hex(&sha384(b"abc")),
+            "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed\
+             8086072ba1e7cc2358baeca134c825a7"
+        );
+        // A two-block message (>112 bytes) exercises multi-block padding; FIPS 180-4 §appendix.
+        let msg = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+        assert_eq!(
+            to_hex(&sha384(msg)),
+            "09330c33f71147e83d192fc782cd1b4753111b173b3b05d22fa08086e3b0f712\
+             fcc7c71a557e2db966c3e9fa91746039"
+        );
+    }
+
+    /// RFC 4231 Test Case 2: HMAC-SHA-384(key="Jefe", "what do ya want for nothing?").
+    #[test]
+    fn hmac_sha384_rfc4231_tc2() {
+        let got = hmac_sha384(b"Jefe", b"what do ya want for nothing?");
+        assert_eq!(
+            to_hex(&got),
+            "af45d2e376484031617f78d2b58a6b1b9c7ef464f5a01b47e42ec3736322445e\
+             8e2240ca5e69e2c78b3239ecfab21649"
+        );
+    }
+
+    /// hkdf_expand_label_sha384 must return exactly the requested length (the AES-256 key/iv sizes).
+    #[test]
+    fn hkdf_expand_label_sha384_lengths() {
+        let secret = [0x42u8; 48];
+        assert_eq!(hkdf_expand_label_sha384(&secret, "key", 32).len(), 32);
+        assert_eq!(hkdf_expand_label_sha384(&secret, "iv", 12).len(), 12);
+    }
+
+    // ── AES-256 / AES-256-GCM ────────────────────────────────────────────────────
+
+    /// AES-256 single-block encryption, FIPS-197 Appendix C.3.
+    #[test]
+    fn aes256_fips197_c3() {
+        let key = hex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+        let pt = hex("00112233445566778899aabbccddeeff");
+        let ct = Aes256::new(key[..].try_into().unwrap()).encrypt_block(pt[..].try_into().unwrap());
+        assert_eq!(to_hex(&ct), "8ea2b7ca516745bfeafc49904b496089");
+    }
+
+    /// AES-256-GCM decrypt/verify, McGrew–Viega GCM Test Case 15 (AES-256, 64-byte P, empty AAD).
+    ///   K  = feffe9928665731c6d6a8f9467308308 feffe9928665731c6d6a8f9467308308
+    ///   IV = cafebabefacedbaddecaf888
+    ///   T  = b094dac5d93471bdec1a502270e3cc6c
+    #[test]
+    fn aes256_gcm_open_gcm_tc15() {
+        let key = hex("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308");
+        let iv = hex("cafebabefacedbaddecaf888");
+        let aad: Vec<u8> = Vec::new();
+        let ct = hex(
+            "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa\
+             8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662898015ad",
+        );
+        let tag = hex("b094dac5d93471bdec1a502270e3cc6c");
+        let expected_pt = hex(
+            "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72\
+             1c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255",
+        );
+
+        let mut ct_and_tag = ct.clone();
+        ct_and_tag.extend_from_slice(&tag);
+        let got = aes256_gcm_open(
+            key[..].try_into().unwrap(),
+            iv[..].try_into().unwrap(),
+            &aad,
+            &ct_and_tag,
+        );
+        assert_eq!(
+            got,
+            Some(expected_pt),
+            "AES-256-GCM open recovers plaintext"
+        );
+
+        // Tamper one tag byte -> reject.
+        let mut tampered = ct.clone();
+        let mut bad_tag = tag.clone();
+        bad_tag[0] ^= 0x01;
+        tampered.extend_from_slice(&bad_tag);
+        assert_eq!(
+            aes256_gcm_open(
+                key[..].try_into().unwrap(),
+                iv[..].try_into().unwrap(),
+                &aad,
+                &tampered,
+            ),
+            None,
+            "tampered AES-256-GCM tag must fail"
+        );
+    }
+
+    // ── ChaCha20 / Poly1305 / AEAD ───────────────────────────────────────────────
+
+    /// ChaCha20 block function, RFC 8439 §2.3.2 (key 00..1f, counter 1, nonce 00000009...).
+    #[test]
+    fn chacha20_block_rfc8439_232() {
+        let key = hex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+        let nonce = hex("000000090000004a00000000");
+        let block = chacha20_block(
+            key[..].try_into().unwrap(),
+            1,
+            nonce[..].try_into().unwrap(),
+        );
+        assert_eq!(
+            to_hex(&block),
+            "10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c0680304\
+             22aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e"
+        );
+    }
+
+    /// Poly1305, RFC 8439 §2.5.2 ("Cryptographic Forum Research Group").
+    #[test]
+    fn poly1305_rfc8439_252() {
+        let key = hex("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b");
+        let tag = poly1305(
+            key[..].try_into().unwrap(),
+            b"Cryptographic Forum Research Group",
+        );
+        assert_eq!(to_hex(&tag), "a8061dc1305136c6c22b8baf0c0127a9");
+    }
+
+    /// AEAD_CHACHA20_POLY1305 decrypt, RFC 8439 §2.8.2 (recovers the sunscreen plaintext).
+    #[test]
+    fn chacha20_poly1305_open_rfc8439_282() {
+        let key = hex("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+        let nonce = hex("070000004041424344454647");
+        let aad = hex("50515253c0c1c2c3c4c5c6c7");
+        let ct = hex(
+            "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d6\
+             3dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b36\
+             92ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc\
+             3ff4def08e4b7a9de576d26586cec64b6116",
+        );
+        let tag = hex("1ae10b594f09e26a7e902ecbd0600691");
+        let expected = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+
+        let mut ct_and_tag = ct.clone();
+        ct_and_tag.extend_from_slice(&tag);
+        let got = chacha20_poly1305_open(
+            key[..].try_into().unwrap(),
+            nonce[..].try_into().unwrap(),
+            &aad,
+            &ct_and_tag,
+        );
+        assert_eq!(
+            got.as_deref(),
+            Some(&expected[..]),
+            "ChaCha20-Poly1305 open"
+        );
+
+        // Tamper one ciphertext byte -> reject.
+        let mut tampered = ct.clone();
+        tampered[0] ^= 0x01;
+        tampered.extend_from_slice(&tag);
+        assert_eq!(
+            chacha20_poly1305_open(
+                key[..].try_into().unwrap(),
+                nonce[..].try_into().unwrap(),
+                &aad,
+                &tampered,
+            ),
+            None,
+            "tampered ChaCha20-Poly1305 must fail"
+        );
+    }
+
+    /// The 32-bit GCM CTR counter wraps (NIST SP 800-38D §7.1) rather than panicking; the upper
+    /// 96 bits of the counter block are untouched.
+    #[test]
+    fn incr32_wraps_at_u32_max() {
+        let mut block = [0u8; 16];
+        block[..12].copy_from_slice(&[0xaa; 12]);
+        block[12..].copy_from_slice(&0xffff_ffffu32.to_be_bytes());
+        incr32(&mut block);
+        assert_eq!(u32::from_be_bytes(block[12..16].try_into().unwrap()), 0);
+        assert!(
+            block[..12].iter().all(|&b| b == 0xaa),
+            "high 96 bits unchanged"
+        );
+    }
+
+    /// Poly1305 over an empty message: no blocks are absorbed, so the tag is exactly `s`
+    /// (the high 16 key bytes). Exercises the zero-block path the RFC vectors don't.
+    #[test]
+    fn poly1305_empty_message_is_s() {
+        let key = hex("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b");
+        let tag = poly1305(key[..].try_into().unwrap(), b"");
+        assert_eq!(tag.to_vec(), key[16..32].to_vec());
     }
 }

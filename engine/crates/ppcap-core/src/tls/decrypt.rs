@@ -1,16 +1,18 @@
 //! TLS 1.3 record decryption from key-log secrets.
 //!
-//! Phase 1: the `TLS_AES_128_GCM_SHA256` suite, which reuses the engine's existing RFC-tested
-//! crypto (HKDF / `hkdf_expand_label` / AES-128-GCM, vendored for QUIC). Given a per-direction
-//! traffic secret (from the key-log, e.g. `CLIENT_TRAFFIC_SECRET_0`), derive the AEAD key + iv via
-//! HKDF-Expand-Label (RFC 8446 §7.3), then decrypt each `application_data` record:
+//! Supports all three TLS 1.3 AEAD suites — `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`,
+//! and `TLS_CHACHA20_POLY1305_SHA256` — over the engine's vendored crypto (HKDF-SHA256/384, AES-128/
+//! 256-GCM, ChaCha20-Poly1305; see [`crate::quic::crypto`], each RFC-vector-tested). Given a
+//! per-direction traffic secret (from the key-log, e.g. `CLIENT_TRAFFIC_SECRET_0`), derive the AEAD
+//! key + iv via HKDF-Expand-Label (RFC 8446 §7.3 — SHA-384 for the AES-256 suite), then decrypt each
+//! `application_data` record:
 //!   * per-record nonce = `iv XOR left-pad(seq)`  (RFC 8446 §5.3),
 //!   * additional data = the 5-byte record header (RFC 8446 §5.2),
-//!   * AES-128-GCM open,
+//!   * AEAD open,
 //!   * strip the TLS 1.3 inner content-type + zero padding (RFC 8446 §5.4).
 //!
-//! Verified against the RFC 8448 §3 published handshake trace. Pure compute, wasm-safe. Higher
-//! suites (AES-256-GCM, ChaCha20-Poly1305) and TLS 1.2 are later phases.
+//! AES-128-GCM is cross-checked against the RFC 8448 §3 published trace end-to-end. Pure compute,
+//! wasm-safe. TLS 1.2 (a different key schedule) is a later phase.
 //!
 //! [`decrypt_flow`] is the flow-level entry the wasm `decrypt_tls_flow` export drives: given a
 //! TLS connection's two cleartext byte streams (each direction's reassembled TCP payload) and a
@@ -21,11 +23,15 @@ use base64::Engine as _;
 use serde::Serialize;
 
 use super::keylog::KeyLog;
-use crate::quic::crypto::{aes128_gcm_open, hkdf_expand_label};
+use crate::quic::crypto::{
+    aes128_gcm_open, aes256_gcm_open, chacha20_poly1305_open, hkdf_expand_label,
+    hkdf_expand_label_sha384,
+};
 
-/// The only TLS 1.3 suite this phase decrypts (HKDF-SHA256 + AES-128-GCM). The crypto for it is
-/// already RFC-verified; AES-256-GCM / ChaCha20-Poly1305 are later phases.
+/// The TLS 1.3 cipher suites this build decrypts, all over vendored RFC-tested crypto.
 const TLS_AES_128_GCM_SHA256: u16 = 0x1301;
+const TLS_AES_256_GCM_SHA384: u16 = 0x1302;
+const TLS_CHACHA20_POLY1305_SHA256: u16 = 0x1303;
 /// TLS 1.3 wire version word (`supported_versions`-unmasked).
 const TLS13_VERSION: u16 = 0x0304;
 /// TLS `ContentType` values (RFC 8446 §5.1). The same registry tags both the outer record's
@@ -44,22 +50,55 @@ const MAX_DECRYPTED_RECORDS: usize = 2000;
 /// handshake records (defense in depth — the caller already caps the input at 4 MiB/direction).
 const MAX_HANDSHAKE_BYTES: usize = 512 * 1024;
 
-/// AEAD state for one direction of a TLS 1.3 connection (TLS_AES_128_GCM_SHA256).
+/// The negotiated AEAD + its derived per-direction key.
+enum Tls13Aead {
+    Aes128Gcm([u8; 16]),
+    Aes256Gcm([u8; 32]),
+    ChaCha20Poly1305([u8; 32]),
+}
+
+/// AEAD state for one direction of a TLS 1.3 connection.
 pub(crate) struct Tls13Keys {
-    key: [u8; 16],
+    aead: Tls13Aead,
     iv: [u8; 12],
     /// Record sequence number for this direction; starts at 0, increments per decrypted record.
     seq: u64,
 }
 
 impl Tls13Keys {
-    /// Derive the AES-128-GCM key + iv from a 32-byte TLS 1.3 traffic secret (RFC 8446 §7.3).
-    /// Returns None if the secret isn't the SHA-256 length (32 bytes).
+    /// Derive the per-direction AEAD key + iv for `cipher` from a TLS 1.3 traffic secret
+    /// (RFC 8446 §7.3): 32-byte secret + HKDF-SHA256 for the SHA-256 suites, 48-byte secret +
+    /// HKDF-SHA384 for `TLS_AES_256_GCM_SHA384`. Returns None on an unsupported suite or a secret
+    /// whose length doesn't match the suite's hash.
+    pub(crate) fn for_cipher(cipher: u16, secret: &[u8]) -> Option<Self> {
+        let (aead, iv) = match cipher {
+            TLS_AES_128_GCM_SHA256 => {
+                let s: &[u8; 32] = secret.try_into().ok()?;
+                let key: [u8; 16] = hkdf_expand_label(s, "key", 16).try_into().ok()?;
+                let iv: [u8; 12] = hkdf_expand_label(s, "iv", 12).try_into().ok()?;
+                (Tls13Aead::Aes128Gcm(key), iv)
+            }
+            TLS_CHACHA20_POLY1305_SHA256 => {
+                let s: &[u8; 32] = secret.try_into().ok()?;
+                let key: [u8; 32] = hkdf_expand_label(s, "key", 32).try_into().ok()?;
+                let iv: [u8; 12] = hkdf_expand_label(s, "iv", 12).try_into().ok()?;
+                (Tls13Aead::ChaCha20Poly1305(key), iv)
+            }
+            TLS_AES_256_GCM_SHA384 => {
+                let s: &[u8; 48] = secret.try_into().ok()?;
+                let key: [u8; 32] = hkdf_expand_label_sha384(s, "key", 32).try_into().ok()?;
+                let iv: [u8; 12] = hkdf_expand_label_sha384(s, "iv", 12).try_into().ok()?;
+                (Tls13Aead::Aes256Gcm(key), iv)
+            }
+            _ => return None,
+        };
+        Some(Tls13Keys { aead, iv, seq: 0 })
+    }
+
+    /// Back-compat convenience for the AES-128-GCM suite (used by the RFC 8448 trace test).
+    #[cfg(test)]
     pub(crate) fn aes128_gcm(secret: &[u8]) -> Option<Self> {
-        let secret: &[u8; 32] = secret.try_into().ok()?;
-        let key: [u8; 16] = hkdf_expand_label(secret, "key", 16).try_into().ok()?;
-        let iv: [u8; 12] = hkdf_expand_label(secret, "iv", 12).try_into().ok()?;
-        Some(Tls13Keys { key, iv, seq: 0 })
+        Self::for_cipher(TLS_AES_128_GCM_SHA256, secret)
     }
 
     /// Per-record nonce: the write_iv XOR the 64-bit sequence number, left-padded with zeros to the
@@ -87,7 +126,12 @@ impl Tls13Keys {
         if len != body.len() || body.len() < 16 {
             return None;
         }
-        let inner = aes128_gcm_open(&self.key, &self.nonce(), header, body)?;
+        let nonce = self.nonce();
+        let inner = match &self.aead {
+            Tls13Aead::Aes128Gcm(k) => aes128_gcm_open(k, &nonce, header, body)?,
+            Tls13Aead::Aes256Gcm(k) => aes256_gcm_open(k, &nonce, header, body)?,
+            Tls13Aead::ChaCha20Poly1305(k) => chacha20_poly1305_open(k, &nonce, header, body)?,
+        };
         self.seq += 1;
         // TLSInnerPlaintext = content || ContentType(1) || zeros*. The last non-zero byte is the
         // real content type; everything before it is the content.
@@ -207,12 +251,16 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
             sessions,
         );
     }
-    if cipher != TLS_AES_128_GCM_SHA256 {
+    if !matches!(
+        cipher,
+        TLS_AES_128_GCM_SHA256 | TLS_AES_256_GCM_SHA384 | TLS_CHACHA20_POLY1305_SHA256
+    ) {
         return TlsDecryptResult::unsupported(
             Some(version),
             Some(cipher),
             &format!(
-                "cipher suite {} not yet supported (only TLS_AES_128_GCM_SHA256)",
+                "cipher suite {} not supported (TLS 1.3 AES-128-GCM / AES-256-GCM / \
+                 ChaCha20-Poly1305 only)",
                 super::cipher_label(cipher)
             ),
             sessions,
@@ -240,6 +288,7 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
         client_buf,
         keylog.secret(&client_random, "CLIENT_HANDSHAKE_TRAFFIC_SECRET"),
         client_app,
+        cipher,
         "c2s",
         &mut records,
         &mut truncated,
@@ -248,6 +297,7 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
         server_buf,
         keylog.secret(&client_random, "SERVER_HANDSHAKE_TRAFFIC_SECRET"),
         server_app,
+        cipher,
         "s2c",
         &mut records,
         &mut truncated,
@@ -278,12 +328,13 @@ fn decrypt_direction(
     buf: &[u8],
     hs_secret: Option<&[u8]>,
     app_secret: Option<&[u8]>,
+    cipher: u16,
     dir: &'static str,
     out: &mut Vec<TlsDecryptRecord>,
     truncated: &mut bool,
 ) {
-    let mut hs_keys = hs_secret.and_then(Tls13Keys::aes128_gcm);
-    let mut app_keys = app_secret.and_then(Tls13Keys::aes128_gcm);
+    let mut hs_keys = hs_secret.and_then(|s| Tls13Keys::for_cipher(cipher, s));
+    let mut app_keys = app_secret.and_then(|s| Tls13Keys::for_cipher(cipher, s));
     let mut in_app = hs_keys.is_none();
     let mut hs_msgs: Vec<u8> = Vec::new();
     let mut hs_scan = 0usize; // offset of the next unparsed handshake message in `hs_msgs`
@@ -416,8 +467,12 @@ mod tests {
         let mut keys = Tls13Keys::aes128_gcm(&secret).expect("derive keys");
 
         // The published "key expanded" / "iv expanded" for the client app-data write keys.
+        let key = match &keys.aead {
+            Tls13Aead::Aes128Gcm(k) => k.to_vec(),
+            _ => panic!("expected AES-128-GCM AEAD"),
+        };
         assert_eq!(
-            keys.key.to_vec(),
+            key,
             hex("17422dda596ed5d9acd890e3c63f5051"),
             "key derivation"
         );
@@ -578,14 +633,42 @@ mod tests {
     fn decrypt_flow_reports_unsupported_cipher() {
         let random = [0x11; 32];
         let client_buf = client_hello_record(&random);
-        let server_buf = server_hello_record(0x1302); // TLS_AES_256_GCM_SHA384 (not yet supported)
+        let server_buf = server_hello_record(0x1304); // TLS_AES_128_CCM_SHA256 (not supported)
         let keylog = keylog_for(&random, "CLIENT_TRAFFIC_SECRET_0", &[0u8; 32]);
 
         let res = decrypt_flow(&client_buf, &server_buf, &keylog);
         assert!(!res.supported);
-        assert_eq!(res.cipher, Some(0x1302));
+        assert_eq!(res.cipher, Some(0x1304));
         assert!(res.records.is_empty());
-        assert!(res.reason.unwrap().contains("not yet supported"));
+        assert!(res.reason.unwrap().contains("not supported"));
+    }
+
+    /// The AES-256-GCM (SHA-384) and ChaCha20-Poly1305 suites now pass the gate: a flow that
+    /// negotiates them is `supported` (only the per-session secret is missing here).
+    #[test]
+    fn decrypt_flow_accepts_aes256_and_chacha20_suites() {
+        for cipher in [0x1302u16, 0x1303u16] {
+            let random = [0x33; 32];
+            let client_buf = client_hello_record(&random);
+            let server_buf = server_hello_record(cipher);
+            // No secret for this session → supported, but session_found = false (not "unsupported").
+            let keylog = keylog_for(&[0x99; 32], "CLIENT_TRAFFIC_SECRET_0", &[0u8; 32]);
+            let res = decrypt_flow(&client_buf, &server_buf, &keylog);
+            assert!(res.supported, "cipher {cipher:#06x} must be supported");
+            assert!(!res.session_found);
+            assert_eq!(res.cipher, Some(cipher));
+        }
+    }
+
+    /// `Tls13Keys::for_cipher` builds the right AEAD and enforces the suite's secret length.
+    #[test]
+    fn for_cipher_dispatch_and_secret_length() {
+        assert!(Tls13Keys::for_cipher(0x1301, &[0u8; 32]).is_some()); // AES-128-GCM-SHA256
+        assert!(Tls13Keys::for_cipher(0x1303, &[0u8; 32]).is_some()); // ChaCha20-Poly1305-SHA256
+        assert!(Tls13Keys::for_cipher(0x1302, &[0u8; 48]).is_some()); // AES-256-GCM-SHA384 (48 B)
+        assert!(Tls13Keys::for_cipher(0x1302, &[0u8; 32]).is_none()); // wrong length for SHA-384
+        assert!(Tls13Keys::for_cipher(0x1301, &[0u8; 48]).is_none()); // wrong length for SHA-256
+        assert!(Tls13Keys::for_cipher(0x1304, &[0u8; 32]).is_none()); // unsupported suite
     }
 
     #[test]
