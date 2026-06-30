@@ -20,6 +20,7 @@ use crate::model::packet::{AppProto, PacketMeta, Transport};
 
 mod cert;
 pub(crate) mod decrypt;
+pub(crate) mod decrypted_http;
 mod der;
 pub(crate) mod keylog;
 

@@ -582,6 +582,74 @@ fn header_u64(head: &[u8], name: &[u8]) -> Option<u64> {
     std::str::from_utf8(v).ok()?.parse().ok()
 }
 
+// ---------------------------------------------------------------------------------------------
+// Carving over an in-order cleartext HTTP stream (decrypted TLS)
+// ---------------------------------------------------------------------------------------------
+
+/// One file carved from an in-order cleartext HTTP stream — like [`CarveObservation`] but without
+/// the flow IPs (the caller already knows which flow it decrypted).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StreamCarve {
+    pub sha256: [u8; 32],
+    pub size: u64,
+    pub known_bad: bool,
+    pub signatures: Vec<SigHit>,
+}
+
+/// Cap on files carved from one decrypted stream.
+const MAX_STREAM_CARVES: usize = 256;
+
+/// Carve files from an in-order cleartext **HTTP/1.1 response** stream — e.g. the decrypted
+/// server→client direction of a TLS flow (key-log decryption). Walks length-delimited, uncompressed
+/// responses (keep-alive aware), hashing and signature-scanning each body, so a malware download
+/// that was hidden inside HTTPS is surfaced exactly like a cleartext one. Compressed / chunked /
+/// non-length-delimited bodies are skipped (the same policy as the live packet carver). The body is
+/// hashed + scanned in place; nothing is retained.
+pub(crate) fn carve_http_stream(stream: &[u8]) -> Vec<StreamCarve> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos < stream.len() && out.len() < MAX_STREAM_CARVES {
+        // Find the next response status line (`HTTP/…`).
+        let rel = match stream[pos..].windows(5).position(|w| w == b"HTTP/") {
+            Some(r) => r,
+            None => break,
+        };
+        let start = pos + rel;
+        let rest = &stream[start..];
+        let hdr_end = match find_crlfcrlf(rest) {
+            Some(p) => p,
+            None => break, // headers not yet complete → stop
+        };
+        let body_start = start + hdr_end + 4;
+        match parse_response_headers(&rest[..hdr_end]) {
+            Some(plan) => {
+                let body_len = plan.content_len as usize;
+                let body_end = match body_start.checked_add(body_len) {
+                    Some(e) if e <= stream.len() => e,
+                    _ => break, // body not fully present
+                };
+                let body = &stream[body_start..body_end];
+                let mut hasher = Sha256Stream::new();
+                hasher.update(body);
+                let sha256 = hasher.finalize_bytes();
+                let mut scanner = SigScanner::new();
+                scanner.feed(body);
+                out.push(StreamCarve {
+                    sha256,
+                    size: body_len as u64,
+                    known_bad: known_bad(&sha256),
+                    signatures: scanner.hits(),
+                });
+                pos = body_end;
+            }
+            // Not carvable (compressed / chunked / no length): skip past these headers and keep
+            // scanning for the next response.
+            None => pos = body_start,
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -739,6 +807,31 @@ mod tests {
             "benign text matched: {:?}",
             sig_labels(&obs)
         );
+    }
+
+    #[test]
+    fn carve_http_stream_walks_keepalive_and_scans_bodies() {
+        // Two responses on one (decrypted) stream: a benign one, then a PE with a UPX marker.
+        let mut stream = http_resp(b"plain text first response").to_vec();
+        stream.extend_from_slice(&http_resp(b"MZ\x90\x00 second file, UPX! packed payload"));
+        let carves = carve_http_stream(&stream);
+        assert_eq!(carves.len(), 2, "both responses carved");
+        assert!(carves[0].signatures.is_empty());
+        assert!(carves[1]
+            .signatures
+            .iter()
+            .any(|s| s.label == "PE/DOS executable"));
+        assert!(carves[1]
+            .signatures
+            .iter()
+            .any(|s| s.label == "UPX-packed executable" && s.suspicious));
+    }
+
+    #[test]
+    fn carve_http_stream_handles_oversized_content_length_without_panic() {
+        // A Content-Length far over the cap is skipped (not carved) and does not overflow/loop.
+        let stream = b"HTTP/1.1 200 OK\r\nContent-Length: 18446744073709551615\r\n\r\nshort body";
+        assert!(carve_http_stream(stream).is_empty());
     }
 
     #[test]

@@ -44,6 +44,9 @@ function normalizeDecrypt(wire: WireTlsDecryptResult): TlsDecryptResult {
     supported: wire.supported, sessionFound: wire.session_found,
     version: wire.version, cipher: wire.cipher, cipherName: wire.cipher_name,
     keylogSessions: wire.keylog_sessions, truncated: wire.truncated, reason: wire.reason, records,
+    appProto: wire.app_proto ?? null,
+    http: wire.http ?? [],
+    carved: wire.carved ?? [],
   };
 }
 

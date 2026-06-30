@@ -173,20 +173,31 @@ describe("PacketInspector", () => {
     expect(onDecrypt).not.toHaveBeenCalled();
   });
 
-  it("decrypts a key-log and renders the recovered records", async () => {
+  it("decrypts a key-log: re-analyzed HTTP, carved files, and raw records", async () => {
     const u = userEvent.setup();
     const onDecrypt = vi.fn().mockResolvedValue({
       supported: true, sessionFound: true, version: 0x0304, cipher: 0x1301,
       cipherName: "TLS_AES_128_GCM_SHA256", keylogSessions: 1, truncated: false, reason: null,
-      records: [{ direction: "c2s", seq: 0, innerType: 23, plaintext: new TextEncoder().encode("GET /secret HTTP/2") }],
+      records: [{ direction: "c2s", seq: 0, innerType: 23, plaintext: new TextEncoder().encode("GET /payload.bin HTTP/1.1") }],
+      appProto: "http/1.1",
+      http: [{ method: "GET", target: "/payload.bin", host: "evil.test", status: 200, content_type: "application/octet-stream", resp_bytes: 4096 }],
+      carved: [{ sha256: "a".repeat(64), size: 4096, known_bad: false, signatures: ["PE/DOS executable", "UPX-packed executable"] }],
     });
     render(<PacketInspector flow={flow} packets={makePackets()} loading={false} error={null} onClose={() => {}} onDecrypt={onDecrypt} />);
     await u.click(screen.getByRole("button", { name: "decrypt" }));
-
     await u.upload(screen.getByLabelText(/SSLKEYLOGFILE/i), keylogFile());
 
-    expect(await screen.findByText(/GET \/secret HTTP\/2/)).toBeInTheDocument();
-    expect(screen.getByText(/client → server/)).toBeInTheDocument();
+    // Default sub-view is the re-analyzed HTTP: the request hidden inside HTTPS.
+    expect(await screen.findByText("/payload.bin")).toBeInTheDocument();
+    expect(screen.getByText("evil.test")).toBeInTheDocument();
+
+    // Files sub-view: the download carved from the decrypted response, with signature chips.
+    await u.click(screen.getByRole("button", { name: /^Files/ }));
+    expect(screen.getByText("UPX-packed executable")).toBeInTheDocument();
+
+    // Records sub-view: the raw decrypted plaintext.
+    await u.click(screen.getByRole("button", { name: /^Records/ }));
+    expect(screen.getByText(/GET \/payload.bin HTTP\/1.1/)).toBeInTheDocument();
     expect(onDecrypt).toHaveBeenCalledOnce();
   });
 

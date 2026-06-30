@@ -576,6 +576,24 @@ export interface WireTlsDecryptRecord {
   plaintext_b64: string;
 }
 
+/** One reconstructed HTTP/1.1 transaction hidden inside the TLS flow. */
+export interface DecryptedHttpTxn {
+  method: string;
+  target: string;
+  host: string;
+  status: number;
+  content_type: string;
+  resp_bytes: number;
+}
+
+/** A file carved from the decrypted server→client HTTP responses. */
+export interface DecryptedCarvedFile {
+  sha256: string;
+  size: number;
+  known_bad: boolean;
+  signatures: string[];
+}
+
 /** The result of `decrypt_tls_flow`: decrypted records for one TLS 1.3 flow (or why not). */
 export interface WireTlsDecryptResult {
   supported: boolean;
@@ -587,6 +605,9 @@ export interface WireTlsDecryptResult {
   truncated: boolean;
   reason: string | null;
   records: WireTlsDecryptRecord[];
+  app_proto?: string | null;
+  http?: DecryptedHttpTxn[];
+  carved?: DecryptedCarvedFile[];
 }
 
 /** Normalized decrypted TLS record (inner plaintext decoded to bytes). */
@@ -607,6 +628,12 @@ export interface TlsDecryptResult {
   truncated: boolean;
   reason: string | null; // why nothing decrypted, when records is empty
   records: TlsDecryptRecord[];
+  /** Re-analysis of the decrypted plaintext: app protocol (`http/1.1`, `http/2`, …). */
+  appProto: string | null;
+  /** Reconstructed HTTP/1.1 transactions hidden inside the TLS flow. */
+  http: DecryptedHttpTxn[];
+  /** Files carved from the decrypted server→client HTTP responses. */
+  carved: DecryptedCarvedFile[];
 }
 
 /** Active capture source — drives whether packet drill-down is available and which backend serves it. */

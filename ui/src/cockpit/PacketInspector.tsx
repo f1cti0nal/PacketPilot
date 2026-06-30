@@ -203,6 +203,7 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
   const [result, setResult] = useState<TlsDecryptResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [hex, setHex] = useState(false);
+  const [sub, setSub] = useState<"http" | "files" | "records">("http");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -213,6 +214,7 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
     setBusy(true);
     setErr(null);
     setResult(null);
+    setSub("http");
     try {
       const text = await file.text();
       setResult(await onDecrypt(text));
@@ -222,6 +224,8 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
       setBusy(false);
     }
   };
+
+  const decrypted = result && result.supported && result.sessionFound && result.records.length > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -236,11 +240,20 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
             {keylogName}{result && result.keylogSessions > 0 ? ` · ${result.keylogSessions} session${result.keylogSessions === 1 ? "" : "s"}` : ""}
           </span>
         )}
-        {result && result.records.length > 0 && (
-          <button type="button" onClick={() => setHex((h) => !h)} aria-pressed={hex}
-            className="ml-auto shrink-0 rounded-[var(--r-micro)] border border-[var(--color-border)] px-2 py-0.5 text-[var(--color-text-dim)] hover:text-[var(--color-text)]">{hex ? "Text" : "Hex"}</button>
-        )}
       </div>
+
+      {decrypted && (
+        <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-1.5 text-xs">
+          {([["http", `HTTP${result.http.length ? ` ${result.http.length}` : ""}`], ["files", `Files${result.carved.length ? ` ${result.carved.length}` : ""}`], ["records", `Records ${result.records.length}`]] as const).map(([k, lbl]) => (
+            <button key={k} type="button" onClick={() => setSub(k)} aria-pressed={sub === k}
+              className={cn("rounded-[var(--r-micro)] px-2 py-0.5", sub === k ? "bg-[var(--color-surface-2)] text-[var(--color-text)]" : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]")}>{lbl}</button>
+          ))}
+          {sub === "records" && (
+            <button type="button" onClick={() => setHex((h) => !h)} aria-pressed={hex}
+              className="ml-auto shrink-0 rounded-[var(--r-micro)] border border-[var(--color-border)] px-2 py-0.5 text-[var(--color-text-dim)] hover:text-[var(--color-text)]">{hex ? "Text" : "Hex"}</button>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {busy ? (
@@ -249,14 +262,18 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
           <div className="text-sm text-[var(--color-text)]">{err}</div>
         ) : !result ? (
           <div className="max-w-prose space-y-2 text-sm text-[var(--color-text-faint)]">
-            <p>Load the <span className="font-mono-num">SSLKEYLOGFILE</span> your browser or app wrote while this capture ran to decrypt the TLS&nbsp;1.3 session. The key-log never leaves your browser.</p>
-            <p className="t-tag">This build decrypts <span className="font-mono-num">TLS_AES_128_GCM_SHA256</span>; other suites are reported but not yet decrypted.</p>
+            <p>Load the <span className="font-mono-num">SSLKEYLOGFILE</span> your browser or app wrote while this capture ran to decrypt the TLS session. The key-log never leaves your browser.</p>
+            <p className="t-tag">Decrypts TLS 1.2 + 1.3 (AEAD &amp; CBC). The decrypted HTTP is re-analyzed — requests, and any file downloaded inside HTTPS — right here.</p>
           </div>
-        ) : !result.supported || !result.sessionFound || result.records.length === 0 ? (
+        ) : !decrypted ? (
           <div className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-2 text-sm text-[var(--color-text-dim)]">
             {result.reason ?? "No application records decrypted for this flow."}
             {result.cipherName && <div className="t-tag mt-1 text-[var(--color-text-faint)]">negotiated {result.cipherName}</div>}
           </div>
+        ) : sub === "http" ? (
+          <DecryptedHttpList result={result} />
+        ) : sub === "files" ? (
+          <DecryptedFilesList files={result.carved} />
         ) : (
           <>
             {result.truncated && <div className="mb-2 t-tag text-[var(--color-text-faint)]">Showing the first {humanNumber(result.records.length)} records — output capped.</div>}
@@ -284,6 +301,66 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
         )}
       </div>
     </div>
+  );
+}
+
+/** The HTTP/1.1 transactions reconstructed from the decrypted TLS flow. */
+function DecryptedHttpList({ result }: { result: TlsDecryptResult }) {
+  if (result.http.length === 0) {
+    const note =
+      result.appProto === "http/2"
+        ? "This flow is HTTP/2 — its HPACK-compressed binary framing isn't decoded yet. The raw decrypted records are under Records."
+        : "The decrypted application data isn't HTTP/1.1, so no requests were reconstructed. See Records for the raw plaintext.";
+    return <div className="text-sm text-[var(--color-text-faint)]">{note}</div>;
+  }
+  return (
+    <ul className="flex flex-col divide-y divide-[var(--color-border)] text-xs">
+      {result.http.map((t, i) => (
+        <li key={i} className="flex flex-col gap-0.5 py-1.5">
+          <div className="flex items-baseline gap-2">
+            <span className="shrink-0 font-mono-num font-medium text-[var(--color-accent)]">{t.method || "—"}</span>
+            <span className="min-w-0 truncate font-mono-num text-[var(--color-text)]" title={`${t.host}${t.target}`}>{t.target || "/"}</span>
+            {t.status > 0 && (
+              <span className="ml-auto shrink-0 font-mono-num text-[var(--color-text-dim)]">{t.status}</span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-1.5 text-[0.65rem] text-[var(--color-text-dim)]">
+            {t.host && <span className="truncate font-mono-num" title={t.host}>{t.host}</span>}
+            {t.content_type && <span className="truncate text-[var(--color-text-faint)]">{t.content_type}</span>}
+            {t.resp_bytes > 0 && <span className="font-mono-num text-[var(--color-text-faint)]">{humanBytes(t.resp_bytes)}</span>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Files carved from the decrypted server→client HTTP responses (downloads hidden inside HTTPS). */
+function DecryptedFilesList({ files }: { files: TlsDecryptResult["carved"] }) {
+  if (files.length === 0) {
+    return <div className="text-sm text-[var(--color-text-faint)]">No length-delimited files were carved from the decrypted responses.</div>;
+  }
+  return (
+    <ul className="flex flex-col divide-y divide-[var(--color-border)] text-xs">
+      {files.map((f, i) => (
+        <li key={`${f.sha256}-${i}`} className="flex flex-col gap-0.5 py-1.5">
+          <div className="flex items-baseline gap-2">
+            <span className="min-w-0 truncate font-mono-num text-[var(--color-text)]" title={f.sha256}>{f.sha256.slice(0, 20)}…</span>
+            {f.known_bad && (
+              <span className="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase" style={{ color: "var(--color-sev-critical)" }}>known-bad</span>
+            )}
+            <span className="ml-auto shrink-0 font-mono-num text-[0.65rem] text-[var(--color-text-faint)]">{humanBytes(f.size)}</span>
+          </div>
+          {f.signatures.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {f.signatures.slice(0, 6).map((s) => (
+                <span key={s} className="rounded bg-[var(--color-surface-2)] px-1 text-[0.6rem] text-[var(--color-text-dim)]">{s}</span>
+              ))}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

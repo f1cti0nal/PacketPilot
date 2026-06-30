@@ -166,6 +166,17 @@ pub struct TlsDecryptRecord {
     pub plaintext_b64: String,
 }
 
+/// A file carved from the decrypted server→client HTTP stream (key-log decryption re-analysis):
+/// a download that was hidden inside HTTPS, now hashed + signature-scanned like a cleartext one.
+#[derive(Debug, Clone, Serialize)]
+pub struct DecryptedCarvedFile {
+    pub sha256: String,
+    pub size: u64,
+    pub known_bad: bool,
+    /// Content-signature labels matched against the body (file type + suspicious markers).
+    pub signatures: Vec<String>,
+}
+
 /// The outcome of decrypting one TLS flow with a key-log.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct TlsDecryptResult {
@@ -186,6 +197,12 @@ pub struct TlsDecryptResult {
     /// Why nothing decrypted, when `records` is empty (unsupported suite, no secret, …).
     pub reason: Option<String>,
     pub records: Vec<TlsDecryptRecord>,
+    /// Re-analysis of the decrypted plaintext: the application protocol (`http/1.1`, `http/2`, …).
+    pub app_proto: Option<String>,
+    /// Reconstructed HTTP/1.1 transactions hidden inside the TLS flow.
+    pub http: Vec<super::decrypted_http::HttpTxn>,
+    /// Files carved from the decrypted server→client HTTP responses.
+    pub carved: Vec<DecryptedCarvedFile>,
 }
 
 impl TlsDecryptResult {
@@ -205,6 +222,52 @@ impl TlsDecryptResult {
             ..Default::default()
         }
     }
+}
+
+/// Concatenate one direction's decrypted application_data (inner type 23) back into its cleartext
+/// stream, in record order.
+fn reassemble(records: &[TlsDecryptRecord], dir: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    for r in records
+        .iter()
+        .filter(|r| r.direction == dir && r.inner_type == 0x17)
+    {
+        if let Ok(b) = base64::engine::general_purpose::STANDARD.decode(r.plaintext_b64.as_bytes())
+        {
+            out.extend_from_slice(&b);
+        }
+    }
+    out
+}
+
+/// Re-analyze a flow's decrypted records: reassemble each direction, detect the application protocol,
+/// and (for HTTP/1.1) parse the transactions + carve any files hidden in the responses.
+fn analyze_decrypted(
+    records: &[TlsDecryptRecord],
+) -> (
+    Option<String>,
+    Vec<super::decrypted_http::HttpTxn>,
+    Vec<DecryptedCarvedFile>,
+) {
+    let c2s = reassemble(records, "c2s");
+    let s2c = reassemble(records, "s2c");
+    let proto = super::decrypted_http::detect_proto(&c2s);
+    let (http, carved) = if proto == "http/1.1" {
+        let txns = super::decrypted_http::parse_transactions(&c2s, &s2c);
+        let files = crate::carve::carve_http_stream(&s2c)
+            .into_iter()
+            .map(|c| DecryptedCarvedFile {
+                sha256: crate::analyze::hex_of(&c.sha256),
+                size: c.size,
+                known_bad: c.known_bad,
+                signatures: c.signatures.iter().map(|s| s.label.to_string()).collect(),
+            })
+            .collect();
+        (txns, files)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    (Some(proto.to_string()), http, carved)
 }
 
 /// Decrypt a single TLS flow from its two cleartext byte streams (`fwd` = query src→dst, `rev` =
@@ -338,6 +401,7 @@ fn decrypt_flow_tls13(
         &mut truncated,
     );
 
+    let (app_proto, http, carved) = analyze_decrypted(&records);
     TlsDecryptResult {
         supported: true,
         session_found: true,
@@ -348,6 +412,9 @@ fn decrypt_flow_tls13(
         truncated,
         reason: None,
         records,
+        app_proto,
+        http,
+        carved,
     }
 }
 
@@ -562,6 +629,7 @@ fn decrypt_flow_tls12(
         &mut truncated,
     );
 
+    let (app_proto, http, carved) = analyze_decrypted(&records);
     TlsDecryptResult {
         supported: true,
         session_found: true,
@@ -572,6 +640,9 @@ fn decrypt_flow_tls12(
         truncated,
         reason: None,
         records,
+        app_proto,
+        http,
+        carved,
     }
 }
 
@@ -1154,6 +1225,48 @@ mod tests {
         let res = decrypt_flow(&[], &[], &KeyLog::parse(""));
         assert!(res.supported && !res.session_found);
         assert!(res.reason.unwrap().contains("no key-log"));
+    }
+
+    /// Re-analysis of the decrypted plaintext: an HTTP/1.1 request+response inside the TLS records
+    /// is parsed into a transaction and a PE-with-UPX body is carved + signature-scanned.
+    #[test]
+    fn analyze_decrypted_reads_http_and_carves_files() {
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let req = b"GET /payload.bin HTTP/1.1\r\nHost: evil.test\r\nUser-Agent: x\r\n\r\n".to_vec();
+        let body = b"MZ\x90\x00 UPX! packed payload bytes";
+        let mut resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        resp.extend_from_slice(body);
+
+        let rec = |dir: &'static str, pt: &[u8]| TlsDecryptRecord {
+            direction: dir,
+            seq: 0,
+            inner_type: 0x17, // application_data
+            plaintext_len: pt.len(),
+            plaintext_b64: b64(pt),
+        };
+        let records = vec![rec("c2s", &req), rec("s2c", &resp)];
+        let (proto, http, carved) = analyze_decrypted(&records);
+
+        assert_eq!(proto.as_deref(), Some("http/1.1"));
+        assert_eq!(http.len(), 1);
+        assert_eq!(http[0].method, "GET");
+        assert_eq!(http[0].target, "/payload.bin");
+        assert_eq!(http[0].host, "evil.test");
+        assert_eq!(http[0].status, 200);
+        assert_eq!(carved.len(), 1);
+        assert_eq!(carved[0].size, body.len() as u64);
+        assert!(carved[0]
+            .signatures
+            .iter()
+            .any(|s| s == "PE/DOS executable"));
+        assert!(carved[0]
+            .signatures
+            .iter()
+            .any(|s| s == "UPX-packed executable"));
     }
 
     // ── TLS 1.2 ──────────────────────────────────────────────────────────────────

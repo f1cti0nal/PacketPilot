@@ -88,7 +88,8 @@ pub use packets::{
 };
 pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};
-pub use tls::decrypt::{TlsDecryptRecord, TlsDecryptResult};
+pub use tls::decrypt::{DecryptedCarvedFile, TlsDecryptRecord, TlsDecryptResult};
+pub use tls::decrypted_http::HttpTxn;
 
 #[cfg(feature = "online")]
 pub use crate::enrich::online::{
