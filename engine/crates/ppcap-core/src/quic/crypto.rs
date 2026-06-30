@@ -409,6 +409,139 @@ pub(crate) fn aes256_gcm_open(
 }
 
 // ---------------------------------------------------------------------------
+// AES decryption (inverse cipher) + AES-CBC, for the TLS 1.2 CBC suites.
+//
+// References: FIPS-197 §5.3 (InvCipher), NIST SP 800-38A §6.2 (CBC).
+// ---------------------------------------------------------------------------
+
+/// Inverse AES S-box, derived from [`SBOX`] at compile time (`INV_SBOX[SBOX[i]] == i`), so there is
+/// no second 256-byte table to mistranscribe.
+const INV_SBOX: [u8; 256] = {
+    let mut inv = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        inv[SBOX[i] as usize] = i as u8;
+        i += 1;
+    }
+    inv
+};
+
+/// GF(2^8) multiply (Russian-peasant), reduction polynomial 0x1b — for InvMixColumns coefficients.
+fn gmul(mut a: u8, mut b: u8) -> u8 {
+    let mut p = 0u8;
+    for _ in 0..8 {
+        if b & 1 != 0 {
+            p ^= a;
+        }
+        let hi = a & 0x80;
+        a <<= 1;
+        if hi != 0 {
+            a ^= 0x1b;
+        }
+        b >>= 1;
+    }
+    p
+}
+
+/// InvSubBytes: apply the inverse S-box to every byte.
+fn inv_sub_bytes(state: &mut [u8; 16]) {
+    for b in state.iter_mut() {
+        *b = INV_SBOX[*b as usize];
+    }
+}
+
+/// InvShiftRows: cyclically shift row `r` RIGHT by `r` (inverse of [`shift_rows`]).
+fn inv_shift_rows(state: &mut [u8; 16]) {
+    let s = *state;
+    for r in 1..4 {
+        for c in 0..4 {
+            state[4 * c + r] = s[4 * ((c + 4 - r) % 4) + r];
+        }
+    }
+}
+
+/// InvMixColumns (FIPS-197 §5.3.3): per-column multiply by the inverse matrix (0e,0b,0d,09).
+fn inv_mix_columns(state: &mut [u8; 16]) {
+    for c in 0..4 {
+        let i = 4 * c;
+        let a0 = state[i];
+        let a1 = state[i + 1];
+        let a2 = state[i + 2];
+        let a3 = state[i + 3];
+        state[i] = gmul(a0, 14) ^ gmul(a1, 11) ^ gmul(a2, 13) ^ gmul(a3, 9);
+        state[i + 1] = gmul(a0, 9) ^ gmul(a1, 14) ^ gmul(a2, 11) ^ gmul(a3, 13);
+        state[i + 2] = gmul(a0, 13) ^ gmul(a1, 9) ^ gmul(a2, 14) ^ gmul(a3, 11);
+        state[i + 3] = gmul(a0, 11) ^ gmul(a1, 13) ^ gmul(a2, 9) ^ gmul(a3, 14);
+    }
+}
+
+/// Decrypt one 16-byte block under the round-key schedule `rk` with `nr` rounds (FIPS-197 §5.3,
+/// the straightforward inverse cipher).
+fn aes_decrypt_block(input: &[u8; 16], rk: &[[u8; 4]], nr: usize) -> [u8; 16] {
+    let mut state = *input;
+    add_round_key(&mut state, rk, nr);
+    for round in (1..nr).rev() {
+        inv_shift_rows(&mut state);
+        inv_sub_bytes(&mut state);
+        add_round_key(&mut state, rk, round);
+        inv_mix_columns(&mut state);
+    }
+    inv_shift_rows(&mut state);
+    inv_sub_bytes(&mut state);
+    add_round_key(&mut state, rk, 0);
+    state
+}
+
+impl Aes128 {
+    /// Decrypt one 16-byte block (FIPS-197 §5.3).
+    pub(crate) fn decrypt_block(&self, input: &[u8; 16]) -> [u8; 16] {
+        aes_decrypt_block(input, &self.rk, 10)
+    }
+}
+
+impl Aes256 {
+    /// Decrypt one 16-byte block (FIPS-197 §5.3, 14 rounds).
+    pub(crate) fn decrypt_block(&self, input: &[u8; 16]) -> [u8; 16] {
+        aes_decrypt_block(input, &self.rk, 14)
+    }
+}
+
+/// AES-CBC decryption (SP 800-38A §6.2), generic over the block-decrypt function. `ct` length must
+/// be a non-zero multiple of 16. Returns `None` otherwise (no unpadding here — TLS strips its own).
+fn cbc_decrypt(
+    decrypt_block: impl Fn(&[u8; 16]) -> [u8; 16],
+    iv: &[u8; 16],
+    ct: &[u8],
+) -> Option<Vec<u8>> {
+    if ct.is_empty() || ct.len() % 16 != 0 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(ct.len());
+    let mut prev = *iv;
+    for chunk in ct.chunks_exact(16) {
+        let block: [u8; 16] = chunk.try_into().unwrap();
+        let dec = decrypt_block(&block);
+        for i in 0..16 {
+            out.push(dec[i] ^ prev[i]);
+        }
+        prev = block;
+    }
+    Some(out)
+}
+
+/// AES-128-CBC decryption.
+pub(crate) fn aes128_cbc_decrypt(key: &[u8; 16], iv: &[u8; 16], ct: &[u8]) -> Option<Vec<u8>> {
+    let aes = Aes128::new(key);
+    cbc_decrypt(|b| aes.decrypt_block(b), iv, ct)
+}
+
+/// AES-256-CBC decryption.
+pub(crate) fn aes256_cbc_decrypt(key: &[u8; 32], iv: &[u8; 16], ct: &[u8]) -> Option<Vec<u8>> {
+    let aes = Aes256::new(key);
+    cbc_decrypt(|b| aes.decrypt_block(b), iv, ct)
+}
+
+// ---------------------------------------------------------------------------
 // Vendored SHA-384 + HMAC-SHA384 + HKDF-Expand-Label-SHA384.
 //
 // TLS 1.3 `TLS_AES_256_GCM_SHA384` runs its key schedule over SHA-384, so the AEAD key/iv come
@@ -571,6 +704,95 @@ pub(crate) fn hkdf_expand_label_sha384(secret: &[u8; 48], label: &str, out_len: 
     info.extend_from_slice(full.as_bytes());
     info.push(0u8); // empty context
     hkdf_expand384(secret, &info, out_len)
+}
+
+// ---------------------------------------------------------------------------
+// Vendored SHA-1 + HMAC-SHA1 (FIPS 180-4 / RFC 2104).
+//
+// Needed for the TLS 1.2 CBC suites with an HMAC-SHA1 record MAC (`*_CBC_SHA`), the most common
+// legacy AES-CBC suites. SHA-1 is used here ONLY to verify record integrity while decrypting a
+// capture the analyst already holds the keys for — never to produce a new signature.
+// ---------------------------------------------------------------------------
+
+/// SHA-1 digest (FIPS 180-4 §6.1).
+pub(crate) fn sha1(msg: &[u8]) -> [u8; 20] {
+    let mut h: [u32; 5] = [
+        0x6745_2301,
+        0xEFCD_AB89,
+        0x98BA_DCFE,
+        0x1032_5476,
+        0xC3D2_E1F0,
+    ];
+    let bitlen = (msg.len() as u64) * 8;
+    let mut data = msg.to_vec();
+    data.push(0x80);
+    while data.len() % 64 != 56 {
+        data.push(0);
+    }
+    data.extend_from_slice(&bitlen.to_be_bytes());
+    for block in data.chunks_exact(64) {
+        let mut w = [0u32; 80];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes(block[i * 4..i * 4 + 4].try_into().unwrap());
+        }
+        for i in 16..80 {
+            w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e] = h;
+        for (i, &wi) in w.iter().enumerate() {
+            let (f, k) = match i {
+                0..=19 => ((b & c) | ((!b) & d), 0x5A82_7999u32),
+                20..=39 => (b ^ c ^ d, 0x6ED9_EBA1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC),
+                _ => (b ^ c ^ d, 0xCA62_C1D6),
+            };
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(wi);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
+        }
+        h[0] = h[0].wrapping_add(a);
+        h[1] = h[1].wrapping_add(b);
+        h[2] = h[2].wrapping_add(c);
+        h[3] = h[3].wrapping_add(d);
+        h[4] = h[4].wrapping_add(e);
+    }
+    let mut out = [0u8; 20];
+    for i in 0..5 {
+        out[i * 4..i * 4 + 4].copy_from_slice(&h[i].to_be_bytes());
+    }
+    out
+}
+
+/// HMAC-SHA1 per RFC 2104 (block size 64, digest 20).
+pub(crate) fn hmac_sha1(key: &[u8], msg: &[u8]) -> [u8; 20] {
+    let mut k = [0u8; BLOCK];
+    if key.len() > BLOCK {
+        k[..20].copy_from_slice(&sha1(key));
+    } else {
+        k[..key.len()].copy_from_slice(key);
+    }
+    let mut ipad = [0x36u8; BLOCK];
+    let mut opad = [0x5cu8; BLOCK];
+    for i in 0..BLOCK {
+        ipad[i] ^= k[i];
+        opad[i] ^= k[i];
+    }
+    let mut inner = Vec::with_capacity(BLOCK + msg.len());
+    inner.extend_from_slice(&ipad);
+    inner.extend_from_slice(msg);
+    let inner_hash = sha1(&inner);
+    let mut outer = Vec::with_capacity(BLOCK + 20);
+    outer.extend_from_slice(&opad);
+    outer.extend_from_slice(&inner_hash);
+    sha1(&outer)
 }
 
 // ---------------------------------------------------------------------------
@@ -836,8 +1058,8 @@ fn poly1305(key: &[u8; 32], msg: &[u8]) -> [u8; 16] {
     tag
 }
 
-/// Constant-time 16-byte equality (tag comparison).
-fn tags_eq(a: &[u8], b: &[u8]) -> bool {
+/// Constant-time equality for MAC/tag comparison (length-checked, no early exit).
+pub(crate) fn tags_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -931,6 +1153,35 @@ pub(crate) fn aes128_gcm_seal(key: &[u8; 16], nonce: &[u8; 12], aad: &[u8], pt: 
 pub(crate) fn aes256_gcm_seal(key: &[u8; 32], nonce: &[u8; 12], aad: &[u8], pt: &[u8]) -> Vec<u8> {
     let aes = Aes256::new(key);
     gcm_seal(|b| aes.encrypt_block(b), nonce, aad, pt)
+}
+
+/// AES-CBC encryption (inverse of [`cbc_decrypt`]); `pt` length must be a multiple of 16.
+#[cfg(test)]
+fn cbc_encrypt(encrypt_block: impl Fn(&[u8; 16]) -> [u8; 16], iv: &[u8; 16], pt: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pt.len());
+    let mut prev = *iv;
+    for chunk in pt.chunks_exact(16) {
+        let mut x = [0u8; 16];
+        for i in 0..16 {
+            x[i] = chunk[i] ^ prev[i];
+        }
+        let enc = encrypt_block(&x);
+        out.extend_from_slice(&enc);
+        prev = enc;
+    }
+    out
+}
+
+#[cfg(test)]
+pub(crate) fn aes128_cbc_encrypt(key: &[u8; 16], iv: &[u8; 16], pt: &[u8]) -> Vec<u8> {
+    let aes = Aes128::new(key);
+    cbc_encrypt(|b| aes.encrypt_block(b), iv, pt)
+}
+
+#[cfg(test)]
+pub(crate) fn aes256_cbc_encrypt(key: &[u8; 32], iv: &[u8; 16], pt: &[u8]) -> Vec<u8> {
+    let aes = Aes256::new(key);
+    cbc_encrypt(|b| aes.encrypt_block(b), iv, pt)
 }
 
 #[cfg(test)]
@@ -1375,6 +1626,85 @@ mod tests {
         let mut bad = aes256_gcm_seal(&k32, &nonce, aad, pt);
         bad[0] ^= 0x01;
         assert!(aes256_gcm_open(&k32, &nonce, aad, &bad).is_none());
+    }
+
+    // ── SHA-1 / HMAC-SHA1 (TLS 1.2 *_CBC_SHA suites) ─────────────────────────────
+
+    /// SHA-1("abc") — FIPS 180-4 known answer; plus the empty-string KAT.
+    #[test]
+    fn sha1_fips180_kats() {
+        assert_eq!(
+            to_hex(&sha1(b"abc")),
+            "a9993e364706816aba3e25717850c26c9cd0d89d"
+        );
+        assert_eq!(
+            to_hex(&sha1(b"")),
+            "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+        );
+        // A two-block message (>56 bytes) exercises the multi-block padding.
+        assert_eq!(
+            to_hex(&sha1(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
+            "84983e441c3bd26ebaae4aa1f95129e5e54670f1"
+        );
+    }
+
+    /// HMAC-SHA1, RFC 2202 Test Case 2 (key="Jefe").
+    #[test]
+    fn hmac_sha1_rfc2202_tc2() {
+        let got = hmac_sha1(b"Jefe", b"what do ya want for nothing?");
+        assert_eq!(to_hex(&got), "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79");
+    }
+
+    // ── AES decryption + AES-CBC ─────────────────────────────────────────────────
+
+    /// AES-128/256 single-block decryption: the inverse of the FIPS-197 C.1/C.3 encrypt vectors.
+    #[test]
+    fn aes_decrypt_fips197_inverse() {
+        let key128 = hex("000102030405060708090a0b0c0d0e0f");
+        let pt = hex("00112233445566778899aabbccddeeff");
+        let ct128 = hex("69c4e0d86a7b0430d8cdb78070b4c55a");
+        assert_eq!(
+            Aes128::new(key128[..].try_into().unwrap())
+                .decrypt_block(ct128[..].try_into().unwrap())
+                .to_vec(),
+            pt
+        );
+        let key256 = hex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+        let ct256 = hex("8ea2b7ca516745bfeafc49904b496089");
+        assert_eq!(
+            Aes256::new(key256[..].try_into().unwrap())
+                .decrypt_block(ct256[..].try_into().unwrap())
+                .to_vec(),
+            pt
+        );
+    }
+
+    /// AES-128-CBC decryption, NIST SP 800-38A §F.2.2 (two blocks).
+    #[test]
+    fn aes128_cbc_decrypt_sp80038a() {
+        let key = hex("2b7e151628aed2a6abf7158809cf4f3c");
+        let iv = hex("000102030405060708090a0b0c0d0e0f");
+        let ct = hex("7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b2");
+        let expected = hex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51");
+        assert_eq!(
+            aes128_cbc_decrypt(key[..].try_into().unwrap(), iv[..].try_into().unwrap(), &ct),
+            Some(expected)
+        );
+    }
+
+    /// AES-CBC encrypt↔decrypt round-trip (the test-only encrypt helper inverts decrypt).
+    #[test]
+    fn aes_cbc_roundtrips() {
+        let iv = [0x24u8; 16];
+        let pt: Vec<u8> = (0u8..48).collect(); // 3 blocks
+        let k16 = [0x11u8; 16];
+        let ct = aes128_cbc_encrypt(&k16, &iv, &pt);
+        assert_eq!(aes128_cbc_decrypt(&k16, &iv, &ct), Some(pt.clone()));
+        let k32 = [0x22u8; 32];
+        let ct = aes256_cbc_encrypt(&k32, &iv, &pt);
+        assert_eq!(aes256_cbc_decrypt(&k32, &iv, &ct), Some(pt));
     }
 
     /// TLS 1.2 PRF-SHA256, the canonical IETF TLS WG test vector (secret/seed = 16 bytes,
