@@ -1,5 +1,6 @@
 import React, { Suspense } from "react";
 import ReactDOM from "react-dom/client";
+import { Analytics } from "@vercel/analytics/react";
 import App from "./App";
 import { Landing } from "./landing/Landing";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
@@ -45,6 +46,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       ) : (
         <Landing />
       )}
+      <Analytics />
     </ErrorBoundary>
   </React.StrictMode>,
 );
