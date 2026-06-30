@@ -83,11 +83,12 @@ pub use model::summary::{
     TimeBucket, TopTalker,
 };
 pub use packets::{
-    carve_pcap, extract_flow_packets, CarveQuery, CarveResult, CarveTarget, FlowPackets,
-    PacketCaps, PacketQuery, PacketRecord,
+    carve_pcap, decrypt_tls_flow, extract_flow_packets, CarveQuery, CarveResult, CarveTarget,
+    FlowPackets, PacketCaps, PacketQuery, PacketRecord,
 };
 pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};
+pub use tls::decrypt::{TlsDecryptRecord, TlsDecryptResult};
 
 #[cfg(feature = "online")]
 pub use crate::enrich::online::{

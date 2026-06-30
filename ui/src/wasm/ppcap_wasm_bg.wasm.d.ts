@@ -6,6 +6,7 @@ export const apply_domain_reputation: (a: number, b: number, c: number, d: numbe
 export const apply_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const apply_rules: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const carve_pcap: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const decrypt_tls_flow: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const export_cef: (a: number, b: number) => [number, number, number, number];
 export const export_csv: (a: number, b: number) => [number, number, number, number];
 export const export_misp: (a: number, b: number, c: bigint) => [number, number, number, number];

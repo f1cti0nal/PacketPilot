@@ -1,23 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { X, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
+import { X, ArrowRight, ArrowLeft, Loader2, KeyRound } from "lucide-react";
 import { cn } from "../lib/cn";
 import { humanBytes, humanNumber } from "../lib/format";
 import { hexLines } from "../lib/hexdump";
 import { FOCUSABLE } from "../lib/useDialogA11y";
 import { tcpFlagsLabel } from "../lib/tcpFlags";
 import { buildStream, streamText } from "../lib/followStream";
-import type { FlowPackets, FlowRow, PacketRow } from "../types";
+import type { FlowPackets, FlowRow, PacketRow, TlsDecryptResult } from "../types";
 
 const ROW_H = 28;
 
-export function PacketInspector({ flow, packets, loading, error, onClose }: {
+export function PacketInspector({ flow, packets, loading, error, onClose, onDecrypt }: {
   flow: FlowRow; packets: FlowPackets | null; loading: boolean; error: string | null; onClose: () => void;
+  /** When provided, a "Decrypt" tab offers TLS key-log decryption for this flow (browser path). */
+  onDecrypt?: (keylogText: string) => Promise<TlsDecryptResult>;
 }) {
   const [sel, setSel] = useState(0);
-  const [mode, setMode] = useState<"packets" | "stream">("packets");
+  const [mode, setMode] = useState<"packets" | "stream" | "decrypt">("packets");
   const [streamHex, setStreamHex] = useState(false);
   useEffect(() => { setSel(0); }, [packets]);
+  // Open each newly-inspected flow on the packets tab (the decrypt tab may not apply to it).
+  useEffect(() => { setMode("packets"); }, [flow.flowId]);
   const closeRef = useRef<HTMLButtonElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
@@ -59,7 +63,7 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
           </div>
           {rows.length > 0 && (
             <div className="flex shrink-0 rounded-[var(--r-tile)] border border-[var(--color-border)] p-0.5 text-xs" role="group" aria-label="Inspector view">
-              {(["packets", "stream"] as const).map((m) => (
+              {(["packets", "stream", ...(onDecrypt ? (["decrypt"] as const) : [])] as Array<"packets" | "stream" | "decrypt">).map((m) => (
                 <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m}
                   className={cn("rounded-[var(--r-micro)] px-2 py-0.5 capitalize",
                     mode === m ? "bg-[var(--color-surface-2)] text-[var(--color-text)]" : "text-[var(--color-text-faint)] hover:text-[var(--color-text)]")}>
@@ -75,6 +79,8 @@ export function PacketInspector({ flow, packets, loading, error, onClose }: {
           <div className="flex flex-1 items-center justify-center gap-2 text-[var(--color-text-faint)]"><Loader2 size={16} className="animate-spin" /><span>Extracting packets…</span></div>
         ) : error ? (
           <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-[var(--color-text-faint)]">{error}</div>
+        ) : mode === "decrypt" && onDecrypt ? (
+          <DecryptView key={flow.flowId} onDecrypt={onDecrypt} />
         ) : rows.length === 0 ? (
           <div className="flex flex-1 items-center justify-center text-sm text-[var(--color-text-faint)]">No packets matched this flow.</div>
         ) : mode === "stream" ? (
@@ -171,6 +177,110 @@ function StreamView({ rows, listTruncated, hex, onToggleHex }: {
               )}
             </div>
           ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Human label for a TLS 1.3 inner content type. */
+function innerTypeLabel(t: number): string {
+  if (t === 23) return "application data";
+  if (t === 22) return "handshake";
+  if (t === 21) return "alert";
+  if (t === 20) return "change cipher spec";
+  return `type ${t}`;
+}
+
+/**
+ * TLS 1.3 key-log decryption panel. The analyst loads the `SSLKEYLOGFILE` their browser/app wrote
+ * during capture; we decrypt this flow's application records in the browser (`onDecrypt`) — the
+ * key-log and capture never leave the page. Decrypted records render like the Follow Stream view.
+ */
+function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise<TlsDecryptResult> }) {
+  const [keylogName, setKeylogName] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<TlsDecryptResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [hex, setHex] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be re-selected after an error
+    if (!file) return;
+    setKeylogName(file.name);
+    setBusy(true);
+    setErr(null);
+    setResult(null);
+    try {
+      const text = await file.text();
+      setResult(await onDecrypt(text));
+    } catch (e2) {
+      setErr(String((e2 as Error)?.message ?? e2));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <input ref={fileRef} type="file" accept=".txt,.log,.keys,text/plain" className="hidden" onChange={onFile} aria-label="SSLKEYLOGFILE key-log file" />
+      <div className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-2 text-xs">
+        <button type="button" onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] px-2.5 py-1 text-[var(--color-text-dim)] hover:text-[var(--color-text)]">
+          <KeyRound size={13} aria-hidden /> {keylogName ? "Load different key-log" : "Load key-log"}
+        </button>
+        {keylogName && (
+          <span className="min-w-0 truncate text-[var(--color-text-faint)]">
+            {keylogName}{result && result.keylogSessions > 0 ? ` · ${result.keylogSessions} session${result.keylogSessions === 1 ? "" : "s"}` : ""}
+          </span>
+        )}
+        {result && result.records.length > 0 && (
+          <button type="button" onClick={() => setHex((h) => !h)} aria-pressed={hex}
+            className="ml-auto shrink-0 rounded-[var(--r-micro)] border border-[var(--color-border)] px-2 py-0.5 text-[var(--color-text-dim)] hover:text-[var(--color-text)]">{hex ? "Text" : "Hex"}</button>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {busy ? (
+          <div className="flex items-center gap-2 text-sm text-[var(--color-text-faint)]"><Loader2 size={16} className="animate-spin" /> Decrypting…</div>
+        ) : err ? (
+          <div className="text-sm text-[var(--color-text)]">{err}</div>
+        ) : !result ? (
+          <div className="max-w-prose space-y-2 text-sm text-[var(--color-text-faint)]">
+            <p>Load the <span className="font-mono-num">SSLKEYLOGFILE</span> your browser or app wrote while this capture ran to decrypt the TLS&nbsp;1.3 session. The key-log never leaves your browser.</p>
+            <p className="t-tag">This build decrypts <span className="font-mono-num">TLS_AES_128_GCM_SHA256</span>; other suites are reported but not yet decrypted.</p>
+          </div>
+        ) : !result.supported || !result.sessionFound || result.records.length === 0 ? (
+          <div className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-2 text-sm text-[var(--color-text-dim)]">
+            {result.reason ?? "No application records decrypted for this flow."}
+            {result.cipherName && <div className="t-tag mt-1 text-[var(--color-text-faint)]">negotiated {result.cipherName}</div>}
+          </div>
+        ) : (
+          <>
+            {result.truncated && <div className="mb-2 t-tag text-[var(--color-text-faint)]">Showing the first {humanNumber(result.records.length)} records — output capped.</div>}
+            {result.records.map((r, i) => (
+              <div key={i} className="mb-2 pl-2" style={{ borderLeft: `2px solid ${r.direction === "c2s" ? "var(--color-accent)" : "var(--color-border-strong)"}` }}>
+                <div className="t-tag mb-0.5 text-[var(--color-text-faint)]">
+                  {r.direction === "c2s" ? "client → server" : "server → client"} · #{r.seq} · {innerTypeLabel(r.innerType)} · {humanBytes(r.plaintext.length)}
+                </div>
+                {hex ? (
+                  <table className="font-mono-num text-xs leading-5"><tbody>
+                    {hexLines(r.plaintext).map((ln) => (
+                      <tr key={ln.offset}>
+                        <td className="pr-4 text-[var(--color-text-faint)]">{ln.offset}</td>
+                        <td className="whitespace-pre pr-4 text-[var(--color-text)]">{ln.hex}</td>
+                        <td className="whitespace-pre text-[var(--color-text-faint)]">{ln.ascii}</td>
+                      </tr>
+                    ))}
+                  </tbody></table>
+                ) : (
+                  <pre className="whitespace-pre-wrap break-all font-mono-num text-xs leading-5" style={{ color: r.direction === "c2s" ? "var(--color-text)" : "var(--color-text-dim)" }}>{streamText(r.plaintext)}</pre>
+                )}
+              </div>
+            ))}
+          </>
         )}
       </div>
     </div>

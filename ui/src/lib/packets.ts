@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import type { ActiveSource, CarveQuery, FlowPackets, FlowRow, PacketRow, WireFlowPackets } from "../types";
+import type { ActiveSource, CarveQuery, FlowPackets, FlowRow, PacketRow, TlsDecryptRecord, TlsDecryptResult, WireFlowPackets, WireTlsDecryptResult } from "../types";
 import type { ExportResult } from "./platform";
 import { isTauri, extractPacketsViaTauri, downloadBinary } from "./platform";
-import { extractPacketsViaWasm, carvePcapViaWasm } from "./wasmEngine";
+import { extractPacketsViaWasm, carvePcapViaWasm, decryptTlsFlowViaWasm } from "./wasmEngine";
 
 export class PacketsUnavailableError extends Error {
   constructor() { super("Packets are only available for captures analyzed from a pcap."); this.name = "PacketsUnavailableError"; }
@@ -34,6 +34,32 @@ function normalize(wire: WireFlowPackets, flow: FlowRow): FlowPackets {
     payloadLen: p.payload_len, payload: b64ToBytes(p.payload_b64), payloadTruncated: p.payload_truncated,
   }));
   return { total: wire.total, truncated: wire.truncated, packets };
+}
+
+function normalizeDecrypt(wire: WireTlsDecryptResult): TlsDecryptResult {
+  const records: TlsDecryptRecord[] = wire.records.map((r) => ({
+    direction: r.direction, seq: r.seq, innerType: r.inner_type, plaintext: b64ToBytes(r.plaintext_b64),
+  }));
+  return {
+    supported: wire.supported, sessionFound: wire.session_found,
+    version: wire.version, cipher: wire.cipher, cipherName: wire.cipher_name,
+    keylogSessions: wire.keylog_sessions, truncated: wire.truncated, reason: wire.reason, records,
+  };
+}
+
+/**
+ * Decrypt a single TLS 1.3 flow using the analyst's NSS key-log (`SSLKEYLOGFILE` text).
+ * Browser-only (WASM path): the capture and the key-log both stay in the page. Only
+ * `TLS_AES_128_GCM_SHA256` is decrypted in this build — other suites come back with
+ * `supported: false` and an explaining `reason`.
+ */
+export async function decryptTlsFlow(source: ActiveSource, flow: FlowRow, keylogText: string): Promise<TlsDecryptResult> {
+  if (!source) throw new PacketsUnavailableError();
+  if (source.kind !== "bytes") {
+    throw new Error("TLS key-log decryption is available in the browser build.");
+  }
+  const wire = await decryptTlsFlowViaWasm(source.bytes, queryFor(flow), keylogText);
+  return normalizeDecrypt(wire);
 }
 
 export async function extractFlowPackets(source: ActiveSource, flow: FlowRow): Promise<FlowPackets> {

@@ -7,6 +7,14 @@ import { makePackets, makeFlows } from "../test/fixtures";
 
 const flow = makeFlows(1)[0];
 
+// jsdom doesn't implement File.text() (it's standard in real browsers, the deploy target),
+// so give the test file a working text() that returns its content.
+function keylogFile(content = "CLIENT_TRAFFIC_SECRET_0 ab cd\n"): File {
+  const f = new File([content], "keys.log", { type: "text/plain" });
+  Object.defineProperty(f, "text", { value: () => Promise.resolve(content) });
+  return f;
+}
+
 describe("PacketInspector", () => {
   it("loading state renders Extracting text", () => {
     render(<PacketInspector flow={flow} packets={null} loading error={null} onClose={() => {}} />);
@@ -153,6 +161,47 @@ describe("PacketInspector", () => {
     expect(screen.getByText(/server → client/)).toBeInTheDocument();
     // The reassembled client bytes contain the GET request line.
     expect(screen.getByText(/GET \/ HTTP/)).toBeInTheDocument();
+  });
+
+  it("shows a Decrypt tab only when onDecrypt is provided, with a key-log prompt", async () => {
+    const u = userEvent.setup();
+    const onDecrypt = vi.fn();
+    render(<PacketInspector flow={flow} packets={makePackets()} loading={false} error={null} onClose={() => {}} onDecrypt={onDecrypt} />);
+    await u.click(screen.getByRole("button", { name: "decrypt" }));
+    expect(screen.getByText(/SSLKEYLOGFILE/)).toBeInTheDocument();
+    expect(screen.getByText(/never leaves your browser/i)).toBeInTheDocument();
+    expect(onDecrypt).not.toHaveBeenCalled();
+  });
+
+  it("decrypts a key-log and renders the recovered records", async () => {
+    const u = userEvent.setup();
+    const onDecrypt = vi.fn().mockResolvedValue({
+      supported: true, sessionFound: true, version: 0x0304, cipher: 0x1301,
+      cipherName: "TLS_AES_128_GCM_SHA256", keylogSessions: 1, truncated: false, reason: null,
+      records: [{ direction: "c2s", seq: 0, innerType: 23, plaintext: new TextEncoder().encode("GET /secret HTTP/2") }],
+    });
+    render(<PacketInspector flow={flow} packets={makePackets()} loading={false} error={null} onClose={() => {}} onDecrypt={onDecrypt} />);
+    await u.click(screen.getByRole("button", { name: "decrypt" }));
+
+    await u.upload(screen.getByLabelText(/SSLKEYLOGFILE/i), keylogFile());
+
+    expect(await screen.findByText(/GET \/secret HTTP\/2/)).toBeInTheDocument();
+    expect(screen.getByText(/client → server/)).toBeInTheDocument();
+    expect(onDecrypt).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces the reason for an unsupported cipher suite", async () => {
+    const u = userEvent.setup();
+    const onDecrypt = vi.fn().mockResolvedValue({
+      supported: false, sessionFound: false, version: 0x0304, cipher: 0x1302,
+      cipherName: "TLS_AES_256_GCM_SHA384", keylogSessions: 1, truncated: false,
+      reason: "cipher suite TLS_AES_256_GCM_SHA384 not yet supported (only TLS_AES_128_GCM_SHA256)",
+      records: [],
+    });
+    render(<PacketInspector flow={flow} packets={makePackets()} loading={false} error={null} onClose={() => {}} onDecrypt={onDecrypt} />);
+    await u.click(screen.getByRole("button", { name: "decrypt" }));
+    await u.upload(screen.getByLabelText(/SSLKEYLOGFILE/i), keylogFile("x"));
+    expect(await screen.findByText(/not yet supported/)).toBeInTheDocument();
   });
 
   it("resets selection to row 0 when packets prop changes", async () => {

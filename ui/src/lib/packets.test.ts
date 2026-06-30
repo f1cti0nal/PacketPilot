@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { makeFlows } from "../test/fixtures";
 
-const { isTauri, extractPacketsViaTauri, invokeStub, saveStub, carvePcapViaWasm, extractPacketsViaWasm, downloadBinary } = vi.hoisted(() => ({
+const { isTauri, extractPacketsViaTauri, invokeStub, saveStub, carvePcapViaWasm, decryptTlsFlowViaWasm, extractPacketsViaWasm, downloadBinary } = vi.hoisted(() => ({
   isTauri: vi.fn(() => false),
   extractPacketsViaTauri: vi.fn(),
   invokeStub: vi.fn(),
   saveStub: vi.fn(),
   carvePcapViaWasm: vi.fn(),
+  decryptTlsFlowViaWasm: vi.fn(),
   downloadBinary: vi.fn(),
   extractPacketsViaWasm: vi.fn(async () => ({
     total: 1, truncated: false,
@@ -19,11 +20,11 @@ const { isTauri, extractPacketsViaTauri, invokeStub, saveStub, carvePcapViaWasm,
 }));
 
 vi.mock("./platform", () => ({ isTauri, extractPacketsViaTauri, downloadBinary }));
-vi.mock("./wasmEngine", () => ({ extractPacketsViaWasm, carvePcapViaWasm }));
+vi.mock("./wasmEngine", () => ({ extractPacketsViaWasm, carvePcapViaWasm, decryptTlsFlowViaWasm }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeStub }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: saveStub, open: vi.fn() }));
 
-import { extractFlowPackets, packetsAvailable, PacketsUnavailableError, carveSubPcap } from "./packets";
+import { extractFlowPackets, packetsAvailable, PacketsUnavailableError, carveSubPcap, decryptTlsFlow } from "./packets";
 import type { ActiveSource, CarveQuery } from "../types";
 
 const browserSource: ActiveSource = { kind: "bytes", bytes: new ArrayBuffer(8) };
@@ -33,6 +34,7 @@ const carveQuery: CarveQuery = { host: "9.9.9.9", start_ns: 0, end_ns: 9 };
 beforeEach(() => {
   isTauri.mockReturnValue(false);
   carvePcapViaWasm.mockReset();
+  decryptTlsFlowViaWasm.mockReset();
   invokeStub.mockReset();
   saveStub.mockReset();
   downloadBinary.mockReset();
@@ -122,5 +124,36 @@ describe("extractFlowPackets", () => {
     await expect(
       extractFlowPackets({ kind: "path", path: "/captures/test.pcap" }, flow),
     ).rejects.toThrow("Path-based packet sources require the Tauri desktop runtime.");
+  });
+});
+
+describe("decryptTlsFlow", () => {
+  const flow = makeFlows(1)[0];
+
+  it("routes bytes → wasm and normalizes the result (snake_case + base64 decoded)", async () => {
+    decryptTlsFlowViaWasm.mockResolvedValue({
+      supported: true, session_found: true, version: 0x0304, cipher: 0x1301,
+      cipher_name: "TLS_AES_128_GCM_SHA256", keylog_sessions: 2, truncated: false, reason: null,
+      records: [{ direction: "s2c", seq: 0, inner_type: 23, plaintext_len: 3, plaintext_b64: btoa("hey") }],
+    });
+    const res = await decryptTlsFlow({ kind: "bytes", bytes: new ArrayBuffer(8) }, flow, "CLIENT_TRAFFIC_SECRET_0 ab cd");
+    expect(decryptTlsFlowViaWasm).toHaveBeenCalledWith(expect.any(ArrayBuffer), expect.any(Object), "CLIENT_TRAFFIC_SECRET_0 ab cd");
+    expect(res.sessionFound).toBe(true);
+    expect(res.cipherName).toBe("TLS_AES_128_GCM_SHA256");
+    expect(res.keylogSessions).toBe(2);
+    expect(res.records[0].direction).toBe("s2c");
+    expect(res.records[0].innerType).toBe(23);
+    expect(new TextDecoder().decode(res.records[0].plaintext)).toBe("hey");
+  });
+
+  it("rejects with a browser-only message for a path source", async () => {
+    await expect(
+      decryptTlsFlow({ kind: "path", path: "/captures/test.pcap" }, flow, "keys"),
+    ).rejects.toThrow("available in the browser build");
+    expect(decryptTlsFlowViaWasm).not.toHaveBeenCalled();
+  });
+
+  it("rejects with PacketsUnavailableError when there is no source", async () => {
+    await expect(decryptTlsFlow(null, flow, "keys")).rejects.toBeInstanceOf(PacketsUnavailableError);
   });
 });

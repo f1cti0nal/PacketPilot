@@ -42,6 +42,18 @@ export function apply_rules(bytes: Uint8Array, rules_text: string, output_json: 
 export function carve_pcap(bytes: Uint8Array, query_json: string): Uint8Array;
 
 /**
+ * Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and decrypt the TLS 1.3 flow described by
+ * `query_json` (a `QueryDto`) using the NSS `SSLKEYLOGFILE` text in `keylog_text`.
+ *
+ * Returns a JSON string matching `TlsDecryptResult` (`{ supported, session_found, version,
+ * cipher, cipher_name, keylog_sessions, truncated, reason, records: [...] }`), where each record
+ * carries the base64 inner plaintext. Only `TLS_AES_128_GCM_SHA256` is supported this phase;
+ * other suites return `supported: false` with an explaining `reason`. The capture and the
+ * key-log both stay on the device — neither leaves the browser.
+ */
+export function decrypt_tls_flow(bytes: Uint8Array, query_json: string, keylog_text: string): string;
+
+/**
  * Export the analysis findings as CEF (Common Event Format) records.
  */
 export function export_cef(output_json: string): string;
@@ -89,6 +101,7 @@ export interface InitOutput {
     readonly apply_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_rules: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly carve_pcap: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly decrypt_tls_flow: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly export_cef: (a: number, b: number) => [number, number, number, number];
     readonly export_csv: (a: number, b: number) => [number, number, number, number];
     readonly export_misp: (a: number, b: number, c: bigint) => [number, number, number, number];

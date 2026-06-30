@@ -9,7 +9,6 @@
 //! lines are ignored. Labels include `CLIENT_TRAFFIC_SECRET_0` / `SERVER_TRAFFIC_SECRET_0` (TLS 1.3
 //! application data), the `*_HANDSHAKE_TRAFFIC_SECRET` pair (1.3 handshake), and `CLIENT_RANDOM`
 //! (TLS 1.2 master secret). Reference: Mozilla NSS key-log format.
-#![allow(dead_code)] // Phase 1 foundation; wired into a wasm `tls_decrypt` entry + UI in Phase 2.
 
 use std::collections::HashMap;
 

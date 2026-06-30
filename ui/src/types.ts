@@ -562,6 +562,50 @@ export interface PacketRow {
 }
 export interface FlowPackets { total: number; truncated: boolean; packets: PacketRow[]; }
 
+// ---------- per-flow TLS key-log decryption (wire contract, snake_case) ----------
+
+/** One decrypted TLS record as returned by `decrypt_tls_flow`. */
+export interface WireTlsDecryptRecord {
+  direction: "c2s" | "s2c";
+  seq: number;
+  inner_type: number;
+  plaintext_len: number;
+  plaintext_b64: string;
+}
+
+/** The result of `decrypt_tls_flow`: decrypted records for one TLS 1.3 flow (or why not). */
+export interface WireTlsDecryptResult {
+  supported: boolean;
+  session_found: boolean;
+  version: number | null;
+  cipher: number | null;
+  cipher_name: string | null;
+  keylog_sessions: number;
+  truncated: boolean;
+  reason: string | null;
+  records: WireTlsDecryptRecord[];
+}
+
+/** Normalized decrypted TLS record (inner plaintext decoded to bytes). */
+export interface TlsDecryptRecord {
+  direction: "c2s" | "s2c";
+  seq: number;
+  innerType: number; // TLS inner content type: 23 app-data, 22 handshake, 21 alert
+  plaintext: Uint8Array;
+}
+
+export interface TlsDecryptResult {
+  supported: boolean; // negotiated a suite this build decrypts (TLS 1.3 + AES-128-GCM)
+  sessionFound: boolean; // the key-log carried secrets for this session
+  version: number | null;
+  cipher: number | null;
+  cipherName: string | null;
+  keylogSessions: number; // distinct sessions in the supplied key-log
+  truncated: boolean;
+  reason: string | null; // why nothing decrypted, when records is empty
+  records: TlsDecryptRecord[];
+}
+
 /** Active capture source — drives whether packet drill-down is available and which backend serves it. */
 export type ActiveSource = { kind: "path"; path: string } | { kind: "bytes"; bytes: ArrayBuffer } | null;
 

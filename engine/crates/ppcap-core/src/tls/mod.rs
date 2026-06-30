@@ -712,8 +712,16 @@ pub(crate) fn sniff_server_hello(payload: &[u8]) -> Option<(&'static str, String
     Some((tls_version_name(sh.version), cipher_label(sh.cipher), ja3s))
 }
 
+/// The negotiated `(version, cipher)` words from a server payload beginning with a ServerHello —
+/// the raw values key-log decryption needs to choose an AEAD ([`decrypt`]). `version` is the
+/// `supported_versions`-unmasked value (authoritative for TLS 1.3). `None` if not a ServerHello.
+pub(crate) fn negotiated_version_cipher(payload: &[u8]) -> Option<(u16, u16)> {
+    let sh = parse_server_hello(payload)?;
+    Some((sh.version, sh.cipher))
+}
+
 /// A display label for a cipher suite: the IANA name when known, else `0xNNNN`.
-fn cipher_label(cipher: u16) -> String {
+pub(crate) fn cipher_label(cipher: u16) -> String {
     cipher_name(cipher)
         .map(|n| n.to_string())
         .unwrap_or_else(|| format!("0x{cipher:04x}"))

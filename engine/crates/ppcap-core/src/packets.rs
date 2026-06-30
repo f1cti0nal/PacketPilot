@@ -165,6 +165,68 @@ pub fn extract_flow_packets(
     })
 }
 
+/// Cap on cleartext bytes reassembled per direction for TLS key-log decryption (a single flow;
+/// the UI paginates the decrypted records). Bounds memory on very long-lived TLS connections.
+const MAX_TLS_DECRYPT_BYTES_PER_DIR: usize = 4 * 1024 * 1024;
+
+/// Stream `source` once and decrypt one TLS 1.3 flow (matched bidirectionally by `q`) using the
+/// supplied NSS key-log text. Reassembles each direction's cleartext TCP payload in capture order
+/// (bounded by [`MAX_TLS_DECRYPT_BYTES_PER_DIR`]) and hands it to
+/// [`crate::tls::decrypt::decrypt_flow`]. Re-reads the capture; the key-log and capture both stay
+/// on the device — nothing is stored across the call.
+pub fn decrypt_tls_flow(
+    mut source: Box<dyn PacketSource>,
+    q: &PacketQuery,
+    keylog_text: &str,
+) -> Result<crate::tls::decrypt::TlsDecryptResult> {
+    let lo = q.start_ns.saturating_sub(WINDOW_TOL_NS);
+    let hi = q.end_ns.saturating_add(WINDOW_TOL_NS);
+    let mut fwd: Vec<u8> = Vec::new();
+    let mut rev: Vec<u8> = Vec::new();
+
+    while let Some(frame) = source.next_frame()? {
+        if frame.ts_ns < lo || frame.ts_ns > hi {
+            continue;
+        }
+        let meta = match decode_frame(&frame) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.transport != q.transport {
+            continue;
+        }
+        let (s, d) = match (meta.src_ip, meta.dst_ip) {
+            (Some(s), Some(d)) => (s, d),
+            _ => continue,
+        };
+        let fwd_match = s == q.src_ip
+            && d == q.dst_ip
+            && meta.src_port == q.src_port
+            && meta.dst_port == q.dst_port;
+        let rev_match = s == q.dst_ip
+            && d == q.src_ip
+            && meta.src_port == q.dst_port
+            && meta.dst_port == q.src_port;
+        if !fwd_match && !rev_match {
+            continue;
+        }
+        let payload = match l4_payload(&frame) {
+            Some(x) if !x.payload.is_empty() => x.payload,
+            _ => continue,
+        };
+        let target = if fwd_match { &mut fwd } else { &mut rev };
+        let room = MAX_TLS_DECRYPT_BYTES_PER_DIR.saturating_sub(target.len());
+        if room == 0 {
+            continue;
+        }
+        let take = payload.len().min(room);
+        target.extend_from_slice(&payload[..take]);
+    }
+
+    let keylog = crate::tls::keylog::KeyLog::parse(keylog_text);
+    Ok(crate::tls::decrypt::decrypt_flow(&fwd, &rev, &keylog))
+}
+
 /// 64 MiB carve byte budget (matches the browser's retained-source cap).
 pub const MAX_CARVE_BYTES: usize = 64 * 1024 * 1024;
 

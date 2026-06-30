@@ -16,7 +16,7 @@ import { compactNumber, humanBytes, humanNumber } from "../lib/format";
 import { flowStats } from "../lib/flowStats";
 import { flowsToCsv } from "../lib/flowsCsv";
 import { downloadText } from "../lib/platform";
-import { extractFlowPackets, carveSubPcap } from "../lib/packets";
+import { extractFlowPackets, carveSubPcap, decryptTlsFlow } from "../lib/packets";
 import { cn } from "../lib/cn";
 import { LoadingState } from "../components/state/LoadingState";
 import { ErrorState } from "../components/state/ErrorState";
@@ -49,6 +49,16 @@ function categoryLabel(token: string): string {
  * when a row is selected. Owns the selected-row, free-text, category, severity
  * and proto filter state, and feeds the already-filtered rows to FlowsTable.
  */
+/** Heuristic: is this flow worth offering TLS key-log decryption for? (TLS port or a TLS marker.) */
+function looksLikeTls(flow: FlowRow): boolean {
+  return (
+    flow.dstPort === 443 || flow.srcPort === 443 ||
+    flow.dstPort === 8443 || flow.srcPort === 8443 ||
+    !!flow.sni || !!flow.ja3 || !!flow.tlsVersion ||
+    (flow.appProto?.toLowerCase().includes("tls") ?? false)
+  );
+}
+
 export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
@@ -420,6 +430,9 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           loading={pktLoading}
           error={pktError}
           onClose={closeInspector}
+          onDecrypt={activeSource?.kind === "bytes" && looksLikeTls(inspecting)
+            ? (keylogText) => decryptTlsFlow(activeSource, inspecting, keylogText)
+            : undefined}
         />
       )}
     </div>

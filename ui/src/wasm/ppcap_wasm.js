@@ -155,6 +155,45 @@ export function carve_pcap(bytes, query_json) {
 }
 
 /**
+ * Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and decrypt the TLS 1.3 flow described by
+ * `query_json` (a `QueryDto`) using the NSS `SSLKEYLOGFILE` text in `keylog_text`.
+ *
+ * Returns a JSON string matching `TlsDecryptResult` (`{ supported, session_found, version,
+ * cipher, cipher_name, keylog_sessions, truncated, reason, records: [...] }`), where each record
+ * carries the base64 inner plaintext. Only `TLS_AES_128_GCM_SHA256` is supported this phase;
+ * other suites return `supported: false` with an explaining `reason`. The capture and the
+ * key-log both stay on the device — neither leaves the browser.
+ * @param {Uint8Array} bytes
+ * @param {string} query_json
+ * @param {string} keylog_text
+ * @returns {string}
+ */
+export function decrypt_tls_flow(bytes, query_json, keylog_text) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(query_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(keylog_text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.decrypt_tls_flow(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * Export the analysis findings as CEF (Common Event Format) records.
  * @param {string} output_json
  * @returns {string}

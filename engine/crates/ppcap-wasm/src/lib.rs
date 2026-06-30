@@ -310,6 +310,52 @@ pub fn extract_packets(bytes: &[u8], query_json: &str, caps_json: &str) -> Resul
     serde_json::to_string(&fp).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+// ---------------------------------------------------------------------------
+// decrypt_tls_flow — TLS 1.3 key-log decryption for a single flow
+// ---------------------------------------------------------------------------
+
+/// Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and decrypt the TLS 1.3 flow described by
+/// `query_json` (a `QueryDto`) using the NSS `SSLKEYLOGFILE` text in `keylog_text`.
+///
+/// Returns a JSON string matching `TlsDecryptResult` (`{ supported, session_found, version,
+/// cipher, cipher_name, keylog_sessions, truncated, reason, records: [...] }`), where each record
+/// carries the base64 inner plaintext. Only `TLS_AES_128_GCM_SHA256` is supported this phase;
+/// other suites return `supported: false` with an explaining `reason`. The capture and the
+/// key-log both stay on the device — neither leaves the browser.
+#[wasm_bindgen]
+pub fn decrypt_tls_flow(
+    bytes: &[u8],
+    query_json: &str,
+    keylog_text: &str,
+) -> Result<String, JsValue> {
+    let q: QueryDto =
+        serde_json::from_str(query_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let query = ppcap_core::PacketQuery {
+        src_ip: q
+            .src_ip
+            .parse()
+            .map_err(|_| JsValue::from_str("bad src_ip"))?,
+        dst_ip: q
+            .dst_ip
+            .parse()
+            .map_err(|_| JsValue::from_str("bad dst_ip"))?,
+        src_port: q.src_port,
+        dst_port: q.dst_port,
+        transport: ppcap_core::Transport::from_ip_proto(q.proto),
+        start_ns: q.start_ns,
+        end_ns: q.end_ns,
+    };
+
+    let len = bytes.len() as u64;
+    let source = ppcap_core::reader::open_reader(Cursor::new(bytes.to_vec()), Some(len))
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    let res = ppcap_core::decrypt_tls_flow(source, &query, keylog_text)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    serde_json::to_string(&res).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// One analyzed flow — same fields, names, and semantics as the Parquet `flows` schema.
 /// Integer timestamps are nanoseconds since the Unix epoch (the frontend divides to ms).
 #[derive(Serialize)]

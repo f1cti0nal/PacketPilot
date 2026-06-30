@@ -4,12 +4,13 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, FlowRow, ReputationVerdict, WasmFlow, WireFlowPackets } from "../types";
+import type { AnalysisOutput, FlowRow, ReputationVerdict, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
 import initWasm, {
   analyze as wasmAnalyze,
   extract_packets as wasmExtractPackets,
+  decrypt_tls_flow as wasmDecryptTlsFlow,
   apply_reputation as wasmApplyReputation,
   apply_domain_reputation as wasmApplyDomainReputation,
   apply_rules as wasmApplyRules,
@@ -26,6 +27,16 @@ export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): 
   await ensureWasm();
   const json = wasmExtractPackets(new Uint8Array(bytes), JSON.stringify(query), "{}") as string;
   return JSON.parse(json) as WireFlowPackets;
+}
+
+/**
+ * Decrypt a single TLS 1.3 flow with an NSS key-log via WASM (browser path).
+ * Both the capture bytes and the key-log text stay in the page — nothing leaves the device.
+ */
+export async function decryptTlsFlowViaWasm(bytes: ArrayBuffer, query: object, keylogText: string): Promise<WireTlsDecryptResult> {
+  await ensureWasm();
+  const json = wasmDecryptTlsFlow(new Uint8Array(bytes), JSON.stringify(query), keylogText) as string;
+  return JSON.parse(json) as WireTlsDecryptResult;
 }
 
 /** Capture extensions the in-browser engine can analyze. */
