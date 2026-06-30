@@ -298,6 +298,10 @@ struct CarveSink {
     hasher: Sha256Stream,
     scanner: SigScanner,
     size: u64,
+    /// Set once the (decoded) body would exceed `MAX_BODY` — the carve is then skipped rather than
+    /// recorded under the hash of a truncated prefix (matching the "skip oversized, never hash wrong
+    /// bytes" policy).
+    overflow: bool,
 }
 
 impl CarveSink {
@@ -306,10 +310,14 @@ impl CarveSink {
             hasher: Sha256Stream::new(),
             scanner: SigScanner::new(),
             size: 0,
+            overflow: false,
         }
     }
     fn feed(&mut self, bytes: &[u8]) {
         let room = MAX_BODY.saturating_sub(self.size) as usize;
+        if bytes.len() > room {
+            self.overflow = true;
+        }
         let take = bytes.len().min(room);
         self.hasher.update(&bytes[..take]);
         self.scanner.feed(&bytes[..take]);
@@ -327,13 +335,70 @@ impl std::io::Write for CarveSink {
     }
 }
 
+/// Streaming zlib-wrapped DEFLATE decoder over a [`CarveSink`], built on the low-level
+/// [`flate2::Decompress`] so a TRUNCATED stream is detected: `finish` only accepts a body that
+/// reached the zlib end-of-stream marker (`StreamEnd`). The high-level `write::ZlibDecoder::finish`
+/// returns `Ok` on truncation, which would emit a wrong hash — so it must not be used here.
+struct Inflate {
+    dec: flate2::Decompress,
+    sink: CarveSink,
+    ended: bool,
+    errored: bool,
+}
+
+impl Inflate {
+    fn new() -> Inflate {
+        Inflate {
+            dec: flate2::Decompress::new(true), // expect a zlib header (HTTP "deflate")
+            sink: CarveSink::new(),
+            ended: false,
+            errored: false,
+        }
+    }
+    fn feed(&mut self, mut input: &[u8]) -> bool {
+        if self.errored {
+            return false;
+        }
+        let mut scratch = [0u8; 16 * 1024];
+        while !input.is_empty() && !self.ended {
+            let in0 = self.dec.total_in();
+            let out0 = self.dec.total_out();
+            match self
+                .dec
+                .decompress(input, &mut scratch, flate2::FlushDecompress::None)
+            {
+                Ok(status) => {
+                    let consumed = (self.dec.total_in() - in0) as usize;
+                    let produced = (self.dec.total_out() - out0) as usize;
+                    if produced > 0 {
+                        self.sink.feed(&scratch[..produced]);
+                    }
+                    input = &input[consumed..];
+                    if matches!(status, flate2::Status::StreamEnd) {
+                        self.ended = true;
+                    } else if self.sink.overflow {
+                        return true; // oversized — finalize aborts (ended stays false anyway)
+                    } else if consumed == 0 && produced == 0 {
+                        break; // need more input
+                    }
+                }
+                Err(_) => {
+                    self.errored = true;
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
 /// Streaming content-decoder: raw (de-framed) body bytes in, plaintext hashed + scanned by the sink.
 /// HTTP `deflate` is taken as zlib-wrapped (the spec-correct form); a non-conforming raw-DEFLATE
 /// server simply errors out and yields no carve.
 enum Decode {
     Plain(CarveSink),
     Gzip(flate2::write::GzDecoder<CarveSink>),
-    Zlib(flate2::write::ZlibDecoder<CarveSink>),
+    Deflate(Inflate),
 }
 
 impl Decode {
@@ -341,7 +406,7 @@ impl Decode {
         match enc {
             Encoding::Identity => Decode::Plain(CarveSink::new()),
             Encoding::Gzip => Decode::Gzip(flate2::write::GzDecoder::new(CarveSink::new())),
-            Encoding::Deflate => Decode::Zlib(flate2::write::ZlibDecoder::new(CarveSink::new())),
+            Encoding::Deflate => Decode::Deflate(Inflate::new()),
         }
     }
     /// Feed de-framed body bytes. Returns `false` if the decoder errored (malformed compression).
@@ -353,16 +418,16 @@ impl Decode {
                 true
             }
             Decode::Gzip(d) => d.write_all(bytes).is_ok(),
-            Decode::Zlib(d) => d.write_all(bytes).is_ok(),
+            Decode::Deflate(inf) => inf.feed(bytes),
         }
     }
-    /// Flush + recover the sink (its hash, size, and signatures). `None` if the trailing flush
-    /// failed (truncated compressed stream).
+    /// Flush + recover the sink. `None` aborts the carve: a truncated compressed stream (gzip CRC
+    /// fails, or the zlib stream never reached `StreamEnd`) — so a wrong hash is never emitted.
     fn finish(self) -> Option<CarveSink> {
         match self {
             Decode::Plain(s) => Some(s),
-            Decode::Gzip(d) => d.finish().ok(),
-            Decode::Zlib(d) => d.finish().ok(),
+            Decode::Gzip(d) => d.finish().ok(), // validates CRC32 + ISIZE → Err on truncation
+            Decode::Deflate(inf) => (inf.ended && !inf.errored).then_some(inf.sink),
         }
     }
 }
@@ -615,6 +680,10 @@ impl CarveState {
                 return None;
             }
         };
+        if sink.overflow {
+            self.aborted = true; // decoded body exceeded MAX_BODY — skip, don't hash a prefix
+            return None;
+        }
         if sink.size == 0 {
             return None; // an empty decoded body is not a file
         }
@@ -1208,6 +1277,54 @@ mod tests {
             .signatures
             .iter()
             .any(|s| s.label == "UPX-packed executable"));
+    }
+
+    fn zlib(data: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        e.write_all(data).unwrap();
+        e.finish().unwrap()
+    }
+
+    /// A complete `Content-Encoding: deflate` (zlib) body is inflated and carved on its real hash.
+    #[test]
+    fn carves_a_complete_deflate_body() {
+        let body = b"MZ\x90\x00 deflate-compressed payload for the carver";
+        let z = zlib(body);
+        let mut resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Encoding: deflate\r\n\r\n",
+            z.len()
+        )
+        .into_bytes();
+        resp.extend_from_slice(&z);
+        let obs = state().feed(1000, &resp).expect("carved");
+        assert_eq!(hex_of(&obs.sha256), sha256_hex(body));
+        assert!(obs
+            .signatures
+            .iter()
+            .any(|s| s.label == "PE/DOS executable"));
+    }
+
+    /// Review finding: a TRUNCATED deflate body that is byte-complete per Content-Length must NOT be
+    /// recorded under the hash of its partial decode — the zlib stream never reaches StreamEnd, so
+    /// the carve aborts (never a wrong hash).
+    #[test]
+    fn aborts_on_truncated_deflate_body_no_wrong_hash() {
+        let body =
+            b"MZ\x90\x00 a longer payload so the compressed stream spans many bytes and truncates";
+        let z = zlib(body);
+        let cut = z.len() - 8; // drop the tail (incl. the adler32 trailer + end-of-stream)
+        let truncated = &z[..cut];
+        let mut resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Encoding: deflate\r\n\r\n",
+            truncated.len()
+        )
+        .into_bytes();
+        resp.extend_from_slice(truncated);
+        assert!(
+            state().feed(1000, &resp).is_none(),
+            "a truncated deflate stream must abort, not emit a partial-decode hash"
+        );
     }
 
     #[test]
