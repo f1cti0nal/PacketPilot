@@ -35,6 +35,19 @@ describe("CarvedFilesCard", () => {
     expect(screen.queryByText("Carved files")).toBeNull();
   });
 
+  it("renders content-signature chips for a carved file", () => {
+    render(
+      <CarvedFilesCard
+        files={[{
+          client: "10.0.0.9", server: "1.2.3.4", sha256: "a".repeat(64), size: 4096, known_bad: false,
+          signatures: ["PE/DOS executable", "UPX-packed executable"],
+        }]}
+      />,
+    );
+    expect(screen.getByText("PE/DOS executable")).toBeInTheDocument();
+    expect(screen.getByText("UPX-packed executable")).toBeInTheDocument();
+  });
+
   it("shows a malicious VirusTotal badge with the threat label, linking to the report", () => {
     render(
       <CarvedFilesCard

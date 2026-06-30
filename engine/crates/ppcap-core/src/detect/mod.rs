@@ -3257,6 +3257,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::DisguisedDownload => 4, // command-and-control (malware payload delivery)
         FindingKind::Cryptomining => 6,  // impact (resource hijacking)
         FindingKind::MalwareDownload => 4, // command-and-control (confirmed malware delivery)
+        FindingKind::MalwareSignature => 4, // command-and-control (signature-matched payload)
         FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
     }
 }
@@ -3284,6 +3285,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::DisguisedDownload => "Command & Control",
         FindingKind::Cryptomining => "Impact",
         FindingKind::MalwareDownload => "Command & Control",
+        FindingKind::MalwareSignature => "Command & Control",
         FindingKind::ExposedRemoteAccess => "Lateral Movement",
     }
 }
@@ -3311,6 +3313,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::DisguisedDownload => "downloaded a disguised executable",
         FindingKind::Cryptomining => "mined cryptocurrency to a pool",
         FindingKind::MalwareDownload => "downloaded a known-malicious file",
+        FindingKind::MalwareSignature => "downloaded a file matching a malware signature",
         FindingKind::ExposedRemoteAccess => "exposed remote access across the perimeter",
     }
 }

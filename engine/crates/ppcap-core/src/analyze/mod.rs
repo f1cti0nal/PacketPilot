@@ -451,8 +451,13 @@ pub fn run_source_visiting<'a>(
     // Carved HTTP files: surface each download's SHA-256 (IOC) and raise a finding for any whose
     // hash is in the embedded known-bad set.
     let carved = body_carver.into_results();
-    for c in carved.iter().filter(|c| c.known_bad) {
-        findings.push(malware_download_finding(c));
+    for c in carved.iter() {
+        if c.known_bad {
+            findings.push(malware_download_finding(c));
+        } else if let Some(f) = malware_signature_finding(c) {
+            // A novel/unknown-hash file whose CONTENT matched a curated malware signature.
+            findings.push(f);
+        }
     }
     // Surface the carved-file IOC list, known-bad first then largest, capped for the summary/UI.
     const TOP_K_CARVED: usize = 128;
@@ -464,6 +469,7 @@ pub fn run_source_visiting<'a>(
             sha256: crate::analyze::hex_of(&c.sha256),
             size: c.size,
             known_bad: c.known_bad,
+            signatures: c.signatures.iter().map(|s| s.label.to_string()).collect(),
         })
         .collect();
     carved_files.sort_by(|a, b| {
@@ -717,6 +723,73 @@ fn malware_download_finding(c: &crate::carve::CarveObservation) -> crate::model:
     }
 }
 
+/// Build the finding for a carved file whose CONTENT matched a curated malware signature (packer /
+/// encoded script / known tooling) — a novel-hash detection the known-bad set misses. Binary-only
+/// markers (`exec_gated`) only fire when the file is an executable, so a benign PDF or source
+/// archive that merely mentions a tool name does not alarm; severity is the highest firing tier.
+/// Returns `None` when nothing fires after gating.
+fn malware_signature_finding(
+    c: &crate::carve::CarveObservation,
+) -> Option<crate::model::finding::Finding> {
+    use crate::carve::SigTier;
+    use crate::model::finding::{Finding, FindingKind};
+    use crate::model::severity::Severity;
+
+    let is_exec = c.signatures.iter().any(|s| s.executable);
+    let firing: Vec<_> = c
+        .signatures
+        .iter()
+        .filter(|s| s.suspicious && (!s.exec_gated || is_exec))
+        .collect();
+    if firing.is_empty() {
+        return None;
+    }
+
+    let (severity, score) = match firing.iter().filter_map(|s| s.tier).max() {
+        Some(SigTier::High) => (Severity::High, 80),
+        _ => (Severity::Medium, 55),
+    };
+    let labels: Vec<&str> = firing.iter().map(|s| s.label).collect();
+    let mut attack: Vec<String> = firing
+        .iter()
+        .filter(|s| !s.technique.is_empty())
+        .map(|s| s.technique.to_string())
+        .collect();
+    attack.sort();
+    attack.dedup();
+    if attack.is_empty() {
+        attack.push("T1027".to_string()); // Obfuscated Files or Information
+    }
+    let mut evidence = vec![format!(
+        "carved {}-byte cleartext HTTP download from {}",
+        c.size, c.server
+    )];
+    for s in &firing {
+        evidence.push(format!(
+            "body matched signature: {} ({})",
+            s.label, s.technique
+        ));
+    }
+    evidence.push(format!("sha256 {}", hex_of(&c.sha256)));
+    Some(Finding {
+        kind: FindingKind::MalwareSignature,
+        severity,
+        score,
+        title: format!(
+            "Downloaded file matched a malware signature: {}",
+            labels.join(", ")
+        ),
+        src_ip: c.client.to_string(),
+        dst_ip: Some(c.server.to_string()),
+        dst_port: None,
+        attack,
+        evidence,
+        interval_ns: None,
+        jitter_cv: None,
+        contacts: None,
+    })
+}
+
 /// Minimal streaming SHA-256 (FIPS 180-4). No external dependencies; constant memory.
 pub(crate) struct Sha256 {
     state: [u32; 8],
@@ -893,6 +966,78 @@ impl Sha256 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The malware-signature finding gates binary-only markers on an executable body and tiers its
+    /// severity — so a benign PDF/archive that merely *mentions* a tool name does not alarm.
+    #[test]
+    fn malware_signature_finding_gates_and_tiers() {
+        use crate::carve::{CarveObservation, SigHit, SigTier};
+        use crate::model::finding::FindingKind;
+        use crate::model::severity::Severity;
+
+        let obs = |sigs: Vec<SigHit>| CarveObservation {
+            client: "10.0.0.5".parse().unwrap(),
+            server: "1.2.3.4".parse().unwrap(),
+            sha256: [0u8; 32],
+            size: 1000,
+            known_bad: false,
+            signatures: sigs,
+        };
+        let hit = |label, technique, suspicious, exec_gated, tier, executable| SigHit {
+            label,
+            technique,
+            suspicious,
+            exec_gated,
+            tier,
+            executable,
+        };
+        let pe = hit("PE/DOS executable", "", false, false, None, true);
+        let pdf = hit("PDF document", "", false, false, None, false);
+        let meterpreter = hit(
+            "Meterpreter payload",
+            "T1059",
+            true,
+            true,
+            Some(SigTier::High),
+            false,
+        );
+        let upx = hit(
+            "UPX-packed executable",
+            "T1027.002",
+            true,
+            true,
+            Some(SigTier::Medium),
+            false,
+        );
+        let cradle = hit(
+            "PowerShell download cradle",
+            "T1059.001",
+            true,
+            false,
+            Some(SigTier::High),
+            false,
+        );
+
+        // A binary marker inside a NON-executable (a PDF) is gated out — no finding.
+        assert!(malware_signature_finding(&obs(vec![pdf, meterpreter])).is_none());
+        // The same marker inside a PE executable → High finding.
+        let f = malware_signature_finding(&obs(vec![pe, meterpreter])).expect("fires");
+        assert_eq!(f.severity, Severity::High);
+        assert_eq!(f.score, 80);
+        assert_eq!(f.kind, FindingKind::MalwareSignature);
+        // A dual-use (Medium) marker in a PE → Medium, not High.
+        let f = malware_signature_finding(&obs(vec![pe, upx])).expect("fires");
+        assert_eq!(f.severity, Severity::Medium);
+        assert_eq!(f.score, 55);
+        // An ungated specific marker (PowerShell cradle) fires even on a non-executable script.
+        let f = malware_signature_finding(&obs(vec![cradle])).expect("fires");
+        assert_eq!(f.severity, Severity::High);
+        // File-type magic alone is never a finding.
+        assert!(malware_signature_finding(&obs(vec![pe])).is_none());
+        // Highest firing tier wins (Medium UPX + High cradle, both in a PE → High).
+        let f = malware_signature_finding(&obs(vec![pe, upx, cradle])).expect("fires");
+        assert_eq!(f.severity, Severity::High);
+    }
 
     #[test]
     fn sha256_known_vectors() {

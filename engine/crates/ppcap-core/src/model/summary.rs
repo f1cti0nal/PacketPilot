@@ -254,8 +254,9 @@ pub struct EncryptedDnsHost {
 }
 
 /// One carved file: a cleartext HTTP download reassembled and hashed in-stream. The SHA-256 is a
-/// ready IOC for external lookup; `known_bad` flags a match against the embedded known-bad set. No
-/// file bytes are retained — only the hash and size.
+/// ready IOC for external lookup; `known_bad` flags a match against the embedded known-bad set;
+/// `signatures` lists any content signatures matched while streaming (file type + suspicious
+/// markers). No file bytes are retained — only the hash, size, and signature labels.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CarvedFile {
     pub client: String,
@@ -263,6 +264,10 @@ pub struct CarvedFile {
     pub sha256: String,
     pub size: u64,
     pub known_bad: bool,
+    /// Content-signature labels matched against the body (e.g. `["PE/DOS executable", "UPX-packed
+    /// executable"]`). Empty when nothing matched.
+    #[serde(default)]
+    pub signatures: Vec<String>,
 }
 
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.

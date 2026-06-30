@@ -37,8 +37,36 @@ const MAX_BODY: u64 = 64 * 1024 * 1024;
 /// download count; the first this-many carved files, including any known-bad, are recorded).
 const MAX_OBSERVATIONS: usize = 4096;
 
-/// One carved file: the downloading client, the serving host, the body's SHA-256, its size, and
-/// whether the hash matched the embedded known-bad set.
+/// Finding severity tier a suspicious signature contributes (file-type tags use `None`).
+/// Declared Medium-before-High so the derived ordering makes `High` the maximum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum SigTier {
+    /// Dual-use marker (e.g. a UPX packer, a PowerShell `-EncodedCommand`) — surfaced cautiously.
+    Medium,
+    /// Specific, low-false-positive malware/tooling marker — alarming.
+    High,
+}
+
+/// A content signature matched against a carved file's bytes. File-type magic tags the real file
+/// type for triage; a suspicious marker can raise a finding. To keep false positives low, a
+/// binary-only marker (`exec_gated`) only counts toward a finding when the file is *also* an
+/// executable — so the string "meterpreter" inside a benign PDF or source archive does not alarm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SigHit {
+    pub label: &'static str,
+    /// MITRE technique id for a suspicious hit, else `""`.
+    pub technique: &'static str,
+    pub suspicious: bool,
+    /// Only counts toward a finding when the file matched an executable file-type magic.
+    pub exec_gated: bool,
+    /// Finding severity tier when it fires; `None` for a file-type tag.
+    pub tier: Option<SigTier>,
+    /// This is executable file-type magic (PE/ELF/Mach-O) — satisfies another hit's `exec_gated`.
+    pub executable: bool,
+}
+
+/// One carved file: the downloading client, the serving host, the body's SHA-256, its size,
+/// whether the hash matched the embedded known-bad set, and any content signatures it matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CarveObservation {
     pub client: IpAddr,
@@ -46,6 +74,8 @@ pub(crate) struct CarveObservation {
     pub sha256: [u8; 32],
     pub size: u64,
     pub known_bad: bool,
+    /// Content signatures the body matched, streamed alongside the hash (no bytes retained).
+    pub signatures: Vec<SigHit>,
 }
 
 /// Embedded known-bad SHA-256 set. Deliberately tiny and curated (the EICAR anti-malware test file
@@ -75,11 +105,196 @@ fn hex32(s: &str) -> Option<[u8; 32]> {
     Some(out)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Streaming content signatures
+// ---------------------------------------------------------------------------------------------
+//
+// A curated, native-Rust signature set run over the carved body *as it streams* — the in-engine
+// alternative to a YARA dependency (which is not viable on the C-compiler-free wasm toolchain). The
+// scanner holds only a bounded rolling window (`OVERLAP` bytes) to catch matches that straddle a
+// chunk boundary, plus a short prefix for offset-0 magic — so it keeps the carver's O(1)-per-flow,
+// no-body-retention invariant. File-type magic (anchored at offset 0) tags the file's real type;
+// suspicious markers (anywhere) flag packers / encoded scripts / known tooling and raise a finding.
+
+/// Where a signature must appear in the body.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Anchor {
+    /// Only at byte 0 — file-type magic.
+    Start,
+    /// Anywhere in the body — content markers.
+    Anywhere,
+}
+
+/// One curated signature.
+struct Sig {
+    label: &'static str,
+    /// MITRE technique id for a suspicious signature; `""` for a benign file-type tag.
+    technique: &'static str,
+    suspicious: bool,
+    /// Only counts toward a finding when the file is also an executable (binary-only markers).
+    exec_gated: bool,
+    /// Finding severity tier when it fires; `None` for a file-type tag.
+    tier: Option<SigTier>,
+    /// True for an executable file-type magic (PE/ELF/Mach-O) — satisfies others' `exec_gated`.
+    executable: bool,
+    anchor: Anchor,
+    pattern: &'static [u8],
+}
+
+/// A file-type magic signature (offset 0, never a finding by itself).
+const fn ft(label: &'static str, executable: bool, pattern: &'static [u8]) -> Sig {
+    Sig {
+        label,
+        technique: "",
+        suspicious: false,
+        exec_gated: false,
+        tier: None,
+        executable,
+        anchor: Anchor::Start,
+        pattern,
+    }
+}
+
+/// A suspicious content marker (anywhere). `exec_gated` ⇒ only fires when the file is an executable.
+const fn susp(
+    label: &'static str,
+    technique: &'static str,
+    exec_gated: bool,
+    tier: SigTier,
+    pattern: &'static [u8],
+) -> Sig {
+    Sig {
+        label,
+        technique,
+        suspicious: true,
+        exec_gated,
+        tier: Some(tier),
+        executable: false,
+        anchor: Anchor::Anywhere,
+        pattern,
+    }
+}
+
+/// The curated signature table. Deliberately small and high-confidence (low false-positive on
+/// benign downloads); a real deployment extends it. Binary-only markers are `exec_gated` and
+/// dual-use markers (UPX packing, a PowerShell `-EncodedCommand`) are `Medium`, so a benign
+/// download that merely *mentions* a tool — a PDF, a source archive — does not raise a loud alarm.
+#[rustfmt::skip]
+const SIGNATURES: &[Sig] = &[
+    // ── File-type magic (offset 0) — triage context, not a finding ──
+    ft("PE/DOS executable",                 true,  b"MZ"),
+    ft("ELF executable",                    true,  b"\x7fELF"),
+    ft("Mach-O executable",                 true,  b"\xcf\xfa\xed\xfe"),
+    ft("Java class file",                   false, b"\xca\xfe\xba\xbe"),
+    ft("ZIP/Office archive",                false, b"PK\x03\x04"),
+    ft("PDF document",                      false, b"%PDF"),
+    ft("gzip archive",                      false, b"\x1f\x8b"),
+    ft("7-Zip archive",                     false, b"7z\xbc\xaf\x27\x1c"),
+    ft("RAR archive",                       false, b"Rar!\x1a\x07"),
+    ft("OLE2 document (legacy Office/MSI)", false, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+    ft("Windows shortcut (.lnk)",           false, b"\x4c\x00\x00\x00\x01\x14\x02\x00"),
+    ft("Microsoft Cabinet",                 false, b"MSCF"),
+    // ── Suspicious content (anywhere). exec_gated markers only fire on an executable body. ──
+    susp("EICAR test signature",          "T1105",     false, SigTier::High,   b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE"),
+    susp("UPX-packed executable",         "T1027.002", true,  SigTier::Medium, b"UPX!"),
+    susp("Mimikatz credential tool",      "T1003",     true,  SigTier::High,   b"sekurlsa::"),
+    susp("Meterpreter payload",           "T1059",     true,  SigTier::High,   b"meterpreter"),
+    susp("Reflective loader (injection)", "T1055.001", true,  SigTier::High,   b"ReflectiveLoader"),
+    susp("PowerShell download cradle",    "T1059.001", false, SigTier::High,   b").DownloadString("),
+    susp("PowerShell encoded command",    "T1027",     false, SigTier::Medium, b"-EncodedCommand"),
+];
+
+/// Longest signature pattern (compile-time), bounding the prefix + cross-chunk overlap window.
+const MAX_SIG_LEN: usize = {
+    let mut m = 0;
+    let mut i = 0;
+    while i < SIGNATURES.len() {
+        if SIGNATURES[i].pattern.len() > m {
+            m = SIGNATURES[i].pattern.len();
+        }
+        i += 1;
+    }
+    m
+};
+const OVERLAP: usize = MAX_SIG_LEN - 1;
+
+/// Streaming multi-pattern matcher over the carved body. Holds only `matched` flags, a short
+/// `prefix` (for offset-0 magic), and a `tail` overlap window — never the body itself.
+struct SigScanner {
+    matched: Vec<bool>,
+    prefix: Vec<u8>,
+    tail: Vec<u8>,
+}
+
+impl SigScanner {
+    fn new() -> SigScanner {
+        SigScanner {
+            matched: vec![false; SIGNATURES.len()],
+            prefix: Vec::new(),
+            tail: Vec::new(),
+        }
+    }
+
+    /// Fold the next run of body bytes (the same slice the hasher sees).
+    fn feed(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        // Start-anchored magic: accumulate the first MAX_SIG_LEN bytes and test from offset 0.
+        if self.prefix.len() < MAX_SIG_LEN {
+            let take = (MAX_SIG_LEN - self.prefix.len()).min(bytes.len());
+            self.prefix.extend_from_slice(&bytes[..take]);
+            for (i, sig) in SIGNATURES.iter().enumerate() {
+                if sig.anchor == Anchor::Start
+                    && !self.matched[i]
+                    && self.prefix.starts_with(sig.pattern)
+                {
+                    self.matched[i] = true;
+                }
+            }
+        }
+        // Anywhere markers: search across the previous tail + this chunk so a match that straddles
+        // the boundary is still found.
+        let mut scan = Vec::with_capacity(self.tail.len() + bytes.len());
+        scan.extend_from_slice(&self.tail);
+        scan.extend_from_slice(bytes);
+        for (i, sig) in SIGNATURES.iter().enumerate() {
+            if sig.anchor == Anchor::Anywhere
+                && !self.matched[i]
+                && scan.windows(sig.pattern.len()).any(|w| w == sig.pattern)
+            {
+                self.matched[i] = true;
+            }
+        }
+        // Carry the last OVERLAP bytes for the next chunk.
+        let keep = scan.len().min(OVERLAP);
+        self.tail = scan[scan.len() - keep..].to_vec();
+    }
+
+    /// The matched signatures, in table order.
+    fn hits(&self) -> Vec<SigHit> {
+        SIGNATURES
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| self.matched[*i])
+            .map(|(_, s)| SigHit {
+                label: s.label,
+                technique: s.technique,
+                suspicious: s.suspicious,
+                exec_gated: s.exec_gated,
+                tier: s.tier,
+                executable: s.executable,
+            })
+            .collect()
+    }
+}
+
 /// The per-flow body plan, set once the response headers are parsed.
 struct BodyPlan {
     content_len: u64,
     hasher: Option<Sha256Stream>,
     hashed: u64,
+    scanner: SigScanner,
 }
 
 /// One in-flight response carve, keyed by `(server, server_port, client, client_port)`.
@@ -181,13 +396,14 @@ impl CarveState {
         }
     }
 
-    /// Fold body bytes through the streaming hash; finalize + emit once `content_len` is reached.
+    /// Fold body bytes through the streaming hash + signature scanner; finalize + emit once
+    /// `content_len` is reached.
     fn feed_body(&mut self, bytes: &[u8]) -> Option<CarveObservation> {
         let p = self.body.as_mut()?;
-        let hasher = p.hasher.as_mut()?;
         let remaining = p.content_len - p.hashed;
         let take = (bytes.len() as u64).min(remaining) as usize;
-        hasher.update(&bytes[..take]);
+        p.hasher.as_mut()?.update(&bytes[..take]);
+        p.scanner.feed(&bytes[..take]);
         p.hashed += take as u64;
         if p.hashed < p.content_len {
             return None;
@@ -200,6 +416,7 @@ impl CarveState {
             sha256,
             size: p.content_len,
             known_bad: known_bad(&sha256),
+            signatures: p.scanner.hits(),
         })
     }
 }
@@ -317,6 +534,7 @@ fn parse_response_headers(head: &[u8]) -> Option<BodyPlan> {
         content_len,
         hasher: Some(Sha256Stream::new()),
         hashed: 0,
+        scanner: SigScanner::new(),
     })
 }
 
@@ -451,6 +669,76 @@ mod tests {
         // A response with no Content-Length is not length-delimited → no carve.
         let nolen = b"HTTP/1.1 200 OK\r\nServer: x\r\n\r\nhello";
         assert!(state().feed(1000, nolen).is_none());
+    }
+
+    fn http_resp(body: &[u8]) -> Vec<u8> {
+        let mut resp =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
+        resp.extend_from_slice(body);
+        resp
+    }
+    fn sig_labels(obs: &CarveObservation) -> Vec<&'static str> {
+        obs.signatures.iter().map(|s| s.label).collect()
+    }
+
+    #[test]
+    fn tags_file_type_magic_at_offset_zero() {
+        // A PE executable: "MZ" magic at byte 0.
+        let mut body = b"MZ\x90\x00\x03\x00\x00\x00".to_vec();
+        body.extend_from_slice(&[0u8; 16]);
+        let obs = state().feed(1000, &http_resp(&body)).expect("carved");
+        assert!(sig_labels(&obs).contains(&"PE/DOS executable"));
+        assert!(
+            obs.signatures.iter().all(|s| !s.suspicious),
+            "file-type magic is context, not suspicious"
+        );
+    }
+
+    #[test]
+    fn flags_a_suspicious_content_signature() {
+        let body = b"\x00\x01garbage prefix UPX!  packed binary body \x90\x90".to_vec();
+        let obs = state().feed(1000, &http_resp(&body)).expect("carved");
+        let upx = obs
+            .signatures
+            .iter()
+            .find(|s| s.label == "UPX-packed executable")
+            .expect("UPX! matched");
+        assert!(upx.suspicious);
+        assert_eq!(upx.technique, "T1027.002");
+    }
+
+    #[test]
+    fn matches_a_signature_straddling_a_segment_boundary() {
+        let marker = b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE";
+        let mut body = vec![b'.'; 10];
+        body.extend_from_slice(marker);
+        body.extend_from_slice(&[b'.'; 10]);
+        let resp = http_resp(&body);
+        // Cut in the middle of the marker so it straddles two segments.
+        let header_len = resp.len() - body.len();
+        let cut = header_len + 10 + marker.len() / 2;
+
+        let mut st = state();
+        assert!(st.feed(1000, &resp[..cut]).is_none(), "incomplete body");
+        let obs = st
+            .feed(1000 + cut as u32, &resp[cut..])
+            .expect("carved on completion");
+        assert!(
+            sig_labels(&obs).contains(&"EICAR test signature"),
+            "a marker split across segments is still matched: {:?}",
+            sig_labels(&obs)
+        );
+    }
+
+    #[test]
+    fn benign_text_matches_no_signatures() {
+        let body = b"just a normal README with nothing special inside it whatsoever.\n";
+        let obs = state().feed(1000, &http_resp(body)).expect("carved");
+        assert!(
+            obs.signatures.is_empty(),
+            "benign text matched: {:?}",
+            sig_labels(&obs)
+        );
     }
 
     #[test]

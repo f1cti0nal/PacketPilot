@@ -12,6 +12,7 @@ import {
   Crosshair,
   Fingerprint,
   FileWarning,
+  FileSearch,
   Pickaxe,
   VenetianMask,
   ScanSearch,
@@ -56,6 +57,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   disguised_download: { label: "Disguised Download", Icon: VenetianMask },
   cryptomining: { label: "Cryptomining", Icon: Pickaxe },
   malware_download: { label: "Malware Download", Icon: FileWarning },
+  malware_signature: { label: "Malware Signature", Icon: FileSearch },
   exposed_remote_access: { label: "Exposed Remote Access", Icon: ScreenShare },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };

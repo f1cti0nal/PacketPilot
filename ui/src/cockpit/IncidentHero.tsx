@@ -30,6 +30,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   disguised_download: "Command & Control",
   cryptomining: "Impact",
   malware_download: "Command & Control",
+  malware_signature: "Command & Control",
   exposed_remote_access: "Lateral Movement",
   ioc_match: "Detection",
 };

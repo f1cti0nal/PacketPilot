@@ -39,7 +39,9 @@ function RepBadge({ file }: { file: CarvedFile }) {
  * Carved files: cleartext HTTP downloads reassembled in-stream and hashed. Each row is the file's
  * SHA-256 — a ready IOC — with its size and the downloading client ← serving host. A `known-bad`
  * badge flags a hash that matched the embedded known-bad set (a confirmed-malware download, which
- * also raises a Critical finding). When file-hash reputation is enabled + consented, a `VT` badge
+ * also raises a Critical finding). Content-signature chips (file type + suspicious markers like a
+ * UPX packer or PowerShell cradle, matched in-stream) give triage context; a suspicious match also
+ * raises a Malware Signature finding. When file-hash reputation is enabled + consented, a `VT` badge
  * shows the VirusTotal verdict (red w/ threat label when flagged, links to the report). No file
  * bytes are retained — only the hash. Display-only; hidden when nothing was carved.
  */
@@ -89,6 +91,18 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
                 {f.server}
               </span>
             </div>
+            {(f.signatures?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {f.signatures!.slice(0, 6).map((s) => (
+                  <span
+                    key={s}
+                    className="rounded bg-[var(--color-surface-2)] px-1 text-[0.6rem] text-[var(--color-text-dim)]"
+                  >
+                    {s}
+                  </span>
+                ))}
+              </div>
+            )}
           </li>
         ))}
       </ul>

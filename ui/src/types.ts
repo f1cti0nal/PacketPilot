@@ -234,6 +234,8 @@ export interface CarvedFile {
   sha256: string;
   size: number;
   known_bad: boolean;
+  /** Content-signature labels the engine matched while streaming (file type + suspicious markers). */
+  signatures?: string[];
   /** VirusTotal file-hash verdict, attached client-side post-analysis (the engine never sets this). */
   reputation?: ReputationVerdict[];
 }
@@ -269,6 +271,7 @@ export type FindingKind =
   | "disguised_download"
   | "cryptomining"
   | "malware_download"
+  | "malware_signature"
   | "exposed_remote_access"
   | "ioc_match";
 
