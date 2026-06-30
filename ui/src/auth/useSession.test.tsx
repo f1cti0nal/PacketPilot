@@ -6,6 +6,7 @@ const h = {
   getSession: vi.fn(),
   signInWithPassword: vi.fn(),
   signUp: vi.fn(),
+  signInWithOAuth: vi.fn(),
   signOut: vi.fn(),
   onAuthStateChange: vi.fn(),
   single: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("../lib/supabase", () => ({
       getSession: (...a: unknown[]) => h.getSession(...a),
       signInWithPassword: (...a: unknown[]) => h.signInWithPassword(...a),
       signUp: (...a: unknown[]) => h.signUp(...a),
+      signInWithOAuth: (...a: unknown[]) => h.signInWithOAuth(...a),
       signOut: (...a: unknown[]) => h.signOut(...a),
       onAuthStateChange: (...a: unknown[]) => h.onAuthStateChange(...a),
     },
@@ -44,6 +46,7 @@ beforeEach(() => {
   h.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
   h.signInWithPassword.mockResolvedValue({ data: {}, error: null });
   h.signUp.mockResolvedValue({ data: { session: null }, error: null });
+  h.signInWithOAuth.mockResolvedValue({ data: { provider: "google", url: "https://x" }, error: null });
   h.signOut.mockResolvedValue({ error: null });
   h.single.mockResolvedValue({ data: { email: "a@b.com", full_name: "A", plan: "pro" }, error: null });
   h.maybeSingle.mockResolvedValue({ data: null, error: null });
@@ -130,6 +133,31 @@ describe("useSession", () => {
       options: { emailRedirectTo: expect.stringContaining("/app") },
     });
     expect(res).toEqual({ ok: true, needsConfirm: true });
+  });
+
+  it("signInWithProvider starts an OAuth redirect back to /app", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("anon"));
+    let res: { ok: boolean } | undefined;
+    await act(async () => {
+      if (result.current.status === "anon") res = await result.current.signInWithProvider("github");
+    });
+    expect(h.signInWithOAuth).toHaveBeenCalledWith({
+      provider: "github",
+      options: { redirectTo: expect.stringContaining("/app") },
+    });
+    expect(res).toEqual({ ok: true });
+  });
+
+  it("signInWithProvider surfaces an OAuth start error", async () => {
+    h.signInWithOAuth.mockResolvedValue({ data: {}, error: { message: "provider disabled" } });
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("anon"));
+    let res: { ok: boolean; error?: string } | undefined;
+    await act(async () => {
+      if (result.current.status === "anon") res = await result.current.signInWithProvider("google");
+    });
+    expect(res).toEqual({ ok: false, error: "provider disabled" });
   });
 
   it("re-derives on auth state change", async () => {

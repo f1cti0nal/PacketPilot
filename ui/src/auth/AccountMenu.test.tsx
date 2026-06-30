@@ -9,7 +9,7 @@ vi.mock("./billing", () => ({ startCheckout: () => billing.startCheckout(), open
 describe("AccountMenu", () => {
   it("anon shows Sign in and calls onOpenAuth", async () => {
     const onOpenAuth = vi.fn();
-    render(<AccountMenu session={{ status: "anon", signIn: vi.fn(), signUp: vi.fn() }} onOpenAuth={onOpenAuth} />);
+    render(<AccountMenu session={{ status: "anon", signIn: vi.fn(), signUp: vi.fn(), signInWithProvider: vi.fn() }} onOpenAuth={onOpenAuth} />);
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
     expect(onOpenAuth).toHaveBeenCalled();
   });
@@ -41,7 +41,7 @@ describe("AccountMenu", () => {
   });
 
   it("anon menu has no Profile & account link", () => {
-    render(<AccountMenu session={{ status: "anon", signIn: vi.fn(), signUp: vi.fn() }} onOpenAuth={vi.fn()} />);
+    render(<AccountMenu session={{ status: "anon", signIn: vi.fn(), signUp: vi.fn(), signInWithProvider: vi.fn() }} onOpenAuth={vi.fn()} />);
     expect(screen.queryByRole("link", { name: /profile & account/i })).not.toBeInTheDocument();
   });
 

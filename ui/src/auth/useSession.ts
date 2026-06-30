@@ -13,12 +13,19 @@ export interface UserProfile {
   trialEndsAt: string | null;
 }
 
+/** Third-party identity providers offered for one-click sign-in. */
+export type OAuthProvider = "google" | "github";
+
 export type SessionState =
   | { status: "loading" }
   | {
       status: "anon";
       signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
       signUp: (email: string, password: string) => Promise<{ ok: boolean; needsConfirm?: boolean; error?: string }>;
+      /** Begin an OAuth redirect (Google/GitHub). On success the browser navigates away to the
+       *  provider and back to `/app`, where the session is picked up — so the promise only resolves
+       *  with `ok: false` when starting the redirect failed. */
+      signInWithProvider: (provider: OAuthProvider) => Promise<{ ok: boolean; error?: string }>;
     }
   | { status: "authed"; email: string; profile: UserProfile; signOut: () => Promise<void> };
 
@@ -47,6 +54,17 @@ export function useSession(): SessionState {
     });
     if (error) return { ok: false, error: error.message };
     return { ok: true, needsConfirm: !data.session };
+  }, []);
+
+  const signInWithProvider = useCallback(async (provider: OAuthProvider) => {
+    if (!supabase) return { ok: false, error: "Accounts are unavailable" };
+    // Redirects to the provider, then back to /app where `detectSessionInUrl` (on by default, the
+    // same mechanism the email-confirm link uses) exchanges the code and fires onAuthStateChange.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/app` },
+    });
+    return error ? { ok: false, error: error.message } : { ok: true };
   }, []);
 
   const signOut = useCallback(async () => {
@@ -115,7 +133,7 @@ export function useSession(): SessionState {
     case "loading":
       return { status: "loading" };
     case "anon":
-      return { status: "anon", signIn, signUp };
+      return { status: "anon", signIn, signUp, signInWithProvider };
     case "authed":
       return { status: "authed", email: state.email, profile: state.profile, signOut };
   }

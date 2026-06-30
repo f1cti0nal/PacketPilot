@@ -3,10 +3,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AuthDialog } from "./AuthDialog";
 
-const anon = (over: Partial<{ signIn: unknown; signUp: unknown }> = {}) => ({
+const anon = (over: Partial<{ signIn: unknown; signUp: unknown; signInWithProvider: unknown }> = {}) => ({
   status: "anon" as const,
   signIn: (over.signIn as never) ?? vi.fn().mockResolvedValue({ ok: true }),
   signUp: (over.signUp as never) ?? vi.fn().mockResolvedValue({ ok: true, needsConfirm: true }),
+  signInWithProvider: (over.signInWithProvider as never) ?? vi.fn().mockResolvedValue({ ok: true }),
 });
 
 describe("AuthDialog", () => {
@@ -28,6 +29,27 @@ describe("AuthDialog", () => {
     await userEvent.type(screen.getByLabelText(/password/i), "bad");
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
     expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
+  });
+
+  it("starts a Google OAuth redirect", async () => {
+    const signInWithProvider = vi.fn().mockResolvedValue({ ok: true });
+    render(<AuthDialog session={anon({ signInWithProvider })} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+    expect(signInWithProvider).toHaveBeenCalledWith("google");
+  });
+
+  it("starts a GitHub OAuth redirect", async () => {
+    const signInWithProvider = vi.fn().mockResolvedValue({ ok: true });
+    render(<AuthDialog session={anon({ signInWithProvider })} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with github/i }));
+    expect(signInWithProvider).toHaveBeenCalledWith("github");
+  });
+
+  it("surfaces an OAuth start error", async () => {
+    const signInWithProvider = vi.fn().mockResolvedValue({ ok: false, error: "provider disabled" });
+    render(<AuthDialog session={anon({ signInWithProvider })} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with github/i }));
+    expect(await screen.findByText(/provider disabled/i)).toBeInTheDocument();
   });
 
   it("toggles to sign-up and shows the confirm panel on needsConfirm", async () => {
