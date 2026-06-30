@@ -1,23 +1,23 @@
-//! TLS 1.3 record decryption from key-log secrets.
+//! TLS record decryption from key-log secrets — TLS 1.3 and TLS 1.2, AEAD suites.
 //!
-//! Supports all three TLS 1.3 AEAD suites — `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`,
-//! and `TLS_CHACHA20_POLY1305_SHA256` — over the engine's vendored crypto (HKDF-SHA256/384, AES-128/
-//! 256-GCM, ChaCha20-Poly1305; see [`crate::quic::crypto`], each RFC-vector-tested). Given a
-//! per-direction traffic secret (from the key-log, e.g. `CLIENT_TRAFFIC_SECRET_0`), derive the AEAD
-//! key + iv via HKDF-Expand-Label (RFC 8446 §7.3 — SHA-384 for the AES-256 suite), then decrypt each
-//! `application_data` record:
-//!   * per-record nonce = `iv XOR left-pad(seq)`  (RFC 8446 §5.3),
-//!   * additional data = the 5-byte record header (RFC 8446 §5.2),
-//!   * AEAD open,
-//!   * strip the TLS 1.3 inner content-type + zero padding (RFC 8446 §5.4).
+//! All three TLS 1.3 AEAD suites (`TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`,
+//! `TLS_CHACHA20_POLY1305_SHA256`) and the common TLS 1.2 AEAD suites (ECDHE/DHE/RSA AES-GCM and
+//! ChaCha20-Poly1305) over the engine's vendored crypto (HKDF-SHA256/384, the TLS 1.2 PRF, AES-128/
+//! 256-GCM, ChaCha20-Poly1305; see [`crate::quic::crypto`], each RFC-vector-tested).
 //!
-//! AES-128-GCM is cross-checked against the RFC 8448 §3 published trace end-to-end. Pure compute,
-//! wasm-safe. TLS 1.2 (a different key schedule) is a later phase.
+//! * **TLS 1.3** ([`decrypt_flow_tls13`]): derive the AEAD key + iv from each direction's traffic
+//!   secret via HKDF-Expand-Label (RFC 8446 §7.3), then decrypt `application_data` records — nonce =
+//!   `iv XOR left-pad(seq)` (§5.3), AAD = the 5-byte record header (§5.2), then strip the inner
+//!   content-type + zero padding (§5.4). A handshake→application epoch machine handles the key
+//!   change. AES-128-GCM is cross-checked against the RFC 8448 §3 published trace end-to-end.
+//! * **TLS 1.2** ([`decrypt_flow_tls12`]): expand the 48-byte master secret (key-log `CLIENT_RANDOM`)
+//!   into the per-direction key block via the TLS 1.2 PRF (RFC 5246 §6.3), then decrypt records after
+//!   the ChangeCipherSpec — nonce + AAD per RFC 5288 (GCM) / RFC 7905 (ChaCha20), sequence number
+//!   per record. CBC suites (which need AES decryption) are a later phase.
 //!
-//! [`decrypt_flow`] is the flow-level entry the wasm `decrypt_tls_flow` export drives: given a
-//! TLS connection's two cleartext byte streams (each direction's reassembled TCP payload) and a
-//! parsed [`KeyLog`], it orients client/server from the ClientHello, gates on a supported suite,
-//! then runs the per-direction epoch state machine below.
+//! Pure compute, wasm-safe. [`decrypt_flow`] is the flow-level entry the wasm `decrypt_tls_flow`
+//! export drives: it orients client/server from the ClientHello, then dispatches on the negotiated
+//! version. TLS 1.0/1.1 and non-AEAD suites return a clear unsupported `reason`.
 
 use base64::Engine as _;
 use serde::Serialize;
@@ -25,7 +25,7 @@ use serde::Serialize;
 use super::keylog::KeyLog;
 use crate::quic::crypto::{
     aes128_gcm_open, aes256_gcm_open, chacha20_poly1305_open, hkdf_expand_label,
-    hkdf_expand_label_sha384,
+    hkdf_expand_label_sha384, tls12_prf_sha256, tls12_prf_sha384,
 };
 
 /// The TLS 1.3 cipher suites this build decrypts, all over vendored RFC-tested crypto.
@@ -34,6 +34,8 @@ const TLS_AES_256_GCM_SHA384: u16 = 0x1302;
 const TLS_CHACHA20_POLY1305_SHA256: u16 = 0x1303;
 /// TLS 1.3 wire version word (`supported_versions`-unmasked).
 const TLS13_VERSION: u16 = 0x0304;
+/// TLS 1.2 wire version word.
+const TLS12_VERSION: u16 = 0x0303;
 /// TLS `ContentType` values (RFC 8446 §5.1). The same registry tags both the outer record's
 /// `opaque_type` and — once decrypted — the TLS 1.3 `TLSInnerPlaintext.type`, so `CT_HANDSHAKE`
 /// is the correct constant for an inner handshake payload as well as an outer handshake record.
@@ -202,11 +204,12 @@ impl TlsDecryptResult {
     }
 }
 
-/// Decrypt a single TLS 1.3 flow from its two cleartext byte streams (`fwd` = query src→dst,
-/// `rev` = the reverse) and a parsed key-log. Orients client/server from whichever stream carries
-/// the ClientHello, so the result's `c2s`/`s2c` labels are always client-relative regardless of
-/// the query's direction. Only `TLS_AES_128_GCM_SHA256` is decrypted this phase; other suites and
-/// TLS 1.2 return `supported = false` with an explaining `reason`. Pure compute, wasm-safe.
+/// Decrypt a single TLS flow from its two cleartext byte streams (`fwd` = query src→dst, `rev` =
+/// the reverse) and a parsed key-log. Orients client/server from whichever stream carries the
+/// ClientHello, so the result's `c2s`/`s2c` labels are always client-relative regardless of the
+/// query's direction, then dispatches on the negotiated version to the TLS 1.3 or TLS 1.2 path
+/// (both AEAD suites only). Unsupported versions/suites return `supported = false` with an
+/// explaining `reason`. Pure compute, wasm-safe.
 pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryptResult {
     let sessions = keylog.session_count();
     if keylog.is_empty() {
@@ -243,14 +246,43 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
             };
         }
     };
-    if version != TLS13_VERSION {
-        return TlsDecryptResult::unsupported(
+    match version {
+        TLS13_VERSION => decrypt_flow_tls13(
+            client_buf,
+            server_buf,
+            &client_random,
+            cipher,
+            keylog,
+            sessions,
+        ),
+        TLS12_VERSION => decrypt_flow_tls12(
+            client_buf,
+            server_buf,
+            &client_random,
+            cipher,
+            keylog,
+            sessions,
+        ),
+        _ => TlsDecryptResult::unsupported(
             Some(version),
             Some(cipher),
-            "key-log decryption supports TLS 1.3 only in this build",
+            "key-log decryption supports TLS 1.2 and 1.3 only",
             sessions,
-        );
+        ),
     }
+}
+
+/// TLS 1.3 branch of [`decrypt_flow`]: derive per-direction traffic keys from the key-log and run
+/// the handshake→application epoch state machine over each direction.
+fn decrypt_flow_tls13(
+    client_buf: &[u8],
+    server_buf: &[u8],
+    client_random: &[u8; 32],
+    cipher: u16,
+    keylog: &KeyLog,
+    sessions: usize,
+) -> TlsDecryptResult {
+    let version = TLS13_VERSION;
     if !matches!(
         cipher,
         TLS_AES_128_GCM_SHA256 | TLS_AES_256_GCM_SHA384 | TLS_CHACHA20_POLY1305_SHA256
@@ -267,8 +299,8 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
         );
     }
 
-    let client_app = keylog.secret(&client_random, "CLIENT_TRAFFIC_SECRET_0");
-    let server_app = keylog.secret(&client_random, "SERVER_TRAFFIC_SECRET_0");
+    let client_app = keylog.secret(client_random, "CLIENT_TRAFFIC_SECRET_0");
+    let server_app = keylog.secret(client_random, "SERVER_TRAFFIC_SECRET_0");
     if client_app.is_none() && server_app.is_none() {
         return TlsDecryptResult {
             supported: true,
@@ -286,7 +318,7 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
     let mut truncated = false;
     decrypt_direction(
         client_buf,
-        keylog.secret(&client_random, "CLIENT_HANDSHAKE_TRAFFIC_SECRET"),
+        keylog.secret(client_random, "CLIENT_HANDSHAKE_TRAFFIC_SECRET"),
         client_app,
         cipher,
         "c2s",
@@ -295,7 +327,7 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
     );
     decrypt_direction(
         server_buf,
-        keylog.secret(&client_random, "SERVER_HANDSHAKE_TRAFFIC_SECRET"),
+        keylog.secret(client_random, "SERVER_HANDSHAKE_TRAFFIC_SECRET"),
         server_app,
         cipher,
         "s2c",
@@ -313,6 +345,271 @@ pub(crate) fn decrypt_flow(fwd: &[u8], rev: &[u8], keylog: &KeyLog) -> TlsDecryp
         truncated,
         reason: None,
         records,
+    }
+}
+
+/// The AEAD this build decrypts for a TLS 1.2 cipher suite.
+#[derive(Clone, Copy, PartialEq)]
+enum Tls12Aead {
+    AesGcm,
+    ChaCha20Poly1305,
+}
+
+/// Parameters for a supported TLS 1.2 AEAD cipher suite.
+struct Tls12Params {
+    aead: Tls12Aead,
+    /// AES key length (16 / 32) or the ChaCha20 key length (32).
+    key_len: usize,
+    /// "Implicit" write-IV length from the key block: the 4-byte GCM salt, or the 12-byte
+    /// ChaCha20 nonce base (RFC 7905).
+    fixed_iv_len: usize,
+    /// The suite's PRF hash is SHA-384 (the `_SHA384` suites), else SHA-256.
+    sha384: bool,
+}
+
+/// Map a TLS 1.2 cipher suite to its AEAD parameters, or `None` for an unsupported suite (CBC,
+/// CCM, RC4, …). Covers the common ECDHE/DHE/RSA AES-GCM and ChaCha20-Poly1305 suites.
+fn tls12_params(cipher: u16) -> Option<Tls12Params> {
+    let p = match cipher {
+        // AES-128-GCM-SHA256: ECDHE-ECDSA / ECDHE-RSA / RSA / DHE-RSA.
+        0xC02B | 0xC02F | 0x009C | 0x009E => Tls12Params {
+            aead: Tls12Aead::AesGcm,
+            key_len: 16,
+            fixed_iv_len: 4,
+            sha384: false,
+        },
+        // AES-256-GCM-SHA384.
+        0xC02C | 0xC030 | 0x009D | 0x009F => Tls12Params {
+            aead: Tls12Aead::AesGcm,
+            key_len: 32,
+            fixed_iv_len: 4,
+            sha384: true,
+        },
+        // ChaCha20-Poly1305-SHA256 (RFC 7905): ECDHE-RSA / ECDHE-ECDSA / DHE-RSA.
+        0xCCA8..=0xCCAA => Tls12Params {
+            aead: Tls12Aead::ChaCha20Poly1305,
+            key_len: 32,
+            fixed_iv_len: 12,
+            sha384: false,
+        },
+        _ => return None,
+    };
+    Some(p)
+}
+
+/// TLS 1.2 branch of [`decrypt_flow`]: expand the key-log master secret into the per-direction key
+/// block (RFC 5246 §6.3), then decrypt each direction's post-ChangeCipherSpec records. Unlike
+/// TLS 1.3 there is no handshake/application key change — a single key per direction with the
+/// sequence number incrementing per record.
+fn decrypt_flow_tls12(
+    client_buf: &[u8],
+    server_buf: &[u8],
+    client_random: &[u8; 32],
+    cipher: u16,
+    keylog: &KeyLog,
+    sessions: usize,
+) -> TlsDecryptResult {
+    let version = TLS12_VERSION;
+    let params = match tls12_params(cipher) {
+        Some(p) => p,
+        None => {
+            return TlsDecryptResult::unsupported(
+                Some(version),
+                Some(cipher),
+                &format!(
+                    "cipher suite {} not supported (TLS 1.2 AES-GCM / ChaCha20-Poly1305 only; \
+                     CBC suites are a later phase)",
+                    super::cipher_label(cipher)
+                ),
+                sessions,
+            );
+        }
+    };
+
+    // TLS 1.2 derives everything from the 48-byte master secret (key-log `CLIENT_RANDOM` label).
+    let master = match keylog.secret(client_random, "CLIENT_RANDOM") {
+        Some(m) if m.len() == 48 => m,
+        _ => {
+            return TlsDecryptResult {
+                supported: true,
+                session_found: false,
+                version: Some(version),
+                cipher: Some(cipher),
+                cipher_name: Some(super::cipher_label(cipher)),
+                keylog_sessions: sessions,
+                reason: Some(
+                    "key-log has no master secret (CLIENT_RANDOM) for this TLS session".to_string(),
+                ),
+                ..Default::default()
+            };
+        }
+    };
+    let server_random = match find_server_random(server_buf) {
+        Some(r) => r,
+        None => {
+            return TlsDecryptResult {
+                supported: true,
+                version: Some(version),
+                cipher: Some(cipher),
+                cipher_name: Some(super::cipher_label(cipher)),
+                keylog_sessions: sessions,
+                reason: Some("no TLS ServerHello random found in this flow".to_string()),
+                ..Default::default()
+            };
+        }
+    };
+
+    // key_block = PRF(master, "key expansion", server_random || client_random); no MAC keys for
+    // an AEAD suite, so it is client/server write keys then client/server write IVs.
+    let total = 2 * params.key_len + 2 * params.fixed_iv_len;
+    let mut seed = [0u8; 64];
+    seed[..32].copy_from_slice(&server_random);
+    seed[32..].copy_from_slice(client_random);
+    let kb = if params.sha384 {
+        tls12_prf_sha384(master, b"key expansion", &seed, total)
+    } else {
+        tls12_prf_sha256(master, b"key expansion", &seed, total)
+    };
+    let c_key = &kb[0..params.key_len];
+    let s_key = &kb[params.key_len..2 * params.key_len];
+    let iv0 = 2 * params.key_len;
+    let c_iv = &kb[iv0..iv0 + params.fixed_iv_len];
+    let s_iv = &kb[iv0 + params.fixed_iv_len..iv0 + 2 * params.fixed_iv_len];
+
+    let mut records: Vec<TlsDecryptRecord> = Vec::new();
+    let mut truncated = false;
+    decrypt_direction_tls12(
+        client_buf,
+        c_key,
+        c_iv,
+        &params,
+        "c2s",
+        &mut records,
+        &mut truncated,
+    );
+    decrypt_direction_tls12(
+        server_buf,
+        s_key,
+        s_iv,
+        &params,
+        "s2c",
+        &mut records,
+        &mut truncated,
+    );
+
+    TlsDecryptResult {
+        supported: true,
+        session_found: true,
+        version: Some(version),
+        cipher: Some(cipher),
+        cipher_name: Some(super::cipher_label(cipher)),
+        keylog_sessions: sessions,
+        truncated,
+        reason: None,
+        records,
+    }
+}
+
+/// Decrypt one TLS 1.2 direction. Records are cleartext until the ChangeCipherSpec; every record
+/// after it is AEAD-protected under `key`/`write_iv`, with the record sequence number starting at 0
+/// (the encrypted Finished) and incrementing per record. Only decrypted `application_data` (type
+/// 23) is surfaced; the Finished/alerts advance the sequence but are not shown.
+fn decrypt_direction_tls12(
+    buf: &[u8],
+    key: &[u8],
+    write_iv: &[u8],
+    params: &Tls12Params,
+    dir: &'static str,
+    out: &mut Vec<TlsDecryptRecord>,
+    truncated: &mut bool,
+) {
+    let mut seq: u64 = 0;
+    let mut encrypted = false;
+    for rec in tls_records(buf) {
+        let ctype = rec[0];
+        if !encrypted {
+            if ctype == CT_CHANGE_CIPHER_SPEC {
+                encrypted = true; // subsequent records use the negotiated keys, seq from 0
+            }
+            continue;
+        }
+        let version = [rec[1], rec[2]];
+        let body = &rec[5..];
+        let this_seq = seq;
+        seq = seq.wrapping_add(1); // every received record advances the sequence number
+        let pt = match tls12_open_record(key, write_iv, params, this_seq, ctype, version, body) {
+            Some(p) => p,
+            None => continue,
+        };
+        if ctype == CT_APPLICATION_DATA {
+            if out.len() >= MAX_DECRYPTED_RECORDS {
+                *truncated = true;
+                break;
+            }
+            out.push(TlsDecryptRecord {
+                direction: dir,
+                seq: this_seq,
+                inner_type: ctype,
+                plaintext_len: pt.len(),
+                plaintext_b64: base64::engine::general_purpose::STANDARD.encode(&pt),
+            });
+        }
+    }
+}
+
+/// Decrypt one TLS 1.2 AEAD record `body` (the bytes after the 5-byte header). Builds the
+/// per-record nonce and the AEAD additional-data per RFC 5246 §6.2.3.3 / RFC 5288 / RFC 7905:
+/// `additional_data = seq_num(8) || type(1) || version(2) || plaintext_len(2)`.
+fn tls12_open_record(
+    key: &[u8],
+    write_iv: &[u8],
+    params: &Tls12Params,
+    seq: u64,
+    ctype: u8,
+    version: [u8; 2],
+    body: &[u8],
+) -> Option<Vec<u8>> {
+    let mut nonce = [0u8; 12];
+    let ct_and_tag: &[u8] = match params.aead {
+        Tls12Aead::AesGcm => {
+            // GenericAEADCipher: explicit_nonce(8) || ciphertext || tag(16). The 12-byte nonce is
+            // the 4-byte implicit salt (write_iv) followed by the wire explicit nonce.
+            if body.len() < 8 + 16 || write_iv.len() != 4 {
+                return None;
+            }
+            nonce[..4].copy_from_slice(write_iv);
+            nonce[4..].copy_from_slice(&body[..8]);
+            &body[8..]
+        }
+        Tls12Aead::ChaCha20Poly1305 => {
+            // RFC 7905: no explicit nonce on the wire; nonce = write_iv XOR left-padded seq_num.
+            if body.len() < 16 || write_iv.len() != 12 {
+                return None;
+            }
+            nonce.copy_from_slice(write_iv);
+            let s = seq.to_be_bytes();
+            for i in 0..8 {
+                nonce[4 + i] ^= s[i];
+            }
+            body
+        }
+    };
+
+    let pt_len = ct_and_tag.len() - 16;
+    let mut aad = Vec::with_capacity(13);
+    aad.extend_from_slice(&seq.to_be_bytes());
+    aad.push(ctype);
+    aad.extend_from_slice(&version);
+    aad.extend_from_slice(&(pt_len as u16).to_be_bytes());
+
+    match params.aead {
+        Tls12Aead::AesGcm if params.key_len == 16 => {
+            aes128_gcm_open(key.try_into().ok()?, &nonce, &aad, ct_and_tag)
+        }
+        Tls12Aead::AesGcm => aes256_gcm_open(key.try_into().ok()?, &nonce, &aad, ct_and_tag),
+        Tls12Aead::ChaCha20Poly1305 => {
+            chacha20_poly1305_open(key.try_into().ok()?, &nonce, &aad, ct_and_tag)
+        }
     }
 }
 
@@ -410,19 +707,31 @@ fn tls_records(buf: &[u8]) -> Vec<&[u8]> {
     out
 }
 
-/// The 32-byte ClientHello random from the first ClientHello record in `buf`, if any.
-/// Layout: record-hdr(5) handshake-hdr(4) client_version(2) random(32) — random at byte 11.
-fn find_client_random(buf: &[u8]) -> Option<[u8; 32]> {
+/// The 32-byte random from the first handshake message of type `want` in `buf`, if any. Both
+/// ClientHello (type 1) and ServerHello (type 2) place the random right after the 4-byte handshake
+/// header + 2-byte legacy_version. Layout: record-hdr(5) handshake-hdr(4) version(2) random(32) —
+/// random at byte 11 of the record (offset 6 within the handshake message).
+fn find_hs_random(buf: &[u8], want: u8) -> Option<[u8; 32]> {
     for rec in tls_records(buf) {
         if rec[0] != CT_HANDSHAKE {
             continue;
         }
         let hs = &rec[5..];
-        if hs.first() == Some(&1) && hs.len() >= 38 {
+        if hs.first() == Some(&want) && hs.len() >= 38 {
             return hs[6..38].try_into().ok();
         }
     }
     None
+}
+
+/// The ClientHello random (key-log lookup key).
+fn find_client_random(buf: &[u8]) -> Option<[u8; 32]> {
+    find_hs_random(buf, 1)
+}
+
+/// The ServerHello random (TLS 1.2 key-block derivation seed).
+fn find_server_random(buf: &[u8]) -> Option<[u8; 32]> {
+    find_hs_random(buf, 2)
 }
 
 /// Advance `*pos` over complete handshake messages in the reassembled stream `msgs`, returning
@@ -690,5 +999,270 @@ mod tests {
         let res = decrypt_flow(&[], &[], &KeyLog::parse(""));
         assert!(res.supported && !res.session_found);
         assert!(res.reason.unwrap().contains("no key-log"));
+    }
+
+    // ── TLS 1.2 ──────────────────────────────────────────────────────────────────
+
+    use crate::quic::crypto::{
+        aes128_gcm_seal, aes256_gcm_seal, chacha20_poly1305_seal, tls12_prf_sha256,
+        tls12_prf_sha384,
+    };
+
+    /// A TLS 1.2 ServerHello record carrying `server_random` and negotiating `cipher` (legacy
+    /// version 0x0303, no extensions — so the parser reports TLS 1.2).
+    fn tls12_server_hello(server_random: &[u8; 32], cipher: u16) -> Vec<u8> {
+        let mut body = vec![0x03, 0x03];
+        body.extend_from_slice(server_random);
+        body.push(0x00); // session_id length
+        body.extend_from_slice(&cipher.to_be_bytes());
+        body.push(0x00); // compression
+        let mut hs = vec![
+            2u8,
+            (body.len() >> 16) as u8,
+            (body.len() >> 8) as u8,
+            body.len() as u8,
+        ];
+        hs.extend_from_slice(&body);
+        let mut rec = vec![22u8, 0x03, 0x03, (hs.len() >> 8) as u8, hs.len() as u8];
+        rec.extend_from_slice(&hs);
+        rec
+    }
+
+    fn ccs_record() -> Vec<u8> {
+        vec![20, 0x03, 0x03, 0, 1, 1] // ChangeCipherSpec
+    }
+
+    fn tls12_aad(seq: u64, ctype: u8, pt_len: usize) -> Vec<u8> {
+        let mut aad = Vec::with_capacity(13);
+        aad.extend_from_slice(&seq.to_be_bytes());
+        aad.push(ctype);
+        aad.extend_from_slice(&[0x03, 0x03]);
+        aad.extend_from_slice(&(pt_len as u16).to_be_bytes());
+        aad
+    }
+
+    /// Build a sealed TLS 1.2 GCM record (`explicit_nonce(8) || ct || tag`).
+    fn tls12_gcm_record(ctype: u8, seq: u64, key: &[u8], iv4: &[u8], pt: &[u8]) -> Vec<u8> {
+        let explicit = seq.to_be_bytes();
+        let mut nonce = [0u8; 12];
+        nonce[..4].copy_from_slice(iv4);
+        nonce[4..].copy_from_slice(&explicit);
+        let aad = tls12_aad(seq, ctype, pt.len());
+        let sealed = if key.len() == 16 {
+            aes128_gcm_seal(key.try_into().unwrap(), &nonce, &aad, pt)
+        } else {
+            aes256_gcm_seal(key.try_into().unwrap(), &nonce, &aad, pt)
+        };
+        let mut frag = explicit.to_vec();
+        frag.extend_from_slice(&sealed);
+        let mut rec = vec![ctype, 0x03, 0x03, (frag.len() >> 8) as u8, frag.len() as u8];
+        rec.extend_from_slice(&frag);
+        rec
+    }
+
+    /// Build a sealed TLS 1.2 ChaCha20-Poly1305 record (RFC 7905: `ct || tag`, no explicit nonce).
+    fn tls12_chacha_record(ctype: u8, seq: u64, key: &[u8; 32], iv12: &[u8], pt: &[u8]) -> Vec<u8> {
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(iv12);
+        let s = seq.to_be_bytes();
+        for i in 0..8 {
+            nonce[4 + i] ^= s[i];
+        }
+        let aad = tls12_aad(seq, ctype, pt.len());
+        let sealed = chacha20_poly1305_seal(key, &nonce, &aad, pt);
+        let mut rec = vec![
+            ctype,
+            0x03,
+            0x03,
+            (sealed.len() >> 8) as u8,
+            sealed.len() as u8,
+        ];
+        rec.extend_from_slice(&sealed);
+        rec
+    }
+
+    /// AES-128-GCM-SHA256 (cipher 0xC02F): the PRF-SHA256 key block + per-record GCM nonce/AAD/seq
+    /// path, end-to-end through `decrypt_flow`. The encrypted Finished (seq 0) advances the
+    /// sequence; the application_data (seq 1) is surfaced.
+    #[test]
+    fn decrypt_flow_tls12_aes128_gcm() {
+        let client_random = [0x11u8; 32];
+        let server_random = [0x22u8; 32];
+        let master = [0x33u8; 48];
+        let cipher = 0xC02Fu16;
+
+        let mut seed = Vec::new();
+        seed.extend_from_slice(&server_random);
+        seed.extend_from_slice(&client_random);
+        let kb = tls12_prf_sha256(&master, b"key expansion", &seed, 40); // 2*16 key + 2*4 iv
+        let (c_key, s_key) = (&kb[0..16], &kb[16..32]);
+        let (c_iv, s_iv) = (&kb[32..36], &kb[36..40]);
+
+        let mut client_buf = client_hello_record(&client_random);
+        client_buf.extend_from_slice(&ccs_record());
+        client_buf.extend_from_slice(&tls12_gcm_record(
+            22,
+            0,
+            c_key,
+            c_iv,
+            b"\x14\x00\x00\x0cFINISHEDxx",
+        ));
+        client_buf.extend_from_slice(&tls12_gcm_record(
+            23,
+            1,
+            c_key,
+            c_iv,
+            b"GET /secret HTTP/1.1\r\n",
+        ));
+
+        let mut server_buf = tls12_server_hello(&server_random, cipher);
+        server_buf.extend_from_slice(&ccs_record());
+        server_buf.extend_from_slice(&tls12_gcm_record(
+            22,
+            0,
+            s_key,
+            s_iv,
+            b"\x14\x00\x00\x0cFINISHEDxx",
+        ));
+        server_buf.extend_from_slice(&tls12_gcm_record(
+            23,
+            1,
+            s_key,
+            s_iv,
+            b"HTTP/1.1 200 OK\r\nsecret",
+        ));
+
+        let keylog = keylog_for(&client_random, "CLIENT_RANDOM", &master);
+        let res = decrypt_flow(&client_buf, &server_buf, &keylog);
+        assert!(res.supported && res.session_found, "{res:?}");
+        assert_eq!(res.version, Some(0x0303));
+        assert_eq!(res.records.len(), 2, "{:?}", res.records);
+
+        let c2s = res.records.iter().find(|r| r.direction == "c2s").unwrap();
+        assert_eq!(c2s.seq, 1, "app data is the 2nd encrypted record");
+        let c2s_pt = base64::engine::general_purpose::STANDARD
+            .decode(&c2s.plaintext_b64)
+            .unwrap();
+        assert_eq!(c2s_pt, b"GET /secret HTTP/1.1\r\n");
+        let s2c = res.records.iter().find(|r| r.direction == "s2c").unwrap();
+        let s2c_pt = base64::engine::general_purpose::STANDARD
+            .decode(&s2c.plaintext_b64)
+            .unwrap();
+        assert_eq!(s2c_pt, b"HTTP/1.1 200 OK\r\nsecret");
+    }
+
+    /// AES-256-GCM-SHA384 (cipher 0xC030): exercises the PRF-SHA384 key-block path + AES-256-GCM.
+    #[test]
+    fn decrypt_flow_tls12_aes256_gcm_sha384() {
+        let client_random = [0x44u8; 32];
+        let server_random = [0x55u8; 32];
+        let master = [0x66u8; 48];
+        let cipher = 0xC030u16;
+
+        let mut seed = Vec::new();
+        seed.extend_from_slice(&server_random);
+        seed.extend_from_slice(&client_random);
+        let kb = tls12_prf_sha384(&master, b"key expansion", &seed, 72); // 2*32 key + 2*4 iv
+        let (c_key, s_key) = (&kb[0..32], &kb[32..64]);
+        let (c_iv, s_iv) = (&kb[64..68], &kb[68..72]);
+
+        // Exercise both directions (each uses its own write key/IV from the key block).
+        let mut client_buf = client_hello_record(&client_random);
+        client_buf.extend_from_slice(&ccs_record());
+        client_buf.extend_from_slice(&tls12_gcm_record(
+            23,
+            0,
+            c_key,
+            c_iv,
+            b"client AES-256 request",
+        ));
+
+        let mut server_buf = tls12_server_hello(&server_random, cipher);
+        server_buf.extend_from_slice(&ccs_record());
+        server_buf.extend_from_slice(&tls12_gcm_record(
+            23,
+            0,
+            s_key,
+            s_iv,
+            b"server AES-256 response",
+        ));
+
+        let keylog = keylog_for(&client_random, "CLIENT_RANDOM", &master);
+        let res = decrypt_flow(&client_buf, &server_buf, &keylog);
+        assert!(res.supported && res.session_found, "{res:?}");
+        assert_eq!(res.records.len(), 2, "{:?}", res.records);
+        let c2s = res.records.iter().find(|r| r.direction == "c2s").unwrap();
+        let s2c = res.records.iter().find(|r| r.direction == "s2c").unwrap();
+        let dec = |r: &TlsDecryptRecord| {
+            base64::engine::general_purpose::STANDARD
+                .decode(&r.plaintext_b64)
+                .unwrap()
+        };
+        assert_eq!(dec(c2s), b"client AES-256 request");
+        assert_eq!(dec(s2c), b"server AES-256 response");
+    }
+
+    /// ChaCha20-Poly1305-SHA256 (cipher 0xCCA8, RFC 7905): nonce = write_iv XOR seq, no explicit
+    /// nonce on the wire.
+    #[test]
+    fn decrypt_flow_tls12_chacha20() {
+        let client_random = [0x77u8; 32];
+        let server_random = [0x88u8; 32];
+        let master = [0x99u8; 48];
+        let cipher = 0xCCA8u16;
+
+        let mut seed = Vec::new();
+        seed.extend_from_slice(&server_random);
+        seed.extend_from_slice(&client_random);
+        let kb = tls12_prf_sha256(&master, b"key expansion", &seed, 88); // 2*32 key + 2*12 iv
+        let s_key: &[u8; 32] = kb[32..64].try_into().unwrap();
+        let s_iv = &kb[64 + 12..88];
+
+        let mut server_buf = tls12_server_hello(&server_random, cipher);
+        server_buf.extend_from_slice(&ccs_record());
+        server_buf.extend_from_slice(&tls12_chacha_record(
+            23,
+            0,
+            s_key,
+            s_iv,
+            b"chacha20 secret response",
+        ));
+
+        let client_buf = client_hello_record(&client_random);
+        let keylog = keylog_for(&client_random, "CLIENT_RANDOM", &master);
+        let res = decrypt_flow(&client_buf, &server_buf, &keylog);
+        assert!(res.supported && res.session_found, "{res:?}");
+        assert_eq!(res.records.len(), 1);
+        let pt = base64::engine::general_purpose::STANDARD
+            .decode(&res.records[0].plaintext_b64)
+            .unwrap();
+        assert_eq!(pt, b"chacha20 secret response");
+    }
+
+    #[test]
+    fn decrypt_flow_tls12_cbc_is_unsupported() {
+        let client_random = [0x12u8; 32];
+        let server_random = [0x34u8; 32];
+        // 0xC013 = ECDHE_RSA_WITH_AES_128_CBC_SHA (CBC — not an AEAD suite).
+        let server_buf = tls12_server_hello(&server_random, 0xC013);
+        let client_buf = client_hello_record(&client_random);
+        let keylog = keylog_for(&client_random, "CLIENT_RANDOM", &[0u8; 48]);
+        let res = decrypt_flow(&client_buf, &server_buf, &keylog);
+        assert!(!res.supported);
+        assert_eq!(res.version, Some(0x0303));
+        assert!(res.reason.unwrap().contains("CBC suites are a later phase"));
+    }
+
+    #[test]
+    fn decrypt_flow_tls12_no_master_secret() {
+        let client_random = [0xaau8; 32];
+        let server_random = [0xbbu8; 32];
+        let server_buf = tls12_server_hello(&server_random, 0xC02F);
+        let client_buf = client_hello_record(&client_random);
+        // Key-log has a master secret for a different session.
+        let keylog = keylog_for(&[0xcc; 32], "CLIENT_RANDOM", &[0u8; 48]);
+        let res = decrypt_flow(&client_buf, &server_buf, &keylog);
+        assert!(res.supported && !res.session_found);
+        assert!(res.reason.unwrap().contains("no master secret"));
     }
 }

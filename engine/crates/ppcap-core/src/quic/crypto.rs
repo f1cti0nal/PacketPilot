@@ -574,6 +574,62 @@ pub(crate) fn hkdf_expand_label_sha384(secret: &[u8; 48], label: &str, out_len: 
 }
 
 // ---------------------------------------------------------------------------
+// TLS 1.2 PRF (RFC 5246 §5).
+//
+// `PRF(secret, label, seed) = P_hash(secret, label || seed)`, where
+// `P_hash(secret, seed) = HMAC(secret, A(1)||seed) || HMAC(secret, A(2)||seed) || …`,
+// `A(0) = seed`, `A(i) = HMAC(secret, A(i-1))`. The hash is the cipher suite's PRF hash
+// (SHA-256 for most TLS 1.2 AEAD suites; SHA-384 for the `_SHA384` suites). Used to expand the
+// key-log master secret into the per-direction key block for TLS 1.2 key-log decryption.
+// ---------------------------------------------------------------------------
+
+/// TLS 1.2 PRF with SHA-256 (RFC 5246 §5).
+pub(crate) fn tls12_prf_sha256(
+    secret: &[u8],
+    label: &[u8],
+    seed: &[u8],
+    out_len: usize,
+) -> Vec<u8> {
+    let mut label_seed = Vec::with_capacity(label.len() + seed.len());
+    label_seed.extend_from_slice(label);
+    label_seed.extend_from_slice(seed);
+    let mut out = Vec::with_capacity(out_len);
+    let mut a = hmac_sha256(secret, &label_seed).to_vec(); // A(1)
+    while out.len() < out_len {
+        let mut input = Vec::with_capacity(a.len() + label_seed.len());
+        input.extend_from_slice(&a);
+        input.extend_from_slice(&label_seed);
+        out.extend_from_slice(&hmac_sha256(secret, &input));
+        a = hmac_sha256(secret, &a).to_vec(); // A(i+1)
+    }
+    out.truncate(out_len);
+    out
+}
+
+/// TLS 1.2 PRF with SHA-384 (for the `_SHA384` cipher suites).
+pub(crate) fn tls12_prf_sha384(
+    secret: &[u8],
+    label: &[u8],
+    seed: &[u8],
+    out_len: usize,
+) -> Vec<u8> {
+    let mut label_seed = Vec::with_capacity(label.len() + seed.len());
+    label_seed.extend_from_slice(label);
+    label_seed.extend_from_slice(seed);
+    let mut out = Vec::with_capacity(out_len);
+    let mut a = hmac_sha384(secret, &label_seed).to_vec();
+    while out.len() < out_len {
+        let mut input = Vec::with_capacity(a.len() + label_seed.len());
+        input.extend_from_slice(&a);
+        input.extend_from_slice(&label_seed);
+        out.extend_from_slice(&hmac_sha384(secret, &input));
+        a = hmac_sha384(secret, &a).to_vec();
+    }
+    out.truncate(out_len);
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Vendored ChaCha20-Poly1305 AEAD (RFC 8439).
 //
 // TLS 1.3 `TLS_CHACHA20_POLY1305_SHA256`. Stream cipher + one-time Poly1305 MAC, both from scratch
@@ -828,6 +884,81 @@ pub(crate) fn chacha20_poly1305_open(
     }
     // Payload encryption uses counter 1 onward (block 0 made the Poly key).
     Some(chacha20_xor(key, 1, nonce, ct))
+}
+
+// ---------------------------------------------------------------------------
+// Test-only AEAD seal helpers (inverse of the `*_open` functions). Not compiled into the wasm.
+// Used to build synthetic encrypted TLS records for round-trip integration tests.
+// ---------------------------------------------------------------------------
+
+/// AES-GCM authenticated encryption core (inverse of [`gcm_open`]); returns ciphertext || tag.
+#[cfg(test)]
+fn gcm_seal(
+    encrypt_block: impl Fn(&[u8; 16]) -> [u8; 16],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    pt: &[u8],
+) -> Vec<u8> {
+    let h = encrypt_block(&[0u8; 16]);
+    let mut j0 = [0u8; 16];
+    j0[..12].copy_from_slice(nonce);
+    j0[15] = 1;
+    let mut counter = j0;
+    incr32(&mut counter);
+    let mut ct = Vec::with_capacity(pt.len() + 16);
+    for chunk in pt.chunks(16) {
+        let ks = encrypt_block(&counter);
+        for (i, &b) in chunk.iter().enumerate() {
+            ct.push(b ^ ks[i]);
+        }
+        incr32(&mut counter);
+    }
+    let s = ghash(&h, aad, &ct);
+    let ej0 = encrypt_block(&j0);
+    for i in 0..16 {
+        ct.push(s[i] ^ ej0[i]);
+    }
+    ct
+}
+
+#[cfg(test)]
+pub(crate) fn aes128_gcm_seal(key: &[u8; 16], nonce: &[u8; 12], aad: &[u8], pt: &[u8]) -> Vec<u8> {
+    let aes = Aes128::new(key);
+    gcm_seal(|b| aes.encrypt_block(b), nonce, aad, pt)
+}
+
+#[cfg(test)]
+pub(crate) fn aes256_gcm_seal(key: &[u8; 32], nonce: &[u8; 12], aad: &[u8], pt: &[u8]) -> Vec<u8> {
+    let aes = Aes256::new(key);
+    gcm_seal(|b| aes.encrypt_block(b), nonce, aad, pt)
+}
+
+#[cfg(test)]
+pub(crate) fn chacha20_poly1305_seal(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    pt: &[u8],
+) -> Vec<u8> {
+    let block0 = chacha20_block(key, 0, nonce);
+    let mut poly_key = [0u8; 32];
+    poly_key.copy_from_slice(&block0[..32]);
+    let ct = chacha20_xor(key, 1, nonce, pt);
+    let mut mac = Vec::with_capacity(aad.len() + ct.len() + 64);
+    mac.extend_from_slice(aad);
+    while mac.len() % 16 != 0 {
+        mac.push(0);
+    }
+    mac.extend_from_slice(&ct);
+    while mac.len() % 16 != 0 {
+        mac.push(0);
+    }
+    mac.extend_from_slice(&(aad.len() as u64).to_le_bytes());
+    mac.extend_from_slice(&(ct.len() as u64).to_le_bytes());
+    let tag = poly1305(&poly_key, &mac);
+    let mut out = ct;
+    out.extend_from_slice(&tag);
+    out
 }
 
 #[cfg(test)]
@@ -1213,5 +1344,52 @@ mod tests {
         let key = hex("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b");
         let tag = poly1305(key[..].try_into().unwrap(), b"");
         assert_eq!(tag.to_vec(), key[16..32].to_vec());
+    }
+
+    /// The test-only AEAD seal helpers are exact inverses of the RFC-verified `*_open` functions.
+    #[test]
+    fn aead_seal_open_roundtrips() {
+        let pt = b"the quick brown fox jumps over the lazy dog (and then some more bytes)";
+        let nonce = [0x07u8; 12];
+        let aad = b"record-header-aad";
+        let k16 = [0x11u8; 16];
+        let k32 = [0x22u8; 32];
+
+        let s = aes128_gcm_seal(&k16, &nonce, aad, pt);
+        assert_eq!(
+            aes128_gcm_open(&k16, &nonce, aad, &s).as_deref(),
+            Some(&pt[..])
+        );
+        let s = aes256_gcm_seal(&k32, &nonce, aad, pt);
+        assert_eq!(
+            aes256_gcm_open(&k32, &nonce, aad, &s).as_deref(),
+            Some(&pt[..])
+        );
+        let s = chacha20_poly1305_seal(&k32, &nonce, aad, pt);
+        assert_eq!(
+            chacha20_poly1305_open(&k32, &nonce, aad, &s).as_deref(),
+            Some(&pt[..])
+        );
+
+        // A flipped ciphertext byte must fail authentication.
+        let mut bad = aes256_gcm_seal(&k32, &nonce, aad, pt);
+        bad[0] ^= 0x01;
+        assert!(aes256_gcm_open(&k32, &nonce, aad, &bad).is_none());
+    }
+
+    /// TLS 1.2 PRF-SHA256, the canonical IETF TLS WG test vector (secret/seed = 16 bytes,
+    /// label = "test label", first 100 output octets).
+    #[test]
+    fn tls12_prf_sha256_ietf_vector() {
+        let secret = hex("9bbe436ba940f017b17652849a71db35");
+        let seed = hex("a0ba9f936cda311827a6f796ffd5198c");
+        let out = tls12_prf_sha256(&secret, b"test label", &seed, 100);
+        assert_eq!(
+            to_hex(&out),
+            "e3f229ba727be17b8d122620557cd453c2aab21d07c3d495329b52d4e61edb5a\
+             6b301791e90d35c9c9a46b4e14baf9af0fa022f7077def17abfd3797c0564bab4\
+             fbc91666e9def9b97fce34f796789baa48082d122ee42c5a72e5a5110fff7018\
+             7347b66"
+        );
     }
 }
