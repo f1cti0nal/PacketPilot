@@ -22,6 +22,7 @@ mod cert;
 pub(crate) mod decrypt;
 pub(crate) mod decrypted_http;
 mod der;
+mod http2;
 pub(crate) mod keylog;
 
 /// A health problem found on a server's leaf certificate. Carries just enough context to render

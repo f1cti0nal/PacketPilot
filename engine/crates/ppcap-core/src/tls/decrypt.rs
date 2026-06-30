@@ -251,21 +251,27 @@ fn analyze_decrypted(
 ) {
     let c2s = reassemble(records, "c2s");
     let s2c = reassemble(records, "s2c");
+    let to_carved = |c: crate::carve::StreamCarve| DecryptedCarvedFile {
+        sha256: crate::analyze::hex_of(&c.sha256),
+        size: c.size,
+        known_bad: c.known_bad,
+        signatures: c.signatures.iter().map(|s| s.label.to_string()).collect(),
+    };
     let proto = super::decrypted_http::detect_proto(&c2s);
-    let (http, carved) = if proto == "http/1.1" {
-        let txns = super::decrypted_http::parse_transactions(&c2s, &s2c);
-        let files = crate::carve::carve_http_stream(&s2c)
-            .into_iter()
-            .map(|c| DecryptedCarvedFile {
-                sha256: crate::analyze::hex_of(&c.sha256),
-                size: c.size,
-                known_bad: c.known_bad,
-                signatures: c.signatures.iter().map(|s| s.label.to_string()).collect(),
-            })
-            .collect();
-        (txns, files)
-    } else {
-        (Vec::new(), Vec::new())
+    let (http, carved) = match proto {
+        "http/1.1" => {
+            let txns = super::decrypted_http::parse_transactions(&c2s, &s2c);
+            let files = crate::carve::carve_http_stream(&s2c)
+                .into_iter()
+                .map(to_carved)
+                .collect();
+            (txns, files)
+        }
+        "http/2" => {
+            let (txns, carves) = super::http2::parse_http2(&c2s, &s2c);
+            (txns, carves.into_iter().map(to_carved).collect())
+        }
+        _ => (Vec::new(), Vec::new()),
     };
     (Some(proto.to_string()), http, carved)
 }
@@ -1267,6 +1273,56 @@ mod tests {
             .signatures
             .iter()
             .any(|s| s == "UPX-packed executable"));
+    }
+
+    /// Re-analysis of a decrypted HTTP/2 flow: the HPACK-compressed request + response headers are
+    /// decoded into a transaction (paired by stream id) and the DATA-frame body is carved.
+    #[test]
+    fn analyze_decrypted_reads_http2_and_carves_files() {
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let frame = |ftype: u8, flags: u8, sid: u32, payload: &[u8]| -> Vec<u8> {
+            let n = payload.len();
+            let mut f = vec![(n >> 16) as u8, (n >> 8) as u8, n as u8, ftype, flags];
+            f.extend_from_slice(&sid.to_be_bytes());
+            f.extend_from_slice(payload);
+            f
+        };
+        let hex = |s: &str| -> Vec<u8> {
+            (0..s.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+                .collect()
+        };
+        // Client: preface + HEADERS on stream 1 (RFC 7541 C.3.1: GET / www.example.com).
+        let req_block = hex("828684410f7777772e6578616d706c652e636f6d");
+        let mut c2s = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".to_vec();
+        c2s.extend_from_slice(&frame(0x1, 0x4 /*END_HEADERS*/, 1, &req_block));
+        // Server: HEADERS (:status 200, indexed = 0x88) + DATA (PE-with-UPX body).
+        let body = b"MZ\x90\x00 UPX! packed http2 body";
+        let mut s2c = frame(0x1, 0x4, 1, &[0x88]);
+        s2c.extend_from_slice(&frame(0x0, 0x1 /*END_STREAM*/, 1, body));
+
+        let rec = |dir: &'static str, pt: &[u8]| TlsDecryptRecord {
+            direction: dir,
+            seq: 0,
+            inner_type: 0x17,
+            plaintext_len: pt.len(),
+            plaintext_b64: b64(pt),
+        };
+        let records = vec![rec("c2s", &c2s), rec("s2c", &s2c)];
+        let (proto, http, carved) = analyze_decrypted(&records);
+
+        assert_eq!(proto.as_deref(), Some("http/2"));
+        assert_eq!(http.len(), 1);
+        assert_eq!(http[0].method, "GET");
+        assert_eq!(http[0].host, "www.example.com");
+        assert_eq!(http[0].status, 200);
+        assert_eq!(carved.len(), 1);
+        assert_eq!(carved[0].size, body.len() as u64);
+        assert!(carved[0]
+            .signatures
+            .iter()
+            .any(|s| s == "PE/DOS executable"));
     }
 
     // ── TLS 1.2 ──────────────────────────────────────────────────────────────────

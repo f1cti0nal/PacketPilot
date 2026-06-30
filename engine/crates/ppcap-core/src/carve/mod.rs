@@ -599,6 +599,22 @@ pub(crate) struct StreamCarve {
 /// Cap on files carved from one decrypted stream.
 const MAX_STREAM_CARVES: usize = 256;
 
+/// Hash + signature-scan a complete file body into a [`StreamCarve`] (for a body already fully
+/// reassembled — a decrypted HTTP/1.1 response body or HTTP/2 DATA stream).
+pub(crate) fn carve_one(body: &[u8]) -> StreamCarve {
+    let mut hasher = Sha256Stream::new();
+    hasher.update(body);
+    let sha256 = hasher.finalize_bytes();
+    let mut scanner = SigScanner::new();
+    scanner.feed(body);
+    StreamCarve {
+        sha256,
+        size: body.len() as u64,
+        known_bad: known_bad(&sha256),
+        signatures: scanner.hits(),
+    }
+}
+
 /// Carve files from an in-order cleartext **HTTP/1.1 response** stream — e.g. the decrypted
 /// server→client direction of a TLS flow (key-log decryption). Walks length-delimited, uncompressed
 /// responses (keep-alive aware), hashing and signature-scanning each body, so a malware download
@@ -628,18 +644,7 @@ pub(crate) fn carve_http_stream(stream: &[u8]) -> Vec<StreamCarve> {
                     Some(e) if e <= stream.len() => e,
                     _ => break, // body not fully present
                 };
-                let body = &stream[body_start..body_end];
-                let mut hasher = Sha256Stream::new();
-                hasher.update(body);
-                let sha256 = hasher.finalize_bytes();
-                let mut scanner = SigScanner::new();
-                scanner.feed(body);
-                out.push(StreamCarve {
-                    sha256,
-                    size: body_len as u64,
-                    known_bad: known_bad(&sha256),
-                    signatures: scanner.hits(),
-                });
+                out.push(carve_one(&stream[body_start..body_end]));
                 pos = body_end;
             }
             // Not carvable (compressed / chunked / no length): skip past these headers and keep

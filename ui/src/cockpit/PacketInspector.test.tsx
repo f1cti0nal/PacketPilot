@@ -201,6 +201,20 @@ describe("PacketInspector", () => {
     expect(onDecrypt).toHaveBeenCalledOnce();
   });
 
+  it("HTTP/2 with no recovered transactions explains the HPACK frames, not 'not decoded'", async () => {
+    const u = userEvent.setup();
+    const onDecrypt = vi.fn().mockResolvedValue({
+      supported: true, sessionFound: true, version: 0x0304, cipher: 0x1301,
+      cipherName: "TLS_AES_128_GCM_SHA256", keylogSessions: 1, truncated: false, reason: null,
+      records: [{ direction: "c2s", seq: 0, innerType: 23, plaintext: new TextEncoder().encode("PRI * HTTP/2.0") }],
+      appProto: "http/2", http: [], carved: [],
+    });
+    render(<PacketInspector flow={flow} packets={makePackets()} loading={false} error={null} onClose={() => {}} onDecrypt={onDecrypt} />);
+    await u.click(screen.getByRole("button", { name: "decrypt" }));
+    await u.upload(screen.getByLabelText(/SSLKEYLOGFILE/i), keylogFile());
+    expect(await screen.findByText(/HTTP\/2.*HPACK-compressed frames/)).toBeInTheDocument();
+  });
+
   it("surfaces the reason for an unsupported cipher suite", async () => {
     const u = userEvent.setup();
     const onDecrypt = vi.fn().mockResolvedValue({

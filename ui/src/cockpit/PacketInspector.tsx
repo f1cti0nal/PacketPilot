@@ -304,13 +304,13 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
   );
 }
 
-/** The HTTP/1.1 transactions reconstructed from the decrypted TLS flow. */
+/** The HTTP transactions (HTTP/1.1 or HTTP/2) reconstructed from the decrypted TLS flow. */
 function DecryptedHttpList({ result }: { result: TlsDecryptResult }) {
   if (result.http.length === 0) {
     const note =
       result.appProto === "http/2"
-        ? "This flow is HTTP/2 — its HPACK-compressed binary framing isn't decoded yet. The raw decrypted records are under Records."
-        : "The decrypted application data isn't HTTP/1.1, so no requests were reconstructed. See Records for the raw plaintext.";
+        ? "This flow is HTTP/2, but no request/response headers were recovered from its HPACK-compressed frames. See Records for the raw decrypted plaintext."
+        : "The decrypted application data isn't HTTP, so no requests were reconstructed. See Records for the raw plaintext.";
     return <div className="text-sm text-[var(--color-text-faint)]">{note}</div>;
   }
   return (
