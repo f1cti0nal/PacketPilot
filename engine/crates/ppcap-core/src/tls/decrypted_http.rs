@@ -170,23 +170,33 @@ fn parse_responses(s2c: &[u8]) -> Vec<Resp> {
         let content_type = header(head, b"content-type:")
             .map(lossy)
             .unwrap_or_default();
-        let has_len = header(head, b"content-length:").is_some();
-        let clen = content_len(head);
-        out.push(Resp {
-            status,
-            content_type,
-            content_len: clen,
-        });
-        if !has_len {
-            break; // chunked / connection-close — can't reliably resync the next response
+        let body_start = start + hdr_end + 4;
+        let after = &s2c[body_start..];
+        // Delimit the body via Content-Length OR chunked framing so keep-alive responses after a
+        // chunked one are still parsed; report the DECODED size (de-chunked + inflated) — the real
+        // payload size, matching what the carver surfaces.
+        match crate::carve::response_body_span(head, after) {
+            Some(span) => {
+                let decoded_len = crate::carve::decode_http_body(head, &after[..span]).len() as u64;
+                out.push(Resp {
+                    status,
+                    content_type,
+                    content_len: decoded_len,
+                });
+                // `body_start > pos` guarantees forward progress even when span == 0.
+                pos = body_start + span;
+            }
+            None => {
+                // Body can't be delimited (no length, not chunked) or isn't fully present — record
+                // what we have and stop; we can't reliably find the next response.
+                out.push(Resp {
+                    status,
+                    content_type,
+                    content_len: content_len(head),
+                });
+                break;
+            }
         }
-        // Clamp the body to the remaining stream + use saturating arithmetic so a hostile
-        // Content-Length can't overflow `pos`. `start >= pos` and `+4` guarantee forward progress.
-        let body = clen.min(s2c.len() as u64) as usize;
-        pos = start
-            .saturating_add(hdr_end)
-            .saturating_add(4)
-            .saturating_add(body);
     }
     out
 }
@@ -258,6 +268,29 @@ mod tests {
         assert_eq!(txns.len(), 1);
         assert_eq!(txns[0].method, "GET");
         assert_eq!(txns[0].status, 200);
+    }
+
+    /// A chunked response must not stop transaction parsing: the keep-alive response after it is
+    /// still surfaced, and the chunked one reports its de-chunked size.
+    #[test]
+    fn chunked_response_resyncs_to_the_next() {
+        let c2s = b"GET /a HTTP/1.1\r\nHost: h\r\n\r\nGET /b HTTP/1.1\r\nHost: h\r\n\r\n";
+        let mut s2c =
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\n\r\n"
+                .to_vec();
+        s2c.extend_from_slice(b"5\r\nhello\r\n0\r\n\r\n"); // de-chunks to 5 bytes
+        s2c.extend_from_slice(b"HTTP/1.1 404 Not Found\r\nContent-Length: 3\r\n\r\nxyz");
+
+        let txns = parse_transactions(c2s, &s2c);
+        assert_eq!(
+            txns.len(),
+            2,
+            "the response after the chunked one is not lost"
+        );
+        assert_eq!(txns[0].status, 200);
+        assert_eq!(txns[0].resp_bytes, 5, "de-chunked size");
+        assert_eq!(txns[1].status, 404);
+        assert_eq!(txns[1].target, "/b");
     }
 
     #[test]
