@@ -8,15 +8,17 @@
 //!
 //! Design constraints that keep it correct and cheap:
 //! - **No buffering of the body** — the hash is computed incrementally, so memory is O(1) per flow
-//!   regardless of file size (only the small header prefix is held, transiently).
+//!   regardless of file size (only the small header prefix is held, transiently). Chunked framing and
+//!   gzip/deflate decompression are likewise *streamed* (a chunk state machine + a push-based
+//!   inflater feeding the hash sink), so this holds even for compressed/chunked downloads.
 //! - **In-order only** — bytes are placed by their TCP sequence number; a *gap* (missing segment)
 //!   aborts the carve (no wrong hash is ever produced), a pure retransmit is skipped, and a partial
 //!   overlap consumes only the fresh tail. Out-of-order / lossy captures simply yield no carve.
-//! - **Length-delimited, uncompressed only** — a `Content-Encoding` (the body is compressed, so its
-//!   hash would not be the file's) or `Transfer-Encoding: chunked` (not de-chunked here) aborts the
-//!   carve rather than hashing the wrong bytes. The common malware-delivery case (a plain
-//!   `Content-Length` binary) is covered.
-//! - **Bounded** — capped number of tracked flows and a maximum carved size.
+//! - **Decoded before hashing** — the body is de-framed (Content-Length or `Transfer-Encoding:
+//!   chunked`) and content-decoded (`Content-Encoding: gzip`/`deflate`) on the fly, so the hash is
+//!   the *file's* hash and content signatures match the real bytes even when it was delivered
+//!   chunked or compressed. Malformed framing/compression aborts the carve (never a wrong hash).
+//! - **Bounded** — capped tracked flows, a maximum carved size, and a bounded chunk-line buffer.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -289,12 +291,190 @@ impl SigScanner {
     }
 }
 
-/// The per-flow body plan, set once the response headers are parsed.
-struct BodyPlan {
-    content_len: u64,
-    hasher: Option<Sha256Stream>,
-    hashed: u64,
+/// Write sink that streams response-body plaintext through the SHA-256 + signature scanner, bounded
+/// by `MAX_BODY`. Owned by the content decoder, so decompressed output is hashed + scanned as it is
+/// produced — the body is never buffered (preserving the carver's O(1)-per-flow invariant).
+struct CarveSink {
+    hasher: Sha256Stream,
     scanner: SigScanner,
+    size: u64,
+}
+
+impl CarveSink {
+    fn new() -> CarveSink {
+        CarveSink {
+            hasher: Sha256Stream::new(),
+            scanner: SigScanner::new(),
+            size: 0,
+        }
+    }
+    fn feed(&mut self, bytes: &[u8]) {
+        let room = MAX_BODY.saturating_sub(self.size) as usize;
+        let take = bytes.len().min(room);
+        self.hasher.update(&bytes[..take]);
+        self.scanner.feed(&bytes[..take]);
+        self.size += take as u64;
+    }
+}
+
+impl std::io::Write for CarveSink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.feed(buf); // bytes past MAX_BODY are dropped by `feed`, but we report them consumed
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Streaming content-decoder: raw (de-framed) body bytes in, plaintext hashed + scanned by the sink.
+/// HTTP `deflate` is taken as zlib-wrapped (the spec-correct form); a non-conforming raw-DEFLATE
+/// server simply errors out and yields no carve.
+enum Decode {
+    Plain(CarveSink),
+    Gzip(flate2::write::GzDecoder<CarveSink>),
+    Zlib(flate2::write::ZlibDecoder<CarveSink>),
+}
+
+impl Decode {
+    fn new(enc: Encoding) -> Decode {
+        match enc {
+            Encoding::Identity => Decode::Plain(CarveSink::new()),
+            Encoding::Gzip => Decode::Gzip(flate2::write::GzDecoder::new(CarveSink::new())),
+            Encoding::Deflate => Decode::Zlib(flate2::write::ZlibDecoder::new(CarveSink::new())),
+        }
+    }
+    /// Feed de-framed body bytes. Returns `false` if the decoder errored (malformed compression).
+    fn feed(&mut self, bytes: &[u8]) -> bool {
+        use std::io::Write;
+        match self {
+            Decode::Plain(s) => {
+                s.feed(bytes);
+                true
+            }
+            Decode::Gzip(d) => d.write_all(bytes).is_ok(),
+            Decode::Zlib(d) => d.write_all(bytes).is_ok(),
+        }
+    }
+    /// Flush + recover the sink (its hash, size, and signatures). `None` if the trailing flush
+    /// failed (truncated compressed stream).
+    fn finish(self) -> Option<CarveSink> {
+        match self {
+            Decode::Plain(s) => Some(s),
+            Decode::Gzip(d) => d.finish().ok(),
+            Decode::Zlib(d) => d.finish().ok(),
+        }
+    }
+}
+
+/// How the response body is framed on the wire.
+enum Framing {
+    /// Exactly `n` raw body bytes remain (Content-Length).
+    Length(u64),
+    /// Chunked transfer-encoding, de-framed by a streaming state machine.
+    Chunked(ChunkDec),
+}
+
+/// Max bytes of a chunk-size / trailer line we buffer before declaring the framing malformed.
+const MAX_CHUNK_LINE: usize = 1024;
+
+/// Streaming `Transfer-Encoding: chunked` decoder (RFC 7230 §4.1): fed body bytes in arbitrary
+/// splits, it emits the de-chunked body and reports completion at the zero-length chunk + trailers.
+struct ChunkDec {
+    state: ChunkState,
+    line: Vec<u8>,
+}
+
+enum ChunkState {
+    Size,        // accumulating the "size[;ext]\r\n" line
+    Data(u64),   // `n` bytes of chunk data remain
+    DataEnd(u8), // `n` bytes of the post-data CRLF remain to consume
+    Trailer,     // accumulating a trailer line (empty line ends the body)
+    Done,
+}
+
+fn trim_crlf(line: &[u8]) -> &[u8] {
+    let line = line.strip_suffix(b"\n").unwrap_or(line);
+    line.strip_suffix(b"\r").unwrap_or(line)
+}
+
+impl ChunkDec {
+    fn new() -> ChunkDec {
+        ChunkDec {
+            state: ChunkState::Size,
+            line: Vec::new(),
+        }
+    }
+    /// Feed raw chunked bytes, pushing decoded body bytes to `out`. `Ok(true)` once the terminator
+    /// is reached; `Err(())` on malformed framing.
+    fn feed(&mut self, mut input: &[u8], out: &mut Vec<u8>) -> Result<bool, ()> {
+        while !input.is_empty() {
+            match self.state {
+                ChunkState::Size | ChunkState::Trailer => {
+                    let nl = input.iter().position(|&b| b == b'\n');
+                    let end = nl.map(|i| i + 1).unwrap_or(input.len());
+                    if self.line.len() + end > MAX_CHUNK_LINE {
+                        return Err(());
+                    }
+                    self.line.extend_from_slice(&input[..end]);
+                    input = &input[end..];
+                    if nl.is_none() {
+                        break; // need more bytes to complete the line
+                    }
+                    let is_size = matches!(self.state, ChunkState::Size);
+                    let line = trim_crlf(&self.line);
+                    if is_size {
+                        let hexpart = line.split(|&b| b == b';').next().unwrap_or(&[]);
+                        let size = parse_hex(hexpart).ok_or(())? as u64;
+                        self.line.clear();
+                        self.state = if size == 0 {
+                            ChunkState::Trailer
+                        } else {
+                            ChunkState::Data(size)
+                        };
+                    } else {
+                        let empty = line.is_empty();
+                        self.line.clear();
+                        if empty {
+                            self.state = ChunkState::Done;
+                            return Ok(true);
+                        }
+                        // else: another trailer line — stay in Trailer.
+                    }
+                }
+                ChunkState::Data(n) => {
+                    let take = n.min(input.len() as u64) as usize;
+                    out.extend_from_slice(&input[..take]);
+                    input = &input[take..];
+                    let left = n - take as u64;
+                    self.state = if left == 0 {
+                        ChunkState::DataEnd(2)
+                    } else {
+                        ChunkState::Data(left)
+                    };
+                }
+                ChunkState::DataEnd(n) => {
+                    let take = (n as usize).min(input.len());
+                    input = &input[take..];
+                    let left = n - take as u8;
+                    self.state = if left == 0 {
+                        ChunkState::Size
+                    } else {
+                        ChunkState::DataEnd(left)
+                    };
+                }
+                ChunkState::Done => return Ok(true),
+            }
+        }
+        Ok(matches!(self.state, ChunkState::Done))
+    }
+}
+
+/// The per-flow body plan, set once the response headers are parsed: how the body is framed, plus
+/// the streaming content decoder (`None` once finalized).
+struct BodyPlan {
+    framing: Framing,
+    decode: Option<Decode>,
 }
 
 /// One in-flight response carve, keyed by `(server, server_port, client, client_port)`.
@@ -330,7 +510,7 @@ impl CarveState {
     }
 
     fn done(&self) -> bool {
-        self.aborted || self.body.as_ref().is_some_and(|b| b.hasher.is_none())
+        self.aborted || self.body.as_ref().is_some_and(|b| b.decode.is_none())
     }
 
     /// Place a server payload at its sequence offset and fold the in-order fresh bytes. Returns a
@@ -396,27 +576,56 @@ impl CarveState {
         }
     }
 
-    /// Fold body bytes through the streaming hash + signature scanner; finalize + emit once
-    /// `content_len` is reached.
+    /// De-frame body bytes (length limit or de-chunk), stream them through the content decoder into
+    /// the hash + signature scanner, and finalize + emit once the body ends. Malformed framing or
+    /// compression aborts the carve (no wrong hash is ever emitted).
     fn feed_body(&mut self, bytes: &[u8]) -> Option<CarveObservation> {
         let p = self.body.as_mut()?;
-        let remaining = p.content_len - p.hashed;
-        let take = (bytes.len() as u64).min(remaining) as usize;
-        p.hasher.as_mut()?.update(&bytes[..take]);
-        p.scanner.feed(&bytes[..take]);
-        p.hashed += take as u64;
-        if p.hashed < p.content_len {
+        p.decode.as_ref()?; // already finalized → nothing more to do
+        let mut deframed = Vec::new();
+        let framing_done = match &mut p.framing {
+            Framing::Length(remaining) => {
+                let take = (bytes.len() as u64).min(*remaining) as usize;
+                deframed.extend_from_slice(&bytes[..take]);
+                *remaining -= take as u64;
+                *remaining == 0
+            }
+            Framing::Chunked(dec) => match dec.feed(bytes, &mut deframed) {
+                Ok(done) => done,
+                Err(()) => {
+                    self.aborted = true;
+                    return None;
+                }
+            },
+        };
+        if let Some(d) = p.decode.as_mut() {
+            if !d.feed(&deframed) {
+                self.aborted = true;
+                return None;
+            }
+        }
+        if !framing_done {
             return None;
         }
-        // Complete — finalize the hash (consumes the hasher).
-        let sha256 = p.hasher.take()?.finalize_bytes();
+        // Body complete — flush the decoder and recover the hash + size + signatures.
+        let sink = match p.decode.take()?.finish() {
+            Some(s) => s,
+            None => {
+                self.aborted = true;
+                return None;
+            }
+        };
+        if sink.size == 0 {
+            return None; // an empty decoded body is not a file
+        }
+        let sha256 = sink.hasher.finalize_bytes();
         Some(CarveObservation {
             client: self.client,
             server: self.server,
             sha256,
-            size: p.content_len,
+            size: sink.size,
             known_bad: known_bad(&sha256),
-            signatures: p.scanner.hits(),
+            signatures: sink.scanner.hits(),
         })
     }
 }
@@ -515,26 +724,27 @@ fn find_crlfcrlf(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
-/// Parse the response head (status line + headers, before the CRLFCRLF) into a [`BodyPlan`], or
-/// `None` to abort the carve: not length-delimited, compressed, chunked, empty, or over the size cap.
+/// Parse the response head (status line + headers, before the CRLFCRLF) into a streaming
+/// [`BodyPlan`], or `None` to skip the carve: a bodyless response (1xx/204/304) or a length-delimited
+/// body that is empty or over the size cap. The body is de-framed (Content-Length or chunked) and
+/// content-decoded (gzip/deflate) on the fly, so a chunked or compressed download is still carved on
+/// its real bytes.
 fn parse_response_headers(head: &[u8]) -> Option<BodyPlan> {
-    // A compressed body's hash would not be the file's hash → don't carve it.
-    if header_present(head, b"content-encoding:") {
+    if is_bodyless(head) {
         return None;
     }
-    // We only carve length-delimited bodies (chunked is not de-chunked here).
-    if header_value_has(head, b"transfer-encoding:", b"chunked") {
-        return None;
-    }
-    let content_len = header_u64(head, b"content-length:")?;
-    if content_len == 0 || content_len > MAX_BODY {
-        return None;
-    }
+    let framing = if header_value_has(head, b"transfer-encoding:", b"chunked") {
+        Framing::Chunked(ChunkDec::new())
+    } else {
+        let content_len = header_u64(head, b"content-length:")?;
+        if content_len == 0 || content_len > MAX_BODY {
+            return None;
+        }
+        Framing::Length(content_len)
+    };
     Some(BodyPlan {
-        content_len,
-        hasher: Some(Sha256Stream::new()),
-        hashed: 0,
-        scanner: SigScanner::new(),
+        framing,
+        decode: Some(Decode::new(content_encoding(head))),
     })
 }
 
@@ -558,10 +768,6 @@ fn header_line<'a>(head: &'a [u8], name: &[u8]) -> Option<&'a [u8]> {
         }
     }
     None
-}
-
-fn header_present(head: &[u8], name: &[u8]) -> bool {
-    header_line(head, name).is_some()
 }
 
 fn header_value_has(head: &[u8], name: &[u8], needle: &[u8]) -> bool {
@@ -939,15 +1145,82 @@ mod tests {
     }
 
     #[test]
-    fn does_not_carve_compressed_or_chunked_bodies() {
-        let gz = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Encoding: gzip\r\n\r\nhello";
-        assert!(state().feed(1000, gz).is_none());
-        let chunked =
-            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
-        assert!(state().feed(1000, chunked).is_none());
-        // A response with no Content-Length is not length-delimited → no carve.
+    fn aborts_on_malformed_compression_or_no_length() {
+        // Content-Encoding: gzip but the body isn't valid gzip → decoder errors → no carve (never a
+        // wrong hash).
+        let bad_gz = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Encoding: gzip\r\n\r\nhello";
+        assert!(state().feed(1000, bad_gz).is_none());
+        // No Content-Length and not chunked → not delimitable → no carve.
         let nolen = b"HTTP/1.1 200 OK\r\nServer: x\r\n\r\nhello";
         assert!(state().feed(1000, nolen).is_none());
+        // A bodyless 204 → no carve.
+        let no_body = b"HTTP/1.1 204 No Content\r\n\r\n";
+        assert!(state().feed(1000, no_body).is_none());
+    }
+
+    /// A chunked download is de-chunked on the fly and carved on its real (de-chunked) hash —
+    /// including when the chunks arrive split across packets.
+    #[test]
+    fn carves_a_chunked_body_streamed_across_packets() {
+        let mut st = state();
+        let p1 = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel";
+        let p2 = b"lo\r\n6\r\n world\r\n0\r\n\r\n"; // " world" completes "hello world"
+        assert!(
+            st.feed(1000, p1).is_none(),
+            "incomplete chunked body must not carve yet"
+        );
+        let obs = st
+            .feed(1000 + p1.len() as u32, p2)
+            .expect("carved on terminator");
+        assert_eq!(hex_of(&obs.sha256), sha256_hex(b"hello world"));
+        assert_eq!(obs.size, 11);
+    }
+
+    /// A gzip download is inflated on the fly: the carved hash is the decompressed file's hash and
+    /// content signatures hit the real bytes.
+    #[test]
+    fn carves_a_gzip_body_to_the_decompressed_hash() {
+        let body = b"MZ\x90\x00 gzipped UPX! payload for the streaming carver";
+        let gz = {
+            use std::io::Write;
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            e.write_all(body).unwrap();
+            e.finish().unwrap()
+        };
+        let mut resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Encoding: gzip\r\n\r\n",
+            gz.len()
+        )
+        .into_bytes();
+        resp.extend_from_slice(&gz);
+        let obs = state().feed(1000, &resp).expect("carved");
+        assert_eq!(
+            hex_of(&obs.sha256),
+            sha256_hex(body),
+            "hash is the inflated file"
+        );
+        assert_eq!(obs.size, body.len() as u64);
+        assert!(obs
+            .signatures
+            .iter()
+            .any(|s| s.label == "PE/DOS executable"));
+        assert!(obs
+            .signatures
+            .iter()
+            .any(|s| s.label == "UPX-packed executable"));
+    }
+
+    #[test]
+    fn chunk_decoder_never_panics_on_garbage() {
+        for seed in 0u16..400 {
+            let junk: Vec<u8> = (0..seed).map(|i| (i.wrapping_mul(47)) as u8).collect();
+            let mut dec = ChunkDec::new();
+            let mut out = Vec::new();
+            // Feed in two arbitrary splits to exercise the streaming state across a boundary.
+            let mid = (seed as usize) / 2;
+            let _ = dec.feed(&junk[..mid], &mut out);
+            let _ = dec.feed(&junk[mid..], &mut out);
+        }
     }
 
     fn http_resp(body: &[u8]) -> Vec<u8> {
