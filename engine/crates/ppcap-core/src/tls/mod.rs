@@ -19,7 +19,9 @@ use std::net::IpAddr;
 use crate::model::packet::{AppProto, PacketMeta, Transport};
 
 mod cert;
+pub(crate) mod decrypt;
 mod der;
+pub(crate) mod keylog;
 
 /// A health problem found on a server's leaf certificate. Carries just enough context to render
 /// an explainable evidence bullet.

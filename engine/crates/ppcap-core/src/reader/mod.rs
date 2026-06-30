@@ -274,8 +274,7 @@ fn open_reader_depth<'a, R: std::io::Read + 'a>(
             // pcap/pcapng). Box the inflated reader before recursing so the recursive call
             // sees a concrete `Box<dyn Read>` rather than an ever-growing
             // `GunzipReader<PrefixReader<GunzipReader<...>>>` monomorphization.
-            let inflated: Box<dyn std::io::Read + 'a> =
-                Box::new(gzip::GunzipReader::new(prefixed));
+            let inflated: Box<dyn std::io::Read + 'a> = Box::new(gzip::GunzipReader::new(prefixed));
             open_reader_depth(inflated, None, gzip_depth + 1)
         }
         Some(m @ (Magic::PcapLeUs | Magic::PcapBeUs | Magic::PcapLeNs | Magic::PcapBeNs)) => {
