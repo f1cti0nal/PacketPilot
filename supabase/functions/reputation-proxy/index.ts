@@ -1,6 +1,7 @@
 // reputation-proxy: authenticated relay for threat-intel reputation lookups. Injects the operator's
 // provider key (env secret) for an ALLOWLISTED provider host only, then forwards a GET.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { verifyAuth0 } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -24,12 +25,10 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   const url = Deno.env.get("SUPABASE_URL")!;
-  const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  const userClient = createClient(url, anon, { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } });
-  const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return json({ error: "unauthorized" }, 401);
+  const identity = await verifyAuth0(req);
+  if (!identity) return json({ error: "unauthorized" }, 401);
 
   const admin = createClient(url, serviceRole);
   const { data: row } = await admin.from("app_settings").select("value").eq("key", "rep_config").single();

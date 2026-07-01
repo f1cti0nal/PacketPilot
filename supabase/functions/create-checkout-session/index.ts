@@ -1,5 +1,6 @@
 import Stripe from "npm:stripe@^17";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { verifyAuth0, resolveProfileId } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -16,18 +17,17 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: uerr } = await userClient.auth.getUser();
-    if (uerr || !user) return json({ error: "Unauthorized" }, 401);
+    const identity = await verifyAuth0(req);
+    if (!identity) return json({ error: "Unauthorized" }, 401);
 
     // Which plan? Default monthly (back-compat: an empty/legacy body → monthly).
     const body = await req.json().catch(() => ({}));
     const plan: Plan = PLANS.includes(body?.plan) ? body.plan : "monthly";
 
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const profile = await resolveProfileId(admin, identity.sub);
+    if (!profile) return json({ error: "Unauthorized" }, 401);
+    const userEmail = profile.email ?? identity.email ?? undefined;
 
     // Resolve the Stripe price id from the admin-editable pricing config. Monthly falls back
     // to the STRIPE_PRICE_PRO env var so the original single-price setup keeps working.
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     const { data: existing } = await admin
       .from("subscriptions")
       .select("stripe_customer_id")
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .not("stripe_customer_id", "is", null)
       .limit(1)
       .maybeSingle();
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
       // No mirrored customer yet (e.g. a never-completed prior checkout). Search Stripe by the
       // canonical key so we reuse an existing customer instead of orphaning a duplicate.
       const found = await stripe.customers.search({
-        query: `metadata['supabase_user_id']:'${user.id}'`,
+        query: `metadata['supabase_user_id']:'${profile.id}'`,
         limit: 1,
       });
       customerId = found.data[0]?.id;
@@ -79,8 +79,8 @@ Deno.serve(async (req) => {
       // Idempotency key keyed on the user makes two concurrent first-time checkouts converge on
       // ONE customer (Stripe dedupes by key for 24h) — closes the customer-dedup race (I-3).
       const customer = await stripe.customers.create(
-        { email: user.email ?? undefined, metadata: { supabase_user_id: user.id } },
-        { idempotencyKey: `customer_${user.id}` },
+        { email: userEmail, metadata: { supabase_user_id: profile.id } },
+        { idempotencyKey: `customer_${profile.id}` },
       );
       customerId = customer.id;
     }
@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
       mode: "subscription",
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
-      client_reference_id: user.id,
+      client_reference_id: profile.id,
       success_url: `${origin}/app?checkout=success`,
       cancel_url: `${origin}/pricing?checkout=cancel`,
     });

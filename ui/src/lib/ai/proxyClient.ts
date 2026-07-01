@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { auth0IdToken } from "../../auth/auth0Client";
 import { SseAccumulator } from "./sse";
 import type { AiMessage } from "./client";
 
@@ -7,8 +8,7 @@ const FN_URL = `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/ai-proxy
 /** Send messages to the ai-proxy Edge Function and stream the completion back. */
 export async function runViaProxy(messages: AiMessage[], onToken: (t: string) => void): Promise<string> {
   if (!supabase) throw new Error("AI is unavailable.");
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  const token = await auth0IdToken();
   if (!token) throw new Error("Sign in to use the AI Analyst.");
   const resp = await fetch(FN_URL, {
     method: "POST",

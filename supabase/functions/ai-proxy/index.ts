@@ -1,6 +1,7 @@
 // ai-proxy: authenticated LLM proxy. Uses the operator's AI_API_KEY (env) + admin-managed
 // ai_config (provider/model). Streams the upstream completion back to the browser.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { verifyAuth0 } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -24,15 +25,12 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   const url = Deno.env.get("SUPABASE_URL")!;
-  const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const aiKey = Deno.env.get("AI_API_KEY") ?? "";
 
-  // Auth: require a logged-in user.
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const userClient = createClient(url, anon, { global: { headers: { Authorization: authHeader } } });
-  const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return json({ error: "unauthorized" }, 401);
+  // Auth: require a logged-in user (Auth0 Third-Party Auth token).
+  const identity = await verifyAuth0(req);
+  if (!identity) return json({ error: "unauthorized" }, 401);
 
   // Admin-managed config (service-role read; app_settings is admin-RLS, so bypass via service role).
   const admin = createClient(url, serviceRole);

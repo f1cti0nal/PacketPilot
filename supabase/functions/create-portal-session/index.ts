@@ -1,5 +1,6 @@
 import Stripe from "npm:stripe@^17";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { verifyAuth0, resolveProfileId } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -13,18 +14,16 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: uerr } = await userClient.auth.getUser();
-    if (uerr || !user) return json({ error: "Unauthorized" }, 401);
+    const identity = await verifyAuth0(req);
+    if (!identity) return json({ error: "Unauthorized" }, 401);
 
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const profile = await resolveProfileId(admin, identity.sub);
+    if (!profile) return json({ error: "Unauthorized" }, 401);
     const { data: existing } = await admin
       .from("subscriptions")
       .select("stripe_customer_id")
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .not("stripe_customer_id", "is", null)
       .limit(1)
       .maybeSingle();

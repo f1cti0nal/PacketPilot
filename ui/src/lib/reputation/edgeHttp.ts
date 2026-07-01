@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { auth0IdToken } from "../../auth/auth0Client";
 import type { HttpGet } from "./http";
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/reputation-proxy`;
@@ -7,8 +8,7 @@ const FN_URL = `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/reputati
 export function edgeRepHttp(): HttpGet {
   return async (url, headers) => {
     if (!supabase) return { status: 0, body: "" };
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const token = await auth0IdToken();
     if (!token) return { status: 0, body: "" };
     try {
       const resp = await fetch(FN_URL, {

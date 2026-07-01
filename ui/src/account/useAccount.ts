@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { auth0User } from "../auth/auth0Client";
 
 export interface AccountProfile {
   id: string;
@@ -42,18 +43,17 @@ export function useAccount(): { state: AccountState; reload: () => void } {
     let cancelled = false;
     setState({ status: "loading" });
     void (async () => {
-      const { data: u } = await client.auth.getUser();
-      const user = u.user;
+      const user = await auth0User();
       if (cancelled) return;
-      if (!user) {
+      if (!user?.sub) {
         setState({ status: "error", error: "You're not signed in" });
         return;
       }
       const prof = await client
         .from("profiles")
         .select("id,email,full_name,avatar_url,role,created_at")
-        .eq("id", user.id)
-        .single();
+        .eq("auth0_sub", user.sub)
+        .maybeSingle();
       if (cancelled) return;
       if (prof.error || !prof.data) {
         setState({ status: "error", error: prof.error?.message ?? "Couldn't load your profile" });
@@ -62,7 +62,7 @@ export function useAccount(): { state: AccountState; reload: () => void } {
       const sub = await client
         .from("subscriptions")
         .select("status,price_id,amount_cents,currency,current_period_end,cancel_at_period_end,stripe_customer_id")
-        .eq("user_id", user.id)
+        .eq("user_id", (prof.data as AccountProfile).id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();

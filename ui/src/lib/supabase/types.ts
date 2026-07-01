@@ -159,6 +159,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          auth0_sub: string | null
           avatar_url: string | null
           created_at: string
           email: string
@@ -171,11 +172,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auth0_sub?: string | null
           avatar_url?: string | null
           created_at?: string
           email: string
           full_name?: string | null
-          id: string
+          id?: string
           plan?: Database["public"]["Enums"]["user_plan"]
           role?: Database["public"]["Enums"]["user_role"]
           status?: Database["public"]["Enums"]["user_status"]
@@ -183,6 +185,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auth0_sub?: string | null
           avatar_url?: string | null
           created_at?: string
           email?: string

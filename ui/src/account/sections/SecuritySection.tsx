@@ -1,12 +1,12 @@
-import { useState, type FormEvent } from "react";
-import { changePassword, changeEmail, signOutEverywhere, deleteAccount } from "../api";
+import { useState } from "react";
+import { sendPasswordReset, signOutEverywhere, deleteAccount } from "../api";
 import { Card, fieldCls, btnCls, btnGhost } from "./ui";
 
 export function SecuritySection({ email }: { email: string }) {
   return (
     <Card title="Security" desc="Manage how you sign in — and leave.">
-      <PasswordForm email={email} />
-      <EmailForm />
+      <PasswordReset email={email} />
+      <IdentityNote />
       <SignOutAll />
       <DangerZone email={email} />
     </Card>
@@ -24,87 +24,51 @@ function Err({ children }: { children: string }) {
   );
 }
 
-function PasswordForm({ email }: { email: string }) {
-  const [cur, setCur] = useState("");
-  const [next, setNext] = useState("");
-  const [conf, setConf] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (busy) return;
-    if (next !== conf) {
-      setError("New passwords don't match");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setDone(false);
-    const r = await changePassword(email, cur, next);
-    setBusy(false);
-    if (!r.ok) {
-      setError(r.error ?? "Couldn't change password");
-      return;
-    }
-    setDone(true);
-    setCur("");
-    setNext("");
-    setConf("");
-  };
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-2">
-      <div className="text-sm font-medium text-[var(--color-text)]">Change password</div>
-      <input type="password" autoComplete="current-password" placeholder="Current password" value={cur} onChange={(e) => setCur(e.target.value)} className={fieldCls} aria-label="Current password" required />
-      <input type="password" autoComplete="new-password" placeholder="New password" value={next} onChange={(e) => setNext(e.target.value)} className={fieldCls} aria-label="New password" required />
-      <input type="password" autoComplete="new-password" placeholder="Confirm new password" value={conf} onChange={(e) => setConf(e.target.value)} className={fieldCls} aria-label="Confirm new password" required />
-      <div>
-        <button type="submit" disabled={busy} className={btnCls}>
-          {busy ? "Saving…" : "Update password"}
-        </button>
-      </div>
-      {error && <Err>{error}</Err>}
-      {done && <Note>Password updated.</Note>}
-    </form>
-  );
-}
-
-function EmailForm() {
-  const [email, setEmail] = useState("");
+function PasswordReset({ email }: { email: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const run = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     setSent(false);
-    const r = await changeEmail(email);
+    const r = await sendPasswordReset(email);
     setBusy(false);
     if (!r.ok) {
-      setError(r.error ?? "Couldn't change email");
+      setError(r.error ?? "Couldn't send reset email");
       return;
     }
     setSent(true);
-    setEmail("");
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2 border-t border-[var(--color-border)] pt-4">
-      <div className="text-sm font-medium text-[var(--color-text)]">Change email</div>
-      <input type="email" autoComplete="email" placeholder="New email address" value={email} onChange={(e) => setEmail(e.target.value)} className={fieldCls} aria-label="New email address" required />
+    <div className="flex flex-col gap-2">
+      <div className="text-sm font-medium text-[var(--color-text)]">Change password</div>
+      <p className="t-tag text-[var(--color-text-dim)]">
+        We'll email <span className="text-[var(--color-text)]">{email}</span> a secure link to set a new password.
+      </p>
       <div>
-        <button type="submit" disabled={busy} className={btnCls}>
-          {busy ? "Sending…" : "Send confirmation"}
+        <button type="button" disabled={busy} onClick={() => void run()} className={btnCls}>
+          {busy ? "Sending…" : "Send password reset email"}
         </button>
       </div>
       {error && <Err>{error}</Err>}
-      {sent && <Note>Check your new email for a confirmation link.</Note>}
-    </form>
+      {sent && <Note>Check your email for the reset link.</Note>}
+    </div>
+  );
+}
+
+function IdentityNote() {
+  return (
+    <div className="flex flex-col gap-2 border-t border-[var(--color-border)] pt-4">
+      <div className="text-sm font-medium text-[var(--color-text)]">Email &amp; connected logins</div>
+      <p className="t-tag text-[var(--color-text-dim)]">
+        Your email address and social sign-ins (Google, GitHub) are managed by your identity provider. Update them from
+        your provider account, then sign in again.
+      </p>
+    </div>
   );
 }
 
@@ -120,6 +84,7 @@ function SignOutAll() {
       setBusy(false);
       return;
     }
+    // Auth0 logout redirects the browser; this is a fallback if it didn't.
     window.location.assign("/app");
   };
   return (

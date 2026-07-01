@@ -47,14 +47,15 @@ export const startCheckout = (plan: PlanChoice = "monthly"): Promise<{ ok: boole
 export const openPortal = (): Promise<{ ok: boolean; error?: string }> =>
   invokeRedirect("create-portal-session");
 
-/** After returning from Checkout with ?checkout=success, refresh the session so the
- *  webhook-updated plan is re-derived, then strip the query param. */
+/** After returning from Checkout with ?checkout=success, strip the query param and reload
+ *  so useSession re-derives the webhook-updated plan from the DB (the plan lives in
+ *  profiles/subscriptions, not the Auth0 token, so a fresh load is what refreshes it). */
 export async function reconcileAfterCheckout(): Promise<void> {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
   if (params.get("checkout") !== "success") return;
-  if (supabase) await supabase.auth.refreshSession();
   params.delete("checkout");
   const qs = params.toString();
   window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  window.location.reload();
 }

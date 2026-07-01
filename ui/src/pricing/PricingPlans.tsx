@@ -17,6 +17,9 @@ const ctaPrimary =
 const ctaGhost =
   "mt-5 inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-dim)] hover:text-[var(--color-text)]";
 
+/** Survives the Auth0 sign-in redirect so we can resume the chosen checkout. */
+const PENDING_KEY = "pp.pending_plan";
+
 export function PricingPlans() {
   const session = useSession();
   const { status, loading } = usePricing();
@@ -24,7 +27,6 @@ export function PricingPlans() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
-  const [pending, setPending] = useState<PlanChoice | null>(null);
 
   // If annual isn't configured yet, the toggle is hidden — pin to monthly.
   useEffect(() => {
@@ -48,21 +50,36 @@ export function PricingPlans() {
   const onChoose = (plan: PlanChoice) => {
     if (session.status === "authed") void subscribe(plan);
     else {
-      setPending(plan);
+      // Auth0 sign-in is a full-page redirect, so remember the chosen plan across it.
+      try {
+        sessionStorage.setItem(PENDING_KEY, plan);
+      } catch {
+        /* storage disabled — the visitor just re-clicks after signing in */
+      }
       setAuthOpen(true);
     }
   };
 
-  // After a sign-in started from this page, continue the checkout the visitor chose.
+  // After returning from Auth0 sign-in, resume the checkout the visitor chose.
   useEffect(() => {
-    if (session.status === "authed" && pending) {
-      const p = pending;
-      setPending(null);
+    if (session.status !== "authed") return;
+    let stored: string | null = null;
+    try {
+      stored = sessionStorage.getItem(PENDING_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (stored) {
+      try {
+        sessionStorage.removeItem(PENDING_KEY);
+      } catch {
+        /* ignore */
+      }
       setAuthOpen(false);
-      void subscribe(p);
+      void subscribe(stored as PlanChoice);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.status, pending]);
+  }, [session.status]);
 
   const founderOut = status.founder_remaining <= 0;
 
@@ -169,10 +186,7 @@ export function PricingPlans() {
       {authOpen && session.status === "anon" && (
         <AuthDialog
           session={session}
-          onClose={() => {
-            setAuthOpen(false);
-            setPending(null);
-          }}
+          onClose={() => setAuthOpen(false)}
         />
       )}
     </div>

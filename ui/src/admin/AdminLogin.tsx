@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import type { AdminSession } from "./useAdminSession";
 
@@ -20,17 +20,14 @@ function Frame({ children }: { children: React.ReactNode }) {
 }
 
 export function AdminLogin({ session }: { session: LoginSession }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (session.status === "unconfigured") {
     return (
       <Frame>
         <p className="text-sm text-[var(--color-text-dim)]">
-          The admin backend is not configured. Set <code>VITE_SUPABASE_URL</code> and{" "}
-          <code>VITE_SUPABASE_ANON_KEY</code>, then reload.
+          The admin backend is not configured. Set <code>VITE_SUPABASE_URL</code>, <code>VITE_SUPABASE_ANON_KEY</code>,{" "}
+          <code>VITE_AUTH0_DOMAIN</code>, and <code>VITE_AUTH0_CLIENT_ID</code>, then reload.
         </p>
       </Frame>
     );
@@ -54,54 +51,22 @@ export function AdminLogin({ session }: { session: LoginSession }) {
     );
   }
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    const res = await session.signIn(email, password);
-    if (!res.ok) setError(res.error ?? "Sign-in failed");
-    setBusy(false);
-  };
-
   return (
     <Frame>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="t-label text-[var(--color-text-dim)]">Email</span>
-          <input
-            type="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="t-label text-[var(--color-text-dim)]">Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-          />
-        </label>
-        {error && (
-          <p role="alert" className="t-tag text-[var(--color-sev-critical)]">
-            {error}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-1 inline-flex items-center justify-center rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-3 py-1.5 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60"
-        >
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+      <p className="mb-4 text-sm text-[var(--color-text-dim)]">
+        Administrator access only. Sign in with your Auth0 account to continue.
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void session.login();
+        }}
+        className="inline-flex w-full items-center justify-center rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-3 py-1.5 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60"
+      >
+        {busy ? "Redirecting…" : "Sign in"}
+      </button>
     </Frame>
   );
 }
