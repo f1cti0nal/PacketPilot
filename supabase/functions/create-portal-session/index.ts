@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
     if (!customerId) return json({ error: "No billing account yet" }, 400);
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!);
-    const origin = req.headers.get("origin") ?? "https://packet-pilot.vercel.app";
+    const origin = req.headers.get("origin") ?? "https://packetpilot.app";
     const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${origin}/app` });
     return json({ url: session.url });
   } catch (e) {

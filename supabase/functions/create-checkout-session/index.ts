@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       customerId = customer.id;
     }
 
-    const origin = req.headers.get("origin") ?? "https://packet-pilot.vercel.app";
+    const origin = req.headers.get("origin") ?? "https://packetpilot.app";
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,

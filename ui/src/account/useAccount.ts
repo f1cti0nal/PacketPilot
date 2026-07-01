@@ -26,8 +26,10 @@ export type AccountState =
 
 /**
  * Loads the signed-in user's own profile + latest subscription row (both RLS-scoped
- * to the caller). The displayed email is taken from the auth user (always current);
- * `profiles.email` is kept in sync by the 0016 trigger for other surfaces.
+ * to the caller). The displayed email is taken from the Auth0 user (always current).
+ * NOTE: under Auth0, `profiles.email` is NOT auto-synced on an email change (0019 retired
+ * the auth.users email trigger), so other surfaces (admin lists, audit) may show a stale
+ * address until an Auth0 Action or a re-provision updates it.
  */
 export function useAccount(): { state: AccountState; reload: () => void } {
   const [state, setState] = useState<AccountState>({ status: "loading" });

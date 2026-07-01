@@ -124,7 +124,11 @@ exports.onExecutePostLogin = async (event, api) => {
   api.accessToken.setCustomClaim("role", "authenticated");
 
   // Server-side profile provisioning (secret never touches the browser).
-  await fetch(`${SUPABASE_URL}/rest/v1/rpc/provision_profile`, {
+  // p_email_verified GATES legacy-account linking: provision_profile will only bind this
+  // Auth0 sub to an existing profile with the same email when the address is verified —
+  // otherwise an attacker could register an unverified identity using someone else's email
+  // (e.g. the admin's) and take over that account.
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/provision_profile`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -134,23 +138,29 @@ exports.onExecutePostLogin = async (event, api) => {
     body: JSON.stringify({
       p_sub: event.user.user_id,
       p_email: event.user.email,
+      p_email_verified: event.user.email_verified === true,
       p_full_name: event.user.name ?? null,
       p_avatar: event.user.picture ?? null,
     }),
   });
+  // Fail the login rather than admit a session with no profile (which would leave the user
+  // signed in but unable to see their own data). This fires when the email is already tied to
+  // another identity — configure Auth0 account-linking (below) so it effectively never does.
+  if (!resp.ok) {
+    api.access.deny("We couldn't finish setting up your account. If you signed up before, use your original login method, or contact support.");
+  }
 };
 ```
+
+**Required Auth0 tenant settings (security):**
+- **Account Linking** — enable automatic linking of accounts that share a *verified* email (Auth0 "Account Link" extension or a Link-by-email Action). Otherwise the same person signing in via a second connection (e.g. Google then GitHub) gets a **different `sub`** and `provision_profile` refuses to fork a duplicate → they'd be denied. One human must map to one `sub`.
+- **Legacy import** — when importing the existing users, set `email_verified: true` on them (bulk import supports it) so their first Auth0 login can link to their existing profile by email. OAuth (Google/GitHub) logins are verified by the provider automatically.
+- **Email changes** — `profiles.email` is no longer auto-synced (the `auth.users` email trigger is retired). If you need it current on admin/audit surfaces, add a Post-User-Update Action (or re-provision) that updates `profiles.email`. *(Follow-up; not blocking.)*
 
 ## Phase 3 — Frontend (`ui/src/…`)
 
 - **Add** `@auth0/auth0-spa-js`. New `ui/src/auth/auth0Client.ts` (createAuth0Client with domain/clientId + `cacheLocation: "localstorage"`).
-- **`ui/src/lib/supabase/client.ts`** — add the token bridge:
-  ```ts
-  createClient(url, anonKey, {
-    accessToken: async () => (await auth0.getIdTokenClaims())?.__raw ?? "",
-  })
-  ```
-  Keep `supabaseConfigured` semantics; anon/offline path unchanged.
+- **`ui/src/lib/supabase/client.ts`** — add the token bridge via `accessToken`, returning the Auth0 ID token when signed in and the **anon key** when not (so public/offline reads behave like a signed-out client). The token helper calls `getTokenSilently()` before `getIdTokenClaims()` so a long-open tab refreshes instead of sending an expired token, and every failure path falls back to the anon key (a token error must never break anon requests). Keep `supabaseConfigured` semantics; anon/offline path unchanged.
 - **`ui/src/auth/useSession.ts`** — replace `signInWithPassword` / `signUp` / `signInWithOAuth` and the `onAuthStateChange` listener with Auth0: `loginWithRedirect()`, `handleRedirectCallback()`, `isAuthenticated()`, `getUser()`, `logout()`. The `authed` branch still fetches `profiles` + `subscriptions` by resolved id — unchanged query shape.
 - **`ui/src/auth/AuthDialog.tsx`** — collapses to a single "Sign in" that calls Auth0 Universal Login (social + password + MFA handled by Auth0). Far less UI to maintain.
 - **`ui/src/lib/reputation/edgeHttp.ts`** and **`ui/src/lib/ai/proxyClient.ts`** — replace `supabase.auth.getSession().access_token` with the Auth0 ID token (or route through `supabase.functions.invoke`, which will use the configured `accessToken`).

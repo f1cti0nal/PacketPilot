@@ -8,8 +8,10 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 const DOMAIN = Deno.env.get("AUTH0_DOMAIN") ?? "";
 const CLIENT_ID = Deno.env.get("AUTH0_CLIENT_ID") ?? "";
 const ISSUER = DOMAIN ? `https://${DOMAIN}/` : "";
-// The browser sends the Auth0 ID token, whose `aud` is the SPA client id.
-const JWKS = DOMAIN ? createRemoteJWKSet(new URL(`https://${DOMAIN}/.well-known/jwks.json`)) : null;
+// The browser sends the Auth0 ID token, whose `aud` is the SPA client id. Require both env
+// vars: an empty `audience` passed to jose disables audience validation entirely (accepting
+// any token minted by the tenant), so a missing AUTH0_CLIENT_ID must fail closed, not open.
+const JWKS = DOMAIN && CLIENT_ID ? createRemoteJWKSet(new URL(`https://${DOMAIN}/.well-known/jwks.json`)) : null;
 
 export interface Auth0Identity {
   sub: string;
@@ -18,7 +20,7 @@ export interface Auth0Identity {
 
 /** Verify the Auth0 token from the Authorization header. Returns null if absent/invalid. */
 export async function verifyAuth0(req: Request): Promise<Auth0Identity | null> {
-  if (!JWKS || !ISSUER) return null;
+  if (!JWKS || !ISSUER || !CLIENT_ID) return null;
   const authz = req.headers.get("Authorization") ?? "";
   const token = authz.startsWith("Bearer ") ? authz.slice(7).trim() : "";
   if (!token) return null;

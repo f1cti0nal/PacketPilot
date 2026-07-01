@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
-import { getAuth0 } from "../../auth/auth0Client";
+import { auth0IdToken } from "../../auth/auth0Client";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -19,18 +19,15 @@ export const supabase: SupabaseClient<Database> | null = supabaseConfigured
   ? createClient<Database>(url as string, anonKey as string, {
       auth: { persistSession: false, autoRefreshToken: false },
       accessToken: async () => {
-        const c = await getAuth0();
-        if (c) {
-          try {
-            if (await c.isAuthenticated()) {
-              const claims = await c.getIdTokenClaims();
-              if (claims?.__raw) return claims.__raw;
-            }
-          } catch {
-            /* fall through to anon */
-          }
+        // auth0IdToken() never throws (it self-heals to null), but guard anyway so a token
+        // failure can NEVER break public/anon requests — they just fall back to the anon key,
+        // exactly like a signed-out client.
+        try {
+          const token = await auth0IdToken();
+          if (token) return token;
+        } catch {
+          /* fall through to anon */
         }
-        // Logged-out requests use the anon key as the bearer, like a signed-out client.
         return anonKey as string;
       },
     })

@@ -235,6 +235,7 @@ create policy "avatars owner delete" on storage.objects
 create or replace function public.provision_profile(
   p_sub text,
   p_email text,
+  p_email_verified boolean default false,
   p_full_name text default null,
   p_avatar text default null
 ) returns void
@@ -242,6 +243,8 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_target uuid;
 begin
   if p_sub is null or p_email is null then
     raise exception 'provision_profile requires sub and email';
@@ -250,14 +253,33 @@ begin
   if exists (select 1 from public.profiles where auth0_sub = p_sub) then
     return;
   end if;
-  -- Link a pre-existing (Supabase-Auth-era) profile by email.
-  update public.profiles
-     set auth0_sub  = p_sub,
-         full_name  = coalesce(full_name, p_full_name),
-         avatar_url = coalesce(avatar_url, p_avatar)
-   where lower(email) = lower(p_email) and auth0_sub is null;
-  if found then
-    return;
+  -- Link a pre-existing (Supabase-Auth-era) profile by email ONLY when Auth0 has
+  -- VERIFIED the address. Without this gate an attacker could register an unverified
+  -- Auth0 identity using someone else's email (e.g. the admin's) and bind their own sub
+  -- to that profile — an account/privilege-escalation takeover. Only the real owner can
+  -- pass email verification. Target exactly one unclaimed row (oldest) so duplicate legacy
+  -- emails can't raise a unique-violation on auth0_sub and lock the user out.
+  if p_email_verified then
+    select id into v_target
+    from public.profiles
+    where lower(email) = lower(p_email) and auth0_sub is null
+    order by created_at
+    limit 1;
+    if v_target is not null then
+      update public.profiles
+         set auth0_sub  = p_sub,
+             full_name  = coalesce(full_name, p_full_name),
+             avatar_url = coalesce(avatar_url, p_avatar)
+       where id = v_target;
+      return;
+    end if;
+  end if;
+  -- Never fork a second profile for an email that already belongs to one (prevents
+  -- duplicate accounts + repeat free trials when the same person signs in via another
+  -- connection, and prevents an unverified identity shadowing an existing account).
+  -- Configure Auth0 account-linking so one human maps to one sub and this never fires.
+  if exists (select 1 from public.profiles where lower(email) = lower(p_email)) then
+    raise exception 'email already associated with an account';
   end if;
   -- Brand-new signup: 14-day Pro reverse-trial (matches handle_new_user, 0018).
   insert into public.profiles (email, full_name, avatar_url, auth0_sub, plan, trial_ends_at)
@@ -265,8 +287,8 @@ begin
   on conflict (auth0_sub) do nothing;
 end;
 $$;
-revoke all on function public.provision_profile(text, text, text, text) from public, anon, authenticated;
-grant execute on function public.provision_profile(text, text, text, text) to service_role;
+revoke all on function public.provision_profile(text, text, boolean, text, text) from public, anon, authenticated;
+grant execute on function public.provision_profile(text, text, boolean, text, text) to service_role;
 
 -- ── 9. Retire the auth.users triggers ───────────────────────────────────────
 -- Auth0 users never create an auth.users row, so these never fire again. The

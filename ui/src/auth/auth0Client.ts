@@ -34,10 +34,19 @@ export function getAuth0(): Promise<Auth0Client> | null {
  * Supabase client's `accessToken` option and the manual Edge Function fetches.
  */
 export async function auth0IdToken(): Promise<string | null> {
-  const c = await getAuth0();
-  if (!c) return null;
   try {
+    const c = await getAuth0();
+    if (!c) return null;
     if (!(await c.isAuthenticated())) return null;
+    // getIdTokenClaims() returns the cached ID token with NO expiry check, so a long-open tab
+    // would keep sending an expired token. Refresh silently first (updates the cached id_token
+    // via the refresh token). If refresh is unavailable, fall back to the cached token — a truly
+    // dead session then goes anon and the user re-authenticates, rather than 401-storming.
+    try {
+      await c.getTokenSilently();
+    } catch {
+      /* refresh unavailable — use whatever is cached */
+    }
     const claims = await c.getIdTokenClaims();
     return claims?.__raw ?? null;
   } catch {
@@ -47,9 +56,9 @@ export async function auth0IdToken(): Promise<string | null> {
 
 /** Current Auth0 user (sub/email/name/picture), or null when signed out. */
 export async function auth0User(): Promise<User | null> {
-  const c = await getAuth0();
-  if (!c) return null;
   try {
+    const c = await getAuth0();
+    if (!c) return null;
     if (!(await c.isAuthenticated())) return null;
     return (await c.getUser()) ?? null;
   } catch {
@@ -62,19 +71,23 @@ export async function auth0User(): Promise<User | null> {
  * the URL) and strip those params. Safe to call on every page load; a no-op otherwise.
  */
 export async function completeAuth0RedirectIfPresent(): Promise<void> {
-  const c = await getAuth0();
-  if (!c) return;
-  const q = window.location.search;
-  if (!(q.includes("code=") && q.includes("state="))) return;
   try {
-    await c.handleRedirectCallback();
+    const c = await getAuth0();
+    if (!c) return;
+    const q = window.location.search;
+    if (!(q.includes("code=") && q.includes("state="))) return;
+    try {
+      await c.handleRedirectCallback();
+    } catch {
+      /* stale/replayed callback — ignore and fall through to the normal session check */
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("code");
+    url.searchParams.delete("state");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
   } catch {
-    /* stale/replayed callback — ignore and fall through to the normal session check */
+    /* getAuth0 init failed — nothing to complete */
   }
-  const url = new URL(window.location.href);
-  url.searchParams.delete("code");
-  url.searchParams.delete("state");
-  window.history.replaceState({}, "", url.pathname + url.search + url.hash);
 }
 
 /** Redirect to Auth0 Universal Login, returning to the current page. */
