@@ -31,6 +31,11 @@ Deno.serve(async (req) => {
   if (!identity) return json({ error: "unauthorized" }, 401);
 
   const admin = createClient(url, serviceRole);
+  // Per-user rate limit — protect the operator's provider keys from abuse. Fail OPEN on error.
+  try {
+    const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "rep:" + identity.sub, p_max: 120, p_window_seconds: 60 });
+    if (ok === false) return json({ error: "rate limit exceeded, slow down" }, 429);
+  } catch { /* fail open */ }
   const { data: row } = await admin.from("app_settings").select("value").eq("key", "rep_config").single();
   const cfg = (row?.value ?? {}) as { enabled?: boolean };
   if (!cfg.enabled) return json({ error: "reputation is not configured" }, 503);

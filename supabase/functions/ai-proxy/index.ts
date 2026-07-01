@@ -32,8 +32,15 @@ Deno.serve(async (req) => {
   const identity = await verifyAuth0(req);
   if (!identity) return json({ error: "unauthorized" }, 401);
 
-  // Admin-managed config (service-role read; app_settings is admin-RLS, so bypass via service role).
   const admin = createClient(url, serviceRole);
+  // Per-user rate limit — protect the operator's AI key from abuse. Fail OPEN on error so a
+  // rate-limit hiccup never breaks the feature.
+  try {
+    const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "ai:" + identity.sub, p_max: 20, p_window_seconds: 60 });
+    if (ok === false) return json({ error: "rate limit exceeded, slow down" }, 429);
+  } catch { /* fail open */ }
+
+  // Admin-managed config (service-role read; app_settings is admin-RLS, so bypass via service role).
   const { data: row } = await admin.from("app_settings").select("value").eq("key", "ai_config").single();
   const cfg = (row?.value ?? {}) as { enabled?: boolean; provider?: string; model?: string };
   if (!cfg.enabled || !aiKey) return json({ error: "AI is not configured" }, 503);
