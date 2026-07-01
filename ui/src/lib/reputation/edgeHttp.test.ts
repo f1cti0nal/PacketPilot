@@ -1,28 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // vi.hoisted runs before module mocking, so the spy is available when the factory is called.
-const mockGetSession = vi.hoisted(() => vi.fn());
+const mockIdToken = vi.hoisted(() => vi.fn());
 
-vi.mock("../supabase", () => ({
-  supabase: { auth: { getSession: mockGetSession } },
-}));
+vi.mock("../supabase", () => ({ supabase: {} }));
+vi.mock("../../auth/auth0Client", () => ({ auth0IdToken: mockIdToken }));
 
 import { edgeRepHttp } from "./edgeHttp";
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  mockGetSession.mockReset();
+  mockIdToken.mockReset();
 });
 
 describe("edgeRepHttp", () => {
-  it("returns {status:0,body:''} when there is no session", async () => {
-    mockGetSession.mockResolvedValue({ data: { session: null } });
+  it("returns {status:0,body:''} when there is no token", async () => {
+    mockIdToken.mockResolvedValue(null);
     const get = edgeRepHttp();
     expect(await get("https://api.abuseipdb.com/api/v2/check?ipAddress=1.2.3.4", {})).toEqual({ status: 0, body: "" });
   });
 
   it("POSTs {url,headers} with the bearer token and returns {status,body}", async () => {
-    mockGetSession.mockResolvedValue({ data: { session: { access_token: "tok123" } } });
+    mockIdToken.mockResolvedValue("tok123");
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ status: 200, body: '{"data":{"abuseConfidenceScore":42}}' }),
@@ -48,21 +47,21 @@ describe("edgeRepHttp", () => {
   });
 
   it("returns {status: resp.status, body:''} when fetch response is not ok", async () => {
-    mockGetSession.mockResolvedValue({ data: { session: { access_token: "tok" } } });
+    mockIdToken.mockResolvedValue("tok");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const get = edgeRepHttp();
     expect(await get("https://api.abuseipdb.com/api/v2/check", {})).toEqual({ status: 401, body: "" });
   });
 
   it("returns {status:0,body:''} when fetch throws (network error)", async () => {
-    mockGetSession.mockResolvedValue({ data: { session: { access_token: "tok" } } });
+    mockIdToken.mockResolvedValue("tok");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network failure")));
     const get = edgeRepHttp();
     expect(await get("https://api.abuseipdb.com/api/v2/check", {})).toEqual({ status: 0, body: "" });
   });
 
   it("maps non-string body from proxy response to empty string", async () => {
-    mockGetSession.mockResolvedValue({ data: { session: { access_token: "tok" } } });
+    mockIdToken.mockResolvedValue("tok");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ status: 200, body: { nested: true } }),

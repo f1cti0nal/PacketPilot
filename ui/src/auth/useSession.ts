@@ -35,10 +35,9 @@ type Internal =
   | { status: "anon" }
   | { status: "authed"; email: string; profile: UserProfile };
 
-/** Identity is available only when BOTH Supabase (data) and Auth0 (login) are configured. */
-const identityReady = supabaseConfigured && auth0Configured;
-
 export function useSession(): SessionState {
+  // Identity is available only when BOTH Supabase (data) and Auth0 (login) are configured.
+  const identityReady = supabaseConfigured && auth0Configured;
   const [state, setState] = useState<Internal>(identityReady ? { status: "loading" } : { status: "anon" });
 
   const login = useCallback(async (opts?: { signUp?: boolean }) => {

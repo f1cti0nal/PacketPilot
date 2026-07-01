@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const insert = vi.fn((_payload: Record<string, unknown>) => ({ then: (res: () => void) => { res(); return Promise.resolve(); } }));
 const from = vi.fn((_table: string) => ({ insert }));
-const getSession = vi.fn(() => Promise.resolve({ data: { session: { user: { id: "u-1" } } as { user: { id: string } } | null } }));
-vi.mock("../supabase", () => ({ supabase: { from: (t: string) => from(t), auth: { getSession: () => getSession() } } }));
+vi.mock("../supabase", () => ({ supabase: { from: (t: string) => from(t) } }));
 
 import { trackPageView, __resetTrackerForTests } from "./track";
 
@@ -11,7 +10,6 @@ beforeEach(() => {
   __resetTrackerForTests();
   sessionStorage.clear();
   from.mockClear(); insert.mockClear();
-  getSession.mockResolvedValue({ data: { session: { user: { id: "u-1" } } as { user: { id: string } } | null } });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -20,7 +18,7 @@ afterEach(() => {
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe("trackPageView", () => {
-  it("inserts an allowlisted token with a session id and the auth uid", async () => {
+  it("inserts an allowlisted token with a session id, attributed anonymously", async () => {
     trackPageView("/app#flows");
     await flush();
     expect(from).toHaveBeenCalledWith("analytics_events");
@@ -28,18 +26,11 @@ describe("trackPageView", () => {
     expect(payload.path).toBe("/app#flows");
     expect(typeof payload.session_id).toBe("string");
     expect((payload.session_id as string).length).toBeGreaterThan(10);
-    expect(payload.user_id).toBe("u-1");
+    expect(payload.user_id).toBeNull();
     expect(payload).not.toHaveProperty("referrer");
     expect(payload).not.toHaveProperty("user_agent");
     expect(payload).not.toHaveProperty("country");
     expect(payload).not.toHaveProperty("created_at");
-  });
-
-  it("sends user_id null when signed out", async () => {
-    getSession.mockResolvedValue({ data: { session: null } });
-    trackPageView("/");
-    await flush();
-    expect((insert.mock.calls[0][0] as Record<string, unknown>).user_id).toBeNull();
   });
 
   it("drops non-allowlisted paths (capture-shaped, query, unknown)", async () => {

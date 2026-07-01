@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({
-  changePassword: vi.fn(),
-  changeEmail: vi.fn(),
+  sendPasswordReset: vi.fn(),
   signOutEverywhere: vi.fn(),
   deleteAccount: vi.fn(),
 }));
@@ -12,8 +11,7 @@ import { SecuritySection } from "./SecuritySection";
 
 const origUrl = window.location;
 beforeEach(() => {
-  api.changePassword.mockResolvedValue({ ok: true });
-  api.changeEmail.mockResolvedValue({ ok: true });
+  api.sendPasswordReset.mockResolvedValue({ ok: true });
   api.signOutEverywhere.mockResolvedValue({ ok: true });
   api.deleteAccount.mockResolvedValue({ ok: true });
   Object.defineProperty(window, "location", { writable: true, value: { assign: vi.fn() } });
@@ -24,32 +22,23 @@ afterEach(() => {
 });
 
 describe("SecuritySection", () => {
-  it("changes the password through re-auth", async () => {
+  it("sends a password reset email via Auth0", async () => {
     render(<SecuritySection email="ada@x.com" />);
-    fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "old" } });
-    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "longenough1" } });
-    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "longenough1" } });
-    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
-    await waitFor(() => expect(api.changePassword).toHaveBeenCalledWith("ada@x.com", "old", "longenough1"));
-    expect(await screen.findByText(/password updated/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /send password reset email/i }));
+    await waitFor(() => expect(api.sendPasswordReset).toHaveBeenCalledWith("ada@x.com"));
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
   });
 
-  it("blocks mismatched passwords before calling the api", () => {
+  it("surfaces a reset error", async () => {
+    api.sendPasswordReset.mockResolvedValue({ ok: false, error: "Couldn't send reset email (500)" });
     render(<SecuritySection email="ada@x.com" />);
-    fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "old" } });
-    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "aaaaaaaa1" } });
-    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "bbbbbbbb1" } });
-    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
-    expect(api.changePassword).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(/don't match/i);
+    fireEvent.click(screen.getByRole("button", { name: /send password reset email/i }));
+    expect(await screen.findByText(/couldn't send reset email/i)).toBeInTheDocument();
   });
 
-  it("requests an email change and shows the confirmation note", async () => {
+  it("notes that email + connected logins are provider-managed", () => {
     render(<SecuritySection email="ada@x.com" />);
-    fireEvent.change(screen.getByLabelText(/new email address/i), { target: { value: "new@x.com" } });
-    fireEvent.click(screen.getByRole("button", { name: /send confirmation/i }));
-    await waitFor(() => expect(api.changeEmail).toHaveBeenCalledWith("new@x.com"));
-    expect(await screen.findByText(/check your new email/i)).toBeInTheDocument();
+    expect(screen.getByText(/managed by your identity provider/i)).toBeInTheDocument();
   });
 
   it("signs out of all devices and redirects", async () => {

@@ -2,25 +2,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sb = vi.hoisted(() => ({
   from: vi.fn(),
-  auth: { signInWithPassword: vi.fn(), updateUser: vi.fn(), signOut: vi.fn() },
   storage: { from: vi.fn() },
   functions: { invoke: vi.fn() },
 }));
 vi.mock("../lib/supabase", () => ({ supabase: sb }));
+
+const auth0 = vi.hoisted(() => ({
+  auth0Logout: vi.fn(),
+  auth0SendPasswordReset: vi.fn(),
+}));
+vi.mock("../auth/auth0Client", () => ({
+  auth0Logout: (...a: unknown[]) => auth0.auth0Logout(...a),
+  auth0SendPasswordReset: (...a: unknown[]) => auth0.auth0SendPasswordReset(...a),
+}));
+
 import * as api from "./api";
 
 const upd = vi.fn();
 beforeEach(() => {
   upd.mockResolvedValue({ error: null });
   sb.from.mockReturnValue({ update: (v: unknown) => ({ eq: (_c: string, _id: string) => upd(v) }) });
-  sb.auth.signInWithPassword.mockResolvedValue({ error: null });
-  sb.auth.updateUser.mockResolvedValue({ error: null });
-  sb.auth.signOut.mockResolvedValue({ error: null });
   sb.functions.invoke.mockResolvedValue({ data: { ok: true }, error: null });
   sb.storage.from.mockReturnValue({
     upload: vi.fn().mockResolvedValue({ error: null }),
     getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: "https://cdn/x.png" } }),
   });
+  auth0.auth0Logout.mockResolvedValue(undefined);
+  auth0.auth0SendPasswordReset.mockResolvedValue({ ok: true });
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -63,27 +71,14 @@ describe("account api", () => {
     expect(upd).toHaveBeenCalledWith({ avatar_url: null });
   });
 
-  it("changePassword fails fast on a bad current password", async () => {
-    sb.auth.signInWithPassword.mockResolvedValue({ error: { message: "bad" } });
-    const r = await api.changePassword("a@b.c", "wrong", "longenough1");
-    expect(r).toEqual({ ok: false, error: "Current password is incorrect" });
-    expect(sb.auth.updateUser).not.toHaveBeenCalled();
+  it("sendPasswordReset delegates to Auth0", async () => {
+    expect(await api.sendPasswordReset("a@b.c")).toEqual({ ok: true });
+    expect(auth0.auth0SendPasswordReset).toHaveBeenCalledWith("a@b.c");
   });
 
-  it("changePassword updates after re-auth", async () => {
-    const r = await api.changePassword("a@b.c", "right", "longenough1");
-    expect(r).toEqual({ ok: true });
-    expect(sb.auth.updateUser).toHaveBeenCalledWith({ password: "longenough1" });
-  });
-
-  it("changeEmail calls updateUser with the trimmed email", async () => {
-    await api.changeEmail("  new@x.com ");
-    expect(sb.auth.updateUser).toHaveBeenCalledWith({ email: "new@x.com" });
-  });
-
-  it("signOutEverywhere uses the global scope", async () => {
-    await api.signOutEverywhere();
-    expect(sb.auth.signOut).toHaveBeenCalledWith({ scope: "global" });
+  it("signOutEverywhere ends the Auth0 session", async () => {
+    expect(await api.signOutEverywhere()).toEqual({ ok: true });
+    expect(auth0.auth0Logout).toHaveBeenCalled();
   });
 
   it("deleteAccount invokes the function and succeeds", async () => {

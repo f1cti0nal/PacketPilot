@@ -3,10 +3,11 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 
 const h = {
   configured: true,
-  getSession: vi.fn(),
-  signInWithPassword: vi.fn(),
-  signOut: vi.fn(),
-  onAuthStateChange: vi.fn(),
+  auth0: true,
+  auth0User: vi.fn(),
+  auth0Login: vi.fn(),
+  auth0Logout: vi.fn(),
+  complete: vi.fn(),
   single: vi.fn(),
 };
 
@@ -15,88 +16,84 @@ vi.mock("../lib/supabase", () => ({
     return h.configured;
   },
   supabase: {
-    auth: {
-      getSession: (...a: unknown[]) => h.getSession(...a),
-      signInWithPassword: (...a: unknown[]) => h.signInWithPassword(...a),
-      signOut: (...a: unknown[]) => h.signOut(...a),
-      onAuthStateChange: (...a: unknown[]) => h.onAuthStateChange(...a),
-    },
     from: () => ({
-      select: () => ({ eq: () => ({ single: (...a: unknown[]) => h.single(...a) }) }),
+      select: () => ({ eq: () => ({ maybeSingle: (...a: unknown[]) => h.single(...a) }) }),
     }),
   },
 }));
 
+vi.mock("../auth/auth0Client", () => ({
+  get auth0Configured() {
+    return h.auth0;
+  },
+  auth0User: (...a: unknown[]) => h.auth0User(...a),
+  auth0Login: (...a: unknown[]) => h.auth0Login(...a),
+  auth0Logout: (...a: unknown[]) => h.auth0Logout(...a),
+  completeAuth0RedirectIfPresent: (...a: unknown[]) => h.complete(...a),
+}));
+
 import { useAdminSession } from "./useAdminSession";
+
+const user = (sub = "auth0|1", email = "a@b.com") => ({ sub, email });
 
 beforeEach(() => {
   h.configured = true;
-  h.getSession.mockResolvedValue({ data: { session: null } });
-  h.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
-  h.signInWithPassword.mockResolvedValue({ data: {}, error: null });
-  h.signOut.mockResolvedValue({ error: null });
+  h.auth0 = true;
+  h.complete.mockResolvedValue(undefined);
+  h.auth0User.mockResolvedValue(null);
+  h.auth0Login.mockResolvedValue(undefined);
+  h.auth0Logout.mockResolvedValue(undefined);
   h.single.mockResolvedValue({ data: null, error: null });
 });
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-const session = (uid = "u1", email = "a@b.com") => ({ user: { id: uid, email } });
-
 describe("useAdminSession", () => {
-  it("is unconfigured when the client is not configured", async () => {
+  it("is unconfigured when Supabase is not configured", async () => {
     h.configured = false;
     const { result } = renderHook(() => useAdminSession());
     await waitFor(() => expect(result.current.status).toBe("unconfigured"));
   });
 
-  it("is anon when there is no session", async () => {
+  it("is unconfigured when Auth0 is not configured", async () => {
+    h.auth0 = false;
+    const { result } = renderHook(() => useAdminSession());
+    await waitFor(() => expect(result.current.status).toBe("unconfigured"));
+  });
+
+  it("is anon when there is no Auth0 user", async () => {
     const { result } = renderHook(() => useAdminSession());
     await waitFor(() => expect(result.current.status).toBe("anon"));
   });
 
   it("is admin when the signed-in user's profile role is admin", async () => {
-    h.getSession.mockResolvedValue({ data: { session: session() } });
+    h.auth0User.mockResolvedValue(user());
     h.single.mockResolvedValue({ data: { email: "a@b.com", role: "admin", full_name: "A" }, error: null });
     const { result } = renderHook(() => useAdminSession());
     await waitFor(() => expect(result.current.status).toBe("admin"));
   });
 
   it("is forbidden when the signed-in user's role is not admin", async () => {
-    h.getSession.mockResolvedValue({ data: { session: session() } });
+    h.auth0User.mockResolvedValue(user());
     h.single.mockResolvedValue({ data: { email: "a@b.com", role: "user", full_name: "A" }, error: null });
     const { result } = renderHook(() => useAdminSession());
     await waitFor(() => expect(result.current.status).toBe("forbidden"));
   });
 
-  it("anon.signIn delegates to supabase.auth.signInWithPassword", async () => {
+  it("anon.login delegates to Auth0 Universal Login", async () => {
     const { result } = renderHook(() => useAdminSession());
     await waitFor(() => expect(result.current.status).toBe("anon"));
     await act(async () => {
-      if (result.current.status === "anon") await result.current.signIn("x@y.com", "pw");
+      if (result.current.status === "anon") await result.current.login();
     });
-    expect(h.signInWithPassword).toHaveBeenCalledWith({ email: "x@y.com", password: "pw" });
+    expect(h.auth0Login).toHaveBeenCalled();
   });
 
   it("falls back to forbidden (never admin) when the role query errors", async () => {
-    h.getSession.mockResolvedValue({ data: { session: session() } });
+    h.auth0User.mockResolvedValue(user());
     h.single.mockResolvedValue({ data: null, error: { message: "boom" } });
     const { result } = renderHook(() => useAdminSession());
     await waitFor(() => expect(result.current.status).toBe("forbidden"));
-  });
-
-  it("re-derives the session on an auth state change", async () => {
-    let cb: ((event: string, s: unknown) => void) | undefined;
-    h.onAuthStateChange.mockImplementation((fn: (event: string, s: unknown) => void) => {
-      cb = fn;
-      return { data: { subscription: { unsubscribe: vi.fn() } } };
-    });
-    const { result } = renderHook(() => useAdminSession());
-    await waitFor(() => expect(result.current.status).toBe("anon"));
-    h.single.mockResolvedValue({ data: { email: "a@b.com", role: "admin", full_name: "A" }, error: null });
-    await act(async () => {
-      cb?.("SIGNED_IN", session());
-    });
-    await waitFor(() => expect(result.current.status).toBe("admin"));
   });
 });

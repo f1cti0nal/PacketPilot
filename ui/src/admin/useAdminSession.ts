@@ -22,10 +22,9 @@ type Internal =
   | { status: "forbidden"; email: string }
   | { status: "admin"; email: string; profile: AdminProfile };
 
-/** Both Supabase (data) and Auth0 (login) must be configured for the admin console. */
-const identityReady = supabaseConfigured && auth0Configured;
-
 export function useAdminSession(): AdminSession {
+  // Both Supabase (data) and Auth0 (login) must be configured for the admin console.
+  const identityReady = supabaseConfigured && auth0Configured;
   const [state, setState] = useState<Internal>(identityReady ? { status: "loading" } : { status: "unconfigured" });
 
   const login = useCallback(async () => {

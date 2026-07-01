@@ -2,13 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AiMessage } from "./client";
 
 // ── Module-level mocks ────────────────────────────────────────────────────
-vi.mock("../supabase", () => ({
-  supabase: {
-    auth: {
-      getSession: vi.fn(),
-    },
-  },
-}));
+const mockIdToken = vi.hoisted(() => vi.fn());
+vi.mock("../supabase", () => ({ supabase: {} }));
+vi.mock("../../auth/auth0Client", () => ({ auth0IdToken: mockIdToken }));
 
 // We'll stub global fetch per-test.
 
@@ -27,25 +23,18 @@ function makeSseStream(deltas: string[]): ReadableStream<Uint8Array> {
 }
 
 describe("runViaProxy", () => {
-  let getSession: ReturnType<typeof vi.fn>;
   let runViaProxy: (messages: AiMessage[], onToken: (t: string) => void) => Promise<string>;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
-
-    const supabaseMod = await import("../supabase");
-    getSession = supabaseMod.supabase!.auth.getSession as ReturnType<typeof vi.fn>;
-
     const mod = await import("./proxyClient");
     runViaProxy = mod.runViaProxy;
   });
 
   it("POSTs to the ai-proxy function URL with bearer token and messages", async () => {
-    getSession.mockResolvedValue({ data: { session: { access_token: "tok-abc" } } });
-    const fetchMock = vi.fn(async () =>
-      new Response(makeSseStream(["Hello"]), { status: 200 }),
-    );
+    mockIdToken.mockResolvedValue("tok-abc");
+    const fetchMock = vi.fn(async () => new Response(makeSseStream(["Hello"]), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const messages: AiMessage[] = [{ role: "user", content: "hi" }];
@@ -60,11 +49,8 @@ describe("runViaProxy", () => {
   });
 
   it("streams deltas to onToken and returns the full assembled text", async () => {
-    getSession.mockResolvedValue({ data: { session: { access_token: "tok-abc" } } });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(makeSseStream(["Hello", " world"]), { status: 200 })),
-    );
+    mockIdToken.mockResolvedValue("tok-abc");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(makeSseStream(["Hello", " world"]), { status: 200 })));
 
     const tokens: string[] = [];
     const result = await runViaProxy([{ role: "user", content: "q" }], (t) => tokens.push(t));
@@ -74,34 +60,22 @@ describe("runViaProxy", () => {
   });
 
   it("throws a friendly error on non-OK response", async () => {
-    getSession.mockResolvedValue({ data: { session: { access_token: "tok-abc" } } });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ error: "not configured" }), { status: 503 })),
-    );
+    mockIdToken.mockResolvedValue("tok-abc");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "not configured" }), { status: 503 })));
 
-    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(
-      /AI is not enabled/i,
-    );
+    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI is not enabled/i);
   });
 
   it("throws a generic error for non-503 non-OK status", async () => {
-    getSession.mockResolvedValue({ data: { session: { access_token: "tok-abc" } } });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("bad", { status: 502 })),
-    );
+    mockIdToken.mockResolvedValue("tok-abc");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("bad", { status: 502 })));
 
-    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(
-      /AI request failed/i,
-    );
+    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI request failed/i);
   });
 
   it("throws when there is no active session", async () => {
-    getSession.mockResolvedValue({ data: { session: null } });
+    mockIdToken.mockResolvedValue(null);
 
-    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(
-      /Sign in/i,
-    );
+    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/Sign in/i);
   });
 });

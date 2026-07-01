@@ -20,6 +20,7 @@ const authedFree = {
 const fullStatus = { annual_available: true, founder_available: true, founder_cap: 200, founder_remaining: 137 };
 
 beforeEach(() => {
+  sessionStorage.clear(); // PricingPlans persists the chosen plan across the Auth0 redirect
   billing.startCheckout.mockResolvedValue({ ok: true });
   sess.useSession.mockReturnValue(authedFree);
   pricing.usePricing.mockReturnValue({ status: fullStatus, loading: false });

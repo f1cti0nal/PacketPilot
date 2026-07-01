@@ -3,14 +3,13 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 
 const h = {
   configured: true,
-  getSession: vi.fn(),
-  signInWithPassword: vi.fn(),
-  signUp: vi.fn(),
-  signInWithOAuth: vi.fn(),
-  signOut: vi.fn(),
-  onAuthStateChange: vi.fn(),
-  single: vi.fn(),
-  maybeSingle: vi.fn(),
+  auth0: true,
+  auth0User: vi.fn(),
+  auth0Login: vi.fn(),
+  auth0Logout: vi.fn(),
+  complete: vi.fn(),
+  profile: vi.fn(),
+  sub: vi.fn(),
 };
 
 vi.mock("../lib/supabase", () => ({
@@ -18,59 +17,66 @@ vi.mock("../lib/supabase", () => ({
     return h.configured;
   },
   supabase: {
-    auth: {
-      getSession: (...a: unknown[]) => h.getSession(...a),
-      signInWithPassword: (...a: unknown[]) => h.signInWithPassword(...a),
-      signUp: (...a: unknown[]) => h.signUp(...a),
-      signInWithOAuth: (...a: unknown[]) => h.signInWithOAuth(...a),
-      signOut: (...a: unknown[]) => h.signOut(...a),
-      onAuthStateChange: (...a: unknown[]) => h.onAuthStateChange(...a),
-    },
     from: () => ({
       select: () => ({
         eq: () => ({
-          // profiles: .single(); subscriptions: .not().limit().maybeSingle()
-          single: (...a: unknown[]) => h.single(...a),
-          not: () => ({ limit: () => ({ maybeSingle: (...a: unknown[]) => h.maybeSingle(...a) }) }),
+          // profiles: .eq(auth0_sub).maybeSingle(); subscriptions: .eq(user_id).not().limit().maybeSingle()
+          maybeSingle: (...a: unknown[]) => h.profile(...a),
+          not: () => ({ limit: () => ({ maybeSingle: (...a: unknown[]) => h.sub(...a) }) }),
         }),
       }),
     }),
   },
 }));
 
+vi.mock("./auth0Client", () => ({
+  get auth0Configured() {
+    return h.auth0;
+  },
+  auth0User: (...a: unknown[]) => h.auth0User(...a),
+  auth0Login: (...a: unknown[]) => h.auth0Login(...a),
+  auth0Logout: (...a: unknown[]) => h.auth0Logout(...a),
+  completeAuth0RedirectIfPresent: (...a: unknown[]) => h.complete(...a),
+}));
+
 import { useSession } from "./useSession";
+
+const user = (sub = "auth0|1", email = "a@b.com") => ({ sub, email });
 
 beforeEach(() => {
   h.configured = true;
-  h.getSession.mockResolvedValue({ data: { session: null } });
-  h.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
-  h.signInWithPassword.mockResolvedValue({ data: {}, error: null });
-  h.signUp.mockResolvedValue({ data: { session: null }, error: null });
-  h.signInWithOAuth.mockResolvedValue({ data: { provider: "google", url: "https://x" }, error: null });
-  h.signOut.mockResolvedValue({ error: null });
-  h.single.mockResolvedValue({ data: { email: "a@b.com", full_name: "A", plan: "pro" }, error: null });
-  h.maybeSingle.mockResolvedValue({ data: null, error: null });
+  h.auth0 = true;
+  h.complete.mockResolvedValue(undefined);
+  h.auth0User.mockResolvedValue(null);
+  h.auth0Login.mockResolvedValue(undefined);
+  h.auth0Logout.mockResolvedValue(undefined);
+  h.profile.mockResolvedValue({ data: { id: "p1", email: "a@b.com", full_name: "A", plan: "pro" }, error: null });
+  h.sub.mockResolvedValue({ data: null, error: null });
 });
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-const session = (uid = "u1", email = "a@b.com") => ({ user: { id: uid, email } });
-
 describe("useSession", () => {
-  it("is anon with no session", async () => {
+  it("is anon with no Auth0 user", async () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("anon"));
   });
 
-  it("is anon when unconfigured", async () => {
+  it("is anon when Supabase is unconfigured", async () => {
     h.configured = false;
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("anon"));
   });
 
-  it("is authed with the profile when a session exists", async () => {
-    h.getSession.mockResolvedValue({ data: { session: session() } });
+  it("is anon when Auth0 is unconfigured", async () => {
+    h.auth0 = false;
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("anon"));
+  });
+
+  it("is authed with the profile when an Auth0 user exists", async () => {
+    h.auth0User.mockResolvedValue(user());
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("authed"));
     if (result.current.status !== "authed") throw new Error("not authed");
@@ -79,9 +85,16 @@ describe("useSession", () => {
     expect(result.current.profile.hasBilling).toBe(false); // no Stripe customer by default
   });
 
+  it("resolves the profile via the Auth0 subject (completes any redirect first)", async () => {
+    h.auth0User.mockResolvedValue(user());
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("authed"));
+    expect(h.complete).toHaveBeenCalled();
+  });
+
   it("sets hasBilling true when a Stripe customer exists", async () => {
-    h.getSession.mockResolvedValue({ data: { session: session() } });
-    h.maybeSingle.mockResolvedValue({ data: { stripe_customer_id: "cus_1" }, error: null });
+    h.auth0User.mockResolvedValue(user());
+    h.sub.mockResolvedValue({ data: { stripe_customer_id: "cus_1" }, error: null });
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("authed"));
     if (result.current.status !== "authed") throw new Error("not authed");
@@ -90,8 +103,8 @@ describe("useSession", () => {
 
   it("keeps an active reverse-trial as Pro and exposes trialEndsAt", async () => {
     const t = new Date(Date.now() + 5 * 86_400_000).toISOString();
-    h.getSession.mockResolvedValue({ data: { session: session() } });
-    h.single.mockResolvedValue({ data: { email: "a@b.com", full_name: "A", plan: "pro", trial_ends_at: t }, error: null });
+    h.auth0User.mockResolvedValue(user());
+    h.profile.mockResolvedValue({ data: { id: "p1", email: "a@b.com", full_name: "A", plan: "pro", trial_ends_at: t }, error: null });
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("authed"));
     if (result.current.status !== "authed") throw new Error("not authed");
@@ -100,9 +113,9 @@ describe("useSession", () => {
   });
 
   it("downgrades an expired trial to effective free", async () => {
-    h.getSession.mockResolvedValue({ data: { session: session() } });
-    h.single.mockResolvedValue({
-      data: { email: "a@b.com", full_name: "A", plan: "pro", trial_ends_at: new Date(Date.now() - 1000).toISOString() },
+    h.auth0User.mockResolvedValue(user());
+    h.profile.mockResolvedValue({
+      data: { id: "p1", email: "a@b.com", full_name: "A", plan: "pro", trial_ends_at: new Date(Date.now() - 1000).toISOString() },
       error: null,
     });
     const { result } = renderHook(() => useSession());
@@ -111,66 +124,31 @@ describe("useSession", () => {
     expect(result.current.profile.plan).toBe("free");
   });
 
-  it("signIn delegates to supabase.auth.signInWithPassword", async () => {
+  it("login delegates to Auth0 Universal Login", async () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("anon"));
     await act(async () => {
-      if (result.current.status === "anon") await result.current.signIn("x@y.com", "pw");
+      if (result.current.status === "anon") await result.current.login();
     });
-    expect(h.signInWithPassword).toHaveBeenCalledWith({ email: "x@y.com", password: "pw" });
+    expect(h.auth0Login).toHaveBeenCalledWith(undefined);
   });
 
-  it("signUp passes emailRedirectTo and reports needsConfirm when no session is returned", async () => {
+  it("login passes the sign-up hint through", async () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.status).toBe("anon"));
-    let res: { ok: boolean; needsConfirm?: boolean } | undefined;
     await act(async () => {
-      if (result.current.status === "anon") res = await result.current.signUp("x@y.com", "pw");
+      if (result.current.status === "anon") await result.current.login({ signUp: true });
     });
-    expect(h.signUp).toHaveBeenCalledWith({
-      email: "x@y.com",
-      password: "pw",
-      options: { emailRedirectTo: expect.stringContaining("/app") },
-    });
-    expect(res).toEqual({ ok: true, needsConfirm: true });
+    expect(h.auth0Login).toHaveBeenCalledWith({ signUp: true });
   });
 
-  it("signInWithProvider starts an OAuth redirect back to /app", async () => {
+  it("signOut delegates to Auth0 logout", async () => {
+    h.auth0User.mockResolvedValue(user());
     const { result } = renderHook(() => useSession());
-    await waitFor(() => expect(result.current.status).toBe("anon"));
-    let res: { ok: boolean } | undefined;
-    await act(async () => {
-      if (result.current.status === "anon") res = await result.current.signInWithProvider("github");
-    });
-    expect(h.signInWithOAuth).toHaveBeenCalledWith({
-      provider: "github",
-      options: { redirectTo: expect.stringContaining("/app") },
-    });
-    expect(res).toEqual({ ok: true });
-  });
-
-  it("signInWithProvider surfaces an OAuth start error", async () => {
-    h.signInWithOAuth.mockResolvedValue({ data: {}, error: { message: "provider disabled" } });
-    const { result } = renderHook(() => useSession());
-    await waitFor(() => expect(result.current.status).toBe("anon"));
-    let res: { ok: boolean; error?: string } | undefined;
-    await act(async () => {
-      if (result.current.status === "anon") res = await result.current.signInWithProvider("google");
-    });
-    expect(res).toEqual({ ok: false, error: "provider disabled" });
-  });
-
-  it("re-derives on auth state change", async () => {
-    let cb: ((e: string, s: unknown) => void) | undefined;
-    h.onAuthStateChange.mockImplementation((fn: (e: string, s: unknown) => void) => {
-      cb = fn;
-      return { data: { subscription: { unsubscribe: vi.fn() } } };
-    });
-    const { result } = renderHook(() => useSession());
-    await waitFor(() => expect(result.current.status).toBe("anon"));
-    await act(async () => {
-      cb?.("SIGNED_IN", session());
-    });
     await waitFor(() => expect(result.current.status).toBe("authed"));
+    await act(async () => {
+      if (result.current.status === "authed") await result.current.signOut();
+    });
+    expect(h.auth0Logout).toHaveBeenCalled();
   });
 });

@@ -50,12 +50,13 @@ export function trackPageView(path: string): void {
   const client = supabase;
   if (!client) return;
   const session_id = sessionId();
-  void client.auth.getSession().then(({ data }) => {
-    void client
-      .from("analytics_events")
-      .insert({ path, session_id, user_id: data.session?.user?.id ?? null })
-      .then(noop, noop);
-  }, noop);
+  // Anonymous attribution: identity now lives in Auth0 (the Supabase client uses the
+  // accessToken option, so supabase.auth.getSession() is unavailable). Resolving the internal
+  // profile id per page view isn't worth a query on this hot path, so user_id is left null.
+  void client
+    .from("analytics_events")
+    .insert({ path, session_id, user_id: null })
+    .then(noop, noop);
 }
 
 /** Test-only: reset the consecutive-dedupe guard between cases. */

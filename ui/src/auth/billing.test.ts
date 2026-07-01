@@ -2,12 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = {
   invoke: vi.fn(),
-  refreshSession: vi.fn(),
 };
 vi.mock("../lib/supabase", () => ({
   supabase: {
     functions: { invoke: (...a: unknown[]) => h.invoke(...a) },
-    auth: { refreshSession: (...a: unknown[]) => h.refreshSession(...a) },
   },
 }));
 
@@ -17,11 +15,10 @@ const origUrl = window.location;
 
 beforeEach(() => {
   h.invoke.mockResolvedValue({ data: { url: "https://stripe.test/cs" }, error: null });
-  h.refreshSession.mockResolvedValue({ data: {}, error: null });
-  // jsdom: make location.assign + search/pathname stubbable
+  // jsdom: make location.assign/reload + search/pathname stubbable
   Object.defineProperty(window, "location", {
     writable: true,
-    value: { assign: vi.fn(), search: "", pathname: "/app", href: "http://localhost/app" },
+    value: { assign: vi.fn(), reload: vi.fn(), search: "", pathname: "/app", href: "http://localhost/app" },
   });
   window.history.replaceState = vi.fn();
 });
@@ -87,16 +84,16 @@ describe("billing", () => {
     expect(res).toEqual({ ok: false, error: "Edge Function returned a non-2xx status code" });
   });
 
-  it("reconcileAfterCheckout refreshes + strips the param only on checkout=success", async () => {
+  it("reconcileAfterCheckout strips the param + reloads only on checkout=success", async () => {
     window.location.search = "?checkout=success&x=1";
     await reconcileAfterCheckout();
-    expect(h.refreshSession).toHaveBeenCalled();
     expect(window.history.replaceState).toHaveBeenCalled();
+    expect(window.location.reload).toHaveBeenCalled();
   });
 
   it("reconcileAfterCheckout does nothing without checkout=success", async () => {
     window.location.search = "?x=1";
     await reconcileAfterCheckout();
-    expect(h.refreshSession).not.toHaveBeenCalled();
+    expect(window.location.reload).not.toHaveBeenCalled();
   });
 });
