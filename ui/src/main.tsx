@@ -1,5 +1,6 @@
 import React, { Suspense } from "react";
 import ReactDOM from "react-dom/client";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import App from "./App";
 import { Landing } from "./landing/Landing";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
@@ -46,5 +47,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Landing />
       )}
     </ErrorBoundary>
+    <SpeedInsights />
   </React.StrictMode>,
 );
