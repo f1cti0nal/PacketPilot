@@ -73,7 +73,6 @@ import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
 import { IocDialog } from "./cockpit/IocDialog";
 import { matchIocs, parseIocs } from "./lib/ioc/ioc";
 import { useSession } from "./auth/useSession";
-import { AuthDialog } from "./auth/AuthDialog";
 import { AccountMenu } from "./auth/AccountMenu";
 import { reconcileAfterCheckout } from "./auth/billing";
 import { trackPageView } from "./lib/analytics/track";
@@ -133,7 +132,6 @@ export function App() {
   const compareGate = gate("multi_capture_diff");
   const aiOn = session.status === "authed" && appSettings.ai.enabled && aiGate === "on";
   const aiModel = appSettings.ai.model;
-  const [authOpen, setAuthOpen] = useState(false);
 
   // After returning from Stripe Checkout, refresh the session so the upgraded plan shows.
   useEffect(() => {
@@ -729,7 +727,7 @@ export function App() {
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       onMatchIocs={summary.status === "ready" && summary.data ? () => setIocDialogOpen(true) : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
-      accountMenu={<AccountMenu session={session} onOpenAuth={() => setAuthOpen(true)} />}
+      accountMenu={<AccountMenu session={session} />}
     >
       <ErrorBoundary resetKey={`${activeId ?? ""}:${tab}`}>
       {tab === "compare" ? (
@@ -815,9 +813,6 @@ export function App() {
         }}
         onCancel={() => setDomainConsentPrompt(null)}
       />
-    )}
-    {authOpen && session.status === "anon" && (
-      <AuthDialog session={session} onClose={() => setAuthOpen(false)} />
     )}
     {summary.status === "ready" && summary.data && (
       <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} model={aiModel} />

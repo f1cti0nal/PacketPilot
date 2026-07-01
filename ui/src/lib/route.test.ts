@@ -31,6 +31,13 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/pricing/")).toBe("pricing");
     expect(resolveRoute("/pricing-plans")).toBe("landing");
   });
+  it("maps the dedicated auth endpoints to auth", () => {
+    expect(resolveRoute("/login")).toBe("auth");
+    expect(resolveRoute("/login/")).toBe("auth");
+    expect(resolveRoute("/signup")).toBe("auth");
+    expect(resolveRoute("/logout")).toBe("auth");
+    expect(resolveRoute("/loginner")).toBe("landing"); // near-miss
+  });
   it("maps the SEO tool slugs to tool", () => {
     expect(resolveRoute("/analyze-pcap-online")).toBe("tool");
     expect(resolveRoute("/wireshark-alternative")).toBe("tool");

@@ -90,13 +90,15 @@ export async function completeAuth0RedirectIfPresent(): Promise<void> {
   }
 }
 
-/** Redirect to Auth0 Universal Login, returning to the current page. */
-export async function auth0Login(opts?: { signUp?: boolean }): Promise<void> {
+/** Redirect to Auth0 Universal Login. Returns to `returnTo` (must be a registered Auth0
+ *  callback path) if given, else the current page. */
+export async function auth0Login(opts?: { signUp?: boolean; returnTo?: string }): Promise<void> {
   const c = await getAuth0();
   if (!c) return;
+  const path = opts?.returnTo ?? window.location.pathname;
   await c.loginWithRedirect({
     authorizationParams: {
-      redirect_uri: `${window.location.origin}${window.location.pathname}`,
+      redirect_uri: `${window.location.origin}${path}`,
       ...(opts?.signUp ? { screen_hint: "signup" } : {}),
     },
   });

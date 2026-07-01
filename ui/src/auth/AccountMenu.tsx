@@ -4,7 +4,7 @@ import type { SessionState } from "./useSession";
 import { openPortal } from "./billing";
 import { isOnTrial, trialDaysLeft } from "./trial";
 
-export function AccountMenu({ session, onOpenAuth }: { session: SessionState; onOpenAuth: () => void }) {
+export function AccountMenu({ session }: { session: SessionState }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
@@ -43,15 +43,14 @@ export function AccountMenu({ session, onOpenAuth }: { session: SessionState; on
 
   if (session.status === "anon") {
     return (
-      <button
-        type="button"
+      <a
+        href="/login"
         aria-label="Sign in"
-        onClick={onOpenAuth}
         className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
       >
         <User size={14} aria-hidden />
         <span className="hidden sm:inline">Sign in</span>
-      </button>
+      </a>
     );
   }
 

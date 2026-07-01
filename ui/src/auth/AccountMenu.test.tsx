@@ -7,11 +7,10 @@ const billing = { startCheckout: vi.fn().mockResolvedValue({ ok: true }), openPo
 vi.mock("./billing", () => ({ startCheckout: () => billing.startCheckout(), openPortal: () => billing.openPortal() }));
 
 describe("AccountMenu", () => {
-  it("anon shows Sign in and calls onOpenAuth", async () => {
-    const onOpenAuth = vi.fn();
-    render(<AccountMenu session={{ status: "anon", login: vi.fn() }} onOpenAuth={onOpenAuth} />);
-    await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
-    expect(onOpenAuth).toHaveBeenCalled();
+  it("anon shows a Sign in link to the /login endpoint", () => {
+    render(<AccountMenu session={{ status: "anon", login: vi.fn() }} />);
+    const link = screen.getByRole("link", { name: /sign in/i });
+    expect(link).toHaveAttribute("href", "/login");
   });
 
   it("authed shows the email, plan, and signs out", async () => {
@@ -19,7 +18,6 @@ describe("AccountMenu", () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut }}
-        onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -32,7 +30,6 @@ describe("AccountMenu", () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
-        onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -41,7 +38,7 @@ describe("AccountMenu", () => {
   });
 
   it("anon menu has no Profile & account link", () => {
-    render(<AccountMenu session={{ status: "anon", login: vi.fn() }} onOpenAuth={vi.fn()} />);
+    render(<AccountMenu session={{ status: "anon", login: vi.fn() }} />);
     expect(screen.queryByRole("link", { name: /profile & account/i })).not.toBeInTheDocument();
   });
 
@@ -49,7 +46,6 @@ describe("AccountMenu", () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
-        onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -60,7 +56,6 @@ describe("AccountMenu", () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut: vi.fn() }}
-        onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -73,7 +68,6 @@ describe("AccountMenu", () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt }, signOut: vi.fn() }}
-        onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -86,7 +80,6 @@ describe("AccountMenu", () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
-        onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -99,7 +92,6 @@ describe("AccountMenu", () => {
     render(
       <AccountMenu
         session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut: vi.fn() }}
-        onOpenAuth={vi.fn()}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
