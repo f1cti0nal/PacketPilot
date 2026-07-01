@@ -29,6 +29,12 @@ Deno.serve(async (req) => {
     if (!profile) return json({ error: "Unauthorized" }, 401);
     const userEmail = profile.email ?? identity.email ?? undefined;
 
+    // Per-user rate limit (abuse guard on checkout-session creation). Fail OPEN on error.
+    try {
+      const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "checkout:" + identity.sub, p_max: 10, p_window_seconds: 60 });
+      if (ok === false) return json({ error: "rate limit exceeded, slow down" }, 429);
+    } catch { /* fail open */ }
+
     // Resolve the Stripe price id from the admin-editable pricing config. Monthly falls back
     // to the STRIPE_PRICE_PRO env var so the original single-price setup keeps working.
     const { data: settingRow } = await admin

@@ -4,6 +4,7 @@ import App from "./App";
 import { Landing } from "./landing/Landing";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { LoadingState } from "./components/state/LoadingState";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { resolveRouteFor } from "./lib/route";
 import "./index.css";
 
@@ -51,5 +52,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Landing />
       )}
     </ErrorBoundary>
+    {/* Same-origin performance telemetry (/_vercel/speed-insights/*); no capture data. */}
+    <SpeedInsights />
   </React.StrictMode>,
 );
