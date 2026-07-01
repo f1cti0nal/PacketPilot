@@ -260,11 +260,15 @@ begin
   -- pass email verification. Target exactly one unclaimed row (oldest) so duplicate legacy
   -- emails can't raise a unique-violation on auth0_sub and lock the user out.
   if p_email_verified then
+    -- FOR UPDATE locks the chosen row: a concurrent provision for the same email blocks,
+    -- then re-evaluates the `auth0_sub is null` qual against the now-claimed row, finds no
+    -- match, and falls through to the duplicate-email raise instead of overwriting the link.
     select id into v_target
     from public.profiles
     where lower(email) = lower(p_email) and auth0_sub is null
     order by created_at
-    limit 1;
+    limit 1
+    for update;
     if v_target is not null then
       update public.profiles
          set auth0_sub  = p_sub,
