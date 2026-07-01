@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveRoute } from "./route";
+import { resolveRoute, isAdminHost, resolveRouteFor } from "./route";
 
 describe("resolveRoute", () => {
   it("maps /admin and subpaths to admin", () => {
@@ -49,5 +49,27 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/features")).toBe("landing");
     expect(resolveRoute("/administrator")).toBe("landing");
     expect(resolveRoute("/accounts")).toBe("landing");
+  });
+});
+
+describe("admin subdomain isolation", () => {
+  it("recognizes the admin subdomain host", () => {
+    expect(isAdminHost("admin.packetpilot.app")).toBe(true);
+    expect(isAdminHost("ADMIN.packetpilot.app")).toBe(true);
+    expect(isAdminHost("packetpilot.app")).toBe(false);
+    expect(isAdminHost("admincentral.packetpilot.app")).toBe(false); // must be the "admin." label
+    expect(isAdminHost("www.packetpilot.app")).toBe(false);
+  });
+
+  it("serves admin for any path on the admin host", () => {
+    expect(resolveRouteFor("admin.packetpilot.app", "/")).toBe("admin");
+    expect(resolveRouteFor("admin.packetpilot.app", "/anything")).toBe("admin");
+  });
+
+  it("routes by pathname on the main host (admin still reachable there for now)", () => {
+    expect(resolveRouteFor("packetpilot.app", "/")).toBe("landing");
+    expect(resolveRouteFor("packetpilot.app", "/app")).toBe("app");
+    expect(resolveRouteFor("packetpilot.app", "/admin")).toBe("admin");
+    expect(resolveRouteFor("packetpilot.app", "/pricing")).toBe("pricing");
   });
 });

@@ -219,3 +219,64 @@ Checklist so this never recurs:
 ### Admins & follow-ups
 - Admins: `ravidholariya3992@gmail.com` (Google, linked) + `ravi.dholariya@icloud.com` (auto-links on next login). New admin = insert a `profiles` row with `role='admin'` + `auth0_sub` null; it links by verified email on first login.
 - Optional, not blocking: enable Auth0 **Account Linking** (one human → one `sub`); add `AUTH0_MGMT_*` M2M secret so `delete-account` also deletes the Auth0 user; re-add Vercel **Speed Insights** (dropped by this deploy — it was a bot promote never merged to `main`).
+
+## Admin isolation (MFA + subdomain)
+
+### A. Require MFA for admins (Auth0 Post-Login Action)
+
+The admin role lives in Supabase (`profiles.role`), so the Action looks it up by the linked
+`auth0_sub` and enforces MFA when the user is an admin. **Replace your existing post-login
+Action code with this** (it keeps the role-claim + provisioning), then in Auth0 **Security →
+Multi-factor Auth enable at least one factor** (e.g. One-Time Password / authenticator app) or
+admins will have nothing to enroll.
+
+```js
+const SUPABASE_URL = "https://brkztcfhmrjjnbjzycie.supabase.co";
+exports.onExecutePostLogin = async (event, api) => {
+  api.idToken.setCustomClaim("role", "authenticated");
+  api.accessToken.setCustomClaim("role", "authenticated");
+
+  const KEY = event.secrets.SUPABASE_SERVICE_ROLE_KEY;
+  const h = { apikey: KEY, authorization: `Bearer ${KEY}` };
+
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/provision_profile`, {
+    method: "POST",
+    headers: { ...h, "content-type": "application/json" },
+    body: JSON.stringify({
+      p_sub: event.user.user_id,
+      p_email: event.user.email,
+      p_email_verified: event.user.email_verified === true,
+      p_full_name: event.user.name ?? null,
+      p_avatar: event.user.picture ?? null,
+    }),
+  });
+  if (!resp.ok) { api.access.deny("Could not finish account setup. Contact support."); return; }
+
+  // Require MFA for admins. Role is looked up by the now-linked auth0_sub. Fail-open on a
+  // lookup error (so a Supabase blip can't lock anyone out) — admins keep MFA once linked.
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?select=role&auth0_sub=eq.${encodeURIComponent(event.user.user_id)}`,
+      { headers: h },
+    );
+    const rows = await r.json();
+    if (Array.isArray(rows) && rows[0] && rows[0].role === "admin") {
+      api.multifactor.enable("any", { allowRememberBrowser: true });
+    }
+  } catch (_) { /* don't block login on a role-lookup error */ }
+};
+```
+
+### B. Dedicated admin subdomain (`admin.packetpilot.app`)
+
+Code side is live: `resolveRouteFor(hostname, pathname)` renders the admin app for **any path on
+an `admin.` host**, and the whole admin subdomain is `noindex` (host-conditioned header in
+`vercel.json`). Setup:
+1. **DNS**: add `admin` CNAME → `cname.vercel-dns.com` (or per Vercel's instructions).
+2. **Vercel**: Project → Domains → add `admin.packetpilot.app`.
+3. **Auth0**: add `https://admin.packetpilot.app` (and `/app`) to the app's **Allowed Callback
+   URLs / Logout URLs / Web Origins** (the admin console runs Auth0 login on that origin).
+4. Verify `https://admin.packetpilot.app` loads the admin panel and login works.
+5. **Then tell me** and I'll flip `/admin` on the public domain to **redirect** to the subdomain
+   (completing the isolation without a lockout window). Deploying that redirect before the
+   subdomain resolves would break admin access, so it's a deliberate second step.

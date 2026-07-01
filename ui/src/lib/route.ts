@@ -23,3 +23,15 @@ export function resolveRoute(pathname: string): Route {
   if (path === "/app" || path.startsWith("/app/")) return "app";
   return "landing";
 }
+
+/** The admin console is isolated on an `admin.` subdomain. On that host every path serves the
+ *  admin app; only there. */
+export function isAdminHost(hostname: string): boolean {
+  return /^admin\./i.test(hostname);
+}
+
+/** Route for the current host + path: the admin subdomain always renders admin; every other
+ *  host routes by pathname. */
+export function resolveRouteFor(hostname: string, pathname: string): Route {
+  return isAdminHost(hostname) ? "admin" : resolveRoute(pathname);
+}

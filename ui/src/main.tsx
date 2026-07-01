@@ -4,7 +4,7 @@ import App from "./App";
 import { Landing } from "./landing/Landing";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { LoadingState } from "./components/state/LoadingState";
-import { resolveRoute } from "./lib/route";
+import { resolveRouteFor } from "./lib/route";
 import "./index.css";
 
 // Pathname routing: "/" → marketing landing, "/app" → triage app, "/admin" → the
@@ -16,7 +16,7 @@ const AuthApp = React.lazy(() => import("./auth/AuthApp"));
 const LegalApp = React.lazy(() => import("./legal/LegalApp"));
 const PricingApp = React.lazy(() => import("./pricing/PricingApp"));
 const ToolApp = React.lazy(() => import("./seo/ToolApp"));
-const route = resolveRoute(window.location.pathname);
+const route = resolveRouteFor(window.location.hostname, window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
