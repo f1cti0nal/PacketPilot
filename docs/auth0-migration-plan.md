@@ -1,6 +1,6 @@
 # Auth0 migration plan — Auth0 as primary IdP via Supabase Third-Party Auth
 
-**Status:** planned, not yet started
+**Status:** ✅ COMPLETED — cut over to production 2026-07-01 (see "Cutover — completed" at the end).
 **Decision date:** 2026-06-30
 **Driver:** Standardize on Auth0 as the organization's primary identity provider (Rules/MFA/Organizations), replacing Supabase Auth for end-user login.
 
@@ -191,3 +191,31 @@ exports.onExecutePostLogin = async (event, api) => {
 ## Rollback
 
 Supabase Auth is still enabled and all user rows keep their UUID. Revert = redeploy the previous frontend + apply the down-migration (restore `auth.uid()` policies, re-add `profiles_id_fkey`, drop `auth0_sub`). No data is destroyed at any step.
+
+## Cutover — completed (2026-07-01)
+
+Sequence used (kept the live app working during the Vercel build; a failed build would have been a no-op):
+1. Merged `feat/auth0-thirdparty` → `main` → Vercel built the Auth0 UI (old app kept serving, `0019` not yet applied).
+2. Waited for the deploy to go **READY** (aliased to `packetpilot.app`), then applied `0019` via the Supabase MCP.
+3. Redeployed the 5 authed edge functions with **`verify_jwt=false`** and the Auth0 JWKS verifier **inlined** into each `index.ts` (the deploy bundler's handling of the `../_shared/auth0.ts` relative import was unreliable, so inline to avoid a cold-start import failure).
+4. Verified server-side: `auth0_sub` column + `current_profile_id()` + `provision_profile(5 args)` present, `profiles_id_fkey` dropped, policies recreated; and the deployed JS bundle contains the Auth0 domain + client id (Vercel env baked in).
+
+**Tenant:** `dev-z7p2u0ds62xilshu.us.auth0.com`, SPA client `aEaW25tXlwSHWM4HRQrx5xqHq08De8sm`.
+
+### ⚠️ The gotcha that cost the most time — the Post-Login Action
+
+Symptom: login succeeded but the app said **"not an administrator"** / showed the user as unprovisioned. Root cause: the **Auth0 Post-Login Action was missing**, so:
+- the **ID token had no `role: authenticated` claim** → Supabase mapped the request to the **anon** role → every RLS `to authenticated` read returned **200 but empty**; and
+- `provision_profile` was never called (no such call in the API logs — only `get_public_settings`), so no profile linked to the Auth0 `sub`.
+
+Diagnosis that nailed it: the API logs showed `GET /rest/v1/profiles?auth0_sub=eq.google-oauth2|… → 200` (empty) and **zero `rpc/provision_profile` calls**. Manually setting `auth0_sub` in the DB did **not** fix it — proof the block was the missing role claim (anon), not the missing row.
+
+Checklist so this never recurs:
+- The Action must set the claim on the **ID token** (`api.idToken.setCustomClaim("role","authenticated")`) — the SPA sends the **ID token** to Supabase, not the access token.
+- The Action must call `provision_profile` (with `p_email_verified`).
+- Creating + **Deploy**ing the Action is not enough — it must be **added to the post-login Trigger flow** (drag in + Apply).
+- After deploying, the user must **fully log out and log back in** — a silent refresh (`getTokenSilently`) does **not** re-run login-flow Actions, so the claim won't appear until a fresh interactive login.
+
+### Admins & follow-ups
+- Admins: `ravidholariya3992@gmail.com` (Google, linked) + `ravi.dholariya@icloud.com` (auto-links on next login). New admin = insert a `profiles` row with `role='admin'` + `auth0_sub` null; it links by verified email on first login.
+- Optional, not blocking: enable Auth0 **Account Linking** (one human → one `sub`); add `AUTH0_MGMT_*` M2M secret so `delete-account` also deletes the Auth0 user; re-add Vercel **Speed Insights** (dropped by this deploy — it was a bot promote never merged to `main`).
