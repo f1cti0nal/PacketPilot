@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import { AppGate } from "./auth/AppGate";
 import { Landing } from "./landing/Landing";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { LoadingState } from "./components/state/LoadingState";
@@ -47,7 +47,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <ToolApp />
         </Suspense>
       ) : route === "app" ? (
-        <App />
+        <AppGate />
       ) : (
         <Landing />
       )}

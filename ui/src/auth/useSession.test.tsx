@@ -83,6 +83,15 @@ describe("useSession", () => {
     expect(result.current.profile.plan).toBe("pro");
     expect(result.current.email).toBe("a@b.com");
     expect(result.current.profile.hasBilling).toBe(false); // no Stripe customer by default
+    expect(result.current.emailVerified).toBe(false); // claim absent → treated as unverified
+  });
+
+  it("reports emailVerified true only when Auth0 confirms the email", async () => {
+    h.auth0User.mockResolvedValue({ sub: "auth0|1", email: "a@b.com", email_verified: true });
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("authed"));
+    if (result.current.status !== "authed") throw new Error("not authed");
+    expect(result.current.emailVerified).toBe(true);
   });
 
   it("resolves the profile via the Auth0 subject (completes any redirect first)", async () => {
