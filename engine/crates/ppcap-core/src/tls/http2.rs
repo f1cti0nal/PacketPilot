@@ -849,7 +849,7 @@ mod tests {
                     s.push(plen as u8);
                     s.push(ftype);
                     s.push(flags);
-                    s.extend_from_slice(&(sid as u32).to_be_bytes());
+                    s.extend_from_slice(&sid.to_be_bytes());
                     s.extend_from_slice(&payload);
                 }
                 // Random truncation to hit the mid-frame `break` paths.

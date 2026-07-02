@@ -1588,7 +1588,7 @@ mod tests {
         // Pad to a 16-byte boundary: pad_total bytes each holding (pad_total - 1).
         let pad_total = 16 - (plain.len() % 16);
         let pad_len = (pad_total - 1) as u8;
-        plain.extend(std::iter::repeat(pad_len).take(pad_total));
+        plain.extend(std::iter::repeat_n(pad_len, pad_total));
 
         let iv = [0x5au8; 16];
         let ct = if enc_key.len() == 16 {
@@ -1721,7 +1721,7 @@ mod tests {
         seed.extend_from_slice(&server_random);
         seed.extend_from_slice(&client_random);
         let kb = tls12_prf_sha256(&master, b"key expansion", &seed, 72);
-        let (s_mac, s_key) = (&kb[20..40], &kb[56..72]);
+        let s_key = &kb[56..72]; // server write key (server MAC key at kb[20..40] is unused here)
 
         // Seal with the WRONG MAC key → the MAC won't verify under the real key.
         let wrong_mac = &kb[0..20]; // client MAC key, not the server's
