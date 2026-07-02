@@ -50,7 +50,7 @@ describe("AuthApp", () => {
     const signIn = vi.fn(async () => ({ ok: true }));
     sess.useSession.mockReturnValue(anon({ signIn }));
     render(<AuthApp />);
-    expect(screen.getByRole("heading", { name: /^sign in$/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /welcome back/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/email/i), "a@b.com");
     await userEvent.type(screen.getByLabelText(/password/i), "hunter2");
     await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));

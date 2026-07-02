@@ -31,7 +31,7 @@ describe("AuthDialog", () => {
     const signUp = vi.fn(async () => ({ ok: true }));
     render(<AuthDialog session={anon({ signUp })} onClose={vi.fn()} />);
     // Toggle from the default sign-in mode into create-account mode.
-    await userEvent.click(screen.getByRole("button", { name: /no account\? create one/i }));
+    await userEvent.click(screen.getByRole("button", { name: /create an account/i }));
     await userEvent.type(screen.getByLabelText(/email/i), "a@b.com");
     await userEvent.type(screen.getByLabelText(/password/i), "hunter2");
     await userEvent.click(screen.getByRole("button", { name: /create account/i }));
