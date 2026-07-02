@@ -11,6 +11,18 @@
       "has": [{ "type": "host", "value": "packet-pilot.vercel.app" }],
       "destination": "https://packetpilot.app/$1",
       "permanent": true
+    },
+    {
+      "source": "/admin",
+      "has": [{ "type": "host", "value": "packetpilot.app" }],
+      "destination": "https://admin.packetpilot.app/",
+      "permanent": false
+    },
+    {
+      "source": "/admin/(.*)",
+      "has": [{ "type": "host", "value": "packetpilot.app" }],
+      "destination": "https://admin.packetpilot.app/$1",
+      "permanent": false
     }
   ],
   "rewrites": [

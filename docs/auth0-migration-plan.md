@@ -280,3 +280,9 @@ an `admin.` host**, and the whole admin subdomain is `noindex` (host-conditioned
 5. **Then tell me** and I'll flip `/admin` on the public domain to **redirect** to the subdomain
    (completing the isolation without a lockout window). Deploying that redirect before the
    subdomain resolves would break admin access, so it's a deliberate second step.
+
+✅ **Done 2026-07-01.** Steps 1–4 verified live (DNS on Vercel nameservers, cert, host-conditioned
+noindex on every path, Auth0 callback/logout allowlists probed directly, console renders clean
+under CSP in a real browser). Step 5 shipped as a host-scoped 307 in `vercel.json` — scoped to
+`packetpilot.app` so preview/branch hostnames keep serving `/admin`, and temporary (not 308) so
+a revert can't be defeated by browser redirect caches.
