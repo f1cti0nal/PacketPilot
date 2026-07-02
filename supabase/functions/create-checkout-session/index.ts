@@ -1,6 +1,5 @@
 import Stripe from "npm:stripe@^17";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { verifyAuth0, resolveProfileId } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -17,21 +16,23 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
-    const identity = await verifyAuth0(req);
-    if (!identity) return json({ error: "Unauthorized" }, 401);
+    const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    // Auth: require a logged-in user (Supabase GoTrue access token). user.id == profiles.id.
+    const authz = req.headers.get("Authorization") ?? "";
+    const token = authz.startsWith("Bearer ") ? authz.slice(7).trim() : "";
+    const { data: userData } = token ? await admin.auth.getUser(token) : { data: { user: null } };
+    const user = userData?.user;
+    if (!user) return json({ error: "Unauthorized" }, 401);
 
     // Which plan? Default monthly (back-compat: an empty/legacy body → monthly).
     const body = await req.json().catch(() => ({}));
     const plan: Plan = PLANS.includes(body?.plan) ? body.plan : "monthly";
 
-    const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const profile = await resolveProfileId(admin, identity.sub);
-    if (!profile) return json({ error: "Unauthorized" }, 401);
-    const userEmail = profile.email ?? identity.email ?? undefined;
+    const userEmail = user.email ?? undefined;
 
     // Per-user rate limit (abuse guard on checkout-session creation). Fail OPEN on error.
     try {
-      const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "checkout:" + identity.sub, p_max: 10, p_window_seconds: 60 });
+      const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "checkout:" + user.id, p_max: 10, p_window_seconds: 60 });
       if (ok === false) return json({ error: "rate limit exceeded, slow down" }, 429);
     } catch { /* fail open */ }
 
@@ -67,7 +68,7 @@ Deno.serve(async (req) => {
     const { data: existing } = await admin
       .from("subscriptions")
       .select("stripe_customer_id")
-      .eq("user_id", profile.id)
+      .eq("user_id", user.id)
       .not("stripe_customer_id", "is", null)
       .limit(1)
       .maybeSingle();
@@ -76,7 +77,7 @@ Deno.serve(async (req) => {
       // No mirrored customer yet (e.g. a never-completed prior checkout). Search Stripe by the
       // canonical key so we reuse an existing customer instead of orphaning a duplicate.
       const found = await stripe.customers.search({
-        query: `metadata['supabase_user_id']:'${profile.id}'`,
+        query: `metadata['supabase_user_id']:'${user.id}'`,
         limit: 1,
       });
       customerId = found.data[0]?.id;
@@ -85,8 +86,8 @@ Deno.serve(async (req) => {
       // Idempotency key keyed on the user makes two concurrent first-time checkouts converge on
       // ONE customer (Stripe dedupes by key for 24h) — closes the customer-dedup race (I-3).
       const customer = await stripe.customers.create(
-        { email: userEmail, metadata: { supabase_user_id: profile.id } },
-        { idempotencyKey: `customer_${profile.id}` },
+        { email: userEmail, metadata: { supabase_user_id: user.id } },
+        { idempotencyKey: `customer_${user.id}` },
       );
       customerId = customer.id;
     }
@@ -96,7 +97,7 @@ Deno.serve(async (req) => {
       mode: "subscription",
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
-      client_reference_id: profile.id,
+      client_reference_id: user.id,
       success_url: `${origin}/app?checkout=success`,
       cancel_url: `${origin}/pricing?checkout=cancel`,
     });

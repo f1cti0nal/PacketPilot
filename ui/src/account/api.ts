@@ -1,5 +1,4 @@
 import { supabase } from "../lib/supabase";
-import { auth0Logout, auth0SendPasswordReset } from "../auth/auth0Client";
 
 type Result = { ok: boolean; error?: string };
 const NO_BACKEND: Result = { ok: false, error: "Accounts are unavailable" };
@@ -46,15 +45,19 @@ export async function removeAvatar(uid: string): Promise<Result> {
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
-/** Password + email are managed by Auth0. Trigger a reset email for the account. */
+/** Email the user a secure link to set a new password (Supabase recovery flow). */
 export async function sendPasswordReset(email: string): Promise<Result> {
-  return auth0SendPasswordReset(email);
+  if (!supabase) return NO_BACKEND;
+  const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/account` : undefined;
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
-/** End the Auth0 session everywhere (redirects to Auth0 logout, then back to /app). */
+/** End the Supabase session on this device. */
 export async function signOutEverywhere(): Promise<Result> {
-  await auth0Logout();
-  return { ok: true };
+  if (!supabase) return NO_BACKEND;
+  const { error } = await supabase.auth.signOut();
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 export async function deleteAccount(): Promise<Result> {

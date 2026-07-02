@@ -49,7 +49,7 @@ export const openPortal = (): Promise<{ ok: boolean; error?: string }> =>
 
 /** After returning from Checkout with ?checkout=success, strip the query param and reload
  *  so useSession re-derives the webhook-updated plan from the DB (the plan lives in
- *  profiles/subscriptions, not the Auth0 token, so a fresh load is what refreshes it). */
+ *  profiles/subscriptions, not the session token, so a fresh load is what refreshes it). */
 export async function reconcileAfterCheckout(): Promise<void> {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);

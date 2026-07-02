@@ -1,6 +1,5 @@
 import Stripe from "npm:stripe@^17";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { verifyAuth0, resolveProfileId, deleteAuth0User } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -14,18 +13,19 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const url = Deno.env.get("SUPABASE_URL")!;
-    const identity = await verifyAuth0(req);
-    if (!identity) return json({ error: "Unauthorized" }, 401);
-
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const profile = await resolveProfileId(admin, identity.sub);
-    if (!profile) return json({ error: "Unauthorized" }, 401);
+    // Auth: require a logged-in user (Supabase GoTrue access token). user.id == profiles.id.
+    const authz = req.headers.get("Authorization") ?? "";
+    const token = authz.startsWith("Bearer ") ? authz.slice(7).trim() : "";
+    const { data: userData } = token ? await admin.auth.getUser(token) : { data: { user: null } };
+    const user = userData?.user;
+    if (!user) return json({ error: "Unauthorized" }, 401);
 
     // Best-effort: cancel the live Stripe subscription so a deleted account stops billing.
     const { data: sub } = await admin
       .from("subscriptions")
       .select("stripe_subscription_id")
-      .eq("user_id", profile.id)
+      .eq("user_id", user.id)
       .not("stripe_subscription_id", "is", null)
       .limit(1)
       .maybeSingle();
@@ -39,10 +39,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Delete the internal profile (cascades subscriptions), then the Auth0 identity.
-    const del = await admin.from("profiles").delete().eq("id", profile.id);
+    // Delete the internal profile (cascades subscriptions), then the auth identity so the
+    // email can be re-registered. Best-effort on the auth user — the profile is already gone.
+    const del = await admin.from("profiles").delete().eq("id", user.id);
     if (del.error) return json({ error: del.error.message }, 400);
-    await deleteAuth0User(identity.sub);
+    try {
+      await admin.auth.admin.deleteUser(user.id);
+    } catch (_) {
+      // Never block account deletion on an auth-admin error.
+    }
     return json({ ok: true });
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 400);

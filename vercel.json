@@ -46,7 +46,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests; script-src 'self' 'wasm-unsafe-eval' 'sha256-tYOH7bVoAACAeu+G+3AK54U4QGlPExTmnAxHrpRlXCI=' 'sha256-+HPHqTxjOByJcvUTBh2FDDTuw12/e24QmwK+cDhd3wQ='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://brkztcfhmrjjnbjzycie.supabase.co wss://brkztcfhmrjjnbjzycie.supabase.co https://dev-z7p2u0ds62xilshu.us.auth0.com; frame-src https://dev-z7p2u0ds62xilshu.us.auth0.com; worker-src 'self'; form-action 'self' https://dev-z7p2u0ds62xilshu.us.auth0.com"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests; script-src 'self' 'wasm-unsafe-eval' 'sha256-tYOH7bVoAACAeu+G+3AK54U4QGlPExTmnAxHrpRlXCI=' 'sha256-+HPHqTxjOByJcvUTBh2FDDTuw12/e24QmwK+cDhd3wQ='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://brkztcfhmrjjnbjzycie.supabase.co wss://brkztcfhmrjjnbjzycie.supabase.co; frame-src 'none'; worker-src 'self'; form-action 'self'"
         },
         { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },

@@ -2,8 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Radar, MailCheck } from "lucide-react";
 import App from "../App";
 import { useSession } from "./useSession";
-import { supabaseConfigured } from "../lib/supabase";
-import { auth0Configured, auth0RefreshUser } from "./auth0Client";
+import { supabase, supabaseConfigured } from "../lib/supabase";
 import { LoadingState } from "../components/state/LoadingState";
 import { ThemeToggle } from "../cockpit/ThemeToggle";
 
@@ -24,15 +23,15 @@ function detectDemo(): boolean {
  * signed-in, email-verified account to reach the full app. Two escape hatches preserve prior
  * behavior:
  *   - Public demo (/app?sample=1) stays anonymous so marketing/SEO "try it" links keep working.
- *   - Builds without Auth0 + Supabase configured (offline / self-host / tests) have no accounts
- *     at all, so there's nothing to gate — the app stays open.
+ *   - Builds without Supabase configured (offline / self-host / tests) have no accounts at all,
+ *     so there's nothing to gate — the app stays open.
  *
  * Signed-out visitors are sent to the branded /login page (which offers sign in / create
  * account, then returns to /app). Signed-in-but-unverified visitors are held on a "verify your
  * email" screen until they confirm.
  */
 export function AppGate() {
-  const identityReady = supabaseConfigured && auth0Configured;
+  const identityReady = supabaseConfigured;
   const [isDemo] = useState(detectDemo);
   const session = useSession();
   // The gate only enforces when accounts exist and this isn't the public demo.
@@ -46,7 +45,7 @@ export function AppGate() {
     }
   }, [gatingActive, session.status]);
 
-  // Offline/self-host (no identity provider) or the public demo: no gate.
+  // Offline/self-host (no backend) or the public demo: no gate.
   if (!identityReady) return <App />;
   if (isDemo) return <App demo />;
 
@@ -65,7 +64,7 @@ export function AppGate() {
     );
   }
   if (!session.emailVerified) {
-    return <VerifyEmailScreen email={session.email} onSignOut={session.signOut} />;
+    return <VerifyEmailScreen email={session.email} onResend={session.resendVerification} onSignOut={session.signOut} />;
   }
   return <App />;
 }
@@ -98,26 +97,47 @@ function GateShell({ children }: { children: ReactNode }) {
 }
 
 /**
- * Held here until the account's email is verified. The verification link lands the user back in
- * Auth0, not here, so "I've verified — continue" force-refreshes the token (bypassing the cache)
- * to observe the updated `email_verified` claim, then reloads so useSession re-derives an
- * authed+verified session and the app renders.
+ * Held here until the account's email is confirmed. With Supabase "Confirm email" on, clicking
+ * the link establishes a verified session in the tab it opens — this screen is the fallback for
+ * a still-unverified session: "I've verified — continue" force-refreshes the session token to
+ * observe the updated `email_confirmed_at`, then reloads so useSession re-derives an
+ * authed+verified session; "Resend" re-sends the confirmation email.
  */
-function VerifyEmailScreen({ email, onSignOut }: { email: string; onSignOut: () => Promise<void> }) {
+function VerifyEmailScreen({
+  email,
+  onResend,
+  onSignOut,
+}: {
+  email: string;
+  onResend: () => Promise<{ ok: boolean; error?: string }>;
+  onSignOut: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
   const [notYet, setNotYet] = useState(false);
+  const [resent, setResent] = useState(false);
 
   const recheck = async () => {
     if (busy) return;
     setBusy(true);
     setNotYet(false);
-    const user = await auth0RefreshUser();
-    if (user?.email_verified === true) {
+    setResent(false);
+    const { data } = supabase ? await supabase.auth.refreshSession() : { data: { session: null } };
+    if (data.session?.user?.email_confirmed_at) {
       window.location.reload();
       return;
     }
     setBusy(false);
     setNotYet(true);
+  };
+
+  const resend = async () => {
+    if (busy) return;
+    setBusy(true);
+    setNotYet(false);
+    const r = await onResend();
+    setBusy(false);
+    setResent(r.ok);
+    if (!r.ok) setNotYet(true);
   };
 
   return (
@@ -146,12 +166,25 @@ function VerifyEmailScreen({ email, onSignOut }: { email: string; onSignOut: () 
           </button>
           <button
             type="button"
+            onClick={() => void resend()}
+            disabled={busy}
+            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-60"
+          >
+            Resend verification email
+          </button>
+          <button
+            type="button"
             onClick={() => void onSignOut()}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)]"
+            className="inline-flex items-center justify-center rounded-[var(--r-tile)] px-3 py-2 text-sm font-medium text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
           >
             Sign out
           </button>
         </div>
+        {resent && (
+          <p role="status" className="mt-3 t-tag text-[var(--color-accent)]">
+            Sent — check your inbox.
+          </p>
+        )}
         {notYet && (
           <p role="alert" className="mt-3 t-tag text-[var(--color-sev-critical)]">
             Not verified yet — open the link in the email, then try again.

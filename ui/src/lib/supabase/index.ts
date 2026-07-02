@@ -1,2 +1,2 @@
-export { supabase, supabaseConfigured } from "./client";
+export { supabase, supabaseConfigured, accessToken } from "./client";
 export type { Database } from "./types";

@@ -17,7 +17,7 @@ const ctaPrimary =
 const ctaGhost =
   "mt-5 inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-dim)] hover:text-[var(--color-text)]";
 
-/** Survives the Auth0 sign-in redirect so we can resume the chosen checkout. */
+/** Survives the sign-in step (OAuth redirect or the in-page dialog) so we can resume checkout. */
 const PENDING_KEY = "pp.pending_plan";
 
 export function PricingPlans() {
@@ -50,7 +50,7 @@ export function PricingPlans() {
   const onChoose = (plan: PlanChoice) => {
     if (session.status === "authed") void subscribe(plan);
     else {
-      // Auth0 sign-in is a full-page redirect, so remember the chosen plan across it.
+      // OAuth sign-in is a full-page redirect, so remember the chosen plan across it.
       try {
         sessionStorage.setItem(PENDING_KEY, plan);
       } catch {
@@ -60,7 +60,7 @@ export function PricingPlans() {
     }
   };
 
-  // After returning from Auth0 sign-in, resume the checkout the visitor chose.
+  // After sign-in completes, resume the checkout the visitor chose.
   useEffect(() => {
     if (session.status !== "authed") return;
     let stored: string | null = null;
