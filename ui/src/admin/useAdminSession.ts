@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
-import { auth0Configured, auth0Login, auth0Logout, auth0User, completeAuth0RedirectIfPresent } from "../auth/auth0Client";
 
 export interface AdminProfile {
   email: string;
@@ -11,7 +10,7 @@ export interface AdminProfile {
 export type AdminSession =
   | { status: "loading" }
   | { status: "unconfigured" }
-  | { status: "anon"; login: () => Promise<void> }
+  | { status: "anon"; signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }> }
   | { status: "forbidden"; email: string; signOut: () => Promise<void> }
   | { status: "admin"; email: string; profile: AdminProfile; signOut: () => Promise<void> };
 
@@ -23,16 +22,18 @@ type Internal =
   | { status: "admin"; email: string; profile: AdminProfile };
 
 export function useAdminSession(): AdminSession {
-  // Both Supabase (data) and Auth0 (login) must be configured for the admin console.
-  const identityReady = supabaseConfigured && auth0Configured;
+  // The admin console needs the Supabase backend; identity is Supabase's own GoTrue session.
+  const identityReady = supabaseConfigured;
   const [state, setState] = useState<Internal>(identityReady ? { status: "loading" } : { status: "unconfigured" });
 
-  const login = useCallback(async () => {
-    await auth0Login();
+  const signIn = useCallback(async (email: string, password: string) => {
+    if (!supabase) return { ok: false, error: "Admin backend is unavailable" };
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    return error ? { ok: false, error: error.message } : { ok: true };
   }, []);
 
   const signOut = useCallback(async () => {
-    await auth0Logout();
+    if (supabase) await supabase.auth.signOut();
   }, []);
 
   useEffect(() => {
@@ -43,19 +44,16 @@ export function useAdminSession(): AdminSession {
     const client = supabase;
     let cancelled = false;
 
-    void (async () => {
-      await completeAuth0RedirectIfPresent();
-      const user = await auth0User();
-      if (cancelled) return;
-      if (!user?.sub) {
-        setState({ status: "anon" });
+    const derive = async (session: { user?: { id: string; email?: string } } | null) => {
+      if (!session?.user) {
+        if (!cancelled) setState({ status: "anon" });
         return;
       }
-      const email = user.email ?? "";
+      const email = session.user.email ?? "";
       const { data, error } = await client
         .from("profiles")
         .select("email,role,full_name")
-        .eq("auth0_sub", user.sub)
+        .eq("id", session.user.id)
         .maybeSingle();
       if (cancelled) return;
       if (error || !data || data.role !== "admin") {
@@ -71,10 +69,13 @@ export function useAdminSession(): AdminSession {
           full_name: (data.full_name as string | null) ?? null,
         },
       });
-    })();
+    };
 
+    void client.auth.getSession().then(({ data }) => derive(data.session ?? null));
+    const { data: sub } = client.auth.onAuthStateChange((_event, session) => void derive(session));
     return () => {
       cancelled = true;
+      sub.subscription.unsubscribe();
     };
   }, []);
 
@@ -84,7 +85,7 @@ export function useAdminSession(): AdminSession {
     case "unconfigured":
       return { status: "unconfigured" };
     case "anon":
-      return { status: "anon", login };
+      return { status: "anon", signIn };
     case "forbidden":
       return { status: "forbidden", email: state.email, signOut };
     case "admin":

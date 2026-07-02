@@ -84,8 +84,8 @@ function SignOutAll() {
       setBusy(false);
       return;
     }
-    // Auth0 logout redirects the browser; this is a fallback if it didn't.
-    window.location.assign("/app");
+    // Session ended — leave the account area.
+    window.location.assign("/");
   };
   return (
     <div className="flex flex-col gap-2 border-t border-[var(--color-border)] pt-4">

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { auth0User } from "../auth/auth0Client";
 
 export interface AccountProfile {
   id: string;
@@ -25,11 +24,9 @@ export type AccountState =
   | { status: "ready"; profile: AccountProfile; subscription: AccountSubscription | null };
 
 /**
- * Loads the signed-in user's own profile + latest subscription row (both RLS-scoped
- * to the caller). The displayed email is taken from the Auth0 user (always current).
- * NOTE: under Auth0, `profiles.email` is NOT auto-synced on an email change (0019 retired
- * the auth.users email trigger), so other surfaces (admin lists, audit) may show a stale
- * address until an Auth0 Action or a re-provision updates it.
+ * Loads the signed-in user's own profile + latest subscription row (both RLS-scoped to the
+ * caller). The displayed email is taken from the GoTrue session user (always current); the
+ * on_auth_user_email_changed trigger keeps profiles.email in sync after a confirmed change.
  */
 export function useAccount(): { state: AccountState; reload: () => void } {
   const [state, setState] = useState<AccountState>({ status: "loading" });
@@ -45,16 +42,17 @@ export function useAccount(): { state: AccountState; reload: () => void } {
     let cancelled = false;
     setState({ status: "loading" });
     void (async () => {
-      const user = await auth0User();
+      const { data: sessionData } = await client.auth.getSession();
+      const user = sessionData.session?.user;
       if (cancelled) return;
-      if (!user?.sub) {
+      if (!user) {
         setState({ status: "error", error: "You're not signed in" });
         return;
       }
       const prof = await client
         .from("profiles")
         .select("id,email,full_name,avatar_url,role,created_at")
-        .eq("auth0_sub", user.sub)
+        .eq("id", user.id)
         .maybeSingle();
       if (cancelled) return;
       if (prof.error || !prof.data) {

@@ -45,7 +45,7 @@ describe("SecuritySection", () => {
     render(<SecuritySection email="ada@x.com" />);
     fireEvent.click(screen.getByRole("button", { name: /sign out everywhere/i }));
     await waitFor(() => expect(api.signOutEverywhere).toHaveBeenCalled());
-    expect(window.location.assign).toHaveBeenCalledWith("/app");
+    expect(window.location.assign).toHaveBeenCalledWith("/");
   });
 
   it("arms delete only when the email matches, then deletes", async () => {

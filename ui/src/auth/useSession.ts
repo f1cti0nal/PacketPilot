@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
-import {
-  auth0Configured,
-  auth0Login,
-  auth0Logout,
-  auth0User,
-  completeAuth0RedirectIfPresent,
-} from "./auth0Client";
 
 export interface UserProfile {
   email: string;
@@ -20,21 +13,32 @@ export interface UserProfile {
   trialEndsAt: string | null;
 }
 
+/** Third-party identity providers offered for one-click sign-in. */
+export type OAuthProvider = "google" | "github";
+
 export type SessionState =
   | { status: "loading" }
   | {
       status: "anon";
-      /** Redirect to Auth0 Universal Login (pass `signUp` to open the sign-up screen).
-       *  The browser navigates away and back, so this promise usually doesn't resolve here. */
-      login: (opts?: { signUp?: boolean }) => Promise<void>;
+      signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+      signUp: (email: string, password: string) => Promise<{ ok: boolean; needsConfirm?: boolean; error?: string }>;
+      /** Begin an OAuth redirect (Google/GitHub). On success the browser navigates away to the
+       *  provider and back to `/app`, where the session is picked up — so the promise only resolves
+       *  with `ok: false` when starting the redirect failed. */
+      signInWithProvider: (provider: OAuthProvider) => Promise<{ ok: boolean; error?: string }>;
+      /** Resend the signup confirmation email (used by the "check your email" state). */
+      resendVerification: (email: string) => Promise<{ ok: boolean; error?: string }>;
     }
   | {
       status: "authed";
       email: string;
-      /** True only when Auth0 reports the email as verified. The /app gate holds unverified
-       *  accounts on a "verify your email" screen; feature-gating consumers can ignore it. */
+      /** True once the account's email is confirmed (GoTrue `email_confirmed_at`). With
+       *  "Confirm email" on, email/password sign-in without confirmation never yields a session,
+       *  and OAuth emails are provider-verified — so this is a safety net for the /app gate. */
       emailVerified: boolean;
       profile: UserProfile;
+      /** Resend the confirmation email to the signed-in address. */
+      resendVerification: () => Promise<{ ok: boolean; error?: string }>;
       signOut: () => Promise<void>;
     };
 
@@ -44,69 +48,94 @@ type Internal =
   | { status: "authed"; email: string; emailVerified: boolean; profile: UserProfile };
 
 export function useSession(): SessionState {
-  // Identity is available only when BOTH Supabase (data) and Auth0 (login) are configured.
-  const identityReady = supabaseConfigured && auth0Configured;
-  const [state, setState] = useState<Internal>(identityReady ? { status: "loading" } : { status: "anon" });
+  const [state, setState] = useState<Internal>(
+    supabaseConfigured ? { status: "loading" } : { status: "anon" },
+  );
 
-  const login = useCallback(async (opts?: { signUp?: boolean }) => {
-    await auth0Login(opts);
+  const signIn = useCallback(async (email: string, password: string) => {
+    if (!supabase) return { ok: false, error: "Accounts are unavailable" };
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }, []);
+
+  const signUp = useCallback(async (email: string, password: string) => {
+    if (!supabase) return { ok: false, error: "Accounts are unavailable" };
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: `${window.location.origin}/app` },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, needsConfirm: !data.session };
+  }, []);
+
+  const signInWithProvider = useCallback(async (provider: OAuthProvider) => {
+    if (!supabase) return { ok: false, error: "Accounts are unavailable" };
+    // Redirects to the provider, then back to /app where `detectSessionInUrl` (on by default, the
+    // same mechanism the email-confirm link uses) exchanges the code and fires onAuthStateChange.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/app` },
+    });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }, []);
+
+  const resendVerification = useCallback(async (email: string) => {
+    if (!supabase) return { ok: false, error: "Accounts are unavailable" };
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/app` },
+    });
+    return error ? { ok: false, error: error.message } : { ok: true };
   }, []);
 
   const signOut = useCallback(async () => {
-    await auth0Logout();
+    if (supabase) await supabase.auth.signOut();
   }, []);
 
   useEffect(() => {
-    if (!identityReady || !supabase) {
+    if (!supabaseConfigured || !supabase) {
       setState({ status: "anon" });
       return;
     }
     const client = supabase;
     let cancelled = false;
 
-    void (async () => {
-      // Complete an in-flight Universal Login redirect before checking the session.
-      await completeAuth0RedirectIfPresent();
-      const user = await auth0User();
-      if (cancelled) return;
-      if (!user?.sub) {
-        setState({ status: "anon" });
+    const derive = async (session: { user?: { id: string; email?: string; email_confirmed_at?: string | null } } | null) => {
+      if (!session?.user) {
+        if (!cancelled) setState({ status: "anon" });
         return;
       }
-      const email = user.email ?? "";
-      // Own profile row, resolved via the Auth0 subject claim (RLS scopes it to the caller).
-      const { data } = await client
-        .from("profiles")
-        .select("id,email,full_name,plan,trial_ends_at")
-        .eq("auth0_sub", user.sub)
-        .maybeSingle();
-      if (cancelled) return;
-      // Whether a real Stripe customer exists (drives "Manage billing").
-      let hasBilling = false;
-      const pid = (data as { id?: string } | null)?.id;
-      if (pid) {
-        const { data: sub } = await client
+      const email = session.user.email ?? "";
+      const emailVerified = !!session.user.email_confirmed_at;
+      // Profile (plan/name) + whether a real Stripe customer exists, in parallel. Both are
+      // RLS-scoped to the caller's own row; supabase reads resolve (never throw) so Promise.all
+      // is safe. A failed read just leaves the field at its safe default.
+      const [{ data }, { data: sub }] = await Promise.all([
+        client.from("profiles").select("email,full_name,plan,trial_ends_at").eq("id", session.user.id).single(),
+        client
           .from("subscriptions")
           .select("stripe_customer_id")
-          .eq("user_id", pid)
+          .eq("user_id", session.user.id)
           .not("stripe_customer_id", "is", null)
           .limit(1)
-          .maybeSingle();
-        hasBilling = !!(sub as { stripe_customer_id?: string | null } | null)?.stripe_customer_id;
-      }
+          .maybeSingle(),
+      ]);
       if (cancelled) return;
+      // Best-effort: a failed profile read still leaves the user authed (email from the
+      // session, plan defaulting to free) rather than bouncing them out.
       const rawPlan = (data?.plan as string) ?? "free";
+      const hasBilling = !!(sub as { stripe_customer_id?: string | null } | null)?.stripe_customer_id;
       const trialEndsAt = (data?.trial_ends_at as string | null) ?? null;
-      // Reverse-trial: a Pro plan past its trial end with no real billing has lapsed —
-      // gate as free immediately (the pg_cron downgrade catches up in the DB).
+      // Reverse-trial: a Pro plan that is past its trial end with no real billing has effectively
+      // lapsed — gate as free immediately (the pg_cron downgrade catches up in the DB).
       const trialExpired = !!trialEndsAt && Date.parse(trialEndsAt) < Date.now();
       const plan = rawPlan === "pro" && trialExpired && !hasBilling ? "free" : rawPlan;
       setState({
         status: "authed",
         email: (data?.email as string) ?? email,
-        // Auth0 only sends `email_verified: true` once the account is confirmed; treat a
-        // missing/false claim as unverified so the /app gate holds it back.
-        emailVerified: user.email_verified === true,
+        emailVerified,
         profile: {
           email: (data?.email as string) ?? email,
           full_name: (data?.full_name as string | null) ?? null,
@@ -115,10 +144,13 @@ export function useSession(): SessionState {
           trialEndsAt,
         },
       });
-    })();
+    };
 
+    void client.auth.getSession().then(({ data }) => derive(data.session ?? null));
+    const { data: sub } = client.auth.onAuthStateChange((_event, session) => void derive(session));
     return () => {
       cancelled = true;
+      sub.subscription.unsubscribe();
     };
   }, []);
 
@@ -126,13 +158,14 @@ export function useSession(): SessionState {
     case "loading":
       return { status: "loading" };
     case "anon":
-      return { status: "anon", login };
+      return { status: "anon", signIn, signUp, signInWithProvider, resendVerification };
     case "authed":
       return {
         status: "authed",
         email: state.email,
         emailVerified: state.emailVerified,
         profile: state.profile,
+        resendVerification: () => resendVerification(state.email),
         signOut,
       };
   }

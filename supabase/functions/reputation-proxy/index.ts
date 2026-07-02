@@ -1,7 +1,6 @@
 // reputation-proxy: authenticated relay for threat-intel reputation lookups. Injects the operator's
 // provider key (env secret) for an ALLOWLISTED provider host only, then forwards a GET.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { verifyAuth0 } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -27,13 +26,16 @@ Deno.serve(async (req) => {
   const url = Deno.env.get("SUPABASE_URL")!;
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  const identity = await verifyAuth0(req);
-  if (!identity) return json({ error: "unauthorized" }, 401);
-
   const admin = createClient(url, serviceRole);
+  // Auth: require a logged-in user (Supabase GoTrue access token).
+  const authz = req.headers.get("Authorization") ?? "";
+  const token = authz.startsWith("Bearer ") ? authz.slice(7).trim() : "";
+  const { data: userData } = token ? await admin.auth.getUser(token) : { data: { user: null } };
+  const user = userData?.user;
+  if (!user) return json({ error: "unauthorized" }, 401);
   // Per-user rate limit — protect the operator's provider keys from abuse. Fail OPEN on error.
   try {
-    const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "rep:" + identity.sub, p_max: 120, p_window_seconds: 60 });
+    const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "rep:" + user.id, p_max: 120, p_window_seconds: 60 });
     if (ok === false) return json({ error: "rate limit exceeded, slow down" }, 429);
   } catch { /* fail open */ }
   const { data: row } = await admin.from("app_settings").select("value").eq("key", "rep_config").single();

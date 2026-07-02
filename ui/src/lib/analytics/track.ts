@@ -50,9 +50,9 @@ export function trackPageView(path: string): void {
   const client = supabase;
   if (!client) return;
   const session_id = sessionId();
-  // Anonymous attribution: identity now lives in Auth0 (the Supabase client uses the
-  // accessToken option, so supabase.auth.getSession() is unavailable). Resolving the internal
-  // profile id per page view isn't worth a query on this hot path, so user_id is left null.
+  // Anonymous attribution: user_id is left null on this hot path (the RLS insert policy allows a
+  // null user_id for both anon and authenticated). Keeping it null avoids reading the session on
+  // every page view and never carries capture data — the path allowlist above is the only field.
   void client
     .from("analytics_events")
     .insert({ path, session_id, user_id: null })

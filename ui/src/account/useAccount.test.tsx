@@ -2,16 +2,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const sb: any = vi.hoisted(() => ({ from: vi.fn() }));
+const sb: any = vi.hoisted(() => ({ from: vi.fn(), auth: { getSession: vi.fn() } }));
 vi.mock("../lib/supabase", () => ({ supabase: sb }));
-
-const a0 = vi.hoisted(() => ({ auth0User: vi.fn() }));
-vi.mock("../auth/auth0Client", () => ({ auth0User: (...args: unknown[]) => a0.auth0User(...args) }));
 
 import { useAccount, type AccountState } from "./useAccount";
 
+// Captures the column the profile row is looked up by (should be "id" under native auth).
+const profileEqCol = { value: "" };
 const profileChain = (data: unknown, error: unknown = null) => ({
-  select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data, error }) }) }),
+  select: () => ({
+    eq: (col: string) => {
+      profileEqCol.value = col;
+      return { maybeSingle: () => Promise.resolve({ data, error }) };
+    },
+  }),
 });
 const subChain = (data: unknown) => ({
   select: () => ({
@@ -20,7 +24,8 @@ const subChain = (data: unknown) => ({
 });
 
 beforeEach(() => {
-  a0.auth0User.mockResolvedValue({ sub: "auth0|1", email: "new@x.com" });
+  profileEqCol.value = "";
+  sb.auth.getSession.mockResolvedValue({ data: { session: { user: { id: "u1", email: "new@x.com" } } } });
   sb.from.mockImplementation((t: string) =>
     t === "profiles"
       ? profileChain({ id: "u1", email: "old@x.com", full_name: "Ada", avatar_url: null, role: "user", created_at: "2026-01-01" })
@@ -38,6 +43,8 @@ describe("useAccount", () => {
     expect(s.profile.email).toBe("new@x.com");
     expect(s.profile.full_name).toBe("Ada");
     expect(s.subscription?.status).toBe("active");
+    // Profile is looked up by the GoTrue user id (native auth), not auth0_sub.
+    expect(profileEqCol.value).toBe("id");
   });
 
   it("returns null subscription when the user has none", async () => {
@@ -58,7 +65,7 @@ describe("useAccount", () => {
   });
 
   it("errors when not signed in", async () => {
-    a0.auth0User.mockResolvedValue(null);
+    sb.auth.getSession.mockResolvedValue({ data: { session: null } });
     const { result } = renderHook(() => useAccount());
     await waitFor(() => expect(result.current.state.status).toBe("error"));
   });

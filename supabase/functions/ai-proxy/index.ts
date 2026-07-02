@@ -1,7 +1,6 @@
 // ai-proxy: authenticated LLM proxy. Uses the operator's AI_API_KEY (env) + admin-managed
 // ai_config (provider/model). Streams the upstream completion back to the browser.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { verifyAuth0 } from "../_shared/auth0.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -28,15 +27,18 @@ Deno.serve(async (req) => {
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const aiKey = Deno.env.get("AI_API_KEY") ?? "";
 
-  // Auth: require a logged-in user (Auth0 Third-Party Auth token).
-  const identity = await verifyAuth0(req);
-  if (!identity) return json({ error: "unauthorized" }, 401);
-
   const admin = createClient(url, serviceRole);
+  // Auth: require a logged-in user (Supabase GoTrue access token). getUser(token)
+  // validates the JWT against the auth server (catches revoked/expired tokens).
+  const authz = req.headers.get("Authorization") ?? "";
+  const token = authz.startsWith("Bearer ") ? authz.slice(7).trim() : "";
+  const { data: userData } = token ? await admin.auth.getUser(token) : { data: { user: null } };
+  const user = userData?.user;
+  if (!user) return json({ error: "unauthorized" }, 401);
   // Per-user rate limit — protect the operator's AI key from abuse. Fail OPEN on error so a
   // rate-limit hiccup never breaks the feature.
   try {
-    const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "ai:" + identity.sub, p_max: 20, p_window_seconds: 60 });
+    const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "ai:" + user.id, p_max: 20, p_window_seconds: 60 });
     if (ok === false) return json({ error: "rate limit exceeded, slow down" }, 429);
   } catch { /* fail open */ }
 

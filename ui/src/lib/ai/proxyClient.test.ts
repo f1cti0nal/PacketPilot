@@ -2,9 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AiMessage } from "./client";
 
 // ── Module-level mocks ────────────────────────────────────────────────────
-const mockIdToken = vi.hoisted(() => vi.fn());
-vi.mock("../supabase", () => ({ supabase: {} }));
-vi.mock("../../auth/auth0Client", () => ({ auth0IdToken: mockIdToken }));
+const mockToken = vi.hoisted(() => vi.fn());
+vi.mock("../supabase", () => ({ supabase: {}, accessToken: mockToken }));
 
 // We'll stub global fetch per-test.
 
@@ -33,7 +32,7 @@ describe("runViaProxy", () => {
   });
 
   it("POSTs to the ai-proxy function URL with bearer token and messages", async () => {
-    mockIdToken.mockResolvedValue("tok-abc");
+    mockToken.mockResolvedValue("tok-abc");
     const fetchMock = vi.fn(async () => new Response(makeSseStream(["Hello"]), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -49,7 +48,7 @@ describe("runViaProxy", () => {
   });
 
   it("streams deltas to onToken and returns the full assembled text", async () => {
-    mockIdToken.mockResolvedValue("tok-abc");
+    mockToken.mockResolvedValue("tok-abc");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(makeSseStream(["Hello", " world"]), { status: 200 })));
 
     const tokens: string[] = [];
@@ -60,21 +59,21 @@ describe("runViaProxy", () => {
   });
 
   it("throws a friendly error on non-OK response", async () => {
-    mockIdToken.mockResolvedValue("tok-abc");
+    mockToken.mockResolvedValue("tok-abc");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "not configured" }), { status: 503 })));
 
     await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI is not enabled/i);
   });
 
   it("throws a generic error for non-503 non-OK status", async () => {
-    mockIdToken.mockResolvedValue("tok-abc");
+    mockToken.mockResolvedValue("tok-abc");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("bad", { status: 502 })));
 
     await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI request failed/i);
   });
 
   it("throws when there is no active session", async () => {
-    mockIdToken.mockResolvedValue(null);
+    mockToken.mockResolvedValue(null);
 
     await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/Sign in/i);
   });

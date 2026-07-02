@@ -1,6 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
-import { auth0IdToken } from "../../auth/auth0Client";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -9,26 +8,23 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabaseConfigured: boolean = Boolean(url && anonKey);
 
 /**
- * Shared browser client. Identity comes from Auth0 (Third-Party Auth): `accessToken`
- * hands PostgREST/Storage/Functions the Auth0 ID token when signed in, and falls back
- * to the anon key when signed out — so public/offline reads behave exactly like a
- * logged-out Supabase session. Supabase Auth's own session is unused (persistSession
- * off), which is why the Data API trusts the Auth0 JWT instead.
+ * Shared browser client. Identity is Supabase's own GoTrue session: PostgREST/Storage/
+ * Functions automatically carry the signed-in user's access token, and fall back to the
+ * anon key when signed out — so public/offline reads behave exactly like a logged-out
+ * session. `persistSession` + `autoRefreshToken` keep the session across reloads and
+ * refresh it silently; `detectSessionInUrl` completes the email-confirm / OAuth redirect.
  */
 export const supabase: SupabaseClient<Database> | null = supabaseConfigured
-  ? createClient<Database>(url as string, anonKey as string, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      accessToken: async () => {
-        // auth0IdToken() never throws (it self-heals to null), but guard anyway so a token
-        // failure can NEVER break public/anon requests — they just fall back to the anon key,
-        // exactly like a signed-out client.
-        try {
-          const token = await auth0IdToken();
-          if (token) return token;
-        } catch {
-          /* fall through to anon */
-        }
-        return anonKey as string;
-      },
-    })
+  ? createClient<Database>(url as string, anonKey as string)
   : null;
+
+/**
+ * The current GoTrue access token (JWT) for manual authed fetches to Edge Functions
+ * (the proxies), or null when signed out. getSession() reads the locally-persisted
+ * session and refreshes if needed — no network round-trip on the happy path.
+ */
+export async function accessToken(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}

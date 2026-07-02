@@ -4,17 +4,9 @@ const sb = vi.hoisted(() => ({
   from: vi.fn(),
   storage: { from: vi.fn() },
   functions: { invoke: vi.fn() },
+  auth: { resetPasswordForEmail: vi.fn(), signOut: vi.fn() },
 }));
 vi.mock("../lib/supabase", () => ({ supabase: sb }));
-
-const auth0 = vi.hoisted(() => ({
-  auth0Logout: vi.fn(),
-  auth0SendPasswordReset: vi.fn(),
-}));
-vi.mock("../auth/auth0Client", () => ({
-  auth0Logout: (...a: unknown[]) => auth0.auth0Logout(...a),
-  auth0SendPasswordReset: (...a: unknown[]) => auth0.auth0SendPasswordReset(...a),
-}));
 
 import * as api from "./api";
 
@@ -27,8 +19,8 @@ beforeEach(() => {
     upload: vi.fn().mockResolvedValue({ error: null }),
     getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: "https://cdn/x.png" } }),
   });
-  auth0.auth0Logout.mockResolvedValue(undefined);
-  auth0.auth0SendPasswordReset.mockResolvedValue({ ok: true });
+  sb.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
+  sb.auth.signOut.mockResolvedValue({ error: null });
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -71,14 +63,14 @@ describe("account api", () => {
     expect(upd).toHaveBeenCalledWith({ avatar_url: null });
   });
 
-  it("sendPasswordReset delegates to Auth0", async () => {
+  it("sendPasswordReset emails a reset link", async () => {
     expect(await api.sendPasswordReset("a@b.c")).toEqual({ ok: true });
-    expect(auth0.auth0SendPasswordReset).toHaveBeenCalledWith("a@b.c");
+    expect(sb.auth.resetPasswordForEmail).toHaveBeenCalledWith("a@b.c", expect.any(Object));
   });
 
-  it("signOutEverywhere ends the Auth0 session", async () => {
+  it("signOutEverywhere ends the Supabase session", async () => {
     expect(await api.signOutEverywhere()).toEqual({ ok: true });
-    expect(auth0.auth0Logout).toHaveBeenCalled();
+    expect(sb.auth.signOut).toHaveBeenCalled();
   });
 
   it("deleteAccount invokes the function and succeeds", async () => {
