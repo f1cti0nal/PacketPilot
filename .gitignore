@@ -4,3 +4,12 @@
 
 # Vite / Vitest local cache
 .vite/
+
+# Secrets / local env (server secrets live only in Supabase/Vercel env, never in the repo)
+.env
+.env.*
+!.env.example
+secrets.json
+*.pem
+.aws/
+.ssh/
