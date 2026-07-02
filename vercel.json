@@ -5,6 +5,14 @@
   "buildCommand": "cd ui && npm run build",
   "outputDirectory": "ui/dist",
   "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "packet-pilot.vercel.app" }],
+      "destination": "https://packetpilot.app/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/app", "destination": "/" },
     { "source": "/app/(.*)", "destination": "/" },
