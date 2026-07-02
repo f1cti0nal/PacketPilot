@@ -74,6 +74,7 @@ import { IocDialog } from "./cockpit/IocDialog";
 import { matchIocs, parseIocs } from "./lib/ioc/ioc";
 import { useSession } from "./auth/useSession";
 import { AccountMenu } from "./auth/AccountMenu";
+import { DemoBanner } from "./auth/DemoBanner";
 import { reconcileAfterCheckout } from "./auth/billing";
 import { trackPageView } from "./lib/analytics/track";
 import { useFeatureFlags } from "./lib/features/useFeatureFlags";
@@ -114,7 +115,7 @@ interface ApplyCaptureInput {
   source?: ActiveSource;
 }
 
-export function App() {
+export function App({ demo = false }: { demo?: boolean } = {}) {
   // Re-render the whole tree on theme toggle so sevColor()'s baked literals refresh: it
   // resolves a CSS var to a literal hex at render time (for SVG/recharts), so without a
   // re-render severity colours would stay the previous theme's palette after a toggle.
@@ -680,6 +681,9 @@ export function App() {
   return (
     <>
     <AnnouncementBanner banner={announcement_banner} />
+    {/* Public-demo nudge: only when running the anonymous sample (AppGate passes `demo`) and the
+        visitor isn't already signed in. */}
+    {demo && session.status !== "authed" && <DemoBanner />}
     {/* Hidden file input for "Load detection rules" — triggered via rulesInputRef.current.click() */}
     <input
       ref={rulesInputRef}

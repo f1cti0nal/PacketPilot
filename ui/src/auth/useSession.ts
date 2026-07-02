@@ -28,12 +28,20 @@ export type SessionState =
        *  The browser navigates away and back, so this promise usually doesn't resolve here. */
       login: (opts?: { signUp?: boolean }) => Promise<void>;
     }
-  | { status: "authed"; email: string; profile: UserProfile; signOut: () => Promise<void> };
+  | {
+      status: "authed";
+      email: string;
+      /** True only when Auth0 reports the email as verified. The /app gate holds unverified
+       *  accounts on a "verify your email" screen; feature-gating consumers can ignore it. */
+      emailVerified: boolean;
+      profile: UserProfile;
+      signOut: () => Promise<void>;
+    };
 
 type Internal =
   | { status: "loading" }
   | { status: "anon" }
-  | { status: "authed"; email: string; profile: UserProfile };
+  | { status: "authed"; email: string; emailVerified: boolean; profile: UserProfile };
 
 export function useSession(): SessionState {
   // Identity is available only when BOTH Supabase (data) and Auth0 (login) are configured.
@@ -96,6 +104,9 @@ export function useSession(): SessionState {
       setState({
         status: "authed",
         email: (data?.email as string) ?? email,
+        // Auth0 only sends `email_verified: true` once the account is confirmed; treat a
+        // missing/false claim as unverified so the /app gate holds it back.
+        emailVerified: user.email_verified === true,
         profile: {
           email: (data?.email as string) ?? email,
           full_name: (data?.full_name as string | null) ?? null,
@@ -117,6 +128,12 @@ export function useSession(): SessionState {
     case "anon":
       return { status: "anon", login };
     case "authed":
-      return { status: "authed", email: state.email, profile: state.profile, signOut };
+      return {
+        status: "authed",
+        email: state.email,
+        emailVerified: state.emailVerified,
+        profile: state.profile,
+        signOut,
+      };
   }
 }

@@ -163,7 +163,7 @@ export function PricingPlans() {
             <ul className="mt-4 flex flex-1 flex-col gap-2">
               <li className="flex items-start gap-2 text-sm text-[var(--color-text-dim)]">
                 <Check size={15} className="mt-0.5 shrink-0 text-[var(--color-accent)]" aria-hidden />
-                Full in-browser triage — unlimited, no signup
+                Full in-browser triage — unlimited on the free plan
               </li>
               <li className="flex items-start gap-2 text-sm text-[var(--color-text-dim)]">
                 <Check size={15} className="mt-0.5 shrink-0 text-[var(--color-accent)]" aria-hidden />

@@ -67,6 +67,28 @@ export async function auth0User(): Promise<User | null> {
 }
 
 /**
+ * Force-refresh the Auth0 session (bypassing the token cache) and return the fresh user.
+ * The `email_verified` claim is baked into the cached ID token, so right after the visitor
+ * clicks the verification link the cache still reads `false` — re-issuing a token is the only
+ * way to observe the now-verified state without a full re-login. Feeds the /app verify gate.
+ */
+export async function auth0RefreshUser(): Promise<User | null> {
+  try {
+    const c = await getAuth0();
+    if (!c) return null;
+    if (!(await c.isAuthenticated())) return null;
+    try {
+      await c.getTokenSilently({ cacheMode: "off" });
+    } catch {
+      /* refresh unavailable — fall back to the cached user */
+    }
+    return (await c.getUser()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Complete the Auth0 exchange if we're returning from Universal Login (?code&state in
  * the URL) and strip those params. Safe to call on every page load; a no-op otherwise.
  */

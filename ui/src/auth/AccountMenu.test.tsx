@@ -17,7 +17,7 @@ describe("AccountMenu", () => {
     const signOut = vi.fn().mockResolvedValue(undefined);
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -29,7 +29,7 @@ describe("AccountMenu", () => {
   it("authed menu links to the /account page", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -45,7 +45,7 @@ describe("AccountMenu", () => {
   it("free authed user sees an Upgrade link to /pricing", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -55,7 +55,7 @@ describe("AccountMenu", () => {
   it("pro authed user can manage billing", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -67,7 +67,7 @@ describe("AccountMenu", () => {
     const trialEndsAt = new Date(Date.now() + 5 * 86_400_000).toISOString();
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt }, signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -79,7 +79,7 @@ describe("AccountMenu", () => {
   it("comped Pro (no Stripe customer) shows no Manage billing button", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt: null }, signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -91,7 +91,7 @@ describe("AccountMenu", () => {
     billing.openPortal.mockResolvedValueOnce({ ok: false, error: "No billing account yet" });
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));

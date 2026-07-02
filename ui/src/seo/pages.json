@@ -4,7 +4,7 @@
     "metaTitle": "Analyze PCAP Online — Free, Nothing Uploaded",
     "metaDescription": "Analyze a PCAP online in your browser. Drag in a .pcap and get a MITRE-mapped, severity-scored threat verdict in seconds. Nothing is uploaded. Free, no install.",
     "h1": "Analyze PCAP Online — In Your Browser, Nothing Uploaded",
-    "lead": "Drop a capture into PacketPilot and analyze your PCAP online in seconds: ~20 behavioral detectors run, findings get severity-scored and mapped to MITRE ATT&CK, and you get a triage verdict without ever sending a packet to a server. The entire engine is a Rust-to-WebAssembly module that runs locally in the tab — your .pcap never leaves the browser and is never uploaded. The full analyzer is free, no signup, no install.",
+    "lead": "Drop a capture into PacketPilot and analyze your PCAP online in seconds: ~20 behavioral detectors run, findings get severity-scored and mapped to MITRE ATT&CK, and you get a triage verdict without ever sending a packet to a server. The entire engine is a Rust-to-WebAssembly module that runs locally in the tab — your .pcap never leaves the browser and is never uploaded. The full analyzer is free, with nothing to install.",
     "sections": [
       {
         "heading": "How it works: a real analysis engine, running in your tab",
@@ -19,7 +19,7 @@
             "bullets": [
               "Client-side Rust → WebAssembly engine — the capture is decoded and analyzed in the tab",
               "Accepts .pcap, .pcapng, .cap, and gzip-compressed .pcap.gz / .pcapng.gz captures",
-              "No upload, no account, no install — open the URL and drag a file in",
+              "No upload, no install — open the URL and drag a file in",
               "Works offline once the page has loaded, because the analyzer is the page"
             ]
           }
@@ -60,7 +60,7 @@
               "Privacy by construction — the capture is never uploaded, so there is nothing to leak, retain, or subpoena",
               "No size-limited upload queue — analysis starts as soon as the file is read locally",
               "Safe for sensitive captures — internal hosts, credentials, and PII never transit a third party",
-              "Same engine, free tier — the full analyzer works anonymously; Pro ($19/mo) adds login-gated extras"
+              "Same engine, free tier — the full analyzer is free; Pro ($19/mo) adds login-gated extras"
             ]
           }
         ]
@@ -77,11 +77,11 @@
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full analyzer — all ~20 detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows views, and exports — works on the free tier with no signup. Pro is $19/mo and adds login-gated extras such as reputation enrichment from AbuseIPDB, GreyNoise, and VirusTotal."
+        "a": "Yes. The full analyzer — all ~20 detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows views, and exports — works on the free tier with a free account. Pro is $19/mo and adds login-gated extras such as reputation enrichment from AbuseIPDB, GreyNoise, and VirusTotal."
       },
       {
         "q": "Do I need to install anything?",
-        "a": "No. There is nothing to download or install and no account required to analyze a capture. Open the app in a modern browser, drag your .pcap onto the page, and the in-browser engine produces a scored, MITRE-mapped verdict in seconds."
+        "a": "No. There is nothing to download or install — PacketPilot runs in a modern browser. Create a free account, drag your .pcap onto the page, and the in-browser engine produces a scored, MITRE-mapped verdict in seconds. You can also preview a live sample capture without an account."
       },
       {
         "q": "How fast is the analysis?",
@@ -109,7 +109,7 @@
             "bullets": [
               "Automated first pass: severity-ranked findings across brute-force, port scan, lateral movement, DGA, malware download, data exfil, ARP spoof, SYN flood, cryptomining, DNS tunneling, weak/deprecated TLS, and more.",
               "MITRE ATT&CK mapping on every finding, so the verdict reads as technique IDs, not raw packet counts.",
-              "Zero install, zero account: it runs in a browser tab on any machine, including ones you can't put Wireshark on.",
+              "Zero install: it runs in a browser tab on any machine, including ones you can't put Wireshark on.",
               "Hand off cleanly: PCAP flow and host carving exports just the relevant packets for Wireshark."
             ]
           }
@@ -156,7 +156,7 @@
             "p": "The reason a browser-based analyzer is even credible for security work is the privacy model. PacketPilot analyzes .pcap, .pcapng, .cap, and .gz files entirely client-side via a Rust→WebAssembly engine. The capture is never uploaded to any server — it stays in the tab, on your machine, the same as it would in Wireshark."
           },
           {
-            "p": "That's the real distinction from cloud PCAP uploaders like CloudShark or A-Packets, which ship your packets offsite to analyze them. With PacketPilot the analysis comes to the data, not the other way around. The full analyzer is free with no signup; Pro is $19/mo for teams that want more."
+            "p": "That's the real distinction from cloud PCAP uploaders like CloudShark or A-Packets, which ship your packets offsite to analyze them. With PacketPilot the analysis comes to the data, not the other way around. The full analyzer is free with a free account; Pro is $19/mo for teams that want more."
           }
         ]
       }
@@ -180,7 +180,7 @@
       },
       {
         "q": "Do I need to install anything or create an account?",
-        "a": "No. PacketPilot runs in any modern browser with nothing to install, which means you can triage captures on machines where you can't or shouldn't install Wireshark. The full analyzer is free with no signup; a Pro tier exists at $19/mo for added capabilities."
+        "a": "Nothing to install — PacketPilot runs in any modern browser, so you can triage captures on machines where you can't or shouldn't install Wireshark. Analyzing your own capture needs a free account (Pro is $19/mo for added capabilities); you can preview a live sample capture without one."
       }
     ]
   },
@@ -189,7 +189,7 @@
     "metaTitle": "Online PCAP Viewer — Open .pcap in Your Browser | PacketPilot",
     "metaDescription": "A free online PCAP viewer that opens .pcap, .pcapng, .cap and .gz captures in your browser. View flows and packets, inspect payloads — nothing is uploaded.",
     "h1": "Online PCAP Viewer That Gives You a Verdict, Not Just a Packet List",
-    "lead": "PacketPilot is an online PCAP viewer that opens .pcap, .pcapng, .cap and .gz captures directly in your browser — no install, no signup, and nothing uploaded. A Rust-to-WebAssembly engine parses the capture entirely client-side, so you get the familiar flows table and on-demand packet inspector you'd expect from Wireshark, plus something most viewers skip: a scored threat verdict with MITRE ATT&CK context.",
+    "lead": "PacketPilot is an online PCAP viewer that opens .pcap, .pcapng, .cap and .gz captures directly in your browser — no install and nothing uploaded. A Rust-to-WebAssembly engine parses the capture entirely client-side, so you get the familiar flows table and on-demand packet inspector you'd expect from Wireshark, plus something most viewers skip: a scored threat verdict with MITRE ATT&CK context.",
     "sections": [
       {
         "heading": "Open a capture in the browser — nothing leaves your machine",
@@ -202,7 +202,7 @@
               "Drag in a .pcap, .pcapng, .cap, or gzip-compressed .pcap.gz / .pcapng.gz file",
               "Parsing and detection run in the browser tab via a Rust/WASM engine — no backend round-trip",
               "The capture is never uploaded; close the tab and nothing persists server-side",
-              "Works on the free tier with no account — open a file and start reading immediately"
+              "Works on the free tier — create a free account and start reading immediately"
             ]
           }
         ]
@@ -276,7 +276,7 @@
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full analyzer — opening captures, the flows table, packet inspector, all of the detectors, the dashboards, and exports — works on the free tier with no signup. A Pro plan ($19/month) is available, but you can open and triage a capture without creating an account."
+        "a": "Yes. The full analyzer — opening captures, the flows table, packet inspector, all of the detectors, the dashboards, and exports — works on the free tier with a free account. A Pro plan ($19/month) is available for more, and you can preview a live sample capture without an account."
       },
       {
         "q": "How is this different from Wireshark or other online PCAP viewers?",
@@ -289,7 +289,7 @@
     "metaTitle": "Pcapng Analyzer — In-Browser, No Upload | PacketPilot",
     "metaDescription": "Analyze a .pcapng (or gzipped .pcapng.gz) capture entirely in your browser. ~20 detectors, severity scoring, MITRE ATT&CK mapping, exports. Nothing uploaded. Free.",
     "h1": "Pcapng analyzer that runs in your browser — nothing uploaded",
-    "lead": "PacketPilot is a pcapng analyzer that parses your .pcapng capture entirely client-side, in the browser tab, via a Rust-to-WebAssembly engine. The file never leaves your machine — there is no upload, no server-side storage, and no account required to run the full analysis. Drop a capture and get behavioral detections, severity-scored incidents, and MITRE ATT&CK mapping in seconds.",
+    "lead": "PacketPilot is a pcapng analyzer that parses your .pcapng capture entirely client-side, in the browser tab, via a Rust-to-WebAssembly engine. The file never leaves your machine — there is no upload and no server-side storage. Drop a capture and get behavioral detections, severity-scored incidents, and MITRE ATT&CK mapping in seconds.",
     "sections": [
       {
         "heading": "Analyze a .pcapng file without it leaving the browser",
@@ -303,7 +303,7 @@
           {
             "bullets": [
               "Drag and drop a .pcapng (or .pcap / .cap) file, or click to browse — analysis starts immediately.",
-              "No signup needed: the complete analyzer is free and works anonymously.",
+              "Free tier: the complete analyzer is free with a free account.",
               "Works offline once loaded — the engine is local WebAssembly, not a remote API."
             ]
           }
@@ -346,7 +346,7 @@
         "heading": "Open a pcapng capture now",
         "blocks": [
           {
-            "p": "There is nothing to install and no account to create. Open the app, drop your .pcapng (or .pcapng.gz) file, and read the scored findings. If you decide you want reputation enrichment or Pro exports later, that's there too — but the full pcapng analysis is free and runs without ever uploading a packet."
+            "p": "There is nothing to install. Create a free account, drop your .pcapng (or .pcapng.gz) file, and read the scored findings. If you decide you want reputation enrichment or Pro exports later, that's there too — but the full pcapng analysis is free and runs without ever uploading a packet."
           }
         ]
       }
@@ -366,7 +366,7 @@
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full pcapng analyzer — all detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows/packet views, and exports — works free with no signup. There's an optional Pro tier ($19/mo) and opt-in, login-gated reputation enrichment, but the core analysis is free and anonymous."
+        "a": "Yes. The full pcapng analyzer — all detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows/packet views, and exports — works free with a free account. There's an optional Pro tier ($19/mo) and opt-in, login-gated reputation enrichment, but the core analysis is free."
       },
       {
         "q": "How large a capture can I analyze in the browser?",
@@ -377,9 +377,9 @@
   {
     "slug": "pcap-to-csv",
     "metaTitle": "PCAP to CSV — Convert Captures in Your Browser | PacketPilot",
-    "metaDescription": "Convert a PCAP to CSV entirely in your browser — flows, fingerprints, and severity per row. Nothing is uploaded. Free, no signup. Also exports STIX, MISP, CEF, Sigma.",
+    "metaDescription": "Convert a PCAP to CSV entirely in your browser — flows, fingerprints, and severity per row. Nothing is uploaded. Free to start. Also exports STIX, MISP, CEF, Sigma.",
     "h1": "PCAP to CSV — convert captures to flow rows in your browser",
-    "lead": "PacketPilot turns a .pcap, .pcapng, .cap, or .gz capture into a structured CSV of network flows without uploading a single packet. The analysis runs entirely client-side in a Rust-to-WebAssembly engine, so your capture stays on your machine — there is no server round-trip, no account required, and no packets leaving the browser. Drop a file in, filter the flows you care about, and export them as CSV (or STIX, MISP, CEF, or Sigma).",
+    "lead": "PacketPilot turns a .pcap, .pcapng, .cap, or .gz capture into a structured CSV of network flows without uploading a single packet. The analysis runs entirely client-side in a Rust-to-WebAssembly engine, so your capture stays on your machine — there is no server round-trip and no packets leaving the browser. Drop a file in, filter the flows you care about, and export them as CSV (or STIX, MISP, CEF, or Sigma).",
     "sections": [
       {
         "heading": "Why convert PCAP to CSV in the browser",
@@ -391,7 +391,7 @@
             "bullets": [
               "Runs client-side via a Rust→WASM engine — the capture is parsed in the tab, not on a host you don't control.",
               "Accepts .pcap, .pcapng, .cap, and gzip-compressed .pcap.gz / .pcapng.gz directly.",
-              "No signup needed for the core analyzer and CSV export — it works anonymously.",
+              "Free on the free tier: the core analyzer and CSV export need only a free account.",
               "No upload step means no file-size queue, no offsite copy, and no retention to reason about."
             ]
           }
@@ -451,7 +451,7 @@
             "p": "The CSV isn't just a protocol decode — the severity and category columns come from roughly 20 behavioral detectors with MITRE ATT&CK mapping, so the rows you export already carry triage context. Detectors include port scan, brute force, lateral movement, cleartext credentials, PII exposure, DGA, malware download with SHA-256 file carving, weak/deprecated TLS, ARP spoof, SYN flood, cryptomining, DNS tunneling, and more."
           },
           {
-            "p": "Open the app, drop in a capture, and you get the triage dashboard, threat graph, findings table, and the filterable Flows view that drives the CSV export — all without an account."
+            "p": "Create a free account, drop in a capture, and you get the triage dashboard, threat graph, findings table, and the filterable Flows view that drives the CSV export."
           }
         ]
       }
@@ -467,7 +467,7 @@
       },
       {
         "q": "Is the PCAP-to-CSV converter free?",
-        "a": "Yes. The full analyzer and CSV export work for free with no signup. Pro ($19/mo) adds extra capabilities, but converting a capture to CSV and exporting filtered flows is part of the free tier."
+        "a": "Yes. The full analyzer and CSV export are free with a free account. Pro ($19/mo) adds extra capabilities, but converting a capture to CSV and exporting filtered flows is part of the free tier."
       },
       {
         "q": "Can I export only certain flows instead of the whole capture?",
@@ -547,7 +547,7 @@
             "p": "This is the line that matters for anyone handling sensitive captures: your PCAP is parsed and carved entirely client-side by the WebAssembly engine. It is never uploaded, never staged on a server, and never leaves the browser tab. That's the deliberate difference from cloud PCAP tools like CloudShark or A-Packets, which ship your packets offsite to analyze them."
           },
           {
-            "p": "The full analyzer — carving, hashing, malware-download detection, detectors, fingerprints, flows, and exports to HTML, STIX 2.1, CSV, MISP, CEF, and Sigma — works on the free tier with no signup. Only optional IP reputation enrichment is login-gated, and even then it sends a derived summary plus public IPs, never the capture. Drop a PCAP in and pull the files out — free, in your browser, right now."
+            "p": "The full analyzer — carving, hashing, malware-download detection, detectors, fingerprints, flows, and exports to HTML, STIX 2.1, CSV, MISP, CEF, and Sigma — works on the free tier with a free account. Only optional IP reputation enrichment is login-gated, and even then it sends a derived summary plus public IPs, never the capture. Drop a PCAP in and pull the files out — free, in your browser, right now."
           }
         ]
       }
@@ -567,7 +567,7 @@
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full analyzer — HTTP file carving, SHA-256 hashing, malware-download detection, the roughly 20 behavioral detectors, flow/host PCAP carving, fingerprints, and all exports — runs on the free tier with no signup. A $19/mo Pro tier adds extras, and optional IP-reputation enrichment is login-gated, but file extraction itself costs nothing."
+        "a": "Yes. The full analyzer — HTTP file carving, SHA-256 hashing, malware-download detection, the roughly 20 behavioral detectors, flow/host PCAP carving, fingerprints, and all exports — runs on the free tier with a free account. A $19/mo Pro tier adds extras, and optional IP-reputation enrichment is login-gated, but file extraction itself costs nothing."
       },
       {
         "q": "How does it flag malicious downloads?",
