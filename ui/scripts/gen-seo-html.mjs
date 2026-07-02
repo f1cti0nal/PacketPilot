@@ -14,7 +14,7 @@ if (!existsSync(indexPath)) {
 
 const pages = JSON.parse(readFileSync(join(root, "src", "seo", "pages.json"), "utf8"));
 const indexHtml = readFileSync(indexPath, "utf8");
-const SITE = "https://packet-pilot.vercel.app";
+const SITE = "https://packetpilot.app";
 
 const esc = (s) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

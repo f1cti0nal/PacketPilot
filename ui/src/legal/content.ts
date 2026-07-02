@@ -172,7 +172,7 @@ const privacy: LegalContent = {
       "heading": "1. Introduction and scope",
       "blocks": [
         {
-          "p": "PacketPilot (\"PacketPilot\", \"we\", \"us\") is an in-browser network packet-capture threat-triage tool operated by [LEGAL ENTITY NAME]. This Privacy Policy explains what information we do and do not handle when you use the PacketPilot website and application at https://packet-pilot.vercel.app (the \"Service\"), including the free tier and the paid Pro subscription ($19/month or $190/year)."
+          "p": "PacketPilot (\"PacketPilot\", \"we\", \"us\") is an in-browser network packet-capture threat-triage tool operated by [LEGAL ENTITY NAME]. This Privacy Policy explains what information we do and do not handle when you use the PacketPilot website and application at https://packetpilot.app (the \"Service\"), including the free tier and the paid Pro subscription ($19/month or $190/year)."
         },
         {
           "p": "PacketPilot is a solo-operated product. This policy covers the marketing site, the in-browser analyzer, optional user accounts, billing, and the optional logged-in enrichment features. It does not cover third-party sites you reach through external links, or the threat-intelligence and AI providers' own handling of data you choose to send them via our opt-in enrichment features, which are governed by their respective policies."
@@ -413,7 +413,7 @@ const privacy: LegalContent = {
 const terms: LegalContent = {
   "title": "Terms of Service",
   "subtitle": "Draft for review — complete the bracketed fields and have counsel review before launch.",
-  "lead": "These Terms of Service (\"Terms\") are a legally binding agreement between you and [LEGAL ENTITY NAME] (\"PacketPilot,\" \"we,\" \"us,\" or \"our\") governing your access to and use of the PacketPilot website, web application, and related services (collectively, the \"Service\"), available at https://packet-pilot.vercel.app and any successor URLs. PacketPilot is an in-browser network packet-capture threat-triage tool: you load a packet capture, and the analysis runs entirely inside your own web browser. By accessing or using the Service, you agree to be bound by these Terms. If you do not agree, do not use the Service. Effective date: [EFFECTIVE DATE].",
+  "lead": "These Terms of Service (\"Terms\") are a legally binding agreement between you and [LEGAL ENTITY NAME] (\"PacketPilot,\" \"we,\" \"us,\" or \"our\") governing your access to and use of the PacketPilot website, web application, and related services (collectively, the \"Service\"), available at https://packetpilot.app and any successor URLs. PacketPilot is an in-browser network packet-capture threat-triage tool: you load a packet capture, and the analysis runs entirely inside your own web browser. By accessing or using the Service, you agree to be bound by these Terms. If you do not agree, do not use the Service. Effective date: [EFFECTIVE DATE].",
   "sections": [
     {
       "heading": "1. Acceptance of These Terms",
