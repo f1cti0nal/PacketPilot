@@ -17,6 +17,7 @@ const session = {
   email: "a@b.com",
   emailVerified: true,
   profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null },
+  resendVerification: vi.fn(),
   signOut: vi.fn(),
 } as Extract<SessionState, { status: "authed" }>;
 
