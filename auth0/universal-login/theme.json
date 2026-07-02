@@ -1,0 +1,69 @@
+{
+  "$comment": "PacketPilot — New Universal Login theme. Styles the login BOX (colors, borders, fonts, logo). The split-screen surround is in page-template.liquid. Apply by merging these values into your tenant's theme: GET /api/v2/branding/themes/default, overlay this, then PATCH /api/v2/branding/themes/{themeId} (or POST to create one). The theme API validates the FULL object, so start from your live theme rather than sending only these keys. See README.md.",
+
+  "displayName": "PacketPilot",
+
+  "borders": {
+    "button_border_radius": 8,
+    "button_border_weight": 1,
+    "buttons_style": "rounded",
+    "input_border_radius": 8,
+    "input_border_weight": 1,
+    "inputs_style": "rounded",
+    "show_widget_shadow": true,
+    "widget_border_weight": 1,
+    "widget_corner_radius": 12
+  },
+
+  "colors": {
+    "base_focus_color": "#60a5fa",
+    "base_hover_color": "#93c5fd",
+    "body_text": "#e7edf7",
+    "captcha_widget_theme": "dark",
+    "error": "#f43f5e",
+    "header": "#e7edf7",
+    "icons": "#93a1b7",
+    "input_background": "#141e30",
+    "input_border": "#223049",
+    "input_filled_text": "#e7edf7",
+    "input_labels_placeholders": "#93a1b7",
+    "links_focused_components": "#60a5fa",
+    "primary_button": "#1d4ed8",
+    "primary_button_label": "#ffffff",
+    "read_only_background": "#0e1a2c",
+    "secondary_button_border": "#2c3c58",
+    "secondary_button_label": "#e7edf7",
+    "success": "#2dd4bf",
+    "widget_background": "#0f1828",
+    "widget_border": "#223049"
+  },
+
+  "fonts": {
+    "$comment": "font_url must point to a font FILE (woff/woff2 with CORS), not a stylesheet. Auth0 documents WOFF/WOFF2 but does NOT document variable-font support — this is the Geist variable woff2 (one file, all weights); TEST it in a non-prod tenant first and if the widget font doesn't apply, fall back to a static single-weight woff2 (e.g. https://cdn.jsdelivr.net/npm/@fontsource/geist-sans/files/geist-sans-latin-500-normal.woff2). Air-gapped build: self-host and swap the URL.",
+    "font_url": "https://cdn.jsdelivr.net/npm/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2",
+    "reference_text_size": 16,
+    "body_text": { "bold": false, "size": 87.5 },
+    "buttons_text": { "bold": false, "size": 100 },
+    "input_labels": { "bold": false, "size": 100 },
+    "links": { "bold": true, "size": 87.5 },
+    "links_style": "normal",
+    "subtitle": { "bold": false, "size": 87.5 },
+    "title": { "bold": true, "size": 150 }
+  },
+
+  "page_background": {
+    "$comment": "The page-template.liquid draws the real background/split-screen; this is the fallback the default page would use and the layout hint (widget on the left).",
+    "background_color": "#0b1220",
+    "background_image_url": "",
+    "page_layout": "left"
+  },
+
+  "widget": {
+    "$comment": "logo_position:none — the crisp inline radar mark is drawn by the page template above the box, so no hosted logo asset is needed. To use Auth0's own logo slot instead, set logo_position:center and logo_url to a hosted PNG/SVG. NOTE: social_buttons_layout ('top'/'bottom') sets the LABEL position on each social button, NOT whether the social block sits above/below the form — Auth0 controls that placement (it renders below the credentials form by default, matching the reference).",
+    "header_text_alignment": "center",
+    "logo_height": 40,
+    "logo_position": "none",
+    "logo_url": "",
+    "social_buttons_layout": "bottom"
+  }
+}
