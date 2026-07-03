@@ -29,7 +29,7 @@ export function ReputationChip({ reputation }: { reputation: ReputationVerdict[]
         <span style={{ color: COLOR[worst.status] }}>{worst.source} {label}</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 min-w-[16rem] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 shadow-lg">
+        <div className="absolute left-0 top-full z-20 mt-1 min-w-[16rem] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
           <ProviderVerdictList verdicts={reputation} />
         </div>
       )}

@@ -842,7 +842,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-xs text-[var(--color-text-dim)] shadow-lg"
+        className="pointer-events-none fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-xs text-[var(--color-text-dim)]"
       >
         {ruleNotice}
       </div>

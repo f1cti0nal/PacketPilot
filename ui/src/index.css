@@ -62,10 +62,12 @@
   --fs-label: 13px;
   --fs-micro: 12px;
 
-  /* Elevation */
-  --sh-rest: 0 1px 2px rgba(4, 4, 8, 0.35);
-  --sh-hero: 0 2px 8px -2px rgba(4, 4, 8, 0.45);
-  --sh-float: 0 12px 32px -16px rgba(4, 4, 8, 0.6), 0 2px 6px -3px rgba(4, 4, 8, 0.4);
+  /* Elevation — flat design: no shadows anywhere. Kept as tokens so every
+     shadow-[var(--sh-*)] usage resolves to none; depth comes from borders
+     and surface steps instead. */
+  --sh-rest: none;
+  --sh-hero: none;
+  --sh-float: none;
 
   color-scheme: dark;
 }
@@ -117,10 +119,10 @@
   --color-sev-info: #056291;
   --color-sev-none: #64748b;
 
-  /* Elevation — soften for light; low alpha on the slate base */
-  --sh-rest: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --sh-hero: 0 2px 8px -2px rgba(15, 23, 42, 0.10);
-  --sh-float: 0 12px 32px -16px rgba(15, 23, 42, 0.15), 0 2px 6px -3px rgba(15, 23, 42, 0.08);
+  /* Elevation — flat in light theme too */
+  --sh-rest: none;
+  --sh-hero: none;
+  --sh-float: none;
 
   color-scheme: light;
 }
@@ -186,14 +188,12 @@ body {
   background: color-mix(in srgb, var(--color-surface-1) 78%, transparent);
   backdrop-filter: blur(20px) saturate(120%);
   -webkit-backdrop-filter: blur(20px) saturate(120%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
 }
-/* Opaque grid card — NOT glass, so blur stays meaningful */
+/* Opaque grid card — flat: plain surface + border, no elevation or inset. */
 .card {
   background: var(--color-surface-1);
   border: 1px solid var(--color-border);
   border-radius: var(--r-card);
-  box-shadow: var(--sh-rest), inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
 }
 
 /* ---- Enterprise data-grid table utilities --------------------------------- */
@@ -221,25 +221,21 @@ body {
   }
 }
 
-/* ---- Glow: 'alive' (cyan) or 'the single worst thing' (critical, breathing) */
+/* ---- Emphasis rules (flat — the old glow shadows are gone; the severity
+   signal is carried by a plain border instead) ------------------------------ */
 .glow-live {
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent),
-    0 0 24px -6px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  /* Flat: no ring/glow — the consumer's own accent border carries the signal. */
+  box-shadow: none;
 }
 .glow-critical {
+  border: 1px solid color-mix(in srgb, var(--color-sev-critical) 55%, transparent);
   border-left: 2px solid var(--color-sev-critical);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-sev-critical) 50%, transparent),
-    0 0 28px -8px color-mix(in srgb, var(--color-sev-critical) 45%, transparent);
-  animation: breathe 3.2s ease-in-out infinite alternate;
 }
 .glow-high {
   border-left: 2px solid var(--color-sev-high);
-  box-shadow: 0 0 18px -8px color-mix(in srgb, var(--color-sev-high) 35%, transparent);
 }
-.score-glow { filter: drop-shadow(0 0 18px color-mix(in srgb, var(--color-sev-critical) 45%, transparent)); }
-.stroke-glow { filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 60%, transparent)); }
+.score-glow { filter: none; }
+.stroke-glow { filter: none; }
 
 /* Keyboard focus — cyan = focus is on-contract (Tailwind preflight resets it). */
 :where(button, a, [role="tab"], [tabindex]):focus-visible {
@@ -247,10 +243,6 @@ body {
   outline-offset: 2px;
 }
 
-@keyframes breathe {
-  from { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-sev-critical) 40%, transparent), 0 0 22px -8px color-mix(in srgb, var(--color-sev-critical) 35%, transparent); }
-  to   { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-sev-critical) 60%, transparent), 0 0 34px -6px color-mix(in srgb, var(--color-sev-critical) 55%, transparent); }
-}
 @keyframes spine-charge { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 @keyframes node-pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 @keyframes radar-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

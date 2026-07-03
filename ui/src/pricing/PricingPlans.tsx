@@ -205,7 +205,7 @@ function PeriodToggle({ period, onChange }: { period: "monthly" | "annual"; onCh
           className={
             "rounded-[var(--r-chip)] px-3 py-1 text-xs font-medium capitalize transition-colors " +
             (period === p
-              ? "bg-[var(--color-bg)] text-[var(--color-text)] shadow-sm"
+              ? "bg-[var(--color-bg)] text-[var(--color-text)]"
               : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]")
           }
         >

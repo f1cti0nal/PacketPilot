@@ -48,7 +48,7 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
       </button>
 
       {open && (
-        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Rule sets" className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
+        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Rule sets" className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1">
           {/* Load .rules file row */}
           <button
             type="button"

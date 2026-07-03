@@ -147,7 +147,7 @@ export function CommandBar({
                 className={cn(
                   "rounded-[var(--r-chip)] px-3 py-1 text-xs font-medium transition-colors",
                   active
-                    ? "bg-[var(--color-bg)] text-[var(--color-text)] shadow-sm"
+                    ? "bg-[var(--color-bg)] text-[var(--color-text)]"
                     : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]",
                 )}
               >

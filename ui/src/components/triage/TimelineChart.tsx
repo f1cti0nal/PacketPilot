@@ -59,7 +59,7 @@ function CustomTooltip({
   const datum = payload[0]?.payload as ChartDatum | undefined;
   if (!datum) return null;
   return (
-    <div className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs shadow-lg">
+    <div className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs">
       <div className="mb-1 font-mono-num text-[var(--color-text)]">
         {fmtTime(datum.epoch_sec)}
       </div>

@@ -87,7 +87,7 @@ export function FilterProfiles({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1">
           {/* Saved profiles list */}
           {profiles.length === 0 ? (
             <p className="px-3 py-2 text-xs text-[var(--color-text-faint)] italic">
