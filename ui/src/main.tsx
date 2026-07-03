@@ -17,6 +17,7 @@ const AuthApp = React.lazy(() => import("./auth/AuthApp"));
 const LegalApp = React.lazy(() => import("./legal/LegalApp"));
 const PricingApp = React.lazy(() => import("./pricing/PricingApp"));
 const ToolApp = React.lazy(() => import("./seo/ToolApp"));
+const BlogApp = React.lazy(() => import("./blog/BlogApp"));
 const route = resolveRouteFor(window.location.hostname, window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -45,6 +46,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       ) : route === "tool" ? (
         <Suspense fallback={<LoadingState label="Loading…" />}>
           <ToolApp />
+        </Suspense>
+      ) : route === "blog" ? (
+        <Suspense fallback={<LoadingState label="Loading…" />}>
+          <BlogApp />
         </Suspense>
       ) : route === "app" ? (
         <AppGate />

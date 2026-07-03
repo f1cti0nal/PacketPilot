@@ -44,6 +44,12 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/extract-files-from-pcap/")).toBe("tool");
     expect(resolveRoute("/analyze-pcap")).toBe("landing"); // near-miss
   });
+  it("maps /blog and post paths to blog", () => {
+    expect(resolveRoute("/blog")).toBe("blog");
+    expect(resolveRoute("/blog/")).toBe("blog");
+    expect(resolveRoute("/blog/anatomy-of-a-pcap-kill-chain")).toBe("blog");
+    expect(resolveRoute("/blogger")).toBe("landing"); // near-miss
+  });
   it("maps everything else to landing", () => {
     expect(resolveRoute("/")).toBe("landing");
     expect(resolveRoute("/features")).toBe("landing");

@@ -1,6 +1,6 @@
-// Post-build: emit a static HTML file per SEO route with crawlable <title>/meta/OG/JSON-LD.
+// Post-build: emit a static HTML file per SEO/blog route with crawlable <title>/meta/OG/JSON-LD.
 // Vercel `cleanUrls` then serves dist/<slug>.html for /<slug>; the SPA renders the body.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -13,12 +13,40 @@ if (!existsSync(indexPath)) {
 }
 
 const pages = JSON.parse(readFileSync(join(root, "src", "seo", "pages.json"), "utf8"));
+const posts = JSON.parse(readFileSync(join(root, "src", "blog", "posts.json"), "utf8"));
 const indexHtml = readFileSync(indexPath, "utf8");
 const SITE = "https://packetpilot.app";
 
 const esc = (s) =>
   String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+// Overwrite a base meta tag's value in place (matches single- or multi-line forms) so each
+// page has exactly one og:/twitter: tag — never a duplicate of the base homepage one.
+const setMeta = (h, attr, key, value) =>
+  h.replace(
+    new RegExp(`<meta\\s+${attr}="${key}"[\\s\\S]*?/>`),
+    `<meta ${attr}="${key}" content="${esc(value)}" />`,
+  );
+
+// Rewrite the base index.html head with this route's title/description/canonical/og/twitter
+// (the shared og:image, og:site_name/type, and twitter:card are inherited) and inject JSON-LD.
+function renderHead({ title, description, url, jsonLd }) {
+  let html = indexHtml
+    .replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(title)}</title>`)
+    .replace(/<meta\s+name="description"[\s\S]*?\/>/, `<meta name="description" content="${esc(description)}" />`)
+    .replace(/<link rel="canonical"[^>]*>/, `<link rel="canonical" href="${url}" />`);
+  html = setMeta(html, "property", "og:title", title);
+  html = setMeta(html, "property", "og:description", description);
+  html = setMeta(html, "property", "og:url", url);
+  html = setMeta(html, "name", "twitter:title", title);
+  html = setMeta(html, "name", "twitter:description", description);
+  const scripts = jsonLd
+    .map((o) => `    <script type="application/ld+json">${JSON.stringify(o)}</script>`)
+    .join("\n");
+  return html.replace("</head>", `${scripts}\n  </head>`);
+}
+
+// ── SEO tool pages ────────────────────────────────────────────────────────────
 for (const p of pages) {
   const url = `${SITE}/${p.slug}`;
   const softwareLd = {
@@ -40,39 +68,58 @@ for (const p of pages) {
       acceptedAnswer: { "@type": "Answer", text: f.a },
     })),
   };
-
-  // Overwrite the value of a base meta tag in place (matches single- or
-  // multi-line forms) so each page has exactly one og:/twitter: tag — never a
-  // duplicate of the base homepage one.
-  const setMeta = (h, attr, key, value) =>
-    h.replace(
-      new RegExp(`<meta\\s+${attr}="${key}"[\\s\\S]*?/>`),
-      `<meta ${attr}="${key}" content="${esc(value)}" />`,
-    );
-
-  let html = indexHtml
-    .replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(p.metaTitle)}</title>`)
-    .replace(/<meta\s+name="description"[\s\S]*?\/>/, `<meta name="description" content="${esc(p.metaDescription)}" />`)
-    .replace(/<link rel="canonical"[^>]*>/, `<link rel="canonical" href="${url}" />`);
-  html = setMeta(html, "property", "og:title", p.metaTitle);
-  html = setMeta(html, "property", "og:description", p.metaDescription);
-  html = setMeta(html, "property", "og:url", url);
-  html = setMeta(html, "name", "twitter:title", p.metaTitle);
-  html = setMeta(html, "name", "twitter:description", p.metaDescription);
-  // og:image, og:site_name, og:type, and twitter:card are shared — inherited
-  // from the base head. Only the page-specific JSON-LD needs injecting.
-  const inject = `    <script type="application/ld+json">${JSON.stringify(softwareLd)}</script>
-    <script type="application/ld+json">${JSON.stringify(faqLd)}</script>
-  </head>`;
-  html = html.replace("</head>", inject);
-
-  writeFileSync(join(dist, `${p.slug}.html`), html, "utf8");
+  writeFileSync(
+    join(dist, `${p.slug}.html`),
+    renderHead({ title: p.metaTitle, description: p.metaDescription, url, jsonLd: [softwareLd, faqLd] }),
+    "utf8",
+  );
 }
 
-// sitemap.xml — public, indexable routes (the marketing/content pages + the SEO pages).
+// ── Blog: index + one page per post ───────────────────────────────────────────
+mkdirSync(join(dist, "blog"), { recursive: true });
+const blogUrl = `${SITE}/blog`;
+writeFileSync(
+  join(dist, "blog.html"),
+  renderHead({
+    title: "The PacketPilot Blog — Network Forensics Notes",
+    description:
+      "Network-forensics teardowns and detection notes from PacketPilot — packet captures analyzed in the browser, nothing uploaded.",
+    url: blogUrl,
+    jsonLd: [{ "@context": "https://schema.org", "@type": "Blog", name: "The PacketPilot Blog", url: blogUrl }],
+  }),
+  "utf8",
+);
+for (const post of posts) {
+  const url = `${SITE}/blog/${post.slug}`;
+  const postingLd = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.metaDescription,
+    datePublished: post.date,
+    dateModified: post.date,
+    author: { "@type": "Organization", name: post.author || "PacketPilot" },
+    publisher: { "@type": "Organization", name: "PacketPilot" },
+    image: `${SITE}/og.png`,
+    mainEntityOfPage: url,
+    url,
+    keywords: (post.tags ?? []).join(", "),
+  };
+  writeFileSync(
+    join(dist, "blog", `${post.slug}.html`),
+    renderHead({ title: post.metaTitle, description: post.metaDescription, url, jsonLd: [postingLd] }),
+    "utf8",
+  );
+}
+
+// sitemap.xml — public, indexable routes (marketing + SEO pages + blog).
 // /admin and /account are intentionally excluded (non-public / authed).
-const STATIC_ROUTES = ["", "app", "pricing", "security", "privacy", "terms"];
-const routes = [...STATIC_ROUTES, ...pages.map((p) => p.slug)];
+const STATIC_ROUTES = ["", "app", "pricing", "security", "privacy", "terms", "blog"];
+const routes = [
+  ...STATIC_ROUTES,
+  ...pages.map((p) => p.slug),
+  ...posts.map((post) => `blog/${post.slug}`),
+];
 const sitemap =
   `<?xml version="1.0" encoding="UTF-8"?>\n` +
   `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
@@ -86,4 +133,6 @@ writeFileSync(
   "utf8",
 );
 
-console.log(`gen-seo-html: generated ${pages.length} SEO pages + sitemap.xml + robots.txt`);
+console.log(
+  `gen-seo-html: generated ${pages.length} SEO pages + ${posts.length} blog post(s) + sitemap.xml + robots.txt`,
+);

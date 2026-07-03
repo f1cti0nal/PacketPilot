@@ -1,6 +1,6 @@
 import { TOOL_PATHS } from "../seo/slugs";
 
-export type Route = "landing" | "app" | "admin" | "account" | "legal" | "pricing" | "tool" | "auth";
+export type Route = "landing" | "app" | "admin" | "account" | "legal" | "pricing" | "tool" | "auth" | "blog";
 
 /** Static legal/trust pages, served by the same SPA bundle (see main.tsx). */
 const LEGAL_PATHS = new Set(["/security", "/privacy", "/terms"]);
@@ -19,6 +19,7 @@ export function resolveRoute(pathname: string): Route {
   if (AUTH_PATHS.has(path)) return "auth";
   if (LEGAL_PATHS.has(path)) return "legal";
   if (path === "/pricing") return "pricing";
+  if (path === "/blog" || path.startsWith("/blog/")) return "blog";
   if (TOOL_PATHS.has(path)) return "tool";
   if (path === "/app" || path.startsWith("/app/")) return "app";
   return "landing";
