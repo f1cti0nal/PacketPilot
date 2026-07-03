@@ -194,10 +194,12 @@ export function TrendPill({ delta, suffix = "%" }: { delta: Delta; suffix?: stri
   const color = dir === "up" ? "var(--admin-up)" : dir === "down" ? "var(--admin-down)" : "var(--color-text-faint)";
   const label = pct == null ? (dir === "up" ? "New" : "—") : `${pct > 0 ? "+" : ""}${pct}${suffix}`;
   const Arrow = dir === "down" ? ArrowDownRight : ArrowUpRight;
+  // Outlined chip on a solid surface (not a transparent hue tint) so the colored
+  // text keeps its full contrast on any backdrop — see index.css:38 / SeverityChip.
   return (
     <span
-      className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-semibold"
-      style={{ color, background: `color-mix(in srgb, ${color} 13%, transparent)` }}
+      className="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs font-semibold"
+      style={{ color, borderColor: color, background: "var(--color-surface-2)" }}
       title="Change vs the previous 7 days"
     >
       {dir !== "flat" && <Arrow size={12} aria-hidden />}
@@ -307,10 +309,12 @@ export function ProgressStat({
 /* ------------------------------------------------------------- Status pill --- */
 
 export function StatusPill({ label, color }: { label: string; color: string }) {
+  // Outlined on a solid surface (see index.css:38): the colored text sits on an
+  // opaque backdrop, so contrast holds even when a hovered table row shifts behind it.
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium capitalize"
-      style={{ color, background: `color-mix(in srgb, ${color} 13%, transparent)` }}
+      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium capitalize"
+      style={{ color, borderColor: color, background: "var(--color-surface-2)" }}
     >
       <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {label}

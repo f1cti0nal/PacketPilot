@@ -43,7 +43,7 @@ export function SettingsView() {
     <div className="flex flex-col gap-[var(--density-gap)]">
       <SectionTitle title="Settings" subtitle="App configuration and content" />
       {error && (
-        <p role="alert" className="rounded-xl bg-[color-mix(in_srgb,var(--color-sev-critical)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-sev-critical)]">
+        <p role="alert" className="rounded-xl border border-[color-mix(in_srgb,var(--color-sev-critical)_35%,transparent)] bg-[var(--color-surface-1)] px-3 py-2 text-sm text-[var(--color-sev-critical)]">
           {error}
         </p>
       )}

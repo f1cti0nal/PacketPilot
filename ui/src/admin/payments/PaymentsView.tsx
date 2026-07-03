@@ -119,7 +119,7 @@ function PaymentRow({ p, showCurrency }: { p: AdminPayment; showCurrency: boolea
       <td className="font-mono-num text-[var(--color-text-dim)]">
         {p.current_period_end ? joinedDate(p.current_period_end) : "—"}
         {p.cancel_at_period_end && (
-          <span className="ml-1.5 inline-flex items-center rounded-full bg-[color-mix(in_srgb,var(--color-sev-medium)_14%,transparent)] px-2 py-0.5 text-xs font-medium text-[var(--color-sev-medium)]">
+          <span className="ml-1.5 inline-flex items-center rounded-full border border-[var(--color-sev-medium)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-sev-medium)]">
             Cancels at period end
           </span>
         )}
