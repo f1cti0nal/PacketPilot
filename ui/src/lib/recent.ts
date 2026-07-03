@@ -101,6 +101,26 @@ export function recordRecent(input: RecordRecentInput): RecentEntry[] {
   return trimmed;
 }
 
+/**
+ * Replace the cached summary of an existing entry in place — same id, list position, and
+ * metadata; only the {@link AnalysisOutput} swaps. Used to fold reputation-enriched results
+ * back into Recent so reopening a capture restores the enriched summary WITHOUT re-querying
+ * the providers (a fresh lookup happens only on explicit re-analyze). No-ops if the id is
+ * absent. Returns the (possibly unchanged) list.
+ */
+export function updateRecentSummary(id: string, summary: AnalysisOutput): RecentEntry[] {
+  const list = listRecent();
+  let changed = false;
+  const next = list.map((e) => {
+    if (e.id !== id) return e;
+    changed = true;
+    return { ...e, summary };
+  });
+  if (!changed) return list;
+  persist(next);
+  return next;
+}
+
 /** Remove one entry (and its cached flows). Returns the new list. */
 export function removeRecent(id: string): RecentEntry[] {
   const next = listRecent().filter((e) => e.id !== id);

@@ -19,6 +19,7 @@ import {
   listRecent,
   putFlows,
   recordRecent,
+  updateRecentSummary,
   removeRecent,
   clearRecent,
 } from "./lib/recent";
@@ -197,6 +198,9 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   // snapshot); a chain serializes the IP and domain commits so they compose, never clobber.
   const summaryDataRef = useRef<AnalysisOutput | null>(null);
   const repChainRef = useRef<Promise<void>>(Promise.resolve());
+  // Mirror of activeId for use inside enrichAndCommit (which holds no React deps): identifies the
+  // Recent entry to write the reputation-enriched summary back to, so a reopen restores it.
+  const activeIdRef = useRef<string | null>(null);
 
   // Rule-loading: base snapshot prevents re-stacking (each reload applies over the original
   // reputation-enriched summary, not the previously-rules-augmented one).
@@ -230,6 +234,11 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
         setFlows({ status: "error", rows: [], error: String((err as Error)?.message ?? err) }),
       );
   }, []);
+
+  // Keep activeIdRef in sync so enrichAndCommit can persist back to the right Recent entry.
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   // Keep summaryDataRef in sync so enrichAndCommit always enriches the freshest data.
   useEffect(() => {
@@ -307,6 +316,11 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
         if (!after || repCaptureKey(after) !== targetKey) return;
         summaryDataRef.current = enriched;
         setSummary({ status: "ready", data: enriched });
+        // Persist the enriched summary back to its Recent entry so reopening restores it
+        // (with reputation chips) instead of re-querying the providers. The active entry IS
+        // this capture — the same-key guards above guarantee we didn't switch away.
+        const id = activeIdRef.current;
+        if (id) setRecent(updateRecentSummary(id, enriched));
       });
       repChainRef.current = run.catch(() => {});
       return run;
@@ -517,12 +531,12 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
             origin: "native",
             source: { kind: "path", path: entry.path },
           });
-          const key = nextSummary.source_sha256 ?? nextSummary.source_path;
-          if (lastRepSourceRef.current !== key) {
-            lastRepSourceRef.current = key;
-            triggerReputationGate(nextSummary);
-            triggerDomainReputationGate(nextSummary);
-          }
+          // Re-analyze is an explicit "redo" — always re-run reputation (refreshing the chips
+          // and the persisted summary), even if this source was already enriched this session.
+          // Unlike the load paths, the lastRepSourceRef de-dup must NOT suppress it here.
+          lastRepSourceRef.current = nextSummary.source_sha256 ?? nextSummary.source_path;
+          triggerReputationGate(nextSummary);
+          triggerDomainReputationGate(nextSummary);
         } catch (err: unknown) {
           const message = String((err as Error)?.message ?? err);
           setSummary({ status: "error", error: message });
