@@ -59,10 +59,16 @@ export interface ExportResult {
  * UI can show a transient hint.
  *
  * `aiSummary` is optional — when provided it is embedded in the report on both surfaces.
+ *
+ * `opts.brand` appends a small "Analyzed with PacketPilot" attribution to the exported
+ * HTML report — a growth loop, since shared reports carry the brand. Callers pass it for
+ * free-tier users and omit it for Pro. It only applies to the browser export (the desktop
+ * `save_report` renders server-side and is the self-hosted build).
  */
 export async function exportReport(
   summary: AnalysisOutput,
   aiSummary?: string,
+  opts?: { brand?: boolean },
 ): Promise<ExportResult> {
   if (isTauri()) {
     const path = await save({
@@ -76,12 +82,29 @@ export async function exportReport(
 
   // Browser: render the full HTML report via WASM (parity with the desktop save_report).
   try {
-    const html = await renderReportWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000), aiSummary);
+    let html = await renderReportWasm(JSON.stringify(summary), Math.floor(Date.now() / 1000), aiSummary);
+    if (opts?.brand) html = withReportBranding(html);
     downloadText(html, `${captureBase(summary)}-report.html`, "text/html");
     return { ok: true, message: "Downloaded" };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "Report export failed" };
   }
+}
+
+/**
+ * Append a subtle PacketPilot attribution footer to the exported report HTML. Styled with
+ * the report's own CSS variables (with safe fallbacks) so it matches the report theme, and
+ * inserted before </body> when present. Static, trusted markup — no interpolation.
+ */
+function withReportBranding(html: string): string {
+  const footer =
+    '<footer style="max-width:1100px;margin:36px auto 0;padding:16px 24px 32px;' +
+    "border-top:1px solid var(--border,#1e293b);text-align:center;" +
+    'font:13px/1.6 ui-sans-serif,system-ui,-apple-system,sans-serif;color:var(--muted,#94a3b8)">' +
+    'Analyzed with <a href="https://packetpilot.app" style="color:var(--accent,#38bdf8);' +
+    'text-decoration:none;font-weight:600">PacketPilot</a>' +
+    " — browser-local network forensics. The capture never left the device.</footer>";
+  return html.includes("</body>") ? html.replace("</body>", `${footer}</body>`) : html + footer;
 }
 
 // ── Structured export: CSV / STIX ────────────────────────────────────────────
