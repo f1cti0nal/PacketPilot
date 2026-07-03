@@ -36,7 +36,6 @@ function computeLayout(
   }
 
   const idx = new Map(nodes.map((nd, i) => [nd.ip, i]));
-  const r = nodes.map((nd) => nd.r);
   const px = new Float64Array(n);
   const py = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -99,26 +98,33 @@ function computeLayout(
     temp = Math.max(temp - cool, 1);
   }
 
-  // Radius-aware overlap resolution: guarantee a gap between every pair of bubbles.
-  for (let pass = 0; pass < 140; pass++) {
+  // Label-aware (box) overlap resolution: each host's footprint is its bubble PLUS the IP label
+  // sitting under it, so nodes are separated enough that the always-on labels stay legible. Separate
+  // overlapping boxes along whichever axis needs the least movement.
+  const halfW = nodes.map((nd) => Math.max(nd.r + 2, (nd.ip.length * 5.7) / 2 + 4));
+  const halfH = nodes.map((nd) => nd.r + 16);
+  for (let pass = 0; pass < 200; pass++) {
     let any = false;
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         let ex = px[i] - px[j];
         let ey = py[i] - py[j];
-        let d = Math.sqrt(ex * ex + ey * ey);
-        const min = r[i] + r[j] + 13;
-        if (d < 0.05) {
-          ex = (i - j) * 0.1 + 0.1;
-          ey = 0.1;
-          d = Math.sqrt(ex * ex + ey * ey);
+        if (Math.abs(ex) < 0.05 && Math.abs(ey) < 0.05) {
+          ex = (i - j) * 0.2 + 0.2;
+          ey = 0.2;
         }
-        if (d < min) {
-          const push = (min - d) / 2;
-          px[i] += (ex / d) * push;
-          py[i] += (ey / d) * push;
-          px[j] -= (ex / d) * push;
-          py[j] -= (ey / d) * push;
+        const ox = halfW[i] + halfW[j] + 8 - Math.abs(ex); // horizontal box overlap
+        const oy = halfH[i] + halfH[j] + 4 - Math.abs(ey); // vertical box overlap
+        if (ox > 0 && oy > 0) {
+          if (ox < oy) {
+            const push = (ox / 2) * (ex >= 0 ? 1 : -1);
+            px[i] += push;
+            px[j] -= push;
+          } else {
+            const push = (oy / 2) * (ey >= 0 ? 1 : -1);
+            py[i] += push;
+            py[j] -= push;
+          }
           any = true;
         }
       }
@@ -141,9 +147,10 @@ function computeLayout(
   }
   const spanX = Math.max(maxX - minX, 1);
   const spanY = Math.max(maxY - minY, 1);
-  const maxR = Math.max(...r);
-  const fit = Math.min((drawW - 2 * maxR) / spanX, (drawH - 2 * maxR) / spanY);
-  const scale = Math.max(0.85, Math.min(1.9, fit));
+  const maxHalfW = Math.max(...halfW);
+  const maxHalfH = Math.max(...halfH);
+  const fit = Math.min((drawW - 2 * maxHalfW) / spanX, (drawH - 2 * maxHalfH) / spanY);
+  const scale = Math.max(0.82, Math.min(1.6, fit));
   const offX = cx - ((minX + maxX) / 2) * scale;
   const offY = cy - ((minY + maxY) / 2) * scale;
   for (let i = 0; i < n; i++) {
@@ -366,20 +373,19 @@ export function ThreatGraph({
                   <circle cx={p.x} cy={p.y} r={nd.r + 5} fill="none" stroke={color} strokeWidth={1} strokeOpacity={0.5} />
                 )}
                 <circle cx={p.x} cy={p.y} r={nd.r} fill={color} fillOpacity={isActive ? 0.4 : 0.22} stroke={color} strokeWidth={isActive ? 2 : 1.5} />
-                {/* Labels only for the hovered host + its neighbours — keeps the default view a clean
-                    map of severity bubbles and reveals IPs on demand. */}
-                {active && lit && (
-                  <text
-                    x={p.x}
-                    y={p.y + nd.r + 11}
-                    textAnchor="middle"
-                    fontSize={9.5}
-                    fill={isActive ? "var(--color-text)" : "var(--color-text-dim)"}
-                    className="pointer-events-none font-mono-num"
-                  >
-                    {nd.ip}
-                  </text>
-                )}
+                {/* Always-on IP labels (the layout is spaced so they don't collide). On hover the
+                    non-highlighted labels fade so the traced subgraph stands out. */}
+                <text
+                  x={p.x}
+                  y={p.y + nd.r + 11}
+                  textAnchor="middle"
+                  fontSize={9.5}
+                  fill={isActive ? "var(--color-text)" : "var(--color-text-dim)"}
+                  style={{ opacity: active ? (lit ? 1 : 0.1) : 0.88, transition: "opacity 0.15s" }}
+                  className="pointer-events-none font-mono-num"
+                >
+                  {nd.ip}
+                </text>
               </g>
             );
           })}
