@@ -13,9 +13,9 @@ const PRO_FEATURES = [
 ];
 
 const ctaPrimary =
-  "mt-5 inline-flex items-center justify-center rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-4 py-2 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-50";
+  "mt-5 inline-flex items-center justify-center rounded-full bg-[var(--color-accent-deep)] px-5 py-2 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-50";
 const ctaGhost =
-  "mt-5 inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-dim)] hover:text-[var(--color-text)]";
+  "mt-5 inline-flex items-center justify-center rounded-full border border-[var(--color-border-strong)] px-5 py-2 text-sm font-medium text-[var(--color-text-dim)] hover:text-[var(--color-text)]";
 
 /** Survives the sign-in step (OAuth redirect or the in-page dialog) so we can resume checkout. */
 const PENDING_KEY = "pp.pending_plan";

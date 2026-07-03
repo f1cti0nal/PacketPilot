@@ -4,7 +4,7 @@ import { ProviderVerdictList } from "../components/transparency/ProviderVerdictL
 
 const RANK: Record<RepStatus, number> = { malicious: 5, benign: 4, unknown: 3, clean: 2, notfound: 1, unavailable: 0 };
 const COLOR: Record<RepStatus, string> = {
-  malicious: "var(--color-sev-critical, #ef4444)", benign: "var(--color-sev-low, #22c55e)",
+  malicious: "var(--color-sev-critical, #c81e42)", benign: "var(--color-sev-low, #0f766e)",
   unknown: "var(--color-text-faint)", clean: "var(--color-text-faint)",
   notfound: "var(--color-text-faint)", unavailable: "var(--color-text-faint)",
 };
