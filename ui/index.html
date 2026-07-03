@@ -8,6 +8,29 @@
       name="description"
       content="Analyze packet captures in your browser — ranked, MITRE-mapped threat findings in seconds. Nothing is uploaded. Free to start."
     />
+    <!-- Canonical + social share card. The SEO generator (scripts/gen-seo-html.mjs)
+         rewrites og:title/og:description/og:url/canonical per tool page; the shared
+         og:image and card type are inherited. -->
+    <link rel="canonical" href="https://packetpilot.app/" />
+    <meta property="og:site_name" content="PacketPilot" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://packetpilot.app/" />
+    <meta property="og:title" content="PacketPilot — In-browser PCAP threat triage" />
+    <meta
+      property="og:description"
+      content="Turn raw packet captures into severity-ranked, MITRE-mapped threat findings in seconds — nothing ever leaves your device."
+    />
+    <meta property="og:image" content="https://packetpilot.app/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="PacketPilot — triage faster, dig deeper, keep it private." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PacketPilot — In-browser PCAP threat triage" />
+    <meta
+      name="twitter:description"
+      content="Turn raw packet captures into severity-ranked, MITRE-mapped threat findings in seconds — nothing ever leaves your device."
+    />
+    <meta name="twitter:image" content="https://packetpilot.app/og.png" />
     <!-- Resolve the theme before first paint to avoid a flash. Mirrors lib/theme.ts
          (stored preference → OS preference → dark). Keep the key string in sync. -->
     <script>

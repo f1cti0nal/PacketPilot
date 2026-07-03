@@ -41,18 +41,27 @@ for (const p of pages) {
     })),
   };
 
+  // Overwrite the value of a base meta tag in place (matches single- or
+  // multi-line forms) so each page has exactly one og:/twitter: tag — never a
+  // duplicate of the base homepage one.
+  const setMeta = (h, attr, key, value) =>
+    h.replace(
+      new RegExp(`<meta\\s+${attr}="${key}"[\\s\\S]*?/>`),
+      `<meta ${attr}="${key}" content="${esc(value)}" />`,
+    );
+
   let html = indexHtml
     .replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(p.metaTitle)}</title>`)
-    .replace(/<meta\s+name="description"[\s\S]*?>/, `<meta name="description" content="${esc(p.metaDescription)}" />`);
-
-  const inject = `    <link rel="canonical" href="${url}" />
-    <meta property="og:title" content="${esc(p.metaTitle)}" />
-    <meta property="og:description" content="${esc(p.metaDescription)}" />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="${url}" />
-    <meta property="og:site_name" content="PacketPilot" />
-    <meta name="twitter:card" content="summary" />
-    <script type="application/ld+json">${JSON.stringify(softwareLd)}</script>
+    .replace(/<meta\s+name="description"[\s\S]*?\/>/, `<meta name="description" content="${esc(p.metaDescription)}" />`)
+    .replace(/<link rel="canonical"[^>]*>/, `<link rel="canonical" href="${url}" />`);
+  html = setMeta(html, "property", "og:title", p.metaTitle);
+  html = setMeta(html, "property", "og:description", p.metaDescription);
+  html = setMeta(html, "property", "og:url", url);
+  html = setMeta(html, "name", "twitter:title", p.metaTitle);
+  html = setMeta(html, "name", "twitter:description", p.metaDescription);
+  // og:image, og:site_name, og:type, and twitter:card are shared — inherited
+  // from the base head. Only the page-specific JSON-LD needs injecting.
+  const inject = `    <script type="application/ld+json">${JSON.stringify(softwareLd)}</script>
     <script type="application/ld+json">${JSON.stringify(faqLd)}</script>
   </head>`;
   html = html.replace("</head>", inject);
