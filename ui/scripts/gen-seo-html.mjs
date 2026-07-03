@@ -76,10 +76,13 @@ for (const p of pages) {
 }
 
 // ── Blog: index + one page per post ───────────────────────────────────────────
+// The index goes in blog/index.html (NOT blog.html): a blog.html file sitting next
+// to the blog/ directory collides under Vercel cleanUrls and 404s the whole /blog
+// namespace. A directory index avoids the name clash and serves /blog cleanly.
 mkdirSync(join(dist, "blog"), { recursive: true });
 const blogUrl = `${SITE}/blog`;
 writeFileSync(
-  join(dist, "blog.html"),
+  join(dist, "blog", "index.html"),
   renderHead({
     title: "The PacketPilot Blog — Network Forensics Notes",
     description:
