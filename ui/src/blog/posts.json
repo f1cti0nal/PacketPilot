@@ -1,0 +1,108 @@
+[
+  {
+    "slug": "anatomy-of-a-pcap-kill-chain",
+    "metaTitle": "Anatomy of a Kill Chain in a Single PCAP",
+    "metaDescription": "A walkthrough of one sample capture where a single host runs the full kill chain — recon, lateral movement, C2 beaconing, and exfil — all triaged in your browser.",
+    "title": "Anatomy of a kill chain, in a single packet capture",
+    "dek": "One host in this sample capture runs the entire playbook — from first scan to data leaving the building. Here's how PacketPilot reconstructs it, and how you can watch it happen in your own browser.",
+    "date": "2026-07-03",
+    "readingMinutes": 6,
+    "tags": ["Network forensics", "Incident response", "Detection"],
+    "author": "PacketPilot",
+    "sections": [
+      {
+        "heading": "The capture, in one screen",
+        "blocks": [
+          {
+            "p": "The capture we're triaging is about 100,000 packets — 99,079 flows across 547 hosts, spanning roughly 63 hours. It's the kind of noisy, real-world traffic where anything interesting hides in a sea of ordinary web and DNS. Dropping it into PacketPilot, the engine doesn't hand back a packet list; it hands back twelve high-severity findings, correlated into six incidents and ranked by risk. The worst scores 89 out of 100."
+          },
+          {
+            "p": "The whole point of triage is to answer one question — \"where do I look first?\" — before you ever open a single packet. Here, one host answers it loudly. And every bit of the analysis below ran locally in the browser tab: the capture was never uploaded anywhere."
+          }
+        ]
+      },
+      {
+        "heading": "One host lights up: 10.13.37.7",
+        "blocks": [
+          {
+            "p": "Five of the six incidents are isolated hygiene problems (we'll get to them). The sixth is a story. The engine attributes seven of the findings to a single internal host — 10.13.37.7 — and correlates them into one incident scored 89. Individually each finding is suspicious; together they trace the shape of an intrusion, from first contact to data leaving the network."
+          },
+          {
+            "table": {
+              "caption": "The findings attributed to host 10.13.37.7, ordered as a kill chain.",
+              "columns": ["Stage", "What the engine saw", "ATT&CK"],
+              "rows": [
+                ["Discovery", "Host sweep — 10.13.37.7 probed 24 hosts on port 445 (SMB)", "T1046"],
+                ["Credential Access", "Brute force — 30 SSH attempts against 10.66.0.1:22", "T1110"],
+                ["Lateral Movement", "RDP sessions to 6 internal hosts on port 3389", "T1021"],
+                ["Command & Control", "Periodic beacon to 45.77.13.37:443 — 7,613 contacts, every ~30s", "T1071"],
+                ["Command & Control", "DNS tunneling — 40 high-entropy queries to the internal resolver", "T1071.004"],
+                ["Exfiltration", "1,003.7 KB to 45.77.13.37:443 and 1.2 MB to 185.220.101.5:443", "T1048"]
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "heading": "Walking the chain",
+        "blocks": [
+          {
+            "p": "It starts quietly. The engine flags a host sweep: 10.13.37.7 reaching 24 different hosts on TCP 445. One host touching that many peers on the SMB port, in a short window, isn't a file share — it's someone mapping the network. That's Discovery (T1046)."
+          },
+          {
+            "p": "Next, the same host hammers 10.66.0.1 on SSH — 30 connection attempts to port 22. The brute-force detector is gated to interactive auth services and counts attempts, so ordinary retries don't trip it; thirty against one target does. That's Credential Access (T1110)."
+          },
+          {
+            "p": "With a foothold, 10.13.37.7 opens RDP sessions to six internal hosts on 3389. One internal machine fanning out admin sessions to many others is the classic lateral-movement signature (T1021) — and it's exactly the pattern the detector is tuned to catch without flagging a busy jump box."
+          },
+          {
+            "p": "Then comes the tell-tale rhythm. The host makes 7,613 connections to an external address, 45.77.13.37:443, at a near-perfect ~30-second cadence — a jitter coefficient of variation of just 0.014. Humans and normal software aren't that regular; malware calling home is. That machine-regular heartbeat is command-and-control beaconing (T1071). Running alongside it, 40 high-entropy DNS queries to the internal resolver betray DNS tunneling (T1071.004) — a second, quieter channel out."
+          },
+          {
+            "p": "Finally, data moves. About 1 MB leaves for the same C2 at 45.77.13.37, and another 1.2 MB goes to a second external host, 185.220.101.5 — an address on a well-known anonymizing network. Large, asymmetric, outbound transfers to external peers are Exfiltration (T1048). The story closes where these stories usually do: with the data already gone."
+          }
+        ]
+      },
+      {
+        "heading": "The same beacon, seen from the other side",
+        "blocks": [
+          {
+            "p": "One detail is worth pausing on. The engine also raises a separate finding on 45.77.13.37 itself — a SYN-flood-shaped pattern of 7,613 half-open connections to its port 443. That's not a second attack; it's the same 7,613 beacons, viewed from the server's perspective. Seeing the client-side beacon and the server-side connection storm line up is a clean confirmation that the ~30-second heartbeat is real, and not a detector artifact."
+          }
+        ]
+      },
+      {
+        "heading": "The rest of the room",
+        "blocks": [
+          {
+            "p": "The other five incidents aren't part of the intrusion — they're the ordinary exposure a real network accumulates, surfaced in the same pass:"
+          },
+          {
+            "bullets": [
+              "Cleartext credentials — HTTP Basic auth from 10.0.0.50 to an internal web server on port 80, and an FTP login from 10.0.0.51 on port 21. Passwords on the wire, in plaintext (T1552).",
+              "Plaintext PII — a credit-card number crossing 10.0.0.52 to port 80 over unencrypted HTTP (T1040).",
+              "Exposed remote access — an external host, 45.77.13.38, reached RDP on an internal machine (10.0.0.42:3389), an internal-to-external boundary crossing that shouldn't be possible (T1133)."
+            ]
+          },
+          {
+            "p": "None of these would stop you in a raw packet list. Ranked next to the kill chain, they read as a to-do list."
+          }
+        ]
+      },
+      {
+        "heading": "Triage, not packets — and nothing left the browser",
+        "blocks": [
+          {
+            "p": "The reason to do this in a triage tool instead of scrolling Wireshark is speed and framing: 100,000 packets became six ranked incidents and one obvious place to start, in seconds. Wireshark is still where you go to prove the details — but not to decide where to look."
+          },
+          {
+            "p": "And the reason to do it in PacketPilot specifically is where the work happens. The entire analysis ran in a Rust-to-WebAssembly engine inside the browser tab. This capture is full of internal IPs, credentials, and a credit-card number; none of it was uploaded anywhere. That's exactly why a browser-local tool is usable on captures you could never paste into a cloud analyzer."
+          },
+          {
+            "p": "Everything above is the bundled sample — you can reproduce it yourself in about ten seconds, no account required. Open the live sample and watch the same kill chain assemble."
+          }
+        ]
+      }
+    ]
+  }
+]
