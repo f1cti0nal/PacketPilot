@@ -246,6 +246,50 @@ describe("platform structured export", () => {
     const r = await exportReport(summary);
     expect(r.ok).toBe(false);
   });
+
+  // Capture the string downloadText hands to `new Blob([...])` — jsdom's Blob has no
+  // usable .text(), so intercept the constructor instead.
+  const captureDownloadedText = (): { get: () => string; restore: () => void } => {
+    let captured = "";
+    const RealBlob = globalThis.Blob;
+    vi.stubGlobal(
+      "Blob",
+      class {
+        constructor(parts: unknown[]) {
+          captured = String((parts as string[])[0]);
+        }
+      },
+    );
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fake"), revokeObjectURL: vi.fn() });
+    return { get: () => captured, restore: () => vi.stubGlobal("Blob", RealBlob) };
+  };
+
+  it("exportReport (browser) appends the PacketPilot attribution when brand=true", async () => {
+    isTauri.mockReturnValue(false);
+    renderReportWasm.mockResolvedValue("<!doctype html><html><body>report</body></html>");
+    const cap = captureDownloadedText();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const r = await exportReport(summary, undefined, { brand: true });
+    expect(r.ok).toBe(true);
+    const html = cap.get();
+    expect(html).toContain("Analyzed with");
+    expect(html).toContain("https://packetpilot.app");
+    // Footer is inserted before the closing </body>.
+    expect(html.indexOf("Analyzed with")).toBeLessThan(html.indexOf("</body>"));
+    click.mockRestore();
+    cap.restore();
+  });
+
+  it("exportReport (browser) omits the attribution for Pro (brand=false)", async () => {
+    isTauri.mockReturnValue(false);
+    renderReportWasm.mockResolvedValue("<!doctype html><html><body>report</body></html>");
+    const cap = captureDownloadedText();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await exportReport(summary, undefined, { brand: false });
+    expect(cap.get()).not.toContain("Analyzed with");
+    click.mockRestore();
+    cap.restore();
+  });
 });
 
 // ── applyRules platform seam ──────────────────────────────────────────────────

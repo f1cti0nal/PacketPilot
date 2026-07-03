@@ -125,10 +125,8 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const appSettings = useAppSettings();
   const { announcement_banner } = appSettings;
   const rep = appSettings.rep;
-  const { gate } = useFeatureFlags(
-    session.status === "authed",
-    session.status === "authed" ? session.profile.plan : "free",
-  );
+  const plan = session.status === "authed" ? session.profile.plan : "free";
+  const { gate } = useFeatureFlags(session.status === "authed", plan);
   const aiGate = gate("ai_assist");
   const pcapGate = gate("pcap_export");
   const compareGate = gate("multi_capture_diff");
@@ -579,8 +577,9 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const handleExport = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
     const ai = aiOn ? await getAiSummary(captureKey(summary.data)) : null;
-    return exportReport(summary.data, ai?.text);
-  }, [summary, aiOn]);
+    // Free-tier exports carry a PacketPilot attribution (a growth loop); Pro removes it.
+    return exportReport(summary.data, ai?.text, { brand: plan !== "pro" });
+  }, [summary, aiOn, plan]);
 
   const handleExportCsv = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
