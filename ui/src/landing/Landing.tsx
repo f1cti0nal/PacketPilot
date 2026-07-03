@@ -294,6 +294,56 @@ export function Landing() {
       });
     }
 
+    // ── (7) Workflow tabs: [data-pp-tab] buttons switching [data-pp-panel] ─────
+    const tabs = Array.from(root.querySelectorAll<HTMLElement>("[data-pp-tab]"));
+    const panels = Array.from(
+      root.querySelectorAll<HTMLElement>("[data-pp-panel]"),
+    );
+    if (tabs.length && panels.length) {
+      const select = (id: string, focus: boolean) => {
+        tabs.forEach((tab) => {
+          const active = tab.getAttribute("data-pp-tab") === id;
+          tab.classList.toggle("is-active", active);
+          tab.setAttribute("aria-selected", active ? "true" : "false");
+          // Roving tabindex: only the active tab is in the tab order.
+          tab.setAttribute("tabindex", active ? "0" : "-1");
+          if (active && focus) tab.focus();
+        });
+        panels.forEach((panel) => {
+          const active = panel.getAttribute("data-pp-panel") === id;
+          panel.classList.toggle("is-active", active);
+          panel.hidden = !active;
+        });
+      };
+      const handlers: Array<[HTMLElement, string, (e: Event) => void]> = [];
+      tabs.forEach((tab, i) => {
+        const id = tab.getAttribute("data-pp-tab") ?? String(i);
+        const onClick = () => select(id, false);
+        const onKey = (e: Event) => {
+          const key = (e as KeyboardEvent).key;
+          let to = -1;
+          if (key === "ArrowRight" || key === "ArrowDown")
+            to = (i + 1) % tabs.length;
+          else if (key === "ArrowLeft" || key === "ArrowUp")
+            to = (i - 1 + tabs.length) % tabs.length;
+          else if (key === "Home") to = 0;
+          else if (key === "End") to = tabs.length - 1;
+          if (to < 0) return;
+          e.preventDefault();
+          select(tabs[to].getAttribute("data-pp-tab") ?? String(to), true);
+        };
+        tab.addEventListener("click", onClick);
+        tab.addEventListener("keydown", onKey);
+        handlers.push([tab, "click", onClick], [tab, "keydown", onKey]);
+      });
+      const initial =
+        tabs.find((t) => t.classList.contains("is-active")) ?? tabs[0];
+      select(initial.getAttribute("data-pp-tab") ?? "0", false);
+      cleanups.push(() => {
+        handlers.forEach(([el, ev, fn]) => el.removeEventListener(ev, fn));
+      });
+    }
+
     return () => {
       cleanups.forEach((fn) => {
         try {

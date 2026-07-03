@@ -1,45 +1,45 @@
-<div class="pp-landing">
+<div class="pp-landing pp-no-js">
 <style>
   .pp-landing *, .pp-landing *::before, .pp-landing *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   .pp-landing {
-    --bg: #06090f;
-    --bg-2: #0b1220;
-    --surface: #0f1828;
-    --surface-2: #141e30;
-    --surface-3: #1b2740;
-    --panel: #0e1a2c;
-    --glass: rgba(18, 28, 46, 0.55);
-    --glass-2: rgba(20, 30, 48, 0.7);
-    --border: #223049;
-    --hairline: rgba(148, 178, 224, 0.12);
-    --hairline-top: rgba(180, 205, 245, 0.18);
-    --text: #e7edf7;
-    --text-dim: #93a1b7;
-    --text-faint: #8b98ad;
-    --accent: #3b82f6;
-    --accent-2: #60a5fa;
-    --accent-strong: #93c5fd;
-    --accent-deep: #2563eb;
-    --accent-deeper: #1d4ed8;
+    --bg: #f7f7f8;
+    --bg-soft: #f1f1f4;
+    --surface: #ffffff;
+    --surface-soft: #fbfbfc;
+    --ink: #0e0e12;
+    --ink-2: #55565f;
+    /* Muted text — #696a73 holds >=4.5:1 AA on every light surface used
+       (white 5.37, --bg 5.02, --bg-soft 4.76, --surface-soft 5.19, wash 4.94). */
+    --ink-3: #696a73;
+    --line: #e8e8ec;
+    --line-strong: #d9d9df;
+    --accent: #6c4df6;
+    --accent-deep: #5636e8;
+    --accent-soft: #efebfe;
+    --accent-wash: #f6f4ff;
     --on-accent: #ffffff;
-    --sev-critical: #f43f5e;
-    --sev-high: #fb923c;
-    --sev-medium: #fbbf24;
-    --sev-low: #2dd4bf;
-    --sev-info: #38bdf8;
+    --pill: #131316;
+    --pill-hover: #26262c;
+    --on-pill: #ffffff;
+    /* Severity hues sized for AA both as white-text chip fills and as text
+       on light surfaces (critical 5.6+, high 5.0+ each way). */
+    --sev-critical: #c81e42;
+    --sev-high: #c2410c;
+    --sev-medium: #b45309;
+    --sev-low: #0f766e;
+    --sev-info: #0369a1;
+    --display: "Inter Tight", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-    --sans: "Geist", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --radius: 14px;
-    --radius-sm: 9px;
-    --radius-lg: 18px;
-    --radius-xl: 22px;
-    --shadow-card: 0 18px 50px rgba(0,0,0,0.45), inset 0 1px 0 var(--hairline-top);
-    --shadow-deep: 0 30px 90px rgba(0,0,0,0.6), 0 0 0 1px rgba(96,165,250,0.07);
-    background:
-      radial-gradient(ellipse 80% 50% at 50% -8%, rgba(37,99,235,0.16), transparent 60%),
-      var(--bg);
-    color: var(--text);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --radius-lg: 22px;
+    --radius-xl: 28px;
+    --shadow-card: 0 1px 2px rgba(14, 14, 18, 0.04), 0 12px 32px rgba(14, 14, 18, 0.06);
+    --shadow-deep: 0 2px 6px rgba(14, 14, 18, 0.05), 0 32px 80px rgba(14, 14, 18, 0.12);
+    background: var(--bg);
+    color: var(--ink);
     font-family: var(--sans);
     font-size: 16px;
     font-weight: 400;
@@ -47,7 +47,7 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     min-height: 100vh;
-    /* `clip` (not `hidden`) contains the bleeding glows + ghost wordmark without
+    /* `clip` (not `hidden`) contains bleeding glows + the ghost wordmark without
        turning .pp-landing into a scroll container — which would break the sticky
        nav's `position: sticky` (overflow-x:hidden promotes overflow-y to auto). */
     overflow-x: clip;
@@ -56,372 +56,367 @@
 
   /* ── UTILITY ── */
   .pp-landing .mono { font-family: var(--mono); }
-  .pp-landing .accent { color: var(--accent-2); }
-  .pp-landing .dim { color: var(--text-dim); }
-  .pp-landing .faint { color: var(--text-faint); }
-  .pp-landing .inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; width: 100%; }
+  .pp-landing .dim { color: var(--ink-2); }
+  .pp-landing .inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; width: 100%; }
   .pp-landing a { color: inherit; }
   .pp-landing :focus-visible {
-    outline: 2px solid var(--accent-2);
+    outline: 2px solid var(--accent);
     outline-offset: 3px;
-    border-radius: 6px;
+    border-radius: 8px;
   }
+  .pp-landing em { font-style: normal; color: var(--accent); }
+
+  /* Shared section scaffolding */
+  .pp-section { padding: 96px 0; position: relative; }
+  .pp-section-head { max-width: 720px; margin: 0 auto 56px; text-align: center; }
+  .pp-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink-2);
+    letter-spacing: 0.02em;
+    margin-bottom: 18px;
+  }
+  .pp-kicker-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .pp-section-title {
+    font-family: var(--display);
+    font-size: clamp(30px, 4.4vw, 44px);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
+    color: var(--ink);
+  }
+  .pp-section-sub {
+    margin-top: 14px;
+    font-size: 16.5px;
+    color: var(--ink-2);
+    line-height: 1.65;
+  }
+
+  /* Buttons */
+  .pp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 22px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-family: var(--sans);
+    font-size: 14.5px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.16s, border-color 0.16s, color 0.16s, transform 0.16s, box-shadow 0.16s;
+  }
+  .pp-btn-lg { padding: 15px 30px; font-size: 15.5px; }
+  /* `.pp-landing` prefix beats the `.pp-landing a { color: inherit }` reset. */
+  .pp-landing .pp-btn-primary {
+    background: var(--pill);
+    color: var(--on-pill);
+    box-shadow: 0 1px 2px rgba(14,14,18,0.2), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .pp-landing .pp-btn-primary:hover { background: var(--pill-hover); transform: translateY(-1px); }
+  .pp-landing .pp-btn-accent {
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: 0 8px 24px rgba(108, 77, 246, 0.32);
+  }
+  .pp-landing .pp-btn-accent:hover { background: var(--accent-deep); transform: translateY(-1px); }
+  .pp-landing .pp-btn-secondary {
+    background: var(--surface);
+    border-color: var(--line-strong);
+    color: var(--ink);
+  }
+  .pp-landing .pp-btn-secondary:hover { border-color: var(--ink-3); transform: translateY(-1px); }
+  .pp-landing .pp-btn-ghost-light {
+    background: rgba(255,255,255,0.92);
+    color: var(--ink);
+  }
+  .pp-btn-ghost-light:hover { background: #ffffff; transform: translateY(-1px); }
+  .pp-arrow { display: inline-block; transition: transform 0.16s; }
+  .pp-btn:hover .pp-arrow { transform: translateX(3px); }
 
   /* ─────────────────────────────  1. ANNOUNCEMENT STRIP  ───────────────────────────── */
   .pp-strip {
     position: relative;
     z-index: 90;
-    border-bottom: 1px solid var(--hairline);
-    background: rgba(8, 13, 24, 0.6);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
+    background: var(--pill);
   }
   .pp-strip a {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 8px 16px;
+    padding: 9px 16px;
     text-decoration: none;
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: rgba(255,255,255,0.75);
     letter-spacing: 0.01em;
     transition: color 0.16s;
   }
-  .pp-strip a:hover { color: var(--text); }
-  .pp-strip a strong { color: var(--accent-strong); font-weight: 500; }
-  .pp-strip-chev { color: var(--accent-2); transition: transform 0.16s; flex-shrink: 0; }
+  .pp-strip a:hover { color: #ffffff; }
+  .pp-strip a strong { color: #ffffff; font-weight: 500; }
+  .pp-strip-chev { color: #a894ff; transition: transform 0.16s; flex-shrink: 0; }
   .pp-strip a:hover .pp-strip-chev { transform: translateX(3px); }
 
-  /* ─────────────────────────────  2. STICKY GLASS NAV  ───────────────────────────── */
+  /* ─────────────────────────────  2. STICKY NAV  ───────────────────────────── */
   .pp-nav {
     position: sticky;
     top: 0;
     z-index: 100;
-    background: rgba(8, 12, 22, 0.72);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
-    backdrop-filter: blur(18px) saturate(140%);
-    border-bottom: 1px solid var(--hairline);
-  }
-  .pp-nav::after {
-    content: '';
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--hairline-top), transparent);
-    pointer-events: none;
+    background: rgba(247, 247, 248, 0.82);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    backdrop-filter: blur(16px) saturate(150%);
+    border-bottom: 1px solid var(--line);
   }
   .pp-nav .inner {
     display: flex;
     align-items: center;
     gap: 14px;
-    height: 62px;
+    height: 66px;
   }
   .pp-nav-brand {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
     text-decoration: none;
-    color: var(--text);
-    font-size: 16px;
-    font-weight: 500;
-    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .pp-logo-mark {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(108, 77, 246, 0.35);
     flex-shrink: 0;
   }
-  .pp-nav-brand svg { color: var(--accent-2); flex-shrink: 0; }
   .pp-nav-links {
     display: flex;
     align-items: center;
-    gap: 2px;
-    flex: 1;
-    justify-content: center;
+    gap: 4px;
+    margin: 0 auto;
   }
   .pp-nav-links a {
-    text-decoration: none;
-    color: var(--text-dim);
+    padding: 8px 14px;
+    border-radius: 999px;
     font-size: 14px;
-    padding: 7px 14px;
-    border-radius: var(--radius-sm);
-    transition: color 0.15s, background 0.15s;
+    font-weight: 500;
+    color: var(--ink-2);
+    text-decoration: none;
+    transition: color 0.16s, background 0.16s;
   }
-  .pp-nav-links a:hover { color: var(--text); background: rgba(96,165,250,0.07); }
-  .pp-nav-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .pp-nav-links a:hover { color: var(--ink); background: var(--bg-soft); }
+  .pp-nav-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
   .pp-nav-toggle {
     display: none;
-    width: 42px; height: 42px;
+    width: 40px; height: 40px;
     align-items: center;
     justify-content: center;
-    background: var(--glass);
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
-    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    color: var(--ink);
     cursor: pointer;
   }
-  .pp-nav-toggle svg { display: block; }
   .pp-nav-toggle .pp-x { display: none; }
-  .pp-nav-toggle[aria-expanded="true"] .pp-x { display: block; }
   .pp-nav-toggle[aria-expanded="true"] .pp-burger { display: none; }
-
-  /* shared pill buttons */
-  .pp-btn {
-    font-family: var(--sans);
-    font-size: 14px;
+  .pp-nav-toggle[aria-expanded="true"] .pp-x { display: block; }
+  .pp-nav-menu {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 20px 18px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .pp-nav-menu a {
+    padding: 12px 10px;
+    font-size: 15px;
     font-weight: 500;
+    color: var(--ink-2);
     text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    border-radius: 100px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: transform 0.14s ease, background 0.16s, border-color 0.16s, box-shadow 0.16s, color 0.16s;
-    border: 1px solid transparent;
-    line-height: 1;
+    border-radius: 10px;
   }
-  .pp-btn-primary {
-    background: linear-gradient(180deg, #3b82f6, #2563eb);
-    color: var(--on-accent);
-    padding: 9px 18px;
-    box-shadow: 0 6px 18px rgba(37,99,235,0.35), inset 0 1px 0 rgba(255,255,255,0.18);
-  }
-  .pp-btn-primary:hover { background: linear-gradient(180deg, #4f8ff8, #2f6ef0); transform: translateY(-1px); box-shadow: 0 10px 26px rgba(37,99,235,0.45), inset 0 1px 0 rgba(255,255,255,0.22); }
-  .pp-btn-secondary {
-    background: var(--glass);
-    color: var(--text);
-    border: 1px solid var(--hairline-top);
-    padding: 9px 18px;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-  }
-  .pp-btn-secondary:hover { border-color: rgba(96,165,250,0.45); background: rgba(96,165,250,0.08); transform: translateY(-1px); }
-  .pp-btn-lg { font-size: 15px; padding: 13px 26px; }
-  .pp-arrow { transition: transform 0.18s; }
-  .pp-btn:hover .pp-arrow { transform: translateX(3px); }
-
-  /* ─────────────────────────────  GLASS PANEL HELPER  ───────────────────────────── */
-  .pp-glass {
-    position: relative;
-    background: var(--glass);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-lg);
-    -webkit-backdrop-filter: blur(16px) saturate(130%);
-    backdrop-filter: blur(16px) saturate(130%);
-    box-shadow: var(--shadow-card);
-  }
-
-  /* ─────────────────────────────  SECTION HEADERS  ───────────────────────────── */
-  .pp-section { padding: clamp(64px, 9vw, 116px) 0; position: relative; }
-  .pp-section-head { max-width: 720px; margin: 0 auto clamp(40px, 5vw, 64px); text-align: center; }
-  .pp-eyebrow-label {
-    font-family: var(--mono);
-    font-size: 11.5px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--accent-2);
-    display: inline-block;
-    margin-bottom: 16px;
-  }
-  .pp-section-title {
-    font-size: clamp(28px, 4vw, 44px);
-    font-weight: 500;
-    letter-spacing: -0.025em;
-    color: var(--text);
-    line-height: 1.12;
-  }
-  .pp-section-title em { font-style: normal; color: var(--accent-2); }
-  .pp-section-sub {
-    font-size: clamp(15px, 1.6vw, 17px);
-    color: var(--text-dim);
-    max-width: 600px;
-    margin: 18px auto 0;
-    line-height: 1.6;
-  }
-
-  /* ─────────────────────────────  SHARED GLOW BREATHE (grafted from B)  ───────────────────────────── */
-  @keyframes pp-glow-breathe {
-    0%, 100% { opacity: 0.85; transform: var(--pp-glow-tf, none) scale(1); }
-    50%      { opacity: 1;    transform: var(--pp-glow-tf, none) scale(1.06); }
+  .pp-nav-menu a:hover { color: var(--ink); background: var(--bg-soft); }
+  .pp-nav-menu .pp-btn { margin-top: 10px; justify-content: center; }
+  @media (max-width: 860px) {
+    .pp-nav-links { display: none; }
+    .pp-nav-actions .pp-btn { display: none; }
+    .pp-nav-toggle { display: inline-flex; }
+    .pp-nav-menu.is-open { display: flex; }
   }
 
   /* ─────────────────────────────  3. HERO  ───────────────────────────── */
-  .pp-hero { position: relative; overflow: hidden; padding: clamp(56px, 8vw, 104px) 0 clamp(40px, 6vw, 72px); }
-  .pp-hero-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
-  .pp-hero-bg::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,255,255,0.012) 3px, rgba(255,255,255,0.012) 4px);
-  }
-  .pp-hero-bg::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(46,72,116,0.35) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(46,72,116,0.35) 1px, transparent 1px);
-    background-size: 58px 58px;
-    -webkit-mask-image: radial-gradient(ellipse 68% 56% at 50% 38%, black 25%, transparent 78%);
-    mask-image: radial-gradient(ellipse 68% 56% at 50% 38%, black 25%, transparent 78%);
-  }
-  .pp-hero-glow {
-    position: absolute;
-    top: -200px; left: 50%;
-    --pp-glow-tf: translateX(-50%);
-    transform: translateX(-50%);
-    width: 1100px; height: 720px;
-    max-width: 130%;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.28) 0%, rgba(96,165,250,0.08) 42%, transparent 70%);
-    pointer-events: none;
-    z-index: 0;
-    animation: pp-glow-breathe 9s ease-in-out infinite;
-  }
-  .pp-hero-content {
+  .pp-hero {
     position: relative;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    padding: 84px 0 36px;
     text-align: center;
-    gap: 22px;
   }
-  .pp-eyebrow {
+  .pp-hero-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 62% 48% at 50% 0%, rgba(108, 77, 246, 0.10), transparent 68%),
+      radial-gradient(ellipse 40% 30% at 82% 12%, rgba(56, 129, 246, 0.05), transparent 70%);
+  }
+  .pp-hero-ring {
+    position: absolute;
+    left: 50%;
+    top: -340px;
+    width: 1060px;
+    height: 1060px;
+    transform: translateX(-50%);
+    border: 1.5px dashed rgba(108, 77, 246, 0.16);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .pp-hero-ring.r2 { width: 780px; height: 780px; top: -220px; opacity: 0.7; }
+  .pp-hero-content { position: relative; max-width: 880px; margin: 0 auto; }
+  .pp-hero-badge {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    background: rgba(37,99,235,0.14);
-    border: 1px solid rgba(96,165,250,0.28);
-    border-radius: 100px;
-    padding: 5px 15px 5px 11px;
-    font-size: 12.5px;
-    color: var(--accent-strong);
-    font-family: var(--mono);
-    letter-spacing: 0.03em;
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-  }
-  /* eyebrow dot with ping ring (grafted from B) */
-  .pp-eyebrow-dot {
-    position: relative;
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--accent-2);
-    box-shadow: 0 0 8px var(--accent-2);
-    flex-shrink: 0;
-  }
-  .pp-eyebrow-dot::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    border: 1px solid var(--accent-2);
-    animation: pp-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-  }
-  @keyframes pp-ping {
-    0%   { transform: scale(1);   opacity: 0.9; }
-    70%, 100% { transform: scale(3); opacity: 0; }
-  }
-  /* Anchor jumps (#features, #how, #privacy, #cases) clear the sticky nav.
-     Scoped to this fragment's sections — no global html scroll-behavior, since
-     this markup also loads under /app. */
-  .pp-landing section[id] { scroll-margin-top: 84px; }
-  .pp-hero-headline {
-    font-size: clamp(34px, 6.4vw, 66px);
-    line-height: 1.04;
-    letter-spacing: -0.035em;
+    gap: 10px;
+    padding: 6px 16px 6px 7px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: var(--shadow-card);
+    font-size: 13px;
     font-weight: 500;
-    max-width: 940px;
-    color: var(--text);
+    color: var(--ink-2);
   }
-  .pp-hero-headline em { font-style: normal; color: var(--accent-2); }
+  .pp-hero-badge strong { color: var(--ink); font-weight: 600; }
+  .pp-badge-stack { display: inline-flex; }
+  .pp-badge-stack span {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: -7px;
+    color: #fff;
+  }
+  .pp-badge-stack span:nth-child(1) { background: #6c4df6; }
+  .pp-badge-stack span:nth-child(2) { background: #0f766e; }
+  .pp-badge-stack span:nth-child(3) { background: #e0570f; margin-right: 0; }
+  .pp-hero-headline {
+    margin: 26px auto 0;
+    font-family: var(--display);
+    font-size: clamp(40px, 7vw, 74px);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    line-height: 1.04;
+    color: var(--ink);
+    max-width: 820px;
+  }
   .pp-hero-sub {
-    font-size: clamp(16px, 1.7vw, 18px);
-    color: var(--text-dim);
+    margin: 22px auto 0;
     max-width: 620px;
-    line-height: 1.62;
+    font-size: 17px;
+    line-height: 1.7;
+    color: var(--ink-2);
   }
   .pp-hero-ctas {
+    margin-top: 34px;
     display: flex;
     align-items: center;
-    gap: 13px;
-    flex-wrap: wrap;
     justify-content: center;
-    margin-top: 4px;
+    gap: 14px;
+    flex-wrap: wrap;
   }
 
-  /* ── HERO LIVE MOCKUP ── */
-  .pp-mockup-wrap {
-    position: relative;
-    margin-top: clamp(44px, 6vw, 72px);
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    perspective: 1600px;
-    z-index: 2;
+  /* Floating protocol chips flanking the hero (decorative) */
+  .pp-float-chips { position: absolute; inset: 0; pointer-events: none; }
+  .pp-float-chip {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ink-2);
+    animation: pp-bob 7s ease-in-out infinite;
   }
+  .pp-float-chip .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+  .pp-float-chip.c1 { left: 1%;  top: 16%;  animation-delay: 0s;    transform: rotate(-6deg); }
+  .pp-float-chip.c2 { left: 4%;  top: 52%;  animation-delay: -1.6s; transform: rotate(4deg); }
+  .pp-float-chip.c3 { left: 10%; top: 84%;  animation-delay: -3.1s; transform: rotate(-3deg); }
+  .pp-float-chip.c4 { right: 1%; top: 18%;  animation-delay: -2.2s; transform: rotate(5deg); }
+  .pp-float-chip.c5 { right: 3%; top: 55%;  animation-delay: -4.4s; transform: rotate(-5deg); }
+  .pp-float-chip.c6 { right: 9%; top: 86%;  animation-delay: -5.5s; transform: rotate(3deg); }
+  @keyframes pp-bob {
+    0%, 100% { margin-top: 0; }
+    50% { margin-top: -12px; }
+  }
+  @media (max-width: 1100px) { .pp-float-chips { display: none; } }
+
+  /* ── Hero mockup: light browser frame around the console ── */
+  .pp-mockup-wrap { position: relative; margin: 64px auto 0; max-width: 1020px; }
   .pp-mockup-glow {
     position: absolute;
-    top: 46%; left: 50%;
-    --pp-glow-tf: translate(-50%, -50%);
-    transform: translate(-50%, -50%);
-    width: 1050px; height: 600px;
-    max-width: 120%;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.3) 0%, rgba(96,165,250,0.1) 48%, transparent 70%);
+    inset: 8% -4% -6% -4%;
+    background: radial-gradient(ellipse 55% 55% at 50% 42%, rgba(108, 77, 246, 0.16), transparent 70%);
     pointer-events: none;
-    z-index: 0;
-    animation: pp-glow-breathe 10s ease-in-out infinite;
   }
-  .pp-tilt {
-    position: relative;
-    z-index: 1;
-    width: 100%;
-    max-width: 1040px;
-    transform-style: preserve-3d;
-    transition: transform 0.25s ease-out;
-    will-change: transform;
-  }
+  .pp-tilt { position: relative; transition: transform 0.25s ease-out; will-change: transform; }
   .pp-mockup {
     position: relative;
-    z-index: 1;
     background: var(--surface);
-    border: 1px solid var(--hairline-top);
+    border: 1px solid var(--line);
     border-radius: var(--radius-lg);
-    overflow: hidden;
-    width: 100%;
     box-shadow: var(--shadow-deep);
+    overflow: hidden;
+    text-align: left;
   }
-  .pp-mockup::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(120deg, transparent 30%, rgba(120,170,255,0.06) 48%, transparent 60%);
-    pointer-events: none;
-    background-size: 280% 100%;
-    animation: pp-sheen 7s ease-in-out infinite;
-  }
-  @keyframes pp-sheen { 0%, 70% { background-position: 200% 0; } 100% { background-position: -120% 0; } }
-
   .pp-titlebar {
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-    padding: 11px 16px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
+    padding: 11px 16px;
+    background: var(--surface-soft);
+    border-bottom: 1px solid var(--line);
   }
-  .pp-titlebar-dots { display: flex; gap: 6px; flex-shrink: 0; }
-  .pp-titlebar-dots span { width: 10px; height: 10px; border-radius: 50%; }
-  .pp-titlebar-dots span:nth-child(1) { background: #f43f5e; opacity: 0.55; }
-  .pp-titlebar-dots span:nth-child(2) { background: #fbbf24; opacity: 0.55; }
-  .pp-titlebar-dots span:nth-child(3) { background: #2dd4bf; opacity: 0.55; }
-  .pp-titlebar-title {
+  .pp-titlebar-dots { display: flex; gap: 6px; }
+  .pp-titlebar-dots span { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
+  .pp-titlebar-url {
     flex: 1;
-    text-align: center;
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 5px 14px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
     font-family: var(--mono);
     font-size: 11px;
-    color: var(--text-faint);
-    letter-spacing: 0.03em;
+    color: var(--ink-3);
+    text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -429,766 +424,858 @@
   .pp-titlebar-badge {
     font-family: var(--mono);
     font-size: 10px;
-    color: var(--sev-critical);
-    background: rgba(244,63,94,0.12);
-    border: 1px solid rgba(244,63,94,0.3);
-    border-radius: 5px;
-    padding: 2px 7px 2px 14px;
-    flex-shrink: 0;
-    position: relative;
+    font-weight: 500;
     letter-spacing: 0.08em;
+    color: var(--sev-low);
+    background: rgba(15, 118, 110, 0.09);
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    padding: 3px 9px;
+    border-radius: 999px;
+    flex-shrink: 0;
   }
-  .pp-titlebar-badge::before {
-    content: '';
-    position: absolute;
-    left: 6px; top: 50%;
-    transform: translateY(-50%);
-    width: 5px; height: 5px;
-    border-radius: 50%;
-    background: var(--sev-critical);
-    box-shadow: 0 0 6px var(--sev-critical);
-    animation: pp-blink 1.4s steps(1) infinite;
-  }
-  @keyframes pp-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.2; } }
+  .pp-app-layout { display: flex; min-height: 430px; }
 
-  .pp-app-layout { display: grid; grid-template-columns: 50px 236px 1fr; height: 446px; }
   .pp-rail {
-    background: var(--panel);
-    border-right: 1px solid var(--border);
+    width: 52px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 14px 0;
     gap: 6px;
+    padding: 14px 0;
+    background: var(--surface-soft);
+    border-right: 1px solid var(--line);
   }
   .pp-rail-icon {
     width: 34px; height: 34px;
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-faint);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    color: var(--ink-3);
   }
-  .pp-rail-icon.active { background: rgba(96,165,250,0.14); color: var(--accent-2); }
-  .pp-rail-sep { width: 24px; height: 1px; background: var(--border); margin: 4px 0; }
+  .pp-rail-icon.active { background: var(--accent-soft); color: var(--accent-deep); }
+  .pp-rail-sep { width: 22px; height: 1px; background: var(--line); margin: 4px 0; }
 
   .pp-sidebar {
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    overflow: hidden;
+    width: 250px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
   }
   .pp-sidebar-header {
-    padding: 13px 14px 9px;
-    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding: 13px 14px 9px;
   }
-  .pp-sidebar-title { font-size: 11px; font-family: var(--mono); color: var(--text-faint); letter-spacing: 0.08em; text-transform: uppercase; }
-  .pp-sidebar-count {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--sev-critical);
-    background: rgba(244,63,94,0.1);
-    border: 1px solid rgba(244,63,94,0.22);
-    border-radius: 5px;
-    padding: 1px 6px;
+  .pp-sidebar-title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .pp-sidebar-count { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+  .pp-findings { display: flex; flex-direction: column; gap: 4px; padding: 0 8px; }
+  .pp-finding {
+    padding: 8px 9px;
+    border-radius: 10px;
+    border: 1px solid transparent;
   }
-  .pp-findings { flex: 1; overflow: hidden; padding: 6px 0; }
-  .pp-finding { padding: 7px 14px; border-left: 2px solid transparent; }
-  .pp-finding.active { background: rgba(96,165,250,0.07); border-left-color: var(--accent-2); }
-  .pp-finding-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+  .pp-finding.active { background: var(--accent-wash); border-color: rgba(108, 77, 246, 0.22); }
+  .pp-finding-top { display: flex; align-items: center; gap: 7px; }
+  .pp-finding-name { font-size: 12px; font-weight: 500; color: var(--ink); }
+  .pp-finding-mitre { margin-top: 3px; font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); }
+  .pp-finding-more { padding: 8px 9px; font-size: 11px; color: var(--ink-3); }
   .pp-sev-chip {
     font-family: var(--mono);
-    font-size: 9px;
+    font-size: 8.5px;
+    font-weight: 500;
     letter-spacing: 0.06em;
-    text-transform: uppercase;
-    border-radius: 4px;
-    padding: 1px 6px;
-    border: 1px solid;
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: #fff;
     flex-shrink: 0;
-    line-height: 1.5;
   }
-  .pp-sev-chip.critical { color: var(--sev-critical); background: rgba(244,63,94,0.1); border-color: rgba(244,63,94,0.3); }
-  .pp-sev-chip.high { color: var(--sev-high); background: rgba(251,146,60,0.1); border-color: rgba(251,146,60,0.3); }
-  .pp-sev-chip.medium { color: var(--sev-medium); background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.3); }
-  .pp-sev-chip.low { color: var(--sev-low); background: rgba(45,212,191,0.1); border-color: rgba(45,212,191,0.3); }
-  .pp-sev-chip.info { color: var(--sev-info); background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.3); }
-  .pp-finding-name { font-size: 12px; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pp-finding-mitre { font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pp-finding-more { padding: 9px 14px 4px; font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
-  .pp-stat-tiles { padding: 10px 12px; border-top: 1px solid var(--border); display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .pp-stat-tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
-  .pp-stat-val { font-family: var(--mono); font-size: 16px; color: var(--text); line-height: 1.2; }
-  .pp-stat-val.critical { color: var(--sev-critical); }
-  .pp-stat-label { font-size: 9px; color: var(--text-faint); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
-
-  .pp-main-panel { background: var(--surface-2); display: flex; flex-direction: column; overflow: hidden; position: relative; }
-  .pp-panel-tabs { display: flex; align-items: center; border-bottom: 1px solid var(--border); padding: 0 16px; background: var(--surface); }
-  .pp-tab { font-size: 12px; font-family: var(--mono); color: var(--text-faint); padding: 11px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.02em; }
-  .pp-tab.active { color: var(--accent-2); border-bottom-color: var(--accent-2); }
-  .pp-flows-table { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
-  /* scanning sweep line */
-  .pp-flows-table::after {
-    content: '';
-    position: absolute;
-    left: 0; right: 0; top: 0;
-    height: 70px;
-    background: linear-gradient(180deg, rgba(96,165,250,0.14), transparent);
-    border-top: 1px solid rgba(96,165,250,0.35);
-    pointer-events: none;
-    z-index: 3;
-    animation: pp-scan 4.5s cubic-bezier(.5,0,.5,1) infinite;
-  }
-  @keyframes pp-scan { 0% { transform: translateY(-72px); opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { transform: translateY(370px); opacity: 0; } }
-  .pp-table-head, .pp-flow-row {
-    display: grid;
-    grid-template-columns: 26px 1fr 64px 70px 78px 56px 92px;
-    gap: 8px;
-    padding: 6px 16px;
-  }
-  .pp-table-head { border-bottom: 1px solid var(--border); background: var(--surface); }
-  .pp-th { font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.07em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pp-table-body { flex: 1; overflow: hidden; }
-  .pp-flow-row { border-bottom: 1px solid rgba(34,48,73,0.5); align-items: center; position: relative; }
-  .pp-flow-row.flagged { background: rgba(244,63,94,0.05); }
-  /* racing packet-pip across the flagged critical flow (grafted from B) */
-  .pp-row-anim { overflow: hidden; }
-  .pp-row-anim::after {
-    content: '';
-    position: absolute;
-    top: 50%; left: -10%;
-    width: 18px; height: 2px;
-    margin-top: -1px;
-    border-radius: 2px;
-    background: linear-gradient(90deg, transparent, var(--sev-critical), rgba(255,255,255,0.9));
-    box-shadow: 0 0 8px var(--sev-critical);
-    pointer-events: none;
-    z-index: 2;
-    animation: pp-packet 3.2s cubic-bezier(.45,0,.55,1) infinite;
-  }
-  @keyframes pp-packet {
-    0%   { left: -12%; opacity: 0; }
-    8%   { opacity: 1; }
-    78%  { opacity: 1; }
-    100% { left: 108%; opacity: 0; }
-  }
-  .pp-td { font-family: var(--mono); font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pp-td.src { color: var(--text); }
-  .pp-td.proto-tls { color: var(--sev-info); }
-  .pp-td.proto-dns { color: var(--sev-low); }
-  .pp-td.proto-http { color: var(--accent-2); }
-  .pp-td.proto-quic { color: var(--accent-strong); }
-  .pp-flow-flag { display: flex; align-items: center; justify-content: center; color: var(--sev-critical); }
-  .pp-flow-flag svg { width: 12px; height: 12px; }
-  .pp-panel-info { padding: 9px 16px; border-top: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 18px; flex-wrap: wrap; position: relative; z-index: 4; }
-  .pp-panel-info-item { font-family: var(--mono); font-size: 10px; color: var(--text-faint); display: flex; align-items: center; gap: 5px; }
-  .pp-panel-info-item svg { color: var(--text-faint); flex-shrink: 0; }
-  .pp-panel-info-item strong { color: var(--text-dim); font-weight: 400; }
-
-  /* floating protocol chips */
-  .pp-float-nodes { position: absolute; inset: -14px; pointer-events: none; z-index: 3; }
-  .pp-float-node {
-    position: absolute;
-    font-family: var(--mono);
-    font-size: 10.5px;
-    color: var(--accent-strong);
-    background: rgba(20, 32, 54, 0.82);
-    border: 1px solid rgba(96,165,250,0.25);
-    border-radius: 8px;
-    padding: 4px 10px;
-    white-space: nowrap;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-    animation: pp-float 6s ease-in-out infinite;
-  }
-  @keyframes pp-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
-  .pp-float-node.n1 { top: 8%; left: -4%; animation-delay: 0s; }
-  .pp-float-node.n2 { top: 33%; left: -6%; animation-delay: 1.1s; }
-  .pp-float-node.n3 { top: 64%; left: -4%; animation-delay: 2.2s; }
-  .pp-float-node.n4 { top: 9%; right: -4%; animation-delay: 0.6s; }
-  .pp-float-node.n5 { top: 39%; right: -6%; animation-delay: 1.7s; }
-  .pp-float-node.n6 { top: 66%; right: -4%; animation-delay: 2.8s; }
-
-  /* ── ANIMATED MINI-ILLUSTRATION MOTION (grafted from B) ── */
-  .pp-illus-flow {
-    stroke-dasharray: 6 6;
-    animation: pp-dash 2.4s linear infinite;
-  }
-  @keyframes pp-dash { to { stroke-dashoffset: -24; } }
-  .pp-illus-node { transform-box: fill-box; transform-origin: center; animation: pp-node-pulse 2.8s ease-in-out infinite; }
-  .pp-illus-node.d1 { animation-delay: 0s; }
-  .pp-illus-node.d2 { animation-delay: 0.5s; }
-  .pp-illus-node.d3 { animation-delay: 1s; }
-  .pp-illus-node.d4 { animation-delay: 1.5s; }
-  @keyframes pp-node-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-
-  /* ─────────────────────────────  4. PLATFORM / FEATURES  ───────────────────────────── */
-  .pp-platform { border-top: 1px solid var(--hairline); }
-  .pp-feat-grid {
+  .pp-sev-chip.critical { background: var(--sev-critical); }
+  .pp-sev-chip.high { background: var(--sev-high); }
+  .pp-sev-chip.medium { background: var(--sev-medium); }
+  .pp-sev-chip.low { background: var(--sev-low); }
+  .pp-sev-chip.info { background: var(--sev-info); }
+  .pp-stat-tiles {
+    margin-top: auto;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 22px;
-    max-width: 1080px;
-    margin: 0 auto;
+    gap: 6px;
+    padding: 10px;
+    border-top: 1px solid var(--line);
   }
-  .pp-feat-card {
-    position: relative;
-    background: var(--glass);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-lg);
-    padding: 24px;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    box-shadow: var(--shadow-card);
-    overflow: hidden;
-    transition: border-color 0.2s, transform 0.2s;
+  .pp-stat-tile {
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 7px 9px;
   }
-  .pp-feat-card::before {
-    content: '';
-    position: absolute;
-    top: -60px; right: -40px;
-    width: 220px; height: 220px;
-    background: radial-gradient(circle, rgba(37,99,235,0.16), transparent 70%);
-    pointer-events: none;
-  }
-  .pp-feat-card:hover { border-color: rgba(96,165,250,0.4); transform: translateY(-3px); }
-  .pp-feat-illu {
-    position: relative;
-    height: 142px;
-    border-radius: var(--radius);
-    background: linear-gradient(165deg, #0c1626, #0a1018);
-    border: 1px solid var(--border);
-    overflow: hidden;
-    margin-bottom: 20px;
-  }
-  .pp-feat-illu::after {
-    content: '';
-    position: absolute;
-    bottom: -40px; left: 50%;
-    transform: translateX(-50%);
-    width: 220px; height: 130px;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.32), transparent 70%);
-    pointer-events: none;
-  }
-  .pp-feat-illu svg { position: relative; z-index: 1; display: block; width: 100%; height: 100%; }
-  .pp-feat-title { font-size: 17px; font-weight: 500; color: var(--text); margin-bottom: 8px; letter-spacing: -0.01em; line-height: 1.3; }
-  .pp-feat-desc { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+  .pp-stat-val { font-family: var(--mono); font-size: 14px; font-weight: 500; color: var(--ink); }
+  .pp-stat-val.critical { color: var(--sev-critical); }
+  .pp-stat-label { font-size: 9.5px; color: var(--ink-3); margin-top: 1px; }
 
-  /* ─────────────────────────────  5. ONE WORKSPACE  ───────────────────────────── */
-  .pp-workspace { border-top: 1px solid var(--hairline); position: relative; overflow: hidden; }
-  .pp-workspace::before {
-    content: '';
-    position: absolute;
-    top: 30%; left: 50%;
-    --pp-glow-tf: translateX(-50%);
-    transform: translateX(-50%);
-    width: 1100px; height: 600px;
-    max-width: 120%;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.16), transparent 65%);
-    pointer-events: none;
-    animation: pp-glow-breathe 11s ease-in-out infinite;
-  }
-  .pp-dash-frame {
-    position: relative;
-    width: 100%;
-    max-width: 1040px;
-    margin: 0 auto;
-    border: 1px solid var(--hairline-top);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow-deep);
-  }
-  .pp-dash-frame svg { display: block; width: 100%; height: auto; }
-  .pp-dash-brand {
-    position: absolute;
-    top: 13px; left: 18px;
-    z-index: 2;
+  .pp-main-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
+  .pp-panel-tabs {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--accent-strong);
-    letter-spacing: 0.04em;
+    gap: 2px;
+    padding: 10px 14px 0;
+    border-bottom: 1px solid var(--line);
   }
-  .pp-dash-brand svg { width: 16px; height: 16px; }
-
-  /* ─────────────────────────────  6. STATS BAND  ───────────────────────────── */
-  .pp-stats {
-    border-top: 1px solid var(--hairline);
-    border-bottom: 1px solid var(--hairline);
-    background: rgba(12, 20, 35, 0.4);
-    padding: clamp(44px, 6vw, 72px) 0;
-  }
-  .pp-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 0;
-    max-width: 1040px;
-    margin: 0 auto;
-  }
-  .pp-stat-block {
-    text-align: center;
-    padding: 8px clamp(12px, 2vw, 28px);
-    position: relative;
-  }
-  .pp-stat-block + .pp-stat-block::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 50%;
-    transform: translateY(-50%);
-    width: 1px; height: 56px;
-    background: linear-gradient(180deg, transparent, var(--hairline), transparent);
-  }
-  .pp-stat-num {
-    font-family: var(--mono);
-    font-size: clamp(34px, 5vw, 52px);
+  .pp-tab {
+    padding: 7px 13px;
+    font-size: 12px;
     font-weight: 500;
-    letter-spacing: -0.03em;
-    line-height: 1;
-    background: linear-gradient(180deg, #ffffff, #9fc0f5);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: var(--accent-strong);
-    margin-bottom: 12px;
+    color: var(--ink-3);
+    border-radius: 9px 9px 0 0;
+    border-bottom: 2px solid transparent;
   }
-  .pp-stat-cap { font-size: 13.5px; color: var(--text-dim); line-height: 1.4; }
-
-  /* ─────────────────────────────  7. HOW IT WORKS  ───────────────────────────── */
-  .pp-how { border-top: 1px solid var(--hairline); }
-  .pp-steps {
+  .pp-tab.active { color: var(--accent-deep); border-bottom-color: var(--accent); }
+  .pp-flows-table { flex: 1; padding: 8px 14px; overflow: hidden; }
+  .pp-table-head, .pp-flow-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 22px;
-    max-width: 1080px;
-    margin: 0 auto;
+    grid-template-columns: 22px minmax(150px, 1.6fr) 52px 58px 62px 52px 64px;
+    gap: 8px;
+    align-items: center;
   }
-  .pp-step {
-    position: relative;
-    background: var(--glass);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-lg);
-    padding: 26px 24px;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    box-shadow: var(--shadow-card);
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "num"
-      "illu"
-      "title"
-      "desc"
-      "code";
-    gap: 14px;
-    align-content: start;
-  }
-  .pp-step-num {
-    grid-area: num;
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--accent-2);
-    letter-spacing: 0.1em;
-    background: rgba(37,99,235,0.12);
-    border: 1px solid rgba(96,165,250,0.25);
+  .pp-table-head { padding: 7px 8px; }
+  .pp-th { font-family: var(--mono); font-size: 9px; letter-spacing: 0.07em; color: var(--ink-3); }
+  .pp-flow-row {
+    padding: 7px 8px;
     border-radius: 8px;
-    width: 44px; height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .pp-step-illu {
-    grid-area: illu;
-    height: 96px;
-    border-radius: var(--radius);
-    background: linear-gradient(165deg, #0c1626, #0a1018);
-    border: 1px solid var(--border);
-    overflow: hidden;
-    position: relative;
-  }
-  .pp-step-illu svg { display: block; width: 100%; height: 100%; }
-  .pp-step-title { grid-area: title; font-size: 16px; font-weight: 500; color: var(--text); letter-spacing: -0.01em; }
-  .pp-step-desc { grid-area: desc; font-size: 13.5px; color: var(--text-dim); line-height: 1.6; }
-  .pp-step-code {
-    grid-area: code;
     font-family: var(--mono);
-    font-size: 11px;
-    color: var(--accent-strong);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    padding: 7px 11px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 10.5px;
+    color: var(--ink-2);
+  }
+  .pp-flow-row:nth-child(odd) { background: var(--surface-soft); }
+  .pp-flow-row.flagged { background: rgba(200, 30, 66, 0.05); }
+  .pp-flow-row.flagged .src { color: var(--sev-critical); }
+  .pp-flow-flag { width: 14px; height: 14px; color: var(--sev-critical); }
+  .pp-flow-flag svg { width: 100%; height: 100%; }
+  .pp-td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp-td.dim { color: var(--ink-3); }
+  .proto-tls { color: var(--accent-deep); }
+  .proto-dns { color: var(--sev-info); }
+  .proto-http { color: var(--sev-high); }
+  .proto-quic { color: var(--sev-low); }
+  .pp-panel-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 9px 18px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-soft);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    flex-wrap: wrap;
+  }
+  .pp-panel-info-item { display: inline-flex; align-items: center; gap: 6px; }
+  .pp-panel-info-item strong { color: var(--ink); font-weight: 600; }
+  @media (max-width: 900px) {
+    .pp-sidebar { display: none; }
+  }
+  @media (max-width: 640px) {
+    .pp-rail { display: none; }
+    .pp-table-head, .pp-flow-row { grid-template-columns: 20px minmax(120px, 1.6fr) 46px 50px; }
+    .pp-th:nth-child(n+5), .pp-flow-row .pp-td:nth-child(n+5) { display: none; }
   }
 
-  /* ─────────────────────────────  8. CAROUSEL  ───────────────────────────── */
-  .pp-cases { border-top: 1px solid var(--hairline); }
-  .pp-carousel { max-width: 820px; margin: 0 auto; position: relative; }
-  .pp-carousel-track { position: relative; min-height: 280px; }
-  .pp-slide {
-    position: relative;
-    background: var(--glass-2);
-    border: 1px solid var(--hairline-top);
-    border-radius: var(--radius-xl);
-    padding: clamp(32px, 5vw, 52px);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
-    backdrop-filter: blur(18px) saturate(140%);
-    box-shadow: var(--shadow-deep);
+  /* ─────────────────────────────  4. STANDARDS MARQUEE  ───────────────────────────── */
+  .pp-standards { padding: 54px 0 20px; }
+  .pp-standards-label {
     text-align: center;
-    display: none;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-3);
+    margin-bottom: 22px;
   }
-  .pp-slide.is-active, .pp-no-js .pp-slide:first-child { display: block; }
-  .pp-slide::before {
-    content: '';
-    position: absolute;
-    top: -60px; left: 50%;
-    transform: translateX(-50%);
-    width: 360px; height: 200px;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.18), transparent 70%);
-    pointer-events: none;
-  }
-  .pp-quote-mark { position: relative; z-index: 1; font-family: var(--mono); font-size: 52px; color: rgba(96,165,250,0.35); line-height: 0.4; margin-bottom: 18px; height: 28px; }
-  .pp-quote { position: relative; z-index: 1; font-size: clamp(18px, 2.4vw, 24px); color: var(--text); line-height: 1.5; letter-spacing: -0.01em; max-width: 640px; margin: 0 auto 28px; font-weight: 400; }
-  .pp-attrib { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; }
-  .pp-avatar {
-    width: 44px; height: 44px;
-    border-radius: 50%;
-    background: rgba(37,99,235,0.14);
-    border: 1px solid rgba(96,165,250,0.3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--accent-2);
-    flex-shrink: 0;
-  }
-  .pp-attrib-role { font-size: 14px; color: var(--text); font-weight: 500; text-align: left; }
-  .pp-attrib-sub { font-size: 12px; color: var(--text-faint); font-family: var(--mono); text-align: left; }
-  .pp-carousel-ctrls { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 28px; }
-  .pp-carousel-arrow {
-    width: 42px; height: 42px;
-    border-radius: 50%;
-    background: var(--glass);
-    border: 1px solid var(--hairline-top);
-    color: var(--text-dim);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    transition: color 0.16s, border-color 0.16s, background 0.16s;
-  }
-  .pp-carousel-arrow:hover { color: var(--text); border-color: rgba(96,165,250,0.45); background: rgba(96,165,250,0.08); }
-  .pp-dots { display: flex; align-items: center; gap: 8px; }
-  .pp-dot {
+  .pp-marquee {
     position: relative;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--border);
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    transition: background 0.16s, width 0.16s;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
   }
-  /* enlarged invisible tap target so 8px dots meet the >=40px mobile rule (grafted from C) */
-  .pp-dot::after {
-    content: '';
-    position: absolute;
-    inset: -16px;
+  .pp-marquee-track {
+    display: flex;
+    gap: 12px;
+    width: max-content;
+    animation: pp-marquee 36s linear infinite;
   }
-  .pp-dot.is-active, .pp-no-js .pp-dot:first-child { background: var(--accent-2); width: 22px; border-radius: 100px; }
-
-  /* ─────────────────────────────  9. PRICING  ───────────────────────────── */
-  .pp-pricing { border-top: 1px solid var(--hairline); position: relative; overflow: hidden; }
-  .pp-pricing::before {
-    content: '';
-    position: absolute;
-    top: 20%; left: 50%;
-    --pp-glow-tf: translateX(-50%);
-    transform: translateX(-50%);
-    width: 900px; height: 600px;
-    max-width: 110%;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.12), transparent 65%);
-    pointer-events: none;
-    animation: pp-glow-breathe 12s ease-in-out infinite;
+  @keyframes pp-marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
   }
-  .pp-toggle {
+  .pp-standard-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    background: var(--glass);
-    border: 1px solid var(--hairline-top);
-    border-radius: 100px;
-    padding: 4px;
-    margin: 24px auto 0;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
+    gap: 8px;
+    padding: 9px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-2);
+    white-space: nowrap;
   }
-  .pp-toggle-btn {
-    font-family: var(--sans);
-    font-size: 13.5px;
-    color: var(--text-dim);
-    background: transparent;
-    border: none;
-    padding: 8px 18px;
-    border-radius: 100px;
-    cursor: pointer;
+  .pp-standard-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ─────────────────────────────  5. BENTO FEATURES  ───────────────────────────── */
+  .pp-bento {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 18px;
+  }
+  .pp-bento-right {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .pp-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .pp-card-title {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .pp-card-desc { font-size: 14px; line-height: 1.65; color: var(--ink-2); }
+  .pp-card-illu { margin-bottom: 10px; }
+  .pp-card-illu svg { width: 100%; height: auto; display: block; }
+
+  /* Big violet privacy card */
+  .pp-card-hero {
+    position: relative;
+    overflow: hidden;
+    justify-content: flex-end;
+    min-height: 480px;
+    background:
+      radial-gradient(ellipse 120% 70% at 20% -10%, rgba(255,255,255,0.22), transparent 55%),
+      linear-gradient(160deg, #7a5cff 0%, #6c4df6 45%, #5230e0 100%);
+    border-color: rgba(86, 54, 232, 0.4);
+    color: #fff;
+  }
+  .pp-card-hero .pp-card-title { color: #fff; font-size: 22px; }
+  .pp-card-hero .pp-card-desc { color: rgba(255,255,255,0.92); font-size: 14.5px; }
+  .pp-privacy-orbit { position: absolute; inset: 0 0 38% 0; pointer-events: none; }
+  .pp-privacy-orbit svg { width: 100%; height: 100%; }
+  .pp-card-hero-badge {
+    position: absolute;
+    top: 22px;
+    left: 26px;
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    transition: color 0.16s, background 0.16s;
+    padding: 6px 13px;
+    /* Dark scrim (not white) so 11px white text clears AA over the light
+       top stop of the card gradient. */
+    background: rgba(19,19,22,0.3);
+    border: 1px solid rgba(255,255,255,0.28);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: #fff;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
   }
-  .pp-toggle-btn[aria-pressed="true"] { color: var(--on-accent); background: linear-gradient(180deg, #3b82f6, #2563eb); box-shadow: 0 4px 12px rgba(37,99,235,0.35); }
-  .pp-toggle-save { font-family: var(--mono); font-size: 10px; color: var(--sev-low); background: rgba(45,212,191,0.12); border: 1px solid rgba(45,212,191,0.25); border-radius: 100px; padding: 1px 7px; }
-  .pp-toggle-btn[aria-pressed="true"] .pp-toggle-save { color: #d6fff6; background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.25); }
+  @media (max-width: 980px) {
+    .pp-bento { grid-template-columns: 1fr; }
+    .pp-card-hero { min-height: 380px; }
+  }
+  @media (max-width: 640px) {
+    .pp-bento-right { grid-template-columns: 1fr; }
+  }
+
+  /* ─────────────────────────────  6. WORKFLOW TABS  ───────────────────────────── */
+  .pp-flow-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 34px;
+  }
+  .pp-flow-tab {
+    appearance: none;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 12px 18px;
+    font-family: var(--sans);
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--ink-3);
+    cursor: pointer;
+    transition: color 0.16s, border-color 0.16s;
+  }
+  .pp-flow-tab:hover { color: var(--ink); }
+  .pp-flow-tab.is-active { color: var(--ink); border-bottom-color: var(--accent); }
+  .pp-flow-panel { display: none; }
+  .pp-flow-panel.is-active { display: block; }
+  .pp-step-card {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 30px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
+    padding: 44px;
+    align-items: center;
+  }
+  .pp-step-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 13px;
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    width: fit-content;
+  }
+  .pp-step-title {
+    margin-top: 16px;
+    font-family: var(--display);
+    font-size: clamp(24px, 3vw, 32px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+    color: var(--ink);
+  }
+  .pp-step-desc { margin-top: 14px; font-size: 15px; line-height: 1.7; color: var(--ink-2); max-width: 400px; }
+  .pp-step-meta {
+    margin-top: 22px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .pp-step-cta { margin-top: 26px; }
+  .pp-step-visual {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .pp-step-visual svg { width: 100%; height: auto; max-height: 300px; display: block; }
+  @media (max-width: 900px) {
+    .pp-step-card { grid-template-columns: 1fr; padding: 28px; }
+    .pp-step-visual { min-height: 0; }
+  }
+
+  /* ─────────────────────────────  7. USE-CASE CARDS  ───────────────────────────── */
+  .pp-cases-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .pp-case-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: 24px;
+    text-decoration: none;
+    transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+  }
+  .pp-case-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-deep);
+    border-color: rgba(108, 77, 246, 0.35);
+  }
+  .pp-case-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  .pp-case-icon.t1 { background: var(--accent-soft); color: var(--accent-deep); }
+  .pp-case-icon.t2 { background: rgba(15, 118, 110, 0.1); color: var(--sev-low); }
+  .pp-case-icon.t3 { background: rgba(224, 87, 15, 0.1); color: var(--sev-high); }
+  .pp-case-icon.t4 { background: rgba(3, 105, 161, 0.1); color: var(--sev-info); }
+  .pp-case-title {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .pp-case-desc { margin-top: 8px; font-size: 13.5px; line-height: 1.6; color: var(--ink-2); flex: 1; }
+  .pp-case-more {
+    margin-top: 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .pp-case-card:hover .pp-case-more { color: var(--accent-deep); }
+  .pp-case-card:hover .pp-case-more .pp-arrow { transform: translateX(3px); }
+  @media (max-width: 1000px) { .pp-cases-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .pp-cases-grid { grid-template-columns: 1fr; } }
+
+  /* ─────────────────────────────  8. STATS BAND  ───────────────────────────── */
+  .pp-stats { padding: 24px 0 96px; }
+  .pp-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+  .pp-stat-block {
+    padding: 34px 26px;
+    text-align: center;
+    border-left: 1px solid var(--line);
+  }
+  .pp-stat-block:first-child { border-left: none; }
+  .pp-stat-num {
+    font-family: var(--display);
+    font-size: clamp(32px, 4vw, 44px);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+    line-height: 1.1;
+  }
+  .pp-stat-num.accented { color: var(--accent); }
+  .pp-stat-cap { margin-top: 8px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+  @media (max-width: 820px) {
+    .pp-stats-grid { grid-template-columns: 1fr 1fr; }
+    .pp-stat-block:nth-child(3) { border-left: none; }
+    .pp-stat-block:nth-child(n+3) { border-top: 1px solid var(--line); }
+  }
+
+  /* ─────────────────────────────  9. TESTIMONIALS CAROUSEL  ───────────────────────────── */
+  .pp-carousel { position: relative; max-width: 760px; margin: 0 auto; }
+  .pp-carousel-track { position: relative; }
+  .pp-slide {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
+    padding: 46px 52px;
+    text-align: center;
+  }
+  .pp-slide.is-active { display: block; }
+  .pp-quote-mark {
+    font-family: var(--display);
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 0.6;
+    color: var(--accent);
+    margin-bottom: 20px;
+  }
+  .pp-quote {
+    font-family: var(--display);
+    font-size: clamp(17px, 2.2vw, 21px);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .pp-attrib {
+    margin-top: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 11px;
+  }
+  .pp-avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .pp-attrib-role { font-size: 14px; font-weight: 600; color: var(--ink); }
+  .pp-attrib-note { display: block; font-size: 12.5px; color: var(--ink-3); }
+  .pp-carousel-ctrls {
+    margin-top: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+  }
+  .pp-carousel-arrow {
+    width: 40px; height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    color: var(--ink);
+    cursor: pointer;
+    transition: border-color 0.16s, transform 0.16s;
+  }
+  .pp-carousel-arrow:hover { border-color: var(--ink-3); transform: translateY(-1px); }
+  .pp-dots { display: flex; gap: 8px; }
+  .pp-dot {
+    width: 8px; height: 8px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--line-strong);
+    cursor: pointer;
+    transition: background 0.16s, width 0.16s;
+  }
+  .pp-dot.is-active { background: var(--accent); width: 22px; border-radius: 999px; }
+  @media (max-width: 640px) { .pp-slide { padding: 32px 24px; } }
+
+  /* ─────────────────────────────  10. INTEGRATIONS ORBIT  ───────────────────────────── */
+  .pp-orbit-wrap {
+    position: relative;
+    max-width: 760px;
+    margin: 0 auto;
+    aspect-ratio: 2 / 1;
+    min-height: 300px;
+  }
+  .pp-orbit-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border: 1.5px dashed var(--line-strong);
+    border-radius: 50%;
+  }
+  .pp-orbit-ring.o1 { width: 340px; height: 340px; }
+  .pp-orbit-ring.o2 { width: 560px; height: 560px; opacity: 0.75; }
+  .pp-orbit-ring.o3 { width: 780px; height: 780px; opacity: 0.5; }
+  .pp-orbit-center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 84px; height: 84px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+    box-shadow: 0 18px 44px rgba(108, 77, 246, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    z-index: 2;
+  }
+  .pp-orbit-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: var(--shadow-card);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ink-2);
+    white-space: nowrap;
+    z-index: 1;
+  }
+  .pp-orbit-node .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+  .pp-orbit-caption {
+    margin-top: 8px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+  @media (max-width: 720px) {
+    .pp-orbit-wrap { display: none; }
+    .pp-orbit-fallback {
+      display: flex !important;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+  }
+  .pp-orbit-fallback { display: none; }
+
+  /* ─────────────────────────────  11. PRICING  ───────────────────────────── */
+  .pp-toggle {
+    display: inline-flex;
+    gap: 4px;
+    margin-top: 26px;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+  }
+  .pp-toggle-btn {
+    appearance: none;
+    border: none;
+    background: none;
+    padding: 8px 20px;
+    border-radius: 999px;
+    font-family: var(--sans);
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: background 0.16s, color 0.16s;
+  }
+  .pp-toggle-btn[aria-pressed="true"] { background: var(--pill); color: var(--on-pill); }
+  .pp-toggle-save {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-left: 4px;
+  }
+  .pp-toggle-btn[aria-pressed="true"] .pp-toggle-save { color: #b7a6ff; }
 
   .pp-price-grid {
     display: grid;
-    grid-template-columns: 1fr 1.08fr 1fr;
-    gap: 20px;
-    align-items: center;
-    max-width: 1040px;
-    margin: 48px auto 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    align-items: stretch;
   }
   .pp-price-card {
     position: relative;
-    background: var(--glass);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-lg);
-    padding: 30px 26px;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    box-shadow: var(--shadow-card);
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: 30px 28px;
   }
   .pp-price-card.featured {
-    background: linear-gradient(180deg, rgba(30,52,96,0.6), rgba(16,26,46,0.55));
-    border: 1px solid rgba(96,165,250,0.4);
-    padding: 38px 28px;
-    box-shadow: 0 36px 96px rgba(37,99,235,0.3), 0 0 0 1px rgba(96,165,250,0.2), inset 0 1px 0 var(--hairline-top);
-    z-index: 1;
-  }
-  .pp-price-card.featured::before {
-    content: '';
-    position: absolute;
-    top: -80px; left: 50%;
-    transform: translateX(-50%);
-    width: 320px; height: 240px;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.4), transparent 70%);
-    pointer-events: none;
+    background: var(--pill);
+    border-color: var(--pill);
+    color: #fff;
+    box-shadow: var(--shadow-deep);
   }
   .pp-price-tag {
     position: absolute;
-    top: -12px; left: 50%;
-    transform: translateX(-50%);
-    font-family: var(--mono);
-    font-size: 10.5px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--on-accent);
-    background: linear-gradient(180deg, #3b82f6, #2563eb);
-    border-radius: 100px;
-    padding: 4px 14px;
-    box-shadow: 0 6px 16px rgba(37,99,235,0.4);
-    white-space: nowrap;
+    top: 24px;
+    right: 24px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 4px 11px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
   }
-  .pp-price-head { position: relative; z-index: 1; }
-  .pp-plan-name { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 14px; letter-spacing: 0.01em; }
-  .pp-plan-name .pp-plan-note { display: block; font-family: var(--mono); font-size: 11px; color: var(--text-faint); font-weight: 400; margin-top: 4px; letter-spacing: 0; }
-  .pp-price-amt { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
-  .pp-price-big { font-family: var(--mono); font-size: 42px; font-weight: 500; color: var(--text); letter-spacing: -0.03em; line-height: 1; }
-  .pp-price-per { font-size: 14px; color: var(--text-faint); font-family: var(--mono); }
-  .pp-price-free { font-size: 13px; color: var(--sev-low); font-family: var(--mono); margin-top: 8px; }
+  .pp-plan-name {
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pp-price-card.featured .pp-plan-name { color: #fff; }
+  .pp-plan-note {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink-3);
+    background: var(--bg-soft);
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+  .pp-price-card.featured .pp-plan-note { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.7); }
+  .pp-price-amt { display: flex; align-items: baseline; gap: 5px; margin-top: 16px; }
+  .pp-price-big {
+    font-family: var(--display);
+    font-size: 44px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .pp-price-card.featured .pp-price-big { color: #fff; }
+  .pp-price-per { font-size: 14px; color: var(--ink-3); }
+  .pp-price-card.featured .pp-price-per { color: rgba(255,255,255,0.6); }
+  .pp-price-note { margin-top: 7px; font-size: 12.5px; color: var(--ink-3); }
+  .pp-price-card.featured .pp-price-note { color: rgba(255,255,255,0.65); }
   .pp-price-annual { display: none; }
-  .pp-price-feats { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 12px; flex: 1; }
-  .pp-price-feat { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--text-dim); line-height: 1.5; }
-  .pp-price-feat svg { color: var(--accent-2); flex-shrink: 0; margin-top: 2px; }
-  .pp-price-card.featured .pp-price-feat svg { color: var(--accent-strong); }
-  .pp-price-card .pp-btn { width: 100%; padding: 11px 18px; position: relative; z-index: 1; }
+  .pp-price-feats {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    margin: 24px 0;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    flex: 1;
+  }
+  .pp-price-card.featured .pp-price-feats { border-top-color: rgba(255,255,255,0.14); }
+  .pp-price-feat {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink-2);
+  }
+  .pp-price-card.featured .pp-price-feat { color: rgba(255,255,255,0.82); }
+  .pp-price-feat svg { flex-shrink: 0; margin-top: 3px; color: var(--sev-low); }
+  .pp-price-card.featured .pp-price-feat svg { color: #9d87ff; }
+  @media (max-width: 900px) {
+    .pp-price-grid { grid-template-columns: 1fr; max-width: 440px; margin: 0 auto; }
+  }
 
-  /* ─────────────────────────────  10. FINAL CTA + FOOTER  ───────────────────────────── */
-  .pp-final { padding: clamp(56px, 8vw, 100px) 0 0; position: relative; }
+  /* ─────────────────────────────  12. FINAL CTA  ───────────────────────────── */
+  .pp-final { padding: 40px 0 0; }
   .pp-final-panel {
     position: relative;
-    max-width: 1000px;
-    margin: 0 auto;
-    text-align: center;
-    border-radius: var(--radius-xl);
-    border: 1px solid var(--hairline-top);
-    background: linear-gradient(180deg, rgba(26,46,84,0.5), rgba(12,20,36,0.5));
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-    padding: clamp(40px, 6vw, 68px) 24px;
     overflow: hidden;
-    box-shadow: var(--shadow-deep);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    /* Every stop keeps solid-white body text >=4.5:1 (top #7557f7 = 4.71). */
+    background:
+      radial-gradient(ellipse 90% 90% at 50% 115%, rgba(255,255,255,0.22), transparent 55%),
+      linear-gradient(170deg, #7557f7 0%, #6242ef 55%, #4f30e2 100%);
+    padding: 92px 24px 108px;
+    text-align: center;
+    color: #fff;
   }
-  .pp-final-panel::before {
-    content: '';
+  .pp-final-title {
+    font-family: var(--display);
+    font-size: clamp(32px, 5.4vw, 56px);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 1.06;
+  }
+  .pp-final-sub {
+    margin: 18px auto 0;
+    max-width: 520px;
+    font-size: 16px;
+    line-height: 1.65;
+    color: #ffffff;
+  }
+  .pp-final-ctas {
+    margin-top: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .pp-final-chips { position: absolute; inset: 0; pointer-events: none; }
+  .pp-final-chip {
     position: absolute;
-    top: -120px; left: 50%;
-    --pp-glow-tf: translateX(-50%);
-    transform: translateX(-50%);
-    width: 760px; height: 460px;
-    max-width: 120%;
-    background: radial-gradient(ellipse at center, rgba(37,99,235,0.32), transparent 65%);
-    pointer-events: none;
-    animation: pp-glow-breathe 10s ease-in-out infinite;
+    padding: 8px 14px;
+    background: rgba(19,19,22,0.3);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #ffffff;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    animation: pp-bob 8s ease-in-out infinite;
   }
-  .pp-final-inner { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 20px; }
-  .pp-final-title { font-size: clamp(28px, 4.4vw, 46px); font-weight: 500; letter-spacing: -0.03em; color: var(--text); max-width: 660px; line-height: 1.1; }
-  .pp-final-title em { font-style: normal; color: var(--accent-2); }
-  .pp-final-sub { font-size: clamp(15px, 1.7vw, 17px); color: var(--text-dim); max-width: 520px; line-height: 1.6; }
-  .pp-final-ctas { display: flex; gap: 13px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+  .pp-final-chip.f1 { left: 7%;  top: 24%; transform: rotate(-7deg); }
+  .pp-final-chip.f2 { left: 13%; bottom: 20%; transform: rotate(5deg); animation-delay: -2.4s; }
+  .pp-final-chip.f3 { right: 7%; top: 27%; transform: rotate(6deg); animation-delay: -4s; }
+  .pp-final-chip.f4 { right: 12%; bottom: 22%; transform: rotate(-5deg); animation-delay: -5.7s; }
+  @media (max-width: 860px) { .pp-final-chips { display: none; } }
 
-  .pp-footer { border-top: 1px solid var(--hairline); background: rgba(8, 13, 24, 0.5); padding: clamp(48px, 6vw, 72px) 0 0; margin-top: clamp(56px, 8vw, 96px); position: relative; }
+  /* ─────────────────────────────  13. FOOTER  ───────────────────────────── */
+  .pp-footer { background: var(--pill); color: rgba(255,255,255,0.72); padding: 64px 0 0; }
   .pp-footer-grid {
     display: grid;
-    grid-template-columns: 2.2fr 1fr 1fr 1fr 1fr;
-    gap: 40px;
-    padding-bottom: 44px;
+    grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+    gap: 34px;
+    padding-bottom: 48px;
   }
-  .pp-footer-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; text-decoration: none; color: var(--text); font-size: 16px; font-weight: 500; }
-  .pp-footer-brand svg { color: var(--accent-2); }
-  .pp-footer-tagline { font-size: 13.5px; color: var(--text-faint); line-height: 1.6; max-width: 300px; }
-  .pp-footer-col-title { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-faint); margin-bottom: 15px; }
+  .pp-footer-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 600;
+    color: #fff;
+    text-decoration: none;
+  }
+  .pp-footer-tagline { margin-top: 14px; font-size: 13.5px; line-height: 1.65; max-width: 260px; color: rgba(255,255,255,0.55); }
+  .pp-footer-col-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.62);
+    margin-bottom: 16px;
+  }
   .pp-footer-links { display: flex; flex-direction: column; gap: 10px; }
-  .pp-footer-links a { font-size: 13.5px; color: var(--text-dim); text-decoration: none; transition: color 0.14s; }
-  .pp-footer-links a:hover { color: var(--text); }
-  .pp-footer-bottom { border-top: 1px solid var(--hairline); padding: 22px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-  .pp-footer-copy, .pp-footer-note { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
-
-  /* ─────────────────────────────  11. GIANT GHOST WORDMARK  ───────────────────────────── */
-  .pp-wordmark { position: relative; overflow: hidden; height: clamp(60px, 13vw, 200px); margin-top: -2vw; pointer-events: none; -webkit-user-select: none; user-select: none; }
+  .pp-footer-links a {
+    font-size: 13.5px;
+    color: rgba(255,255,255,0.72);
+    text-decoration: none;
+    transition: color 0.16s;
+  }
+  .pp-footer-links a:hover { color: #fff; }
+  .pp-footer-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 20px 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    font-size: 12.5px;
+    color: rgba(255,255,255,0.62);
+  }
+  .pp-wordmark {
+    overflow: hidden;
+    line-height: 0.78;
+    text-align: center;
+    padding-top: 26px;
+    user-select: none;
+  }
   .pp-wordmark span {
-    position: absolute;
-    bottom: -0.18em;
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: var(--sans);
+    font-family: var(--display);
     font-weight: 700;
-    font-size: clamp(64px, 17vw, 280px);
-    letter-spacing: -0.04em;
-    line-height: 1;
-    white-space: nowrap;
-    color: transparent;
-    -webkit-text-stroke: 1px rgba(96,165,250,0.16);
-    background: linear-gradient(180deg, rgba(96,165,250,0.1), transparent 80%);
+    font-size: clamp(64px, 12.5vw, 190px);
+    letter-spacing: -0.045em;
+    display: inline-block;
+    transform: translateY(0.16em);
+    background: linear-gradient(180deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.04) 90%);
     -webkit-background-clip: text;
     background-clip: text;
+    color: transparent;
+    white-space: nowrap;
   }
+  @media (max-width: 900px) { .pp-footer-grid { grid-template-columns: 1fr 1fr; } }
 
-  /* ─────────────────────────────  REVEAL  ───────────────────────────── */
-  .pp-js [data-pp-reveal] { opacity: 0; transform: translateY(22px); transition: opacity 0.6s ease, transform 0.6s ease; }
-  .pp-js [data-pp-reveal].pp-in { opacity: 1; transform: none; }
-
-  /* ─────────────────────────────  MOBILE NAV MENU  ───────────────────────────── */
-  .pp-nav-menu {
-    display: none;
-    position: absolute;
-    top: 100%; left: 0; right: 0;
-    background: rgba(8, 12, 22, 0.96);
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-    border-bottom: 1px solid var(--hairline);
-    padding: 12px 24px 22px;
-    flex-direction: column;
-    gap: 4px;
+  /* ─────────────────────────────  SCROLL REVEAL + MOTION  ───────────────────────────── */
+  .pp-landing.pp-js [data-pp-reveal] {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
   }
-  .pp-nav-menu.is-open { display: flex; }
-  .pp-nav-menu a { text-decoration: none; color: var(--text-dim); font-size: 15px; padding: 12px 8px; border-radius: 8px; border-bottom: 1px solid var(--hairline); }
-  .pp-nav-menu a:last-child { border-bottom: none; }
-  .pp-nav-menu a:hover { color: var(--text); }
-  .pp-nav-menu .pp-btn { margin-top: 12px; justify-content: center; }
-
-  /* ─────────────────────────────  RESPONSIVE  ───────────────────────────── */
-  @media (max-width: 1024px) {
-    .pp-feat-grid { gap: 18px; }
-    .pp-price-grid { grid-template-columns: 1fr; max-width: 440px; }
-    .pp-price-card.featured { padding: 32px 26px; }
-    .pp-price-card.featured::before { display: none; }
-    /* step cards reflow to horizontal num+body+illustration (grafted from C) */
-    .pp-steps { grid-template-columns: 1fr; max-width: 720px; gap: 18px; }
-    .pp-step {
-      grid-template-columns: 48px 1fr 200px;
-      grid-template-areas:
-        "num   title illu"
-        "num   desc  illu"
-        "num   code  illu";
-      align-items: start;
-      gap: 6px 22px;
-      padding: 24px;
-    }
-    .pp-step-num { grid-area: num; align-self: start; }
-    .pp-step-illu { grid-area: illu; align-self: center; height: 110px; }
-    .pp-step-title { align-self: end; }
-  }
-  @media (max-width: 860px) {
-    .pp-nav-links { display: none; }
-    .pp-nav-actions .pp-btn { display: none; }
-    .pp-nav-toggle { display: inline-flex; }
-    .pp-nav .inner { justify-content: space-between; }
-    .pp-feat-grid { grid-template-columns: 1fr; max-width: 480px; }
-    .pp-app-layout { grid-template-columns: 50px 1fr; }
-    .pp-main-panel { display: none; }
-    .pp-float-node { display: none; }
-    .pp-footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
-    .pp-footer-grid > :first-child { grid-column: 1 / -1; }
-  }
-  @media (max-width: 640px) {
-    .pp-stats-grid { grid-template-columns: 1fr 1fr; gap: 28px 0; }
-    .pp-stat-block:nth-child(odd)::before { display: none; }
-    .pp-stat-block:nth-child(3)::before, .pp-stat-block:nth-child(4)::before {
-      content: ''; position: absolute; top: -14px; left: 14%; right: 14%; width: auto; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--hairline), transparent); transform: none;
-    }
-    .pp-app-layout { grid-template-columns: 1fr; height: auto; }
-    .pp-rail { display: none; }
-    .pp-app-layout .pp-sidebar { border-right: none; }
-    .pp-carousel-track { min-height: 320px; }
-  }
-  /* below 560: step card returns to single column stack (grafted from C) */
-  @media (max-width: 560px) {
-    .pp-step {
-      grid-template-columns: 1fr;
-      grid-template-areas:
-        "num"
-        "illu"
-        "title"
-        "desc"
-        "code";
-      gap: 14px;
-    }
-    .pp-step-illu { height: 96px; }
-  }
-  @media (max-width: 480px) {
-    .pp-landing { font-size: 15px; }
-    .pp-footer-grid { grid-template-columns: 1fr; gap: 28px; }
-    .pp-hero-ctas .pp-btn, .pp-final-ctas .pp-btn { width: 100%; }
-    .pp-titlebar-title { font-size: 9.5px; }
-    .pp-strip a { font-size: 11.5px; padding: 8px 14px; text-align: center; text-wrap: balance; }
-  }
-  /* explicit narrow-viewport hardening down to 320px (grafted from C) */
-  @media (max-width: 380px) {
-    .pp-landing .inner { padding: 0 16px; }
-    .pp-app-layout { grid-template-columns: 1fr; }
-    .pp-stats-grid { grid-template-columns: 1fr; gap: 26px 0; }
-    .pp-stat-block:nth-child(n)::before { display: none; }
-    .pp-stat-block + .pp-stat-block::after {
-      content: ''; position: absolute; top: -13px; left: 18%; right: 18%; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--hairline), transparent);
-    }
-    .pp-section { padding: clamp(48px, 12vw, 64px) 0; }
-    .pp-titlebar { padding: 10px 12px; }
-  }
+  .pp-landing.pp-js [data-pp-reveal].pp-in { opacity: 1; transform: none; }
 
   @media (prefers-reduced-motion: reduce) {
     .pp-landing *, .pp-landing *::before, .pp-landing *::after {
@@ -1197,6 +1284,7 @@
       transition-duration: 0.001ms !important;
     }
     .pp-js [data-pp-reveal] { opacity: 1 !important; transform: none !important; }
+    .pp-marquee-track { animation: none !important; transform: none !important; }
   }
 </style>
 
@@ -1208,24 +1296,18 @@
   </a>
 </div>
 
-<!-- ═══════════════ 2. STICKY GLASS NAV ═══════════════ -->
+<!-- ═══════════════ 2. STICKY NAV ═══════════════ -->
 <nav class="pp-nav" aria-label="Primary">
   <div class="inner">
     <a class="pp-nav-brand" href="#top">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <circle cx="12" cy="12" r="11" stroke="currentColor" stroke-width="1.2" opacity="0.3"/>
-        <circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
-        <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.2"/>
-        <line x1="12" y1="1" x2="12" y2="23" stroke="currentColor" stroke-width="1" opacity="0.18"/>
-        <line x1="1" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="1" opacity="0.18"/>
-        <circle cx="12" cy="4.5" r="1.6" fill="currentColor"/>
-        <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
-      </svg>
+      <span class="pp-logo-mark" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><circle cx="8" cy="8" r="2.6" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="2.4" r="1.4" fill="currentColor"/></svg>
+      </span>
       PacketPilot
     </a>
     <div class="pp-nav-links">
       <a href="#features">Features</a>
-      <a href="#how">How it works</a>
+      <a href="#workflow">Workflow</a>
       <a href="#privacy">Privacy</a>
       <a href="/pricing">Pricing</a>
       <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">Docs</a>
@@ -1240,7 +1322,7 @@
   </div>
   <div class="pp-nav-menu" id="pp-nav-menu" data-pp-nav-menu>
     <a href="#features">Features</a>
-    <a href="#how">How it works</a>
+    <a href="#workflow">Workflow</a>
     <a href="#privacy">Privacy</a>
     <a href="/pricing">Pricing</a>
     <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">Docs</a>
@@ -1251,19 +1333,33 @@
 <!-- ═══════════════ 3. HERO ═══════════════ -->
 <section class="pp-hero" id="top">
   <div class="pp-hero-bg" aria-hidden="true"></div>
-  <div class="pp-hero-glow" aria-hidden="true"></div>
+  <div class="pp-hero-ring" aria-hidden="true"></div>
+  <div class="pp-hero-ring r2" aria-hidden="true"></div>
+
+  <div class="pp-float-chips" aria-hidden="true">
+    <div class="pp-float-chip c1"><span class="dot" style="background:#6c4df6;"></span>TLS 1.3</div>
+    <div class="pp-float-chip c2"><span class="dot" style="background:#0f766e;"></span>QUIC</div>
+    <div class="pp-float-chip c3"><span class="dot" style="background:#0369a1;"></span>DNS</div>
+    <div class="pp-float-chip c4"><span class="dot" style="background:#e0570f;"></span>STIX 2.1</div>
+    <div class="pp-float-chip c5"><span class="dot" style="background:#b45309;"></span>MISP</div>
+    <div class="pp-float-chip c6"><span class="dot" style="background:#dc2648;"></span>Sigma</div>
+  </div>
+
   <div class="inner">
     <div class="pp-hero-content">
-      <div class="pp-eyebrow" data-pp-reveal>
-        <span class="pp-eyebrow-dot pp-pill-dot" aria-hidden="true"></span>
-        Runs 100% in your browser
+      <div class="pp-hero-badge" data-pp-reveal>
+        <span class="pp-badge-stack" aria-hidden="true">
+          <span><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 1.5L10 3.5V6C10 8.4 8.2 10.4 6 10.9C3.8 10.4 2 8.4 2 6V3.5L6 1.5Z" stroke="currentColor" stroke-width="1.1"/></svg></span>
+          <span><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="5.2" cy="5.2" r="3.4" stroke="currentColor" stroke-width="1.1"/><path d="M7.8 7.8L10.4 10.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
+          <span><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 8.5L4.8 5.7L6.8 7.7L10 4.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </span>
+        <span><strong>Runs 100% in your browser</strong> — built for analysts</span>
       </div>
       <h1 class="pp-hero-headline" data-pp-reveal>
-        Analyze, detect, and investigate network captures —
-        <em>in one private workspace.</em>
+        Triage faster, dig deeper, keep it <em>private.</em>
       </h1>
       <p class="pp-hero-sub" data-pp-reveal>
-        Drop a .pcap and get severity-ranked threat intelligence in seconds — powered by a Rust/WASM engine that never sends a packet off your device. 20+ detectors, MITRE ATT&amp;CK mapped, free to start.
+        PacketPilot turns raw packet captures into severity-ranked, MITRE-mapped threat findings in seconds — powered by a Rust/WASM engine that never sends a packet off your device.
       </p>
       <div class="pp-hero-ctas" data-pp-reveal>
         <a class="pp-btn pp-btn-primary pp-btn-lg" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
@@ -1273,43 +1369,35 @@
         </a>
       </div>
 
-      <!-- LIVE SOC CONSOLE -->
-      <div class="pp-mockup-wrap">
+      <!-- LIVE CONSOLE MOCKUP — a decorative picture of the app: no interactive
+           elements inside, so the whole frame is hidden from assistive tech. -->
+      <div class="pp-mockup-wrap" aria-hidden="true">
         <div class="pp-mockup-glow" aria-hidden="true"></div>
         <div class="pp-tilt" data-pp-tilt>
-          <div class="pp-float-nodes" aria-hidden="true">
-            <div class="pp-float-node n1">TLS 1.3</div>
-            <div class="pp-float-node n2">QUIC</div>
-            <div class="pp-float-node n3">DNS</div>
-            <div class="pp-float-node n4">STIX 2.1</div>
-            <div class="pp-float-node n5">MISP</div>
-            <div class="pp-float-node n6">Sigma</div>
-          </div>
-
           <div class="pp-mockup">
             <div class="pp-titlebar">
               <div class="pp-titlebar-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-              <div class="pp-titlebar-title">PacketPilot &mdash; suspicious_traffic_2026-06-14.pcapng</div>
-              <div class="pp-titlebar-badge">LIVE</div>
+              <div class="pp-titlebar-url">packetpilot.app &mdash; suspicious_traffic_2026-06-14.pcapng</div>
+              <div class="pp-titlebar-badge">LOCAL ONLY</div>
             </div>
 
             <div class="pp-app-layout">
               <!-- rail -->
               <div class="pp-rail" aria-hidden="true">
-                <div class="pp-rail-icon active" title="Dashboard">
+                <div class="pp-rail-icon active">
                   <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
                 </div>
-                <div class="pp-rail-icon" title="Flows">
+                <div class="pp-rail-icon">
                   <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="12" x2="10" y2="12" stroke="currentColor" stroke-width="1.2"/></svg>
                 </div>
                 <div class="pp-rail-sep"></div>
-                <div class="pp-rail-icon" title="Threats">
+                <div class="pp-rail-icon">
                   <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 2L14 5V9C14 12.3 11.3 14.9 8 15C4.7 14.9 2 12.3 2 9V5L8 2Z" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="7" x2="8" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11" r="0.7" fill="currentColor"/></svg>
                 </div>
-                <div class="pp-rail-icon" title="Graph">
+                <div class="pp-rail-icon">
                   <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3.5" r="2.2" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="12.5" r="2.2" stroke="currentColor" stroke-width="1.2"/><circle cx="13" cy="12.5" r="2.2" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="5.7" x2="4" y2="10.6" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="5.7" x2="12" y2="10.6" stroke="currentColor" stroke-width="1.2"/></svg>
                 </div>
-                <div class="pp-rail-icon" title="Export">
+                <div class="pp-rail-icon">
                   <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 10V2M5 5L8 2L11 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11V13H13V11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
                 </div>
               </div>
@@ -1370,7 +1458,7 @@
                     <div class="pp-th">JA3</div>
                   </div>
                   <div class="pp-table-body">
-                    <div class="pp-flow-row flagged pp-row-anim">
+                    <div class="pp-flow-row flagged">
                       <div class="pp-flow-flag"><svg viewBox="0 0 12 12" fill="none"><path d="M6 2v4M6 8v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1"/></svg></div>
                       <div class="pp-td src">10.0.0.54 &rarr; 185.220.101.47</div>
                       <div class="pp-td proto-tls">TLS</div>
@@ -1436,10 +1524,10 @@
                   </div>
                 </div>
                 <div class="pp-panel-info">
-                  <div class="pp-panel-info-item"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/></svg><strong>14,281</strong>&nbsp;flows</div>
-                  <div class="pp-panel-info-item"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg><strong>187</strong>&nbsp;hosts</div>
-                  <div class="pp-panel-info-item"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 8L8 2M2 2l6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg><strong>2</strong>&nbsp;IOC matches</div>
-                  <div class="pp-panel-info-item" style="margin-left:auto;"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M5 3v2l1.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg><strong>analyzed in seconds</strong></div>
+                  <div class="pp-panel-info-item"><strong>14,281</strong>&nbsp;flows</div>
+                  <div class="pp-panel-info-item"><strong>187</strong>&nbsp;hosts</div>
+                  <div class="pp-panel-info-item"><strong>2</strong>&nbsp;IOC matches</div>
+                  <div class="pp-panel-info-item" style="margin-left:auto;"><strong>analyzed in seconds</strong></div>
                 </div>
               </div>
             </div>
@@ -1450,275 +1538,396 @@
   </div>
 </section>
 
-<!-- ═══════════════ 4. PLATFORM / FEATURES ═══════════════ -->
-<section class="pp-section pp-platform" id="features">
+<!-- ═══════════════ 4. STANDARDS MARQUEE ═══════════════ -->
+<section class="pp-standards" aria-label="Supported formats and standards">
+  <div class="pp-standards-label" data-pp-reveal>Speaks the formats and standards your investigation already uses</div>
+  <div class="pp-marquee" aria-hidden="true">
+    <div class="pp-marquee-track">
+      <!-- set A -->
+      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>PCAP</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>PCAPNG</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>GZIP</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>TLS 1.2 / 1.3</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>QUIC / HTTP3</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>JA3 / JA4</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>JA3S</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>HASSH</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>Suricata rules</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>MITRE ATT&amp;CK</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>STIX 2.1</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>MISP</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>CEF</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>CSV</span>
+      <!-- set B (duplicate for seamless loop) -->
+      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>PCAP</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>PCAPNG</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>GZIP</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>TLS 1.2 / 1.3</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>QUIC / HTTP3</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>JA3 / JA4</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>JA3S</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>HASSH</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>Suricata rules</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>MITRE ATT&amp;CK</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>STIX 2.1</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>MISP</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>CEF</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>CSV</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 5. BENTO FEATURES ═══════════════ -->
+<section class="pp-section" id="features">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-eyebrow-label">The Platform</span>
-      <h2 class="pp-section-title">Everything a SOC analyst needs,<br>in one <em>private workspace.</em></h2>
+      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Why analysts choose PacketPilot</span>
+      <h2 class="pp-section-title">A complete forensics workspace, without the upload.</h2>
+      <p class="pp-section-sub">Purpose-built for SOC analysts, incident responders, and threat hunters who can't ship evidence to someone else's cloud.</p>
     </div>
-    <div class="pp-feat-grid">
-      <!-- card 1: severity triage -->
-      <div class="pp-feat-card" data-pp-reveal>
-        <div class="pp-feat-illu" aria-hidden="true">
-          <svg viewBox="0 0 280 142" xmlns="http://www.w3.org/2000/svg">
-            <rect class="pp-illus-node d1" x="22" y="22" width="236" height="20" rx="5" fill="rgba(244,63,94,0.16)" stroke="#f43f5e" stroke-width="1"/>
-            <rect x="28" y="28" width="34" height="8" rx="2" fill="#f43f5e" opacity="0.55"/>
-            <text x="242" y="36" fill="#f43f5e" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+42</text>
-            <rect class="pp-illus-node d2" x="22" y="50" width="170" height="20" rx="5" fill="rgba(251,146,60,0.16)" stroke="#fb923c" stroke-width="1"/>
-            <rect x="28" y="56" width="30" height="8" rx="2" fill="#fb923c" opacity="0.55"/>
-            <text x="176" y="64" fill="#fb923c" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+25</text>
-            <rect class="pp-illus-node d3" x="22" y="78" width="110" height="20" rx="5" fill="rgba(251,191,36,0.16)" stroke="#fbbf24" stroke-width="1"/>
-            <rect x="28" y="84" width="22" height="8" rx="2" fill="#fbbf24" opacity="0.55"/>
-            <text x="116" y="92" fill="#fbbf24" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+14</text>
-            <rect class="pp-illus-node d4" x="22" y="106" width="58" height="20" rx="5" fill="rgba(45,212,191,0.16)" stroke="#2dd4bf" stroke-width="1"/>
-            <rect x="28" y="112" width="18" height="8" rx="2" fill="#2dd4bf" opacity="0.55"/>
-            <text x="64" y="120" fill="#2dd4bf" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+6</text>
+
+    <div class="pp-bento">
+      <!-- Big violet privacy card -->
+      <div class="pp-card pp-card-hero" data-pp-reveal id="privacy">
+        <span class="pp-card-hero-badge"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1.5L10 3.5V6C10 8.4 8.2 10.4 6 10.9C3.8 10.4 2 8.4 2 6V3.5L6 1.5Z" stroke="currentColor" stroke-width="1.1"/></svg>0 PACKETS UPLOADED</span>
+        <div class="pp-privacy-orbit" aria-hidden="true">
+          <svg viewBox="0 0 420 300" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="210" cy="150" r="120" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.2" stroke-dasharray="3 6"/>
+            <circle cx="210" cy="150" r="76" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.2" stroke-dasharray="3 6"/>
+            <circle cx="210" cy="150" r="34" fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.55)" stroke-width="1.4"/>
+            <path d="M210 138l9 4.5v6c0 5.5-4 10.4-9 11.5-5-1.1-9-6-9-11.5v-6l9-4.5z" fill="none" stroke="#fff" stroke-width="1.6"/>
+            <circle cx="210" cy="30" r="11" fill="rgba(255,255,255,0.16)" stroke="rgba(255,255,255,0.5)"/>
+            <circle cx="330" cy="150" r="11" fill="rgba(255,255,255,0.16)" stroke="rgba(255,255,255,0.5)"/>
+            <circle cx="90" cy="150" r="11" fill="rgba(255,255,255,0.16)" stroke="rgba(255,255,255,0.5)"/>
+            <circle cx="134" cy="74" r="8" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.4)"/>
+            <circle cx="286" cy="74" r="8" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.4)"/>
+            <circle cx="152" cy="238" r="8" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.4)"/>
+            <circle cx="268" cy="238" r="8" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.4)"/>
           </svg>
         </div>
-        <div class="pp-feat-title">Severity-ranked triage from one drop</div>
-        <div class="pp-feat-desc">Drop a capture and get findings ranked critical to info in seconds — each with the evidence behind it and a transparent risk score.</div>
+        <div class="pp-card-title">Your capture never leaves this tab</div>
+        <div class="pp-card-desc">Parsing, detection, fingerprinting, carving — all of it runs in a Rust engine compiled to WebAssembly, inside your browser. Works offline and air-gapped. The optional AI summary sends derived stats only, never packets.</div>
       </div>
 
-      <!-- card 2: 20+ detectors / attack matrix -->
-      <div class="pp-feat-card" data-pp-reveal>
-        <div class="pp-feat-illu" aria-hidden="true">
-          <svg viewBox="0 0 280 142" xmlns="http://www.w3.org/2000/svg">
-            <g font-family="'Geist Mono',monospace" font-size="7" fill="#8b98ad">
-              <text x="22" y="22">RECON</text><text x="78" y="22">C2</text><text x="120" y="22">EXFIL</text><text x="172" y="22">IMPACT</text>
-            </g>
-            <g>
-              <rect class="pp-illus-node d1" x="20" y="30" width="40" height="14" rx="3" fill="rgba(251,191,36,0.18)" stroke="#fbbf24" stroke-width="0.8"/>
-              <rect x="20" y="48" width="40" height="14" rx="3" fill="rgba(59,130,246,0.12)" stroke="#223049" stroke-width="0.8"/>
-              <rect class="pp-illus-node d3" x="20" y="66" width="40" height="14" rx="3" fill="rgba(45,212,191,0.18)" stroke="#2dd4bf" stroke-width="0.8"/>
-              <rect class="pp-illus-node d2" x="72" y="30" width="40" height="14" rx="3" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="0.8"/>
-              <rect x="72" y="48" width="40" height="14" rx="3" fill="rgba(59,130,246,0.1)" stroke="#223049" stroke-width="0.8"/>
-              <rect class="pp-illus-node d4" x="124" y="30" width="40" height="14" rx="3" fill="rgba(244,63,94,0.2)" stroke="#f43f5e" stroke-width="0.8"/>
-              <rect x="124" y="66" width="40" height="14" rx="3" fill="rgba(59,130,246,0.1)" stroke="#223049" stroke-width="0.8"/>
-              <rect class="pp-illus-node d1" x="176" y="48" width="40" height="14" rx="3" fill="rgba(244,63,94,0.2)" stroke="#f43f5e" stroke-width="0.8"/>
-              <rect x="176" y="84" width="40" height="14" rx="3" fill="rgba(59,130,246,0.1)" stroke="#223049" stroke-width="0.8"/>
-              <rect x="228" y="30" width="40" height="14" rx="3" fill="rgba(59,130,246,0.1)" stroke="#223049" stroke-width="0.8"/>
-              <rect x="20" y="84" width="40" height="14" rx="3" fill="rgba(59,130,246,0.1)" stroke="#223049" stroke-width="0.8"/>
-              <rect class="pp-illus-node d3" x="72" y="84" width="40" height="14" rx="3" fill="rgba(251,191,36,0.16)" stroke="#fbbf24" stroke-width="0.8"/>
-              <rect x="124" y="48" width="40" height="14" rx="3" fill="rgba(59,130,246,0.1)" stroke="#223049" stroke-width="0.8"/>
-            </g>
-            <text x="22" y="120" fill="#93c5fd" font-size="8" font-family="'Geist Mono',monospace">ATT&amp;CK · 20+ detectors mapped</text>
-          </svg>
+      <!-- Right 2x2 grid -->
+      <div class="pp-bento-right">
+        <div class="pp-card" data-pp-reveal>
+          <div class="pp-card-illu" aria-hidden="true">
+            <svg viewBox="0 0 280 120" xmlns="http://www.w3.org/2000/svg">
+              <rect x="10" y="10" width="240" height="20" rx="6" fill="rgba(220,38,72,0.09)" stroke="#dc2648" stroke-width="1"/>
+              <rect x="18" y="16" width="34" height="8" rx="3" fill="#dc2648" opacity="0.6"/>
+              <text x="242" y="24" fill="#dc2648" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+42</text>
+              <rect x="10" y="38" width="172" height="20" rx="6" fill="rgba(224,87,15,0.09)" stroke="#e0570f" stroke-width="1"/>
+              <rect x="18" y="44" width="28" height="8" rx="3" fill="#e0570f" opacity="0.6"/>
+              <text x="174" y="52" fill="#e0570f" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+25</text>
+              <rect x="10" y="66" width="112" height="20" rx="6" fill="rgba(180,83,9,0.09)" stroke="#b45309" stroke-width="1"/>
+              <rect x="18" y="72" width="22" height="8" rx="3" fill="#b45309" opacity="0.6"/>
+              <text x="114" y="80" fill="#b45309" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+14</text>
+              <rect x="10" y="94" width="62" height="20" rx="6" fill="rgba(15,118,110,0.09)" stroke="#0f766e" stroke-width="1"/>
+              <rect x="18" y="100" width="18" height="8" rx="3" fill="#0f766e" opacity="0.6"/>
+              <text x="64" y="108" fill="#0f766e" font-size="9" font-family="'Geist Mono',monospace" text-anchor="end">+6</text>
+            </svg>
+          </div>
+          <div class="pp-card-title">Severity-ranked triage</div>
+          <div class="pp-card-desc">Findings ranked critical to info in seconds, each with its evidence and a transparent risk score you can audit term by term.</div>
         </div>
-        <div class="pp-feat-title">20+ MITRE-mapped detectors</div>
-        <div class="pp-feat-desc">Behavioral and signature detection: C2 beaconing, DGA, port scans, ARP spoofing, SYN floods, lateral movement, exfiltration, cryptomining, cleartext creds — each mapped to ATT&amp;CK.</div>
-      </div>
 
-      <!-- card 3: TLS / protocol intelligence -->
-      <div class="pp-feat-card" data-pp-reveal>
-        <div class="pp-feat-illu" aria-hidden="true">
-          <svg viewBox="0 0 280 142" xmlns="http://www.w3.org/2000/svg">
-            <g font-family="'Geist Mono',monospace" font-size="8.5">
-              <rect class="pp-illus-node d1" x="22" y="24" width="236" height="22" rx="5" fill="#0f1828" stroke="#223049"/>
-              <text x="32" y="38" fill="#38bdf8">TLS 1.3</text><text x="92" y="38" fill="#8b98ad">JA3</text><text x="120" y="38" fill="#93a1b7">771,4865-4866…</text>
-              <rect class="pp-illus-node d2" x="22" y="52" width="236" height="22" rx="5" fill="#0f1828" stroke="#223049"/>
-              <text x="32" y="66" fill="#93c5fd">QUIC</text><text x="92" y="66" fill="#8b98ad">SNI</text><text x="120" y="66" fill="#93a1b7">cdn.example.net</text>
-              <rect class="pp-illus-node d3" x="22" y="80" width="236" height="22" rx="5" fill="#0f1828" stroke="#223049"/>
-              <text x="32" y="94" fill="#2dd4bf">SSH</text><text x="92" y="94" fill="#8b98ad">HASSH</text><text x="120" y="94" fill="#93a1b7">ec7378c1a9f6…</text>
-              <rect class="pp-illus-node d4" x="22" y="108" width="236" height="22" rx="5" fill="#0f1828" stroke="#223049"/>
-              <text x="32" y="122" fill="#60a5fa">DNS</text><text x="92" y="122" fill="#8b98ad">PTR</text><text x="120" y="122" fill="#93a1b7">10.0.0.54 ↔ host</text>
-            </g>
-          </svg>
+        <div class="pp-card" data-pp-reveal>
+          <div class="pp-card-illu" aria-hidden="true">
+            <svg viewBox="0 0 280 120" xmlns="http://www.w3.org/2000/svg">
+              <g font-family="'Geist Mono',monospace" font-size="7" fill="#85868f">
+                <text x="12" y="14">RECON</text><text x="68" y="14">C2</text><text x="110" y="14">EXFIL</text><text x="162" y="14">IMPACT</text>
+              </g>
+              <g>
+                <rect x="10" y="22" width="40" height="14" rx="4" fill="rgba(180,83,9,0.12)" stroke="#b45309" stroke-width="0.8"/>
+                <rect x="10" y="40" width="40" height="14" rx="4" fill="#f1f1f4" stroke="#d9d9df" stroke-width="0.8"/>
+                <rect x="10" y="58" width="40" height="14" rx="4" fill="rgba(15,118,110,0.12)" stroke="#0f766e" stroke-width="0.8"/>
+                <rect x="62" y="22" width="40" height="14" rx="4" fill="rgba(224,87,15,0.14)" stroke="#e0570f" stroke-width="0.8"/>
+                <rect x="62" y="40" width="40" height="14" rx="4" fill="#f1f1f4" stroke="#d9d9df" stroke-width="0.8"/>
+                <rect x="114" y="22" width="40" height="14" rx="4" fill="rgba(220,38,72,0.14)" stroke="#dc2648" stroke-width="0.8"/>
+                <rect x="114" y="58" width="40" height="14" rx="4" fill="#f1f1f4" stroke="#d9d9df" stroke-width="0.8"/>
+                <rect x="166" y="40" width="40" height="14" rx="4" fill="rgba(220,38,72,0.14)" stroke="#dc2648" stroke-width="0.8"/>
+                <rect x="166" y="76" width="40" height="14" rx="4" fill="#f1f1f4" stroke="#d9d9df" stroke-width="0.8"/>
+                <rect x="218" y="22" width="40" height="14" rx="4" fill="#f1f1f4" stroke="#d9d9df" stroke-width="0.8"/>
+                <rect x="10" y="76" width="40" height="14" rx="4" fill="#f1f1f4" stroke="#d9d9df" stroke-width="0.8"/>
+                <rect x="62" y="76" width="40" height="14" rx="4" fill="rgba(180,83,9,0.12)" stroke="#b45309" stroke-width="0.8"/>
+                <rect x="114" y="40" width="40" height="14" rx="4" fill="#f1f1f4" stroke="#d9d9df" stroke-width="0.8"/>
+              </g>
+              <text x="12" y="110" fill="#5636e8" font-size="8" font-family="'Geist Mono',monospace">ATT&amp;CK &middot; 20+ detectors mapped</text>
+            </svg>
+          </div>
+          <div class="pp-card-title">20+ MITRE-mapped detectors</div>
+          <div class="pp-card-desc">C2 beaconing, DGA, port scans, ARP spoofing, SYN floods, lateral movement, exfiltration, cryptomining, cleartext creds — each mapped to ATT&amp;CK.</div>
         </div>
-        <div class="pp-feat-title">Deep protocol &amp; TLS intelligence</div>
-        <div class="pp-feat-desc">JA3/JA4/JA3S/HASSH fingerprints, SNI from TLS and QUIC/HTTP3, passive DNS, HTTP metadata, and file carving with SHA-256 IOC matching.</div>
-      </div>
 
-      <!-- card 4: exports + AI -->
-      <div class="pp-feat-card" data-pp-reveal>
-        <div class="pp-feat-illu" aria-hidden="true">
-          <svg viewBox="0 0 280 142" xmlns="http://www.w3.org/2000/svg">
-            <g font-family="'Geist Mono',monospace" font-size="9">
-              <rect class="pp-illus-node d1" x="22" y="26" width="62" height="24" rx="6" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="53" y="42" fill="#93c5fd" text-anchor="middle">STIX 2.1</text>
-              <rect class="pp-illus-node d2" x="92" y="26" width="54" height="24" rx="6" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="119" y="42" fill="#93c5fd" text-anchor="middle">MISP</text>
-              <rect class="pp-illus-node d3" x="154" y="26" width="48" height="24" rx="6" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="178" y="42" fill="#93c5fd" text-anchor="middle">CEF</text>
-              <rect class="pp-illus-node d4" x="210" y="26" width="48" height="24" rx="6" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="234" y="42" fill="#93c5fd" text-anchor="middle">Sigma</text>
-              <rect class="pp-illus-node d2" x="22" y="58" width="48" height="24" rx="6" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="46" y="74" fill="#93c5fd" text-anchor="middle">CSV</text>
-              <rect class="pp-illus-node d4" x="78" y="58" width="84" height="24" rx="6" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="120" y="74" fill="#93c5fd" text-anchor="middle">HTML report</text>
-            </g>
-            <rect x="22" y="94" width="236" height="32" rx="7" fill="#0f1828" stroke="#223049"/>
-            <circle cx="38" cy="110" r="6" fill="none" stroke="#60a5fa" stroke-width="1.1"/><path d="M35 110l2 2 4-4" stroke="#60a5fa" stroke-width="1.1" fill="none"/>
-            <text x="52" y="113" fill="#93a1b7" font-size="8.5" font-family="'Geist',sans-serif">AI summary — derived stats only, never packets</text>
-          </svg>
+        <div class="pp-card" data-pp-reveal>
+          <div class="pp-card-illu" aria-hidden="true">
+            <svg viewBox="0 0 280 120" xmlns="http://www.w3.org/2000/svg">
+              <g font-family="'Geist Mono',monospace" font-size="8.5">
+                <rect x="10" y="8" width="260" height="22" rx="6" fill="#fbfbfc" stroke="#e8e8ec"/>
+                <text x="20" y="22" fill="#0369a1">TLS 1.3</text><text x="82" y="22" fill="#85868f">JA3</text><text x="112" y="22" fill="#55565f">771,4865-4866&hellip;</text>
+                <rect x="10" y="36" width="260" height="22" rx="6" fill="#fbfbfc" stroke="#e8e8ec"/>
+                <text x="20" y="50" fill="#5636e8">QUIC</text><text x="82" y="50" fill="#85868f">SNI</text><text x="112" y="50" fill="#55565f">cdn.example.net</text>
+                <rect x="10" y="64" width="260" height="22" rx="6" fill="#fbfbfc" stroke="#e8e8ec"/>
+                <text x="20" y="78" fill="#0f766e">SSH</text><text x="82" y="78" fill="#85868f">HASSH</text><text x="112" y="78" fill="#55565f">ec7378c1a9f6&hellip;</text>
+                <rect x="10" y="92" width="260" height="22" rx="6" fill="#fbfbfc" stroke="#e8e8ec"/>
+                <text x="20" y="106" fill="#e0570f">DNS</text><text x="82" y="106" fill="#85868f">PTR</text><text x="112" y="106" fill="#55565f">10.0.0.54 &#8596; host</text>
+              </g>
+            </svg>
+          </div>
+          <div class="pp-card-title">Deep protocol &amp; TLS intelligence</div>
+          <div class="pp-card-desc">JA3/JA4/JA3S/HASSH fingerprints, SNI from TLS and QUIC/HTTP3, passive DNS, HTTP metadata, and file carving with SHA-256 IOC matching.</div>
         </div>
-        <div class="pp-feat-title">Open exports + an AI analyst</div>
-        <div class="pp-feat-desc">Export STIX 2.1, MISP, CEF, Sigma, CSV, and standalone HTML reports. An optional, privacy-preserving AI summary sends only derived stats — never packets.</div>
+
+        <div class="pp-card" data-pp-reveal>
+          <div class="pp-card-illu" aria-hidden="true">
+            <svg viewBox="0 0 280 120" xmlns="http://www.w3.org/2000/svg">
+              <g font-family="'Geist Mono',monospace" font-size="9">
+                <rect x="10" y="10" width="62" height="24" rx="7" fill="#efebfe" stroke="rgba(108,77,246,0.35)"/><text x="41" y="26" fill="#5636e8" text-anchor="middle">STIX 2.1</text>
+                <rect x="80" y="10" width="54" height="24" rx="7" fill="#efebfe" stroke="rgba(108,77,246,0.35)"/><text x="107" y="26" fill="#5636e8" text-anchor="middle">MISP</text>
+                <rect x="142" y="10" width="48" height="24" rx="7" fill="#efebfe" stroke="rgba(108,77,246,0.35)"/><text x="166" y="26" fill="#5636e8" text-anchor="middle">CEF</text>
+                <rect x="198" y="10" width="52" height="24" rx="7" fill="#efebfe" stroke="rgba(108,77,246,0.35)"/><text x="224" y="26" fill="#5636e8" text-anchor="middle">Sigma</text>
+                <rect x="10" y="42" width="48" height="24" rx="7" fill="#efebfe" stroke="rgba(108,77,246,0.35)"/><text x="34" y="58" fill="#5636e8" text-anchor="middle">CSV</text>
+                <rect x="66" y="42" width="92" height="24" rx="7" fill="#efebfe" stroke="rgba(108,77,246,0.35)"/><text x="112" y="58" fill="#5636e8" text-anchor="middle">HTML report</text>
+              </g>
+              <rect x="10" y="80" width="260" height="30" rx="8" fill="#fbfbfc" stroke="#e8e8ec"/>
+              <circle cx="27" cy="95" r="6" fill="none" stroke="#6c4df6" stroke-width="1.1"/><path d="M24 95l2 2 4-4" stroke="#6c4df6" stroke-width="1.1" fill="none"/>
+              <text x="42" y="99" fill="#55565f" font-size="8.5" font-family="'Inter',sans-serif">AI summary &mdash; derived stats only, never packets</text>
+            </svg>
+          </div>
+          <div class="pp-card-title">Open exports + an AI analyst</div>
+          <div class="pp-card-desc">Export STIX 2.1, MISP, CEF, Sigma, CSV, and standalone HTML reports. An optional, privacy-preserving AI summary works from derived stats only.</div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════ 5. ONE WORKSPACE ═══════════════ -->
-<section class="pp-section pp-workspace">
+<!-- ═══════════════ 6. WORKFLOW TABS ═══════════════ -->
+<section class="pp-section" id="workflow" style="padding-top: 24px;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-eyebrow-label">One Workspace</span>
-      <h2 class="pp-section-title">Everything comes together<br>in a <em>single dashboard.</em></h2>
+      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Your workflow, streamlined</span>
+      <h2 class="pp-section-title">From capture to evidence, step by step.</h2>
+      <p class="pp-section-sub">No setup, no upload — your capture never leaves the browser.</p>
     </div>
-    <div class="pp-dash-frame" data-pp-reveal>
-      <div class="pp-dash-brand" aria-hidden="true">
-        <svg viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="11" cy="11" r="10" stroke="currentColor" stroke-width="1.2" opacity="0.4"/>
-          <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.2" opacity="0.6"/>
-          <circle cx="11" cy="11" r="2.6" stroke="currentColor" stroke-width="1.2"/>
-          <circle cx="11" cy="4" r="1.3" fill="currentColor"/>
-        </svg>
-        PacketPilot
+
+    <div data-pp-tabs data-pp-reveal>
+      <div class="pp-flow-tabs" role="tablist" aria-label="Workflow steps">
+        <button class="pp-flow-tab is-active" type="button" role="tab" id="pp-wtab-1" aria-controls="pp-wpanel-1" aria-selected="true" data-pp-tab="drop">Drop a capture</button>
+        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-2" aria-controls="pp-wpanel-2" aria-selected="false" tabindex="-1" data-pp-tab="triage">Triage findings</button>
+        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-3" aria-controls="pp-wpanel-3" aria-selected="false" tabindex="-1" data-pp-tab="investigate">Investigate flows</button>
+        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-4" aria-controls="pp-wpanel-4" aria-selected="false" tabindex="-1" data-pp-tab="export">Export evidence</button>
       </div>
-      <svg viewBox="0 0 1000 470" xmlns="http://www.w3.org/2000/svg" aria-label="PacketPilot score waterfall and threat relationship graph">
-        <defs><linearGradient id="ppDashBgA" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0f1828"/><stop offset="100%" stop-color="#0b1220"/></linearGradient></defs>
-        <rect width="1000" height="470" fill="url(#ppDashBgA)"/>
-        <rect width="1000" height="40" fill="#0e1a2c"/><rect width="1000" height="1" y="40" fill="#223049"/>
-        <text x="500" y="24" fill="#8b98ad" font-size="11" font-family="'Geist Mono',ui-monospace,monospace" text-anchor="middle">PacketPilot — Overview</text>
-        <rect x="24" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049"/><text x="40" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',sans-serif">Total flows</text><text x="40" y="103" fill="#e7edf7" font-size="22" font-family="'Geist Mono',monospace">48,291</text>
-        <rect x="256" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049"/><text x="272" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',sans-serif">Unique hosts</text><text x="272" y="103" fill="#e7edf7" font-size="22" font-family="'Geist Mono',monospace">127</text>
-        <rect x="488" y="58" width="220" height="60" rx="8" fill="#0f1828" stroke="#223049"/><text x="504" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',sans-serif">Capture duration</text><text x="504" y="103" fill="#e7edf7" font-size="22" font-family="'Geist Mono',monospace">4h 12m</text>
-        <rect x="720" y="58" width="256" height="60" rx="8" fill="#0f1828" stroke="#223049"/><text x="736" y="80" fill="#8b98ad" font-size="10" font-family="'Geist',sans-serif">Risk score</text><text x="736" y="103" fill="#f43f5e" font-size="22" font-family="'Geist Mono',monospace">87 / 100</text>
-        <rect x="24" y="138" width="466" height="308" rx="10" fill="#0f1828" stroke="#223049"/><text x="44" y="168" fill="#e7edf7" font-size="13" font-family="'Geist',sans-serif">Score waterfall</text><text x="44" y="186" fill="#8b98ad" font-size="10" font-family="'Geist',sans-serif">How each detection contributes to the risk score</text>
-        <rect x="200" y="206" width="210" height="26" rx="4" fill="rgba(244,63,94,0.18)" stroke="#f43f5e"/><text x="44" y="223" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',monospace">Malware DL</text><text x="412" y="223" fill="#f43f5e" font-size="10.5" font-family="'Geist Mono',monospace">+42</text>
-        <rect x="200" y="240" width="125" height="26" rx="4" fill="rgba(251,146,60,0.18)" stroke="#fb923c"/><text x="44" y="257" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',monospace">Beaconing</text><text x="333" y="257" fill="#fb923c" font-size="10.5" font-family="'Geist Mono',monospace">+25</text>
-        <rect x="200" y="274" width="70" height="26" rx="4" fill="rgba(251,191,36,0.16)" stroke="#fbbf24"/><text x="44" y="291" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',monospace">DGA</text><text x="278" y="291" fill="#fbbf24" font-size="10.5" font-family="'Geist Mono',monospace">+14</text>
-        <rect x="200" y="308" width="30" height="26" rx="4" fill="rgba(45,212,191,0.16)" stroke="#2dd4bf"/><text x="44" y="325" fill="#93a1b7" font-size="10.5" font-family="'Geist Mono',monospace">Port scan</text><text x="238" y="325" fill="#2dd4bf" font-size="10.5" font-family="'Geist Mono',monospace">+6</text>
-        <line x1="44" y1="352" x2="470" y2="352" stroke="#223049"/><text x="44" y="375" fill="#e7edf7" font-size="11" font-family="'Geist Mono',monospace">Total risk</text><text x="470" y="375" fill="#f43f5e" font-size="13" font-family="'Geist Mono',monospace" text-anchor="end">87</text>
-        <rect x="44" y="396" width="124" height="30" rx="7" fill="#1d4ed8"/><text x="106" y="415" fill="#fff" font-size="11" text-anchor="middle" font-family="'Geist',sans-serif">Export STIX -&gt;</text><rect x="178" y="396" width="120" height="30" rx="7" fill="none" stroke="#223049"/><text x="238" y="415" fill="#93a1b7" font-size="11" text-anchor="middle" font-family="'Geist',sans-serif">HTML report</text>
-        <rect x="510" y="138" width="466" height="308" rx="10" fill="#0f1828" stroke="#223049"/><text x="530" y="168" fill="#e7edf7" font-size="13" font-family="'Geist',sans-serif">Threat relationship graph</text><text x="530" y="186" fill="#8b98ad" font-size="10" font-family="'Geist',sans-serif">Central host and its associated indicators</text>
-        <line class="pp-illus-flow" x1="743" y1="310" x2="640" y2="240" stroke="#f43f5e" opacity="0.6"/><line class="pp-illus-flow" x1="743" y1="310" x2="846" y2="240" stroke="#fb923c" opacity="0.6"/><line class="pp-illus-flow" x1="743" y1="310" x2="640" y2="380" stroke="#fbbf24" opacity="0.6"/><line class="pp-illus-flow" x1="743" y1="310" x2="846" y2="380" stroke="#8b98ad" opacity="0.5"/>
-        <circle cx="743" cy="310" r="30" fill="#1b2740" stroke="#60a5fa" stroke-width="1.4"/><text x="743" y="307" fill="#93c5fd" font-size="10" text-anchor="middle" font-family="'Geist Mono',monospace">10.0.1.42</text><text x="743" y="320" fill="#8b98ad" font-size="8" text-anchor="middle" font-family="'Geist',sans-serif">host</text>
-        <circle class="pp-illus-node d1" cx="640" cy="240" r="20" fill="#141e30" stroke="#f43f5e"/><text x="640" y="244" fill="#f43f5e" font-size="9" text-anchor="middle" font-family="'Geist',sans-serif">IOC</text>
-        <circle class="pp-illus-node d2" cx="846" cy="240" r="20" fill="#141e30" stroke="#fb923c"/><text x="846" y="244" fill="#fb923c" font-size="9" text-anchor="middle" font-family="'Geist',sans-serif">C2</text>
-        <circle class="pp-illus-node d3" cx="640" cy="380" r="20" fill="#141e30" stroke="#fbbf24"/><text x="640" y="384" fill="#fbbf24" font-size="9" text-anchor="middle" font-family="'Geist',sans-serif">DGA</text>
-        <circle class="pp-illus-node d4" cx="846" cy="380" r="20" fill="#141e30" stroke="#8b98ad"/><text x="846" y="384" fill="#93a1b7" font-size="9" text-anchor="middle" font-family="'Geist',sans-serif">DNS</text>
-      </svg>
+
+      <div class="pp-flow-panel is-active" role="tabpanel" id="pp-wpanel-1" aria-labelledby="pp-wtab-1" data-pp-panel="drop">
+        <div class="pp-step-card">
+          <div>
+            <span class="pp-step-tag">Step 1</span>
+            <h3 class="pp-step-title">Drop a .pcap</h3>
+            <p class="pp-step-desc">Drag-and-drop a .pcap, .pcapng, or gzip-compressed capture. Works in any modern browser — nothing is installed and nothing is uploaded.</p>
+            <div class="pp-step-meta">.pcap &middot; .pcapng &middot; .pcap.gz</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Try it now&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+          </div>
+          <div class="pp-step-visual" aria-hidden="true">
+            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
+              <rect x="120" y="50" width="200" height="130" rx="14" fill="#ffffff" stroke="#6c4df6" stroke-width="1.4" stroke-dasharray="6 6"/>
+              <path d="M220 145V95M200 113l20-20 20 20" stroke="#6c4df6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <text x="220" y="168" fill="#85868f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">drop capture here</text>
+              <rect x="30" y="196" width="120" height="30" rx="9" fill="#ffffff" stroke="#e8e8ec"/><text x="90" y="215" fill="#55565f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">traffic.pcapng</text>
+              <rect x="166" y="196" width="108" height="30" rx="9" fill="#ffffff" stroke="#e8e8ec"/><text x="220" y="215" fill="#55565f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">edge.pcap.gz</text>
+              <rect x="290" y="196" width="120" height="30" rx="9" fill="#ffffff" stroke="#e8e8ec"/><text x="350" y="215" fill="#55565f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">incident01.pcap</text>
+              <circle cx="366" cy="66" r="18" fill="#efebfe"/><path d="M360 66l4 4 8-8" stroke="#5636e8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="pp-flow-panel" role="tabpanel" id="pp-wpanel-2" aria-labelledby="pp-wtab-2" data-pp-panel="triage" hidden>
+        <div class="pp-step-card">
+          <div>
+            <span class="pp-step-tag">Step 2</span>
+            <h3 class="pp-step-title">Instant, ranked triage</h3>
+            <p class="pp-step-desc">The Rust/WASM engine decodes packets, runs 20+ MITRE-mapped detectors, fingerprints TLS flows, and ranks findings by severity — in seconds.</p>
+            <div class="pp-step-meta">20+ detectors &middot; ATT&amp;CK mapped &middot; transparent scoring</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app?sample=1">See a live triage&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+          </div>
+          <div class="pp-step-visual" aria-hidden="true">
+            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
+              <rect x="40" y="34" width="360" height="38" rx="10" fill="rgba(220,38,72,0.07)" stroke="#dc2648"/><rect x="54" y="46" width="44" height="13" rx="4" fill="#dc2648"/><text x="61" y="56" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">CRIT</text><text x="112" y="57" fill="#0e0e12" font-size="11" font-family="'Inter',sans-serif">Malware download</text><text x="386" y="57" fill="#dc2648" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+42</text>
+              <rect x="40" y="82" width="322" height="38" rx="10" fill="rgba(224,87,15,0.07)" stroke="#e0570f"/><rect x="54" y="94" width="44" height="13" rx="4" fill="#e0570f"/><text x="61" y="104" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">HIGH</text><text x="112" y="105" fill="#0e0e12" font-size="11" font-family="'Inter',sans-serif">C2 beaconing</text><text x="348" y="105" fill="#e0570f" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+25</text>
+              <rect x="40" y="130" width="252" height="38" rx="10" fill="rgba(180,83,9,0.07)" stroke="#b45309"/><rect x="54" y="142" width="38" height="13" rx="4" fill="#b45309"/><text x="60" y="152" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">MED</text><text x="104" y="153" fill="#0e0e12" font-size="11" font-family="'Inter',sans-serif">DGA domains</text><text x="278" y="153" fill="#b45309" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+14</text>
+              <rect x="40" y="178" width="182" height="38" rx="10" fill="rgba(15,118,110,0.07)" stroke="#0f766e"/><rect x="54" y="190" width="38" height="13" rx="4" fill="#0f766e"/><text x="60" y="200" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">LOW</text><text x="104" y="201" fill="#0e0e12" font-size="11" font-family="'Inter',sans-serif">Weak TLS</text><text x="208" y="201" fill="#0f766e" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+6</text>
+              <text x="40" y="240" fill="#85868f" font-size="9.5" font-family="'Geist Mono',monospace">risk score 87 / 100 &middot; every term auditable</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="pp-flow-panel" role="tabpanel" id="pp-wpanel-3" aria-labelledby="pp-wtab-3" data-pp-panel="investigate" hidden>
+        <div class="pp-step-card">
+          <div>
+            <span class="pp-step-tag">Step 3</span>
+            <h3 class="pp-step-title">Pivot and drill down</h3>
+            <p class="pp-step-desc">Pivot from a finding to its flows, follow a TCP stream, inspect packets and payloads on demand, chase a JA3 across hosts, and map relationships in the threat graph.</p>
+            <div class="pp-step-meta">flows &middot; packets &middot; threat graph &middot; passive DNS</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Open the workspace&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+          </div>
+          <div class="pp-step-visual" aria-hidden="true">
+            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
+              <line x1="220" y1="130" x2="120" y2="64" stroke="#dc2648" stroke-width="1.2" opacity="0.55"/>
+              <line x1="220" y1="130" x2="322" y2="64" stroke="#e0570f" stroke-width="1.2" opacity="0.55"/>
+              <line x1="220" y1="130" x2="120" y2="200" stroke="#b45309" stroke-width="1.2" opacity="0.55"/>
+              <line x1="220" y1="130" x2="322" y2="200" stroke="#85868f" stroke-width="1.2" opacity="0.45"/>
+              <circle cx="220" cy="130" r="34" fill="#efebfe" stroke="#6c4df6" stroke-width="1.6"/>
+              <text x="220" y="127" fill="#5636e8" font-size="10" text-anchor="middle" font-family="'Geist Mono',monospace">10.0.1.42</text>
+              <text x="220" y="141" fill="#85868f" font-size="8" text-anchor="middle" font-family="'Inter',sans-serif">host</text>
+              <circle cx="120" cy="64" r="22" fill="#ffffff" stroke="#dc2648" stroke-width="1.3"/><text x="120" y="68" fill="#dc2648" font-size="9" text-anchor="middle" font-family="'Inter',sans-serif">IOC</text>
+              <circle cx="322" cy="64" r="22" fill="#ffffff" stroke="#e0570f" stroke-width="1.3"/><text x="322" y="68" fill="#e0570f" font-size="9" text-anchor="middle" font-family="'Inter',sans-serif">C2</text>
+              <circle cx="120" cy="200" r="22" fill="#ffffff" stroke="#b45309" stroke-width="1.3"/><text x="120" y="204" fill="#b45309" font-size="9" text-anchor="middle" font-family="'Inter',sans-serif">DGA</text>
+              <circle cx="322" cy="200" r="22" fill="#ffffff" stroke="#85868f" stroke-width="1.3"/><text x="322" y="204" fill="#55565f" font-size="9" text-anchor="middle" font-family="'Inter',sans-serif">DNS</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="pp-flow-panel" role="tabpanel" id="pp-wpanel-4" aria-labelledby="pp-wtab-4" data-pp-panel="export" hidden>
+        <div class="pp-step-card">
+          <div>
+            <span class="pp-step-tag">Step 4</span>
+            <h3 class="pp-step-title">Export the evidence</h3>
+            <p class="pp-step-desc">Hand off findings in the formats your stack already understands: STIX 2.1, MISP, CEF, Sigma, CSV — or a self-contained HTML report you can share as-is.</p>
+            <div class="pp-step-meta">STIX &middot; MISP &middot; CEF &middot; Sigma &middot; CSV &middot; HTML</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/pricing">See what's included&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+          </div>
+          <div class="pp-step-visual" aria-hidden="true">
+            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
+              <g font-family="'Geist Mono',monospace" font-size="11">
+                <rect x="60" y="40" width="94" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="107" y="62" fill="#5636e8" text-anchor="middle">STIX 2.1</text>
+                <rect x="172" y="40" width="86" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="215" y="62" fill="#5636e8" text-anchor="middle">MISP</text>
+                <rect x="276" y="40" width="78" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="315" y="62" fill="#5636e8" text-anchor="middle">CEF</text>
+                <rect x="102" y="94" width="88" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="146" y="116" fill="#5636e8" text-anchor="middle">Sigma</text>
+                <rect x="208" y="94" width="78" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="247" y="116" fill="#5636e8" text-anchor="middle">CSV</text>
+              </g>
+              <rect x="94" y="160" width="252" height="52" rx="12" fill="#ffffff" stroke="#e8e8ec"/>
+              <circle cx="122" cy="186" r="10" fill="#efebfe"/><path d="M118 186l3 3 6-6" stroke="#5636e8" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <text x="142" y="182" fill="#0e0e12" font-size="11" font-family="'Inter',sans-serif">incident-report.html</text>
+              <text x="142" y="198" fill="#85868f" font-size="9" font-family="'Inter',sans-serif">self-contained &middot; shareable</text>
+            </svg>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════ 6. STATS BAND ═══════════════ -->
-<section class="pp-stats" id="privacy">
+<!-- ═══════════════ 7. USE CASES ═══════════════ -->
+<section class="pp-section" id="cases" style="padding-top: 24px;">
   <div class="inner">
-    <div class="pp-stats-grid">
-      <div class="pp-stat-block" data-pp-reveal>
-        <div class="pp-stat-num" data-pp-count="20">20+</div>
-        <div class="pp-stat-cap">Threat detectors</div>
+    <div class="pp-section-head" data-pp-reveal>
+      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Built for analysts</span>
+      <h2 class="pp-section-title">Discover how PacketPilot handles your investigation.</h2>
+    </div>
+    <div class="pp-cases-grid">
+      <a class="pp-case-card" href="/analyze-pcap-online" data-pp-reveal>
+        <span class="pp-case-icon t1" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3L20 6.5V11C20 16 16.6 20.4 12 21.5C7.4 20.4 4 16 4 11V6.5L12 3Z" stroke="currentColor" stroke-width="1.5"/><path d="M9 12l2.2 2.2L15.5 9.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <div class="pp-case-title">Incident response, unblocked.</div>
+        <div class="pp-case-desc">Triage a suspicious capture in seconds, pull severity-ranked findings, and export STIX straight into a case — without shipping evidence anywhere.</div>
+        <span class="pp-case-more">Explore more <span class="pp-arrow" aria-hidden="true">&#8594;</span></span>
+      </a>
+      <a class="pp-case-card" href="/wireshark-alternative" data-pp-reveal>
+        <span class="pp-case-icon t2" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </span>
+        <div class="pp-case-title">Threat hunting made fast.</div>
+        <div class="pp-case-desc">Pivot from a JA3 fingerprint to every flow that shares it, follow the C2 beacon, and carve the dropped payload — all in one browser tab.</div>
+        <span class="pp-case-more">Explore more <span class="pp-arrow" aria-hidden="true">&#8594;</span></span>
+      </a>
+      <a class="pp-case-card" href="/extract-files-from-pcap" data-pp-reveal>
+        <span class="pp-case-icon t3" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 3v6h6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        </span>
+        <div class="pp-case-title">File forensics, built in.</div>
+        <div class="pp-case-desc">Carve files from HTTP flows with streaming SHA-256, catch disguised executables, and match hashes against known-bad sets automatically.</div>
+        <span class="pp-case-more">Explore more <span class="pp-arrow" aria-hidden="true">&#8594;</span></span>
+      </a>
+      <a class="pp-case-card" href="/pcap-to-csv" data-pp-reveal>
+        <span class="pp-case-icon t4" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3L21 7L12 11L3 7L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 9.5v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5" stroke="currentColor" stroke-width="1.5"/></svg>
+        </span>
+        <div class="pp-case-title">Teaching &amp; lab-ready.</div>
+        <div class="pp-case-desc">Open PacketPilot on any lab machine, air-gapped if needed, and let students explore real captures with zero install — then export flows to CSV.</div>
+        <span class="pp-case-more">Explore more <span class="pp-arrow" aria-hidden="true">&#8594;</span></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 8. STATS BAND ═══════════════ -->
+<section class="pp-stats">
+  <div class="inner">
+    <div class="pp-stats-grid" data-pp-reveal>
+      <div class="pp-stat-block">
+        <div class="pp-stat-num accented" data-pp-count="20">20+</div>
+        <div class="pp-stat-cap">Threat detectors,<br>MITRE ATT&amp;CK mapped</div>
       </div>
-      <div class="pp-stat-block" data-pp-reveal>
+      <div class="pp-stat-block">
         <div class="pp-stat-num" data-pp-count="0">0</div>
-        <div class="pp-stat-cap">Packets uploaded</div>
+        <div class="pp-stat-cap">Packets uploaded —<br>analysis stays on-device</div>
       </div>
-      <div class="pp-stat-block" data-pp-reveal>
-        <div class="pp-stat-num">Live</div>
-        <div class="pp-stat-cap">In-browser triage</div>
-      </div>
-      <div class="pp-stat-block" data-pp-reveal>
+      <div class="pp-stat-block">
         <div class="pp-stat-num" data-pp-count="5">5</div>
         <div class="pp-stat-cap">Export formats<br>(STIX, MISP, CEF, Sigma, CSV)</div>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════ 7. HOW IT WORKS ═══════════════ -->
-<section class="pp-section pp-how" id="how">
-  <div class="inner">
-    <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-eyebrow-label">How it works</span>
-      <h2 class="pp-section-title">From capture to evidence<br>in <em>three steps.</em></h2>
-      <p class="pp-section-sub">No setup, no upload — your capture never leaves the browser.</p>
-    </div>
-    <div class="pp-steps">
-      <div class="pp-step" data-pp-reveal>
-        <div class="pp-step-num">01</div>
-        <div class="pp-step-illu" aria-hidden="true">
-          <svg viewBox="0 0 240 96" xmlns="http://www.w3.org/2000/svg">
-            <rect class="pp-illus-flow" x="70" y="20" width="100" height="56" rx="8" fill="none" stroke="rgba(96,165,250,0.5)" stroke-width="1.2"/>
-            <path class="pp-illus-node d1" d="M120 64V36M110 46l10-10 10 10" stroke="#60a5fa" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <text x="120" y="84" fill="#8b98ad" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">drop .pcap</text>
-          </svg>
-        </div>
-        <div class="pp-step-title">Drop a .pcap</div>
-        <div class="pp-step-desc">Drag-and-drop a .pcap, .pcapng, or .gz file. Works in any modern browser. Nothing is uploaded.</div>
-        <div class="pp-step-code">.pcap · .pcapng · .pcap.gz</div>
-      </div>
-      <div class="pp-step" data-pp-reveal>
-        <div class="pp-step-num">02</div>
-        <div class="pp-step-illu" aria-hidden="true">
-          <svg viewBox="0 0 240 96" xmlns="http://www.w3.org/2000/svg">
-            <rect class="pp-illus-node d1" x="30" y="24" width="76" height="10" rx="3" fill="rgba(244,63,94,0.2)" stroke="#f43f5e" stroke-width="0.8"/>
-            <rect class="pp-illus-node d2" x="30" y="40" width="120" height="10" rx="3" fill="rgba(251,146,60,0.2)" stroke="#fb923c" stroke-width="0.8"/>
-            <rect class="pp-illus-node d3" x="30" y="56" width="50" height="10" rx="3" fill="rgba(251,191,36,0.18)" stroke="#fbbf24" stroke-width="0.8"/>
-            <rect class="pp-illus-node d4" x="30" y="72" width="90" height="10" rx="3" fill="rgba(45,212,191,0.18)" stroke="#2dd4bf" stroke-width="0.8"/>
-            <circle cx="200" cy="48" r="18" fill="none" stroke="#60a5fa" stroke-width="1.4" opacity="0.5"/>
-            <path d="M200 30 a18 18 0 0 1 13 30" stroke="#60a5fa" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-            <text x="200" y="52" fill="#93c5fd" font-size="8" font-family="'Geist Mono',monospace" text-anchor="middle">scan</text>
-          </svg>
-        </div>
-        <div class="pp-step-title">Instant triage</div>
-        <div class="pp-step-desc">The Rust/WASM engine decodes packets, runs 20+ detectors, fingerprints TLS flows, and ranks findings by severity — in seconds, right in your browser.</div>
-        <div class="pp-step-code">20+ detectors · MITRE mapped</div>
-      </div>
-      <div class="pp-step" data-pp-reveal>
-        <div class="pp-step-num">03</div>
-        <div class="pp-step-illu" aria-hidden="true">
-          <svg viewBox="0 0 240 96" xmlns="http://www.w3.org/2000/svg">
-            <g font-family="'Geist Mono',monospace" font-size="8">
-              <rect class="pp-illus-node d1" x="26" y="26" width="50" height="18" rx="5" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="51" y="38" fill="#93c5fd" text-anchor="middle">STIX</text>
-              <rect class="pp-illus-node d2" x="84" y="26" width="50" height="18" rx="5" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="109" y="38" fill="#93c5fd" text-anchor="middle">MISP</text>
-              <rect class="pp-illus-node d3" x="142" y="26" width="50" height="18" rx="5" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="167" y="38" fill="#93c5fd" text-anchor="middle">Sigma</text>
-              <rect class="pp-illus-node d4" x="55" y="52" width="50" height="18" rx="5" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="80" y="64" fill="#93c5fd" text-anchor="middle">CEF</text>
-              <rect class="pp-illus-node d2" x="113" y="52" width="50" height="18" rx="5" fill="rgba(59,130,246,0.14)" stroke="rgba(96,165,250,0.35)"/><text x="138" y="64" fill="#93c5fd" text-anchor="middle">CSV</text>
-            </g>
-          </svg>
-        </div>
-        <div class="pp-step-title">Export evidence</div>
-        <div class="pp-step-desc">Download STIX, MISP, Sigma, CEF, or CSV. Share a self-contained HTML report. Re-apply Suricata rules on the next run.</div>
-        <div class="pp-step-code">STIX · MISP · Sigma · CEF · CSV</div>
+      <div class="pp-stat-block">
+        <div class="pp-stat-num accented">Live</div>
+        <div class="pp-stat-cap">In-browser triage,<br>results in seconds</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════ 8. USE-CASES CAROUSEL ═══════════════ -->
-<section class="pp-section pp-cases" id="cases">
+<!-- ═══════════════ 9. TESTIMONIALS ═══════════════ -->
+<section class="pp-section" style="padding-top: 12px;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-eyebrow-label">Built for Analysts</span>
-      <h2 class="pp-section-title">How teams put<br>PacketPilot <em>to work.</em></h2>
+      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>In the field</span>
+      <h2 class="pp-section-title">How teams put PacketPilot to work.</h2>
     </div>
-    <div class="pp-carousel" data-pp-carousel data-pp-reveal aria-roledescription="carousel" aria-label="Use cases">
-      <div class="pp-carousel-track">
-        <div class="pp-slide is-active" data-pp-slide aria-roledescription="slide" aria-label="1 of 3">
+    <div class="pp-carousel" data-pp-carousel data-pp-reveal role="region" aria-roledescription="carousel" aria-label="Use cases">
+      <div class="pp-carousel-track" aria-live="polite">
+        <div class="pp-slide is-active" data-pp-slide role="group" aria-roledescription="slide" aria-label="1 of 3">
           <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
           <p class="pp-quote">Triage a suspicious capture in seconds, pull severity-ranked findings, and export STIX straight into a case — without uploading sensitive evidence to anyone's cloud.</p>
           <div class="pp-attrib">
             <span class="pp-avatar" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2L16 4.5V9C16 12.6 13.3 15.8 10 16.5C6.7 15.8 4 12.6 4 9V4.5L10 2Z" stroke="currentColor" stroke-width="1.3"/><path d="M7.3 9.3L9.2 11.2L13 7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </span>
-            <span><span class="pp-attrib-role">Incident response</span></span>
+            <span><span class="pp-attrib-role">Incident response</span><span class="pp-attrib-note">evidence-safe triage</span></span>
           </div>
         </div>
-        <div class="pp-slide" data-pp-slide aria-roledescription="slide" aria-label="2 of 3">
+        <div class="pp-slide" data-pp-slide role="group" aria-roledescription="slide" aria-label="2 of 3">
           <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
           <p class="pp-quote">Pivot from a JA3 fingerprint to every flow that shares it, follow the C2 beacon, and carve the dropped payload — all in one browser tab.</p>
           <div class="pp-attrib">
             <span class="pp-avatar" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.3"/><line x1="12.5" y1="12.5" x2="17" y2="17" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
             </span>
-            <span><span class="pp-attrib-role">Threat hunting</span></span>
+            <span><span class="pp-attrib-role">Threat hunting</span><span class="pp-attrib-note">fingerprint-driven pivots</span></span>
           </div>
         </div>
-        <div class="pp-slide" data-pp-slide aria-roledescription="slide" aria-label="3 of 3">
+        <div class="pp-slide" data-pp-slide role="group" aria-roledescription="slide" aria-label="3 of 3">
           <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
           <p class="pp-quote">Open PacketPilot in a browser on any lab machine, air-gapped if needed, and let students explore real captures with zero install.</p>
           <div class="pp-attrib">
             <span class="pp-avatar" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3L18 6.5L10 10L2 6.5L10 3Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 8v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5V8" stroke="currentColor" stroke-width="1.3"/></svg>
             </span>
-            <span><span class="pp-attrib-role">Security education</span></span>
+            <span><span class="pp-attrib-role">Security education</span><span class="pp-attrib-note">zero-install labs</span></span>
           </div>
         </div>
       </div>
@@ -1727,9 +1936,9 @@
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div class="pp-dots" role="group" aria-label="Choose use case">
-          <button class="pp-dot pp-carousel-dot is-active" type="button" data-pp-dot data-index="0" aria-label="Use case 1"></button>
-          <button class="pp-dot pp-carousel-dot" type="button" data-pp-dot data-index="1" aria-label="Use case 2"></button>
-          <button class="pp-dot pp-carousel-dot" type="button" data-pp-dot data-index="2" aria-label="Use case 3"></button>
+          <button class="pp-dot is-active" type="button" data-pp-dot data-index="0" aria-label="Use case 1"></button>
+          <button class="pp-dot" type="button" data-pp-dot data-index="1" aria-label="Use case 2"></button>
+          <button class="pp-dot" type="button" data-pp-dot data-index="2" aria-label="Use case 3"></button>
         </div>
         <button class="pp-carousel-arrow" type="button" data-pp-next aria-label="Next use case">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1739,27 +1948,66 @@
   </div>
 </section>
 
-<!-- ═══════════════ 9. PRICING ═══════════════ -->
-<section class="pp-section pp-pricing">
+<!-- ═══════════════ 10. INTEGRATIONS ORBIT ═══════════════ -->
+<section class="pp-section" id="integrations" style="padding-top: 12px; overflow: hidden;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-eyebrow-label">Pricing</span>
-      <h2 class="pp-section-title">Simple pricing for<br><em>serious analysis.</em></h2>
+      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Seamless handoffs</span>
+      <h2 class="pp-section-title">Plays well with the rest of your stack.</h2>
+      <p class="pp-section-sub">Import Suricata rules, enrich with VirusTotal, AbuseIPDB, and GreyNoise, and export to the formats your SIEM and CTI tools already read.</p>
+    </div>
+
+    <div class="pp-orbit-wrap" data-pp-reveal aria-hidden="true">
+      <div class="pp-orbit-ring o1"></div>
+      <div class="pp-orbit-ring o2"></div>
+      <div class="pp-orbit-ring o3"></div>
+      <div class="pp-orbit-center">
+        <svg width="34" height="34" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><circle cx="8" cy="8" r="2.6" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="2.4" r="1.4" fill="currentColor"/></svg>
+      </div>
+      <span class="pp-orbit-node" style="left: 50%; top: -6%;"><span class="dot" style="background:#6c4df6;"></span>STIX 2.1</span>
+      <span class="pp-orbit-node" style="left: 27%; top: 12%;"><span class="dot" style="background:#0f766e;"></span>Suricata</span>
+      <span class="pp-orbit-node" style="left: 73%; top: 12%;"><span class="dot" style="background:#e0570f;"></span>MISP</span>
+      <span class="pp-orbit-node" style="left: 12%; top: 46%;"><span class="dot" style="background:#0369a1;"></span>VirusTotal</span>
+      <span class="pp-orbit-node" style="left: 88%; top: 46%;"><span class="dot" style="background:#b45309;"></span>AbuseIPDB</span>
+      <span class="pp-orbit-node" style="left: 20%; top: 82%;"><span class="dot" style="background:#dc2648;"></span>GreyNoise</span>
+      <span class="pp-orbit-node" style="left: 80%; top: 82%;"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
+      <span class="pp-orbit-node" style="left: 33%; top: 76%;"><span class="dot" style="background:#0f766e;"></span>CEF</span>
+      <span class="pp-orbit-node" style="left: 67%; top: 76%;"><span class="dot" style="background:#e0570f;"></span>CSV</span>
+    </div>
+    <div class="pp-orbit-fallback" data-pp-reveal>
+      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>STIX 2.1</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>Suricata</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>MISP</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>VirusTotal</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>AbuseIPDB</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>GreyNoise</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>CEF</span>
+      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>CSV</span>
+    </div>
+    <div class="pp-orbit-caption" data-pp-reveal>Reputation lookups are opt-in and send only public indicators — IPs, domains, and file hashes. Never packets.</div>
+  </div>
+</section>
+
+<!-- ═══════════════ 11. PRICING ═══════════════ -->
+<section class="pp-section" id="pricing" style="padding-top: 40px;">
+  <div class="inner">
+    <div class="pp-section-head" data-pp-reveal>
+      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Pricing</span>
+      <h2 class="pp-section-title">Simple, transparent pricing.</h2>
       <p class="pp-section-sub">The analyzer is free forever. Upgrade to Pro for the full analyst toolkit. Cancel anytime.</p>
       <div class="pp-toggle" role="group" aria-label="Billing period">
         <button class="pp-toggle-btn" type="button" data-pp-period="monthly" aria-pressed="true">Monthly</button>
-        <button class="pp-toggle-btn" type="button" data-pp-period="annual" aria-pressed="false">Yearly <span class="pp-toggle-save">-17%</span></button>
+        <button class="pp-toggle-btn" type="button" data-pp-period="annual" aria-pressed="false">Yearly <span class="pp-toggle-save">&minus;17%</span></button>
       </div>
     </div>
 
     <div class="pp-price-grid">
       <!-- Free -->
       <div class="pp-price-card" data-pp-reveal>
-        <div class="pp-price-head">
-          <div class="pp-plan-name">Free</div>
-          <div class="pp-price-amt"><span class="pp-price-big">$0</span></div>
-          <div class="pp-price-free">Free forever</div>
-        </div>
+        <div class="pp-plan-name">Free</div>
+        <div class="pp-price-amt"><span class="pp-price-big">$0</span></div>
+        <div class="pp-price-note">Free forever</div>
         <div class="pp-price-feats">
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited in-browser triage</div>
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Behavioral detectors, MITRE mapping, dashboards</div>
@@ -1768,36 +2016,32 @@
         <a class="pp-btn pp-btn-secondary" href="/app">Open the app</a>
       </div>
 
-      <!-- Pro (featured) -->
+      <!-- Pro (featured dark) -->
       <div class="pp-price-card featured" data-pp-reveal>
         <span class="pp-price-tag">Popular</span>
-        <div class="pp-price-head">
-          <div class="pp-plan-name">Pro</div>
-          <div class="pp-price-amt" data-pp-price="monthly">
-            <span class="pp-price-big">$19</span><span class="pp-price-per">/mo</span>
-          </div>
-          <div class="pp-price-amt pp-price-annual" data-pp-price="annual">
-            <span class="pp-price-big">$190</span><span class="pp-price-per">/yr</span>
-          </div>
-          <div class="pp-price-free" data-pp-price="monthly">Billed monthly. Cancel anytime.</div>
-          <div class="pp-price-free pp-price-annual" data-pp-price="annual" style="color:var(--sev-low);">2 months free · billed annually</div>
+        <div class="pp-plan-name">Pro</div>
+        <div class="pp-price-amt" data-pp-price="monthly">
+          <span class="pp-price-big">$19</span><span class="pp-price-per">/mo</span>
         </div>
+        <div class="pp-price-amt pp-price-annual" data-pp-price="annual">
+          <span class="pp-price-big">$190</span><span class="pp-price-per">/yr</span>
+        </div>
+        <div class="pp-price-note" data-pp-price="monthly">Billed monthly. Cancel anytime.</div>
+        <div class="pp-price-note pp-price-annual" data-pp-price="annual">2 months free &middot; billed annually</div>
         <div class="pp-price-feats">
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited captures &amp; larger files</div>
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>All exports — STIX, MISP, CEF, Sigma, CSV, HTML report</div>
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>AI analyst summary + reputation enrichment</div>
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>PCAP &amp; file carving, multi-capture compare, saved rules</div>
         </div>
-        <a class="pp-btn pp-btn-primary" href="/pricing">Get Pro</a>
+        <a class="pp-btn pp-btn-accent" href="/pricing">Get Pro</a>
       </div>
 
       <!-- Founder -->
       <div class="pp-price-card" data-pp-reveal>
-        <div class="pp-price-head">
-          <div class="pp-plan-name">Founder<span class="pp-plan-note">annual only</span></div>
-          <div class="pp-price-amt"><span class="pp-price-big">$149</span><span class="pp-price-per">/yr</span></div>
-          <div class="pp-price-free" style="color:var(--text-faint);">rate locked for life · limited seats</div>
-        </div>
+        <div class="pp-plan-name">Founder<span class="pp-plan-note">annual only</span></div>
+        <div class="pp-price-amt"><span class="pp-price-big">$149</span><span class="pp-price-per">/yr</span></div>
+        <div class="pp-price-note">Rate locked for life &middot; limited seats</div>
         <div class="pp-price-feats">
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Everything in Pro, at a price that never goes up</div>
           <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Back an indie tool early and help shape the roadmap</div>
@@ -1808,33 +2052,35 @@
   </div>
 </section>
 
-<!-- ═══════════════ 10. FINAL CTA + FOOTER ═══════════════ -->
+<!-- ═══════════════ 12. FINAL CTA ═══════════════ -->
 <section class="pp-final">
-  <div class="inner">
+  <div class="inner" style="padding: 0;">
     <div class="pp-final-panel" data-pp-reveal>
-      <div class="pp-final-inner">
-        <h2 class="pp-final-title">Ready to triage<br>your <em>first capture?</em></h2>
-        <p class="pp-final-sub">Drop a .pcap and get severity-ranked findings in seconds. Free to start. No upload — no data leaves your device.</p>
-        <div class="pp-final-ctas">
-          <a class="pp-btn pp-btn-primary pp-btn-lg" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
-          <a class="pp-btn pp-btn-secondary pp-btn-lg" href="/pricing">View pricing</a>
-        </div>
+      <div class="pp-final-chips" aria-hidden="true">
+        <div class="pp-final-chip f1">.pcapng</div>
+        <div class="pp-final-chip f2">JA3/JA4</div>
+        <div class="pp-final-chip f3">STIX 2.1</div>
+        <div class="pp-final-chip f4">ATT&amp;CK</div>
+      </div>
+      <h2 class="pp-final-title">Ready to triage<br>your first capture?</h2>
+      <p class="pp-final-sub">Drop a .pcap and get severity-ranked findings in seconds. Free to start. No upload — no data leaves your device.</p>
+      <div class="pp-final-ctas">
+        <a class="pp-btn pp-btn-primary pp-btn-lg" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
+        <a class="pp-btn pp-btn-ghost-light pp-btn-lg" href="/pricing">View pricing</a>
       </div>
     </div>
   </div>
 </section>
 
+<!-- ═══════════════ 13. FOOTER ═══════════════ -->
 <footer class="pp-footer">
   <div class="inner">
     <div class="pp-footer-grid">
       <div>
         <a class="pp-footer-brand" href="#top">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.2" opacity="0.3"/>
-            <circle cx="10" cy="10" r="5.5" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
-            <circle cx="10" cy="10" r="2.4" stroke="currentColor" stroke-width="1.2"/>
-            <circle cx="10" cy="3.6" r="1.3" fill="currentColor"/>
-          </svg>
+          <span class="pp-logo-mark" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><circle cx="8" cy="8" r="2.6" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="2.4" r="1.4" fill="currentColor"/></svg>
+          </span>
           PacketPilot
         </a>
         <div class="pp-footer-tagline">Network forensics triage that runs entirely in your browser. Your captures stay yours.</div>
@@ -1843,7 +2089,7 @@
         <div class="pp-footer-col-title">Product</div>
         <div class="pp-footer-links">
           <a href="#features">Features</a>
-          <a href="#how">How it works</a>
+          <a href="#workflow">Workflow</a>
           <a href="#privacy">Privacy</a>
           <a href="/pricing">Pricing</a>
         </div>
@@ -1861,7 +2107,6 @@
         <div class="pp-footer-col-title">Project</div>
         <div class="pp-footer-links">
           <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">GitHub</a>
-          <a href="#">Releases</a>
           <a href="https://github.com/f1cti0nal/PacketPilot/issues" target="_blank" rel="noopener">Report an issue</a>
         </div>
       </div>
@@ -1875,15 +2120,13 @@
       </div>
     </div>
     <div class="pp-footer-bottom">
-      <div class="pp-footer-copy">&copy; 2026 PacketPilot</div>
-      <div class="pp-footer-note">Runs locally &nbsp;&middot;&nbsp; Your captures stay yours</div>
+      <div>&copy; 2026 PacketPilot</div>
+      <div>Runs locally &nbsp;&middot;&nbsp; Your captures stay yours</div>
     </div>
   </div>
+  <div class="pp-wordmark" aria-hidden="true">
+    <span>packetpilot</span>
+  </div>
 </footer>
-
-<!-- ═══════════════ 11. GIANT GHOST WORDMARK ═══════════════ -->
-<div class="pp-wordmark" aria-hidden="true">
-  <span>PACKETPILOT</span>
-</div>
 
 </div>
