@@ -46,7 +46,7 @@ const security: LegalContent = {
       "heading": "Exactly what is — and isn't — transmitted",
       "blocks": [
         {
-          "p": "Anonymous analysis transmits nothing about your capture. With no account and no opt-in, you can open a file and get the full triage with zero capture-derived data leaving the browser. The analyzer works fully anonymously, with no signup required."
+          "p": "Whether you use the free public sample or analyze your own capture in a free account, the triage transmits nothing about your capture: with enrichment off, you get the full analysis with zero capture-derived data leaving the browser. Signing in gates access to the app, not your data — your captures never leave the page."
         },
         {
           "p": "The only path by which any capture-derived data can reach a backend is the optional enrichment feature, and only for a logged-in user who explicitly opts in. Enrichment is OFF by default and requires both a login and an explicit consent action before anything is sent."
@@ -74,12 +74,12 @@ const security: LegalContent = {
           "p": "Most secure-analysis tools ask you to choose between convenience (a cloud SaaS you upload to) and control (an on-prem appliance you have to deploy, patch, and secure). PacketPilot collapses that choice: because analysis runs in the browser, the convenient option already keeps the data local."
         },
         {
-          "p": "For anonymous analysis, no capture data crosses any trust boundary — there is no data residency question to answer, no Data Processing Agreement needed for the contents of your captures, and no sub-processor that ever sees your packets. The data stays on the analyst's workstation."
+          "p": "With enrichment off, no capture data crosses any trust boundary — there is no data residency question to answer, no Data Processing Agreement needed for the contents of your captures, and no sub-processor that ever sees your packets. The data stays on the analyst's workstation."
         },
         {
           "bullets": [
             "No on-prem deployment required to keep captures local — the default already does that.",
-            "No data boundary crossed for anonymous analysis: captures never leave the workstation.",
+            "No data boundary crossed with enrichment off: captures never leave the workstation.",
             "Air-gapped use is supported: with no opt-in enrichment, the analyzer needs no backend calls to do its job (see the FAQ for offline specifics).",
             "Sub-processors (Supabase for auth/database/storage, Stripe for payments, Vercel for hosting/CDN) handle accounts, billing, and page delivery — never captures. Reputation providers and the AI provider are touched only for opt-in enrichment, and only ever receive the derived summary plus public IPs/domains."
           ]
@@ -90,14 +90,14 @@ const security: LegalContent = {
       "heading": "Verify it yourself — don't take our word",
       "blocks": [
         {
-          "p": "The claim is falsifiable, and you should falsify it. Open your browser's developer tools, go to the Network tab, and watch it while you analyze a capture anonymously (no login, enrichment off). Load your pcap, run the triage, click into flows and findings."
+          "p": "The claim is falsifiable, and you should falsify it. Open your browser's developer tools, go to the Network tab, and watch it while you analyze a capture with enrichment off — use the no-login public sample, or your own capture in a free account. Load the capture, run the triage, click into flows and findings."
         },
         {
           "p": "You will see the page assets and the WASM engine load — and then nothing that contains your capture. There is no request that uploads the file, streams packets, or posts payload bytes. The analysis happens with no outbound request carrying your data, because the work is done locally."
         },
         {
           "bullets": [
-            "Open DevTools → Network, clear it, then load and analyze a capture with no account and enrichment disabled.",
+            "Open DevTools → Network, clear it, then load and analyze a capture with enrichment disabled — the no-login public sample, or your own capture in a free account.",
             "Confirm the capture file is never sent in any request body or upload.",
             "Turn on enrichment as a logged-in user and watch again: now you can see exactly what leaves — a small derived-summary payload and public indicators to the proxy endpoints, and nothing more.",
             "Inspect those requests directly: no raw packets, no payloads, no private IPs."
@@ -112,7 +112,7 @@ const security: LegalContent = {
           "p": "Cloud pcap analyzers and online sandboxes work by taking your file. You upload the capture, their servers parse and store it, and the analysis happens on their infrastructure — which means a copy of your packets, payloads, and internal addressing now lives somewhere you don't control. Many free analysis services go further and make submitted results publicly searchable, so a capture uploaded for a quick look can end up indexed and visible to anyone, including the adversary you were investigating."
         },
         {
-          "p": "PacketPilot inverts that model. The engine comes to your data instead of your data going to the engine. Nothing is uploaded for anonymous analysis, nothing is stored server-side, and nothing about your capture is ever made public. The only data that can leave — on explicit opt-in — is a derived summary plus public indicators, which is exactly the information already designed to be looked up against public threat intel."
+          "p": "PacketPilot inverts that model. The engine comes to your data instead of your data going to the engine. Nothing about your capture is uploaded when you analyze, nothing is stored server-side, and nothing about your capture is ever made public. The only data that can leave — on explicit opt-in — is a derived summary plus public indicators, which is exactly the information already designed to be looked up against public threat intel."
         },
         {
           "bullets": [
@@ -178,7 +178,7 @@ const privacy: LegalContent = {
           "p": "PacketPilot is a solo-operated product. This policy covers the marketing site, the in-browser analyzer, optional user accounts, billing, and the optional logged-in enrichment features. It does not cover third-party sites you reach through external links, or the threat-intelligence and AI providers' own handling of data you choose to send them via our opt-in enrichment features, which are governed by their respective policies."
         },
         {
-          "p": "By using the Service you acknowledge this policy. If you do not agree with it, please do not use the Service. The analyzer is usable fully anonymously with no account."
+          "p": "By using the Service you acknowledge this policy. If you do not agree with it, please do not use the Service. You can try the analyzer on a live sample with no account; analyzing your own captures uses a free account, and either way captures are processed only in your browser."
         }
       ]
     },
@@ -264,7 +264,7 @@ const privacy: LegalContent = {
           ]
         },
         {
-          "p": "Subject to applicable law, you have the right to: access the personal data we hold about you; correct inaccurate data; request deletion of your account and associated data; receive an export of your data in a portable form; object to or restrict certain processing; and withdraw consent to enrichment at any time (which does not affect prior processing). The analyzer can be used anonymously, so you can also simply use the Service without providing any personal data."
+          "p": "Subject to applicable law, you have the right to: access the personal data we hold about you; correct inaccurate data; request deletion of your account and associated data; receive an export of your data in a portable form; object to or restrict certain processing; and withdraw consent to enrichment at any time (which does not affect prior processing). You can also try the analyzer on a public sample without providing any personal data; using it on your own captures requires only a free account (email and password)."
         },
         {
           "p": "You can delete your account (and trigger deletion of associated profile, subscription-mirror, and analytics linkage data) from within the account settings, or by contacting us at [CONTACT EMAIL e.g. support@...]. We will respond to verified requests within the timeframe required by applicable law. You also have the right to lodge a complaint with your local data protection authority."
@@ -392,7 +392,7 @@ const privacy: LegalContent = {
     },
     {
       "q": "Do I need an account to use PacketPilot?",
-      "a": "No. The analyzer works fully anonymously with no signup. Accounts are optional and only needed for features like Pro billing and opt-in enrichment."
+      "a": "To analyze your own captures you create a free account (email and password); you can also try a live sample capture with no account. Either way, captures are analyzed entirely in your browser and never uploaded — an account gates access to the app, not your data."
     },
     {
       "q": "What does the analytics actually record?",
@@ -419,7 +419,7 @@ const terms: LegalContent = {
       "heading": "1. Acceptance of These Terms",
       "blocks": [
         {
-          "p": "By creating an account, clicking to accept, or otherwise accessing or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and by our Privacy Policy, which is incorporated here by reference. These Terms apply whether you use the Service anonymously (without an account) or as a registered Free or Pro user."
+          "p": "By creating an account, clicking to accept, or otherwise accessing or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and by our Privacy Policy, which is incorporated here by reference. These Terms apply whether you use the public sample without an account or as a registered Free or Pro user."
         },
         {
           "p": "If you are using the Service on behalf of an organization, you represent that you have authority to bind that organization to these Terms, and \"you\" refers to both you and that organization. If we update these Terms, your continued use after the update takes effect constitutes acceptance of the revised Terms (see \"Changes to These Terms and the Service\")."
@@ -438,7 +438,7 @@ const terms: LegalContent = {
         {
           "bullets": [
             "Optional enrichment. If you are logged in and explicitly opt in, a limited derived summary (aggregate statistics and finding metadata — not raw packets) together with a small number of public IP addresses and public domains (such as TLS SNI hostnames) may be sent to our servers, which proxy them to third-party reputation providers and/or an AI provider to add context. Private and internal IPs, payloads, and the raw capture are never sent. Enrichment is off by default and requires login plus an explicit opt-in action.",
-            "Accounts are optional. The analyzer works fully and anonymously with no signup. An account unlocks features such as saved preferences, Pro functionality, and opt-in enrichment.",
+            "A free account is required to analyze your own captures; a live sample is available without one. An account (email and password) also unlocks saved preferences, Pro functionality, and opt-in enrichment.",
             "Free and Pro tiers. The Service offers a Free tier and a paid Pro subscription, as described under \"Subscriptions, Billing, and Refunds.\""
           ]
         }
@@ -448,7 +448,7 @@ const terms: LegalContent = {
       "heading": "3. Accounts and Eligibility",
       "blocks": [
         {
-          "p": "You may use the core analyzer without an account. To access account-based features (including Pro and opt-in enrichment), you must register an account."
+          "p": "You may try the core analyzer on a live sample without an account. To analyze your own captures and access account-based features (including Pro and opt-in enrichment), you must register a free account."
         },
         {
           "bullets": [
@@ -647,7 +647,7 @@ const terms: LegalContent = {
     },
     {
       "q": "Do I need an account to use PacketPilot?",
-      "a": "No. The analyzer works fully and anonymously with no signup. An account is only needed for features like Pro and opt-in enrichment."
+      "a": "To analyze your own captures, yes — a free account (email and password). You can try a live sample capture without one. Your captures are analyzed entirely in your browser either way."
     },
     {
       "q": "What is opt-in enrichment, and what data does it send?",
