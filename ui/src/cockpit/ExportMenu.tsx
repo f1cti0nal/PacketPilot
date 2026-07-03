@@ -48,7 +48,7 @@ export function ExportMenu({
         Export
       </button>
       {open && (
-        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Export formats" className="absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1 shadow-lg">
+        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Export formats" className="absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1">
           {actions.map((a) => (
             <button
               key={a.id}

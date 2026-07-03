@@ -157,8 +157,8 @@ export function AuthPanel({
               type="submit"
               disabled={busy}
               className={
-                "mt-1 inline-flex items-center justify-center gap-2 rounded-[var(--r-tile)] " +
-                "bg-[var(--color-accent-deep)] px-3 py-2 text-sm font-medium text-[var(--color-on-accent)] " +
+                "mt-1 inline-flex items-center justify-center gap-2 rounded-full " +
+                "bg-[var(--color-accent-deep)] px-4 py-2 text-sm font-medium text-[var(--color-on-accent)] " +
                 "transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               }
             >

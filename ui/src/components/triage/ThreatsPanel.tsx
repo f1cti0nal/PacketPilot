@@ -198,7 +198,7 @@ export function ThreatsPanel({ threats }: ThreatsPanelProps) {
     <section
       data-component="ThreatsPanel"
       aria-label="Top threats"
-      className="rounded-lg border border-border bg-surface p-4 shadow-sm"
+      className="rounded-lg border border-border bg-surface p-4"
     >
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-[var(--color-text-dim)]">

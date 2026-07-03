@@ -139,7 +139,7 @@ export function BeaconRadar({ size = 150 }: { size?: number }) {
         {/* C2 blip */}
         <circle cx={blip.x} cy={blip.y} r={9} fill="none" stroke="var(--color-sev-critical)" strokeWidth={1} opacity={0.4} />
         <circle className="blip" cx={blip.x} cy={blip.y} r={3.4} fill="var(--color-sev-critical)"
-          style={{ filter: "drop-shadow(0 0 6px var(--color-sev-critical))", animation: "blip-pulse 2.6s ease-in-out infinite" }} />
+          style={{ animation: "blip-pulse 2.6s ease-in-out infinite" }} />
       </svg>
     </div>
   );

@@ -114,7 +114,7 @@ export function LoadCaptureDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-border bg-surface shadow-2xl"
+        className="w-full max-w-md rounded-xl border border-border bg-surface"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">

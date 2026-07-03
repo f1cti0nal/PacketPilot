@@ -29,6 +29,6 @@ export function Row({ label, hint, children }: { label: string; hint?: string; c
 export const fieldCls =
   "rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]";
 export const btnCls =
-  "inline-flex items-center justify-center rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-3 py-1.5 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60";
+  "inline-flex items-center justify-center rounded-full bg-[var(--color-accent-deep)] px-4 py-1.5 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60";
 export const btnGhost =
-  "inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-3 py-1.5 text-sm text-[var(--color-text-dim)] hover:text-[var(--color-text)] disabled:opacity-60";
+  "inline-flex items-center justify-center rounded-full border border-[var(--color-border-strong)] bg-transparent px-4 py-1.5 text-sm text-[var(--color-text-dim)] hover:text-[var(--color-text)] disabled:opacity-60";

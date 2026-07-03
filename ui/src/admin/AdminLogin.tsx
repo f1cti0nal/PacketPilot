@@ -92,7 +92,7 @@ export function AdminLogin({ session }: { session: LoginSession }) {
         <button
           type="submit"
           disabled={busy}
-          className="inline-flex w-full items-center justify-center rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-3 py-1.5 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60"
+          className="inline-flex w-full items-center justify-center rounded-full bg-[var(--color-accent-deep)] px-4 py-1.5 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60"
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>

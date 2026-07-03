@@ -160,7 +160,7 @@ function VerifyEmailScreen({
             type="button"
             onClick={() => void recheck()}
             disabled={busy}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-3 py-2 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60"
+            className="inline-flex items-center justify-center rounded-full bg-[var(--color-accent-deep)] px-4 py-2 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60"
           >
             {busy ? "Checking…" : "I've verified — continue"}
           </button>
@@ -168,7 +168,7 @@ function VerifyEmailScreen({
             type="button"
             onClick={() => void resend()}
             disabled={busy}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-60"
+            className="inline-flex items-center justify-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface-1)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-60"
           >
             Resend verification email
           </button>

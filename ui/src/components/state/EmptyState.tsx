@@ -27,7 +27,7 @@ export function EmptyState({
         <button
           type="button"
           onClick={onLoad}
-          className="mt-6 inline-flex items-center gap-2 rounded-[var(--r-tile)] bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-bg)] transition-opacity hover:opacity-90"
+          className="mt-6 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent-deep)] px-5 py-2 text-sm font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90"
         >
           <FolderOpen size={16} aria-hidden />
           Load capture

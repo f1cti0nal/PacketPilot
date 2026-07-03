@@ -5,9 +5,9 @@ const STATUS_RANK: Record<RepStatus, number> = {
   malicious: 5, unknown: 3, notfound: 2, unavailable: 1, benign: 0, clean: 0,
 };
 const STATUS_COLOR: Record<RepStatus, string> = {
-  malicious: "var(--color-sev-critical, #ef4444)",
-  benign: "var(--color-sev-low, #22c55e)",
-  clean: "var(--color-sev-low, #22c55e)",
+  malicious: "var(--color-sev-critical, #c81e42)",
+  benign: "var(--color-sev-low, #0f766e)",
+  clean: "var(--color-sev-low, #0f766e)",
   unknown: "var(--color-text-faint)",
   notfound: "var(--color-text-faint)",
   unavailable: "var(--color-text-faint)",

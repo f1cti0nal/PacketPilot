@@ -39,7 +39,6 @@ export function KpiCluster({ output }: { output: AnalysisOutput }) {
       )
     : "info";
   const verdictColor = `var(--color-sev-${worstSev})`;
-  const isCritical = worstSev === "critical";
 
   return (
     <div className="grid grid-cols-2 gap-[var(--density-gap-sm)] sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
@@ -58,7 +57,7 @@ export function KpiCluster({ output }: { output: AnalysisOutput }) {
           onFire
             ? {
                 background: `color-mix(in srgb, ${verdictColor} 5%, var(--color-bg))`,
-                boxShadow: `inset 2px 0 0 ${verdictColor}${isCritical ? `, inset 0 0 30px -18px ${verdictColor}` : ""}`,
+                boxShadow: `inset 2px 0 0 ${verdictColor}`,
               }
             : undefined
         }

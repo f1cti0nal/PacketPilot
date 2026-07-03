@@ -71,7 +71,7 @@ export function AiChatPanel({ open, onClose, output, model }: { open: boolean; o
 
   return (
     <>
-      <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="AI chat" className="fixed inset-y-0 right-0 z-50 flex w-[28rem] max-w-full flex-col bg-[var(--color-surface)] shadow-xl">
+      <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="AI chat" className="fixed inset-y-0 right-0 z-50 flex w-[28rem] max-w-full flex-col bg-[var(--color-surface)]">
         <div className="flex items-center justify-between border-b border-[var(--color-border,#222)] p-3">
           <h2 className="text-sm font-medium">Ask about this capture</h2>
           <button type="button" className="t-tag" onClick={onClose}>Close</button>

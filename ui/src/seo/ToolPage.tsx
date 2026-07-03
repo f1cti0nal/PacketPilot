@@ -15,7 +15,7 @@ export function ToolPage({ page }: { page: SeoPage }) {
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <a
             href="/app"
-            className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-4 py-2 text-sm font-medium text-[var(--color-on-accent)]"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-deep)] px-5 py-2 text-sm font-medium text-[var(--color-on-accent)]"
           >
             Analyze a PCAP — free
             <ArrowRight size={15} aria-hidden />
@@ -67,7 +67,7 @@ export function ToolPage({ page }: { page: SeoPage }) {
           </p>
           <a
             href="/app"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-[var(--r-tile)] bg-[var(--color-accent-deep)] px-4 py-2 text-sm font-medium text-[var(--color-on-accent)]"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-deep)] px-5 py-2 text-sm font-medium text-[var(--color-on-accent)]"
           >
             Open PacketPilot
             <ArrowRight size={15} aria-hidden />

@@ -70,7 +70,7 @@ function CategoryTooltip({
   if (!datum) return null;
   const meta = SEVERITY_META[datum.severity];
   return (
-    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs shadow-lg">
+    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs">
       <div className="mb-1 flex items-center gap-2">
         <span
           className="inline-block h-2.5 w-2.5 rounded-sm"

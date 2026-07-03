@@ -100,7 +100,7 @@ function KillChainStepper({ findings }: { findings: Finding[] }) {
           const color = stageColor(i, steps.length);
           return (
             <li key={stage} className="kill-node relative flex items-start gap-3" style={{ animation: `node-pop 0.4s ease-out ${0.12 + i * 0.16}s both` }}>
-              <span className="relative z-10 mt-0.5 h-3 w-3 shrink-0 rounded-full border-2" style={{ borderColor: color, background: "var(--color-bg)", boxShadow: `0 0 8px -1px ${color}` }} />
+              <span className="relative z-10 mt-0.5 h-3 w-3 shrink-0 rounded-full border-2" style={{ borderColor: color, background: "var(--color-bg)" }} />
               <div className="flex min-w-0 flex-col">
                 <span className="text-[13px] font-medium text-[var(--color-text)]">{stage}</span>
                 {m && <span className="font-mono-num t-tag text-[var(--color-text-faint)]">{m}</span>}

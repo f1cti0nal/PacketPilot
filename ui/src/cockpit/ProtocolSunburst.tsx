@@ -33,7 +33,7 @@ export function ProtocolSunburst({ hierarchy }: { hierarchy: ProtocolHierarchyNo
     <section
       data-component="ProtocolSunburst"
       aria-label="Protocol hierarchy"
-      className="rounded-lg border border-border bg-surface p-4 shadow-sm"
+      className="rounded-lg border border-border bg-surface p-4"
     >
       <h2 className="mb-3 flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-[var(--color-text-dim)]">
         <Network size={15} className="text-[var(--color-accent)]" /> Protocol hierarchy
