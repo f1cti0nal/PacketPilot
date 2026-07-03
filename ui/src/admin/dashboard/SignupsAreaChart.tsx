@@ -11,7 +11,7 @@ export function SignupsAreaChart({ data }: { data: DayPoint[] }) {
     );
   }
   return (
-    <div data-component="SignupsAreaChart" className="h-48 w-full text-[var(--color-text-dim)]">
+    <div data-component="SignupsAreaChart" className="h-56 w-full text-[var(--color-text-dim)]">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
           <defs>

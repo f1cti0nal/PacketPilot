@@ -19,7 +19,15 @@ function sectionFromHash(): AdminSectionId {
   return (VALID.has(id) ? id : "dashboard") as AdminSectionId;
 }
 
-export function AdminShell({ email, onSignOut }: { email: string; onSignOut: () => Promise<void> }) {
+export function AdminShell({
+  email,
+  name = null,
+  onSignOut,
+}: {
+  email: string;
+  name?: string | null;
+  onSignOut: () => Promise<void>;
+}) {
   const [active, setActive] = useState<AdminSectionId>(() => sectionFromHash());
   const [collapsed, setCollapsed] = useState(false);
 
@@ -43,28 +51,38 @@ export function AdminShell({ email, onSignOut }: { email: string; onSignOut: () 
   const title = section?.label ?? "Dashboard";
 
   return (
-    <div className="flex h-full min-h-0 bg-bg text-[var(--color-text)]">
-      <Sidebar active={active} onSelect={select} collapsed={collapsed} onToggleCollapse={() => setCollapsed((c) => !c)} />
+    <div className="admin-root flex h-full min-h-0 text-[var(--color-text)]">
+      <Sidebar
+        active={active}
+        onSelect={select}
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
+        email={email}
+        name={name}
+        onSignOut={onSignOut}
+      />
       <div className="flex min-h-0 flex-1 flex-col">
-        <AdminTopBar title={title} email={email} onSignOut={onSignOut} />
-        <main className="min-h-0 flex-1 overflow-y-auto p-4">
-          {active === "dashboard" ? (
-            <AdminDashboard />
-          ) : active === "users" ? (
-            <UsersView adminEmail={email} />
-          ) : active === "payments" ? (
-            <PaymentsView />
-          ) : active === "traffic" ? (
-            <TrafficView />
-          ) : active === "features" ? (
-            <FeatureFlagsView />
-          ) : active === "settings" ? (
-            <SettingsView />
-          ) : active === "env" ? (
-            <EnvironmentView />
-          ) : (
-            <Placeholder title={title} phase={section?.phase ?? 0} />
-          )}
+        <AdminTopBar title={title} subtitle={section?.desc} onJump={select} />
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[1440px] px-[var(--admin-gutter)] py-[var(--admin-gutter)]">
+            {active === "dashboard" ? (
+              <AdminDashboard />
+            ) : active === "users" ? (
+              <UsersView adminEmail={email} />
+            ) : active === "payments" ? (
+              <PaymentsView />
+            ) : active === "traffic" ? (
+              <TrafficView />
+            ) : active === "features" ? (
+              <FeatureFlagsView />
+            ) : active === "settings" ? (
+              <SettingsView />
+            ) : active === "env" ? (
+              <EnvironmentView />
+            ) : (
+              <Placeholder title={title} phase={section?.phase ?? 0} />
+            )}
+          </div>
         </main>
       </div>
     </div>

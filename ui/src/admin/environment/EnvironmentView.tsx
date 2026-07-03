@@ -2,6 +2,7 @@ import { supabaseConfigured } from "../../lib/supabase";
 import { useAdminAppSettings } from "../settings/useAdminAppSettings";
 import { joinedDate } from "../dashboard/format";
 import { maskKey, maskUrl } from "./envMask";
+import { SectionTitle, StatusPill, TableCard } from "../ui/kit";
 
 const PUBLIC_VARS: { name: string; value: string | undefined; mask: (v: string | undefined) => string }[] = [
   { name: "VITE_SUPABASE_URL", value: import.meta.env.VITE_SUPABASE_URL, mask: maskUrl },
@@ -21,19 +22,19 @@ const SERVER_SECRETS: { name: string; location: string; usedBy: string }[] = [
 ];
 
 function Chip({ ok }: { ok: boolean }) {
-  return (
-    <span className="t-tag uppercase" style={{ color: ok ? "var(--color-sev-low)" : "var(--color-sev-medium)" }}>
-      {ok ? "Configured" : "Missing"}
-    </span>
-  );
+  return <StatusPill label={ok ? "Configured" : "Missing"} color={ok ? "var(--color-sev-low)" : "var(--color-sev-medium)"} />;
 }
 
 export function EnvironmentView() {
   const { state } = useAdminAppSettings();
   return (
     <div className="flex flex-col gap-[var(--density-gap)]">
-      <section>
-        <h3 className="mb-1 t-tag uppercase text-[var(--color-text-dim)]">Public app config (browser)</h3>
+      <SectionTitle title="Environment" subtitle="Environment variables and secrets" />
+
+      <TableCard
+        title="Public app config"
+        footer={supabaseConfigured ? "Backend configured." : "Backend not configured (set these in the Vercel project)."}
+      >
         <table className="pp-table" aria-label="Public app config">
           <thead>
             <tr><th>Variable</th><th>Status</th><th>Value (masked)</th></tr>
@@ -41,20 +42,16 @@ export function EnvironmentView() {
           <tbody>
             {PUBLIC_VARS.map((v) => (
               <tr key={v.name}>
-                <td className="font-mono-num">{v.name}</td>
+                <td className="font-mono-num font-medium text-[var(--color-text)]">{v.name}</td>
                 <td><Chip ok={Boolean(v.value)} /></td>
                 <td className="font-mono-num text-[var(--color-text-dim)]">{v.mask(v.value)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="mt-1 t-tag text-[var(--color-text-dim)]">
-          {supabaseConfigured ? "Backend configured." : "Backend not configured (set these in the Vercel project)."}
-        </p>
-      </section>
+      </TableCard>
 
-      <section>
-        <h3 className="mb-1 t-tag uppercase text-[var(--color-text-dim)]">Server secrets (managed server-side — not visible here)</h3>
+      <TableCard title="Server secrets" footer="Managed server-side — never fetched into the browser.">
         <table className="pp-table" aria-label="Server secrets">
           <thead>
             <tr><th>Secret</th><th>Status</th><th>Where it's set</th><th>Used by</th></tr>
@@ -62,18 +59,17 @@ export function EnvironmentView() {
           <tbody>
             {SERVER_SECRETS.map((s) => (
               <tr key={s.name}>
-                <td className="font-mono-num">{s.name}</td>
-                <td className="t-tag uppercase text-[var(--color-text-dim)]">Server-managed</td>
+                <td className="font-mono-num font-medium text-[var(--color-text)]">{s.name}</td>
+                <td className="text-xs font-medium uppercase text-[var(--color-text-dim)]">Server-managed</td>
                 <td className="text-[var(--color-text-dim)]">{s.location}</td>
-                <td className="t-tag text-[var(--color-text-dim)]">{s.usedBy}</td>
+                <td className="text-xs text-[var(--color-text-dim)]">{s.usedBy}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </section>
+      </TableCard>
 
-      <section>
-        <h3 className="mb-1 t-tag uppercase text-[var(--color-text-dim)]">App settings (read-only)</h3>
+      <TableCard title="App settings (read-only)">
         {state.status === "ready" ? (
           <table className="pp-table" aria-label="App settings mirror">
             <thead>
@@ -82,7 +78,7 @@ export function EnvironmentView() {
             <tbody>
               {state.settings.map((s) => (
                 <tr key={s.key}>
-                  <td className="font-mono-num">{s.key}</td>
+                  <td className="font-mono-num font-medium text-[var(--color-text)]">{s.key}</td>
                   <td className="font-mono-num text-[var(--color-text-dim)]">{JSON.stringify(s.value).slice(0, 80)}</td>
                   <td className="font-mono-num text-[var(--color-text-dim)]">{joinedDate(s.updated_at)}</td>
                 </tr>
@@ -90,9 +86,9 @@ export function EnvironmentView() {
             </tbody>
           </table>
         ) : (
-          <p className="text-sm text-[var(--color-text-dim)]">Settings unavailable.</p>
+          <p className="px-5 py-4 text-sm text-[var(--color-text-dim)]">Settings unavailable.</p>
         )}
-      </section>
+      </TableCard>
     </div>
   );
 }

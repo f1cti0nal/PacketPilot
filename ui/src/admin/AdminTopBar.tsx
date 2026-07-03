@@ -1,68 +1,48 @@
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { ThemeToggle } from "../cockpit/ThemeToggle";
 import { DensityToggle } from "../cockpit/DensityToggle";
+import { SearchInput } from "./ui/kit";
+import { ADMIN_SECTIONS, type AdminSectionId } from "./sections";
 
 export function AdminTopBar({
   title,
-  email,
-  onSignOut,
+  subtitle,
+  onJump,
 }: {
   title: string;
-  email: string;
-  onSignOut: () => Promise<void>;
+  subtitle?: string;
+  onJump: (id: AdminSectionId) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const q = query.trim().toLowerCase();
+    if (!q) return;
+    const hit = ADMIN_SECTIONS.find((s) => s.label.toLowerCase().includes(q) || s.id.includes(q));
+    if (hit) {
+      onJump(hit.id as AdminSectionId);
+      setQuery("");
+    }
+  };
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-4">
-      <h1 className="t-title text-[var(--color-text)]">{title}</h1>
-      <div className="flex items-center gap-2">
+    <header className="flex h-16 shrink-0 items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-[var(--admin-gutter)]">
+      <div className="min-w-0">
+        <h1 className="font-display text-xl font-semibold leading-tight text-[var(--color-text)]">{title}</h1>
+        {subtitle && <p className="truncate text-sm text-[var(--color-text-dim)]">{subtitle}</p>}
+      </div>
+      <form onSubmit={submit} className="ml-auto hidden min-w-0 max-w-xs flex-1 md:block">
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Jump to a section…"
+          aria-label="Jump to a section"
+        />
+      </form>
+      <div className="ml-auto flex items-center gap-2 md:ml-0">
         <ThemeToggle />
         <DensityToggle />
-        <div ref={ref} className="relative">
-          <button
-            type="button"
-            aria-label="Account menu"
-            aria-expanded={open}
-            aria-haspopup="true"
-            onClick={() => setOpen((o) => !o)}
-            className="flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-sm text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-          >
-            <span className="max-w-[12rem] truncate">{email}</span>
-            <ChevronDown size={14} aria-hidden />
-          </button>
-          {open && (
-            <div
-              className="absolute right-0 z-10 mt-1 w-40 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1 shadow-[var(--sh-float)]"
-            >
-              <button
-                type="button"
-                onClick={() => void onSignOut()}
-                className="w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-text-dim)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-              >
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     </header>
   );

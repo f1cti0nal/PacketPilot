@@ -1,5 +1,6 @@
 import type { RecentUser } from "../useAdminDashboard";
 import { joinedDate } from "./format";
+import { Avatar, Badge, StatusPill } from "../ui/kit";
 
 const STATUS_COLOR: Record<string, string> = {
   active: "var(--color-sev-low)",
@@ -9,7 +10,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function RecentUsersTable({ users }: { users: RecentUser[] }) {
   if (users.length === 0) {
-    return <p className="text-sm text-[var(--color-text-dim)]">No users yet.</p>;
+    return <p className="px-5 py-4 text-sm text-[var(--color-text-dim)]">No users yet.</p>;
   }
   return (
     <table className="pp-table">
@@ -24,21 +25,22 @@ export function RecentUsersTable({ users }: { users: RecentUser[] }) {
       </thead>
       <tbody>
         {users.map((u) => {
+          const name = u.full_name ?? u.email.split("@")[0];
           const color = STATUS_COLOR[u.status] ?? "var(--color-text-dim)";
           return (
             <tr key={u.email}>
-              <td>{u.full_name ?? u.email.split("@")[0]}</td>
+              <td>
+                <div className="flex items-center gap-2.5">
+                  <Avatar name={u.full_name} email={u.email} size={30} />
+                  <span className="font-medium text-[var(--color-text)]">{name}</span>
+                </div>
+              </td>
               <td className="text-[var(--color-text-dim)]">{u.email}</td>
               <td>
-                <span className="inline-flex items-center rounded-[var(--r-chip)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 t-tag uppercase text-[var(--color-text-dim)]">
-                  {u.plan}
-                </span>
+                <Badge tone={u.plan === "pro" ? "accent" : "neutral"}>{u.plan}</Badge>
               </td>
               <td>
-                <span className="inline-flex items-center gap-1.5 t-tag uppercase" style={{ color }}>
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-                  {u.status}
-                </span>
+                <StatusPill label={u.status} color={color} />
               </td>
               <td className="font-mono-num text-[var(--color-text-dim)]">{joinedDate(u.created_at)}</td>
             </tr>
