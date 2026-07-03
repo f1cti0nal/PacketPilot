@@ -92,7 +92,7 @@ test.describe("accessibility (axe, real browser) — WCAG A/AA incl. contrast", 
   });
 
   // The marketing landing page at "/" is a production surface — hold it to the same
-  // WCAG AA contrast bar as the app. It is self-contained dark (ignores the theme toggle).
+  // WCAG AA contrast bar as the app. It is self-contained light (ignores the theme toggle).
   test("landing page (/) — AA contrast", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator(".pp-landing")).toBeVisible({ timeout: 15_000 });

@@ -9,7 +9,9 @@
     --surface-soft: #fbfbfc;
     --ink: #0e0e12;
     --ink-2: #55565f;
-    --ink-3: #85868f;
+    /* Muted text — #696a73 holds >=4.5:1 AA on every light surface used
+       (white 5.37, --bg 5.02, --bg-soft 4.76, --surface-soft 5.19, wash 4.94). */
+    --ink-3: #696a73;
     --line: #e8e8ec;
     --line-strong: #d9d9df;
     --accent: #6c4df6;
@@ -20,8 +22,10 @@
     --pill: #131316;
     --pill-hover: #26262c;
     --on-pill: #ffffff;
-    --sev-critical: #dc2648;
-    --sev-high: #e0570f;
+    /* Severity hues sized for AA both as white-text chip fills and as text
+       on light surfaces (critical 5.6+, high 5.0+ each way). */
+    --sev-critical: #c81e42;
+    --sev-high: #c2410c;
     --sev-medium: #b45309;
     --sev-low: #0f766e;
     --sev-info: #0369a1;
@@ -544,7 +548,7 @@
     color: var(--ink-2);
   }
   .pp-flow-row:nth-child(odd) { background: var(--surface-soft); }
-  .pp-flow-row.flagged { background: rgba(220, 38, 72, 0.05); }
+  .pp-flow-row.flagged { background: rgba(200, 30, 66, 0.05); }
   .pp-flow-row.flagged .src { color: var(--sev-critical); }
   .pp-flow-flag { width: 14px; height: 14px; color: var(--sev-critical); }
   .pp-flow-flag svg { width: 100%; height: 100%; }
@@ -663,7 +667,7 @@
     color: #fff;
   }
   .pp-card-hero .pp-card-title { color: #fff; font-size: 22px; }
-  .pp-card-hero .pp-card-desc { color: rgba(255,255,255,0.82); font-size: 14.5px; }
+  .pp-card-hero .pp-card-desc { color: rgba(255,255,255,0.92); font-size: 14.5px; }
   .pp-privacy-orbit { position: absolute; inset: 0 0 38% 0; pointer-events: none; }
   .pp-privacy-orbit svg { width: 100%; height: 100%; }
   .pp-card-hero-badge {
@@ -674,7 +678,9 @@
     align-items: center;
     gap: 7px;
     padding: 6px 13px;
-    background: rgba(255,255,255,0.14);
+    /* Dark scrim (not white) so 11px white text clears AA over the light
+       top stop of the card gradient. */
+    background: rgba(19,19,22,0.3);
     border: 1px solid rgba(255,255,255,0.28);
     border-radius: 999px;
     font-family: var(--mono);
@@ -1145,9 +1151,10 @@
     position: relative;
     overflow: hidden;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    /* Every stop keeps solid-white body text >=4.5:1 (top #7557f7 = 4.71). */
     background:
-      radial-gradient(ellipse 90% 90% at 50% 115%, rgba(255,255,255,0.34), transparent 60%),
-      linear-gradient(170deg, #8f76ff 0%, #6c4df6 55%, #5a3bee 100%);
+      radial-gradient(ellipse 90% 90% at 50% 115%, rgba(255,255,255,0.22), transparent 55%),
+      linear-gradient(170deg, #7557f7 0%, #6242ef 55%, #4f30e2 100%);
     padding: 92px 24px 108px;
     text-align: center;
     color: #fff;
@@ -1164,7 +1171,7 @@
     max-width: 520px;
     font-size: 16px;
     line-height: 1.65;
-    color: rgba(255,255,255,0.82);
+    color: #ffffff;
   }
   .pp-final-ctas {
     margin-top: 32px;
@@ -1178,12 +1185,12 @@
   .pp-final-chip {
     position: absolute;
     padding: 8px 14px;
-    background: rgba(255,255,255,0.13);
+    background: rgba(19,19,22,0.3);
     border: 1px solid rgba(255,255,255,0.25);
     border-radius: 12px;
     font-family: var(--mono);
     font-size: 11px;
-    color: rgba(255,255,255,0.9);
+    color: #ffffff;
     -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     animation: pp-bob 8s ease-in-out infinite;
@@ -1218,7 +1225,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+    color: rgba(255,255,255,0.62);
     margin-bottom: 16px;
   }
   .pp-footer-links { display: flex; flex-direction: column; gap: 10px; }
@@ -1238,7 +1245,7 @@
     padding: 20px 0;
     border-top: 1px solid rgba(255,255,255,0.1);
     font-size: 12.5px;
-    color: rgba(255,255,255,0.45);
+    color: rgba(255,255,255,0.62);
   }
   .pp-wordmark {
     overflow: hidden;
@@ -1362,8 +1369,9 @@
         </a>
       </div>
 
-      <!-- LIVE CONSOLE MOCKUP -->
-      <div class="pp-mockup-wrap">
+      <!-- LIVE CONSOLE MOCKUP — a decorative picture of the app: no interactive
+           elements inside, so the whole frame is hidden from assistive tech. -->
+      <div class="pp-mockup-wrap" aria-hidden="true">
         <div class="pp-mockup-glow" aria-hidden="true"></div>
         <div class="pp-tilt" data-pp-tilt>
           <div class="pp-mockup">
@@ -1709,9 +1717,9 @@
     <div data-pp-tabs data-pp-reveal>
       <div class="pp-flow-tabs" role="tablist" aria-label="Workflow steps">
         <button class="pp-flow-tab is-active" type="button" role="tab" id="pp-wtab-1" aria-controls="pp-wpanel-1" aria-selected="true" data-pp-tab="drop">Drop a capture</button>
-        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-2" aria-controls="pp-wpanel-2" aria-selected="false" data-pp-tab="triage">Triage findings</button>
-        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-3" aria-controls="pp-wpanel-3" aria-selected="false" data-pp-tab="investigate">Investigate flows</button>
-        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-4" aria-controls="pp-wpanel-4" aria-selected="false" data-pp-tab="export">Export evidence</button>
+        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-2" aria-controls="pp-wpanel-2" aria-selected="false" tabindex="-1" data-pp-tab="triage">Triage findings</button>
+        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-3" aria-controls="pp-wpanel-3" aria-selected="false" tabindex="-1" data-pp-tab="investigate">Investigate flows</button>
+        <button class="pp-flow-tab" type="button" role="tab" id="pp-wtab-4" aria-controls="pp-wpanel-4" aria-selected="false" tabindex="-1" data-pp-tab="export">Export evidence</button>
       </div>
 
       <div class="pp-flow-panel is-active" role="tabpanel" id="pp-wpanel-1" aria-labelledby="pp-wtab-1" data-pp-panel="drop">
@@ -1742,7 +1750,7 @@
           <div>
             <span class="pp-step-tag">Step 2</span>
             <h3 class="pp-step-title">Instant, ranked triage</h3>
-            <p class="pp-step-desc">The Rust/WASM engine decodes packets, runs 20+ MITRE-mapped detectors, fingerprints every TLS flow, and ranks findings by severity — in seconds.</p>
+            <p class="pp-step-desc">The Rust/WASM engine decodes packets, runs 20+ MITRE-mapped detectors, fingerprints TLS flows, and ranks findings by severity — in seconds.</p>
             <div class="pp-step-meta">20+ detectors &middot; ATT&amp;CK mapped &middot; transparent scoring</div>
             <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app?sample=1">See a live triage&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
           </div>
@@ -1890,9 +1898,9 @@
       <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>In the field</span>
       <h2 class="pp-section-title">How teams put PacketPilot to work.</h2>
     </div>
-    <div class="pp-carousel" data-pp-carousel data-pp-reveal aria-roledescription="carousel" aria-label="Use cases">
-      <div class="pp-carousel-track">
-        <div class="pp-slide is-active" data-pp-slide aria-roledescription="slide" aria-label="1 of 3">
+    <div class="pp-carousel" data-pp-carousel data-pp-reveal role="region" aria-roledescription="carousel" aria-label="Use cases">
+      <div class="pp-carousel-track" aria-live="polite">
+        <div class="pp-slide is-active" data-pp-slide role="group" aria-roledescription="slide" aria-label="1 of 3">
           <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
           <p class="pp-quote">Triage a suspicious capture in seconds, pull severity-ranked findings, and export STIX straight into a case — without uploading sensitive evidence to anyone's cloud.</p>
           <div class="pp-attrib">
@@ -1902,7 +1910,7 @@
             <span><span class="pp-attrib-role">Incident response</span><span class="pp-attrib-note">evidence-safe triage</span></span>
           </div>
         </div>
-        <div class="pp-slide" data-pp-slide aria-roledescription="slide" aria-label="2 of 3">
+        <div class="pp-slide" data-pp-slide role="group" aria-roledescription="slide" aria-label="2 of 3">
           <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
           <p class="pp-quote">Pivot from a JA3 fingerprint to every flow that shares it, follow the C2 beacon, and carve the dropped payload — all in one browser tab.</p>
           <div class="pp-attrib">
@@ -1912,7 +1920,7 @@
             <span><span class="pp-attrib-role">Threat hunting</span><span class="pp-attrib-note">fingerprint-driven pivots</span></span>
           </div>
         </div>
-        <div class="pp-slide" data-pp-slide aria-roledescription="slide" aria-label="3 of 3">
+        <div class="pp-slide" data-pp-slide role="group" aria-roledescription="slide" aria-label="3 of 3">
           <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
           <p class="pp-quote">Open PacketPilot in a browser on any lab machine, air-gapped if needed, and let students explore real captures with zero install.</p>
           <div class="pp-attrib">
@@ -1977,7 +1985,7 @@
       <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>CEF</span>
       <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>CSV</span>
     </div>
-    <div class="pp-orbit-caption" data-pp-reveal>Reputation lookups are opt-in and send bare public IPs only — never packets.</div>
+    <div class="pp-orbit-caption" data-pp-reveal>Reputation lookups are opt-in and send only public indicators — IPs, domains, and file hashes. Never packets.</div>
   </div>
 </section>
 
