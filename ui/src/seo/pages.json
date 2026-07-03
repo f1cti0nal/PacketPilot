@@ -574,5 +574,121 @@
         "a": "When a carved file's SHA-256 matches PacketPilot's curated known-bad hash set, it raises a Critical Malware Download finding mapped to MITRE ATT&CK T1105 (Ingress Tool Transfer), attributed from client to server. Because detection is on the content hash rather than the filename or URL, a renamed or disguised binary is still caught on the bytes that actually crossed the wire."
       }
     ]
+  },
+  {
+    "slug": "wireshark-vs-cloudshark",
+    "metaTitle": "Wireshark vs CloudShark vs PacketPilot — PCAP Tools Compared",
+    "metaDescription": "Wireshark vs CloudShark vs PacketPilot: how three PCAP analysis tools compare on privacy, threat triage, install, and cost — and which to use when.",
+    "h1": "Wireshark vs CloudShark vs PacketPilot: PCAP Analysis Compared",
+    "lead": "Wireshark, CloudShark, and PacketPilot all open packet captures, but they solve different jobs. Wireshark is the deep desktop microscope, CloudShark is a hosted capture repository built for team collaboration, and PacketPilot is a browser-local triage engine that scores threats without ever uploading your capture. This page compares all three honestly — where each is strong, the tradeoffs, and how to choose.",
+    "sections": [
+      {
+        "heading": "The short version: pick by the job, not the brand",
+        "blocks": [
+          {
+            "p": "These tools overlap on the surface — they all open a .pcap — but they optimize for different things, and it's common to use two of them together. Choosing well is mostly about matching the tool to the task in front of you."
+          },
+          {
+            "bullets": [
+              "Deep, manual, protocol-level forensics on your own workstation → Wireshark",
+              "A shared, searchable capture repository your team annotates together → CloudShark",
+              "A fast, private \"is this capture malicious?\" verdict with nothing uploaded → PacketPilot"
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Side-by-side comparison",
+        "blocks": [
+          {
+            "table": {
+              "caption": "Comparison of PacketPilot, Wireshark, and CloudShark across data handling, triage capabilities, and cost.",
+              "highlight": 1,
+              "columns": ["Capability", "PacketPilot", "Wireshark", "CloudShark"],
+              "rows": [
+                ["Where it runs", "Your browser (Rust/WebAssembly)", "Desktop app you install", "Hosted web app, or an on-prem appliance"],
+                ["Does the capture leave your machine?", "No — processed in the browser tab", "No — analyzed locally on your machine", "Yes on the hosted service; the self-hosted appliance keeps it inside your network"],
+                ["Install required", "No", "Yes", "No for the hosted service; the appliance is deployed by your team"],
+                ["Automated threat triage & scoring", "Yes — 20+ detectors, severity-ranked verdict", "No — you drive the analysis manually", "No — analysis and collaboration focus"],
+                ["MITRE ATT&CK mapping", "Built in", "No", "No"],
+                ["Protocol dissection depth", "Common protocols, threat-focused", "Deepest — thousands of protocols", "Wireshark-grade (uses its dissectors)"],
+                ["TLS/SSH fingerprints (JA3/JA4/JA3S/HASSH)", "Built in, per flow", "Add-ons / external tools", "Not a core feature"],
+                ["File carving + hash reputation", "SHA-256 carving; opt-in AbuseIPDB / GreyNoise / VirusTotal", "Manual object export", "No"],
+                ["Threat-intel exports (STIX / MISP / CEF / Sigma)", "Yes", "No (pcap, CSV, text)", "No"],
+                ["Team sharing & capture repository", "Single-analyst; shareable HTML report", "File-based", "Yes — its core strength"],
+                ["Cost", "Free tier; Pro $19/mo", "Free, open source", "Paid (subscription or appliance licence)"],
+                ["Best for", "Fast, private threat triage", "Deep manual packet forensics", "Team collaboration & capture storage"]
+              ]
+            }
+          },
+          {
+            "p": "The rows aren't a scoreboard. A \"No\" for Wireshark on automated scoring isn't a flaw — it's a different design goal. The point is to see, at a glance, which tool fits the task."
+          }
+        ]
+      },
+      {
+        "heading": "Wireshark: the deep local microscope",
+        "blocks": [
+          {
+            "p": "Wireshark is the industry-standard protocol analyzer, and nothing here replaces it. It's free and open source, runs entirely on your machine, and dissects thousands of protocols down to individual fields. When you need to understand exactly what a packet contains, follow a stream byte by byte, or debug a protocol, Wireshark is the tool — and tshark gives you the same engine on the command line for scripting."
+          },
+          {
+            "p": "What Wireshark deliberately doesn't do is triage for you. It shows you everything and leaves the judgment to you, which is powerful but slow when the question is simply \"is this capture bad, and where do I look first?\" It also has to be installed, which isn't always possible on a locked-down or shared host. PacketPilot is complementary here: triage fast in the browser, then pivot into Wireshark for the deep dive — it can even carve a per-flow or per-host sub-pcap to hand straight over."
+          }
+        ]
+      },
+      {
+        "heading": "CloudShark: collaboration and capture storage",
+        "blocks": [
+          {
+            "p": "CloudShark (by QA Cafe) is a web-based capture analysis platform built around collaboration: a central repository where a team can upload, store, tag, annotate, and share captures by link, with analysis powered by Wireshark's dissectors on the server. If your workflow is \"a team needs one place to keep and discuss captures,\" that's exactly what it's for, and it's available both as a hosted service and as a self-hosted appliance."
+          },
+          {
+            "p": "The tradeoff is where the packets go. On the hosted service your capture is uploaded to CloudShark's infrastructure; the appliance keeps data inside your network but is a system your team has to deploy and run. And like Wireshark, its focus is analysis and collaboration rather than an automated, MITRE-mapped threat verdict. PacketPilot takes the opposite stance on data — the capture never leaves your browser tab and there's nothing to deploy — at the cost of the shared-repository features CloudShark specializes in."
+          }
+        ]
+      },
+      {
+        "heading": "PacketPilot: private, zero-install threat triage",
+        "blocks": [
+          {
+            "p": "PacketPilot is a Rust engine compiled to WebAssembly that runs inside your browser. You drop a .pcap, .pcapng, .cap, or gzip-compressed capture onto the page and roughly 20 behavioral detectors run locally — brute force, port scan, lateral movement, C2 beaconing, data exfiltration, DNS tunneling, DGA, cryptomining, ARP spoof, SYN flood, cleartext credentials, and more — each severity-scored and mapped to MITRE ATT&CK. Within seconds you get a ranked verdict instead of a raw packet list."
+          },
+          {
+            "bullets": [
+              "The capture is processed in the browser tab and is never uploaded — the privacy guarantee is structural, and you can confirm it in devtools",
+              "Nothing to install and nothing to deploy — it works on locked-down or air-gapped hosts where you can't install Wireshark or reach a cloud service",
+              "Threat-intel exports (STIX 2.1, MISP, CEF, Sigma, CSV) and a shareable HTML report, plus SHA-256 file carving and opt-in IP reputation",
+              "Free tier with a free account; Pro is $19/mo for exports, enrichment, carving, and saved rules"
+            ]
+          },
+          {
+            "p": "Where PacketPilot isn't the answer: it isn't a replacement for Wireshark's field-level dissection depth, and it isn't a team capture repository like CloudShark. It's the fast, private first pass — triage the capture, get the verdict, then reach for the other tools if you need to go deeper or share with a team."
+          }
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "q": "Is PacketPilot a replacement for Wireshark?",
+        "a": "No — they're complementary. PacketPilot gives you a fast, automated, MITRE-mapped threat verdict in the browser with nothing to install; Wireshark gives you unmatched field-level protocol dissection on your workstation. A common workflow is to triage in PacketPilot to find where to look, then open the same capture in Wireshark to go deep. PacketPilot can even carve a per-flow or per-host sub-pcap to hand straight to Wireshark."
+      },
+      {
+        "q": "How is PacketPilot different from CloudShark?",
+        "a": "Both run in a browser, but they optimize for opposite things. CloudShark is a hosted (or appliance) capture repository built for team storage, sharing, and collaboration, which means your capture is uploaded to its infrastructure or your deployed appliance. PacketPilot processes the capture entirely in your browser tab — nothing is uploaded and there's nothing to deploy — and it focuses on automated threat triage and scoring rather than collaboration."
+      },
+      {
+        "q": "Does Wireshark upload my capture?",
+        "a": "No. Wireshark analyzes captures locally on your machine and doesn't upload them, just like PacketPilot keeps everything in your browser. The upload distinction is specifically about hosted cloud analyzers: PacketPilot's data-handling advantage is over services that ship your packets offsite, not over local tools like Wireshark."
+      },
+      {
+        "q": "Which tool is best for incident-response triage?",
+        "a": "For a fast, private first pass — \"is this capture malicious and where do I look?\" — PacketPilot is purpose-built: severity-ranked, MITRE-mapped findings in seconds, with the capture never leaving your browser, which matters when the traffic is sensitive or regulated. Once you know where to focus, pivot into Wireshark for deep manual analysis, and use CloudShark if your team needs to store and discuss the capture together."
+      },
+      {
+        "q": "Is PacketPilot really free?",
+        "a": "The full analyzer — all the detectors, severity scoring, MITRE mapping, the dashboards and flows views, file carving, and exports — works on the free tier with a free account. Pro is $19/mo (or $190/yr) and adds reputation enrichment, the AI analyst summary, and saved rules. You can also try a live sample capture with no account at all."
+      }
+    ]
   }
 ]

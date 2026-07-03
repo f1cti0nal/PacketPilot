@@ -3,6 +3,7 @@
 export const TOOL_SLUGS = [
   "analyze-pcap-online",
   "wireshark-alternative",
+  "wireshark-vs-cloudshark",
   "pcap-viewer",
   "pcapng-analyzer",
   "pcap-to-csv",
