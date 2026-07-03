@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { LoadingState } from "../../components/state/LoadingState";
 import { ErrorState } from "../../components/state/ErrorState";
 import { joinedDate, money } from "../dashboard/format";
 import { useAdminPayments, type AdminPayment } from "./useAdminPayments";
 import { paymentsSummary } from "./summary";
+import { MiniStat, PillButton, SearchInput, SectionTitle, StatusPill, TableCard } from "../ui/kit";
 
 const STATUS_COLOR: Record<string, string> = {
   active: "var(--color-sev-low)",
@@ -34,27 +36,29 @@ export function PaymentsView() {
 
   return (
     <div className="flex flex-col gap-[var(--density-gap)]">
-      <div className="flex flex-wrap items-end gap-3">
-        <Kpi label="Active MRR" value={money(mrrCents)} />
-        <Kpi label="Active subs" value={String(summary.activeCount)} />
-        <Kpi label="Past due" value={String(summary.statusCounts.past_due ?? 0)} />
-        <Kpi label="Canceled" value={String(summary.statusCounts.canceled ?? 0)} />
-        <button
-          type="button"
-          onClick={reload}
-          className="ml-auto rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-        >
+      <div className="flex flex-wrap items-center gap-3">
+        <SectionTitle title="Payments" subtitle="Subscriptions and revenue from Stripe" />
+        <PillButton className="ml-auto" icon={RefreshCw} variant="secondary" onClick={reload}>
           Refresh
-        </button>
+        </PillButton>
       </div>
-      <input
-        type="search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by email…"
-        aria-label="Search payments by email"
-        className="w-full max-w-sm rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-dim)]"
-      />
+
+      <div className="grid grid-cols-2 gap-[var(--density-gap-sm)] md:grid-cols-4">
+        <MiniStat label="Active MRR" value={money(mrrCents)} />
+        <MiniStat label="Active subs" value={String(summary.activeCount)} />
+        <MiniStat label="Past due" value={String(summary.statusCounts.past_due ?? 0)} />
+        <MiniStat label="Canceled" value={String(summary.statusCounts.canceled ?? 0)} />
+      </div>
+
+      <div className="w-full max-w-xs">
+        <SearchInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by email…"
+          aria-label="Search payments by email"
+        />
+      </div>
+
       {state.status === "loading" ? (
         <LoadingState label="Loading payments…" />
       ) : state.status === "error" ? (
@@ -64,27 +68,35 @@ export function PaymentsView() {
           {payments.length === 0 ? "No subscriptions yet." : "No matches."}
         </p>
       ) : (
-        <table className="pp-table">
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Renews</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p) => (
-              <PaymentRow key={p.id} p={p} showCurrency={anyNonUsd} />
-            ))}
-          </tbody>
-        </table>
+        <TableCard
+          title="Subscriptions"
+          count={rows.length}
+          footer={
+            <>
+              Reflects the latest Stripe sync.
+              {capped &&
+                " Showing the latest 100 subscriptions; the counts above describe this page (Active MRR is global)."}
+            </>
+          }
+        >
+          <table className="pp-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Renews</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p) => (
+                <PaymentRow key={p.id} p={p} showCurrency={anyNonUsd} />
+              ))}
+            </tbody>
+          </table>
+        </TableCard>
       )}
-      <p className="t-tag text-[var(--color-text-dim)]">
-        Reflects the latest Stripe sync.
-        {capped && " Showing the latest 100 subscriptions; the counts above describe this page (Active MRR is global)."}
-      </p>
     </div>
   );
 }
@@ -94,38 +106,26 @@ function PaymentRow({ p, showCurrency }: { p: AdminPayment; showCurrency: boolea
   return (
     <tr title={p.price_id ?? undefined}>
       <td>
-        <div>{p.email ?? p.id}</div>
-        {p.full_name && <div className="t-tag text-[var(--color-text-dim)]">{p.full_name}</div>}
+        <div className="font-medium text-[var(--color-text)]">{p.email ?? p.id}</div>
+        {p.full_name && <div className="text-xs text-[var(--color-text-dim)]">{p.full_name}</div>}
       </td>
       <td className="font-mono-num">
         {money(p.amount_cents)}
-        {showCurrency && <span className="ml-1 t-tag uppercase text-[var(--color-text-dim)]">{p.currency}</span>}
+        {showCurrency && <span className="ml-1 text-xs uppercase text-[var(--color-text-dim)]">{p.currency}</span>}
       </td>
       <td>
-        <span className="inline-flex items-center gap-1.5 t-tag uppercase" style={{ color }}>
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-          {p.status}
-        </span>
+        <StatusPill label={p.status} color={color} />
       </td>
       <td className="font-mono-num text-[var(--color-text-dim)]">
         {p.current_period_end ? joinedDate(p.current_period_end) : "—"}
         {p.cancel_at_period_end && (
-          <span className="ml-1.5 inline-flex items-center rounded-[var(--r-chip)] border border-[var(--color-border)] px-1.5 py-0.5 t-tag uppercase text-[var(--color-sev-medium)]">
+          <span className="ml-1.5 inline-flex items-center rounded-full border border-[var(--color-sev-medium)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-sev-medium)]">
             Cancels at period end
           </span>
         )}
       </td>
       <td className="font-mono-num text-[var(--color-text-dim)]">{joinedDate(p.created_at)}</td>
     </tr>
-  );
-}
-
-function Kpi({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-      <div className="t-tag uppercase text-[var(--color-text-dim)]">{label}</div>
-      <div className="font-mono-num text-lg text-[var(--color-text)]">{value}</div>
-    </div>
   );
 }
 

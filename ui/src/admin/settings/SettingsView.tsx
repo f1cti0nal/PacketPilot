@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { LoadingState } from "../../components/state/LoadingState";
 import { ErrorState } from "../../components/state/ErrorState";
 import { joinedDate } from "../dashboard/format";
+import { AdminCard, PillButton, SectionTitle, TableCard } from "../ui/kit";
 import {
   useAdminAppSettings,
   updateValue,
@@ -39,8 +41,9 @@ export function SettingsView() {
 
   return (
     <div className="flex flex-col gap-[var(--density-gap)]">
+      <SectionTitle title="Settings" subtitle="App configuration and content" />
       {error && (
-        <p role="alert" className="t-tag text-[var(--color-sev-critical)]">
+        <p role="alert" className="rounded-xl border border-[color-mix(in_srgb,var(--color-sev-critical)_35%,transparent)] bg-[var(--color-surface-1)] px-3 py-2 text-sm text-[var(--color-sev-critical)]">
           {error}
         </p>
       )}
@@ -49,42 +52,44 @@ export function SettingsView() {
       ) : state.status === "error" ? (
         <ErrorState title="Couldn't load settings" message={state.error} />
       ) : state.settings.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-dim)]">No settings yet.</p>
+        <AdminCard>
+          <p className="py-4 text-center text-sm text-[var(--color-text-dim)]">No settings yet.</p>
+        </AdminCard>
       ) : (
-        <table className="pp-table">
-          <thead>
-            <tr>
-              <th>Key</th>
-              <th>Value</th>
-              <th>Description</th>
-              <th>Updated</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.settings.map((s) => (
-              <SettingRow key={s.key} s={s} run={run} />
-            ))}
-          </tbody>
-        </table>
+        <TableCard title="App settings" count={state.settings.length}>
+          <table className="pp-table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Value</th>
+                <th>Description</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.settings.map((s) => (
+                <SettingRow key={s.key} s={s} run={run} />
+              ))}
+            </tbody>
+          </table>
+        </TableCard>
       )}
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-          placeholder="new_setting_key"
-          aria-label="New setting key"
-          className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-dim)]"
-        />
-        <button
-          type="button"
-          onClick={() => void add()}
-          className="rounded-[var(--r-micro)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-        >
-          Add setting
-        </button>
-      </div>
+      <AdminCard title="Add a setting" subtitle="Create a new app setting key">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value)}
+            placeholder="new_setting_key"
+            aria-label="New setting key"
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none transition-colors placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)]"
+          />
+          <PillButton icon={Plus} variant="primary" onClick={() => void add()}>
+            Add setting
+          </PillButton>
+        </div>
+      </AdminCard>
     </div>
   );
 }
@@ -121,8 +126,9 @@ function SettingRow({ s, run }: { s: AdminSetting; run: (fn: Mutator) => void })
           type="button"
           onClick={() => run(() => deleteSetting(s.key))}
           aria-label={`Delete ${s.key}`}
-          className="rounded-[var(--r-micro)] px-2 py-1 t-tag uppercase text-[var(--color-sev-critical)] hover:bg-[var(--color-surface-2)]"
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[var(--color-sev-critical)] transition-colors hover:bg-[color-mix(in_srgb,var(--color-sev-critical)_10%,transparent)]"
         >
+          <Trash2 size={13} aria-hidden />
           Delete
         </button>
       </td>

@@ -1,18 +1,9 @@
-import { Card } from "../../cockpit/primitives";
+import { AdminCard, MiniStat, SectionTitle, TableCard } from "../ui/kit";
 import { LoadingState } from "../../components/state/LoadingState";
 import { ErrorState } from "../../components/state/ErrorState";
 import { SignupsAreaChart } from "../dashboard/SignupsAreaChart";
 import { joinedDate } from "../dashboard/format";
 import { useAdminTraffic, type RecentEvent, type TopPath } from "./useAdminTraffic";
-
-function Kpi({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-      <div className="t-tag uppercase text-[var(--color-text-dim)]">{label}</div>
-      <div className="font-mono-num text-lg text-[var(--color-text)]">{value}</div>
-    </div>
-  );
-}
 
 export function TrafficView() {
   const { state } = useAdminTraffic();
@@ -23,26 +14,29 @@ export function TrafficView() {
 
   return (
     <div className="flex flex-col gap-[var(--density-gap)]">
-      <div className="flex flex-wrap items-end gap-3">
-        <Kpi label="Active users today" value={String(stats.active_today)} />
-        <Kpi label="Page views today" value={String(stats.pageviews_today)} />
-        <Kpi label="Signed-in" value={String(stats.authed_today)} />
-        <Kpi label="Anonymous" value={String(stats.anon_today)} />
+      <SectionTitle title="Live Traffic" subtitle="Live visits and page activity" />
+
+      <div className="grid grid-cols-2 gap-[var(--density-gap-sm)] md:grid-cols-4">
+        <MiniStat label="Active users today" value={String(stats.active_today)} />
+        <MiniStat label="Page views today" value={String(stats.pageviews_today)} />
+        <MiniStat label="Signed-in" value={String(stats.authed_today)} />
+        <MiniStat label="Anonymous" value={String(stats.anon_today)} />
       </div>
+
       {empty ? (
         <p className="text-sm text-[var(--color-text-dim)]">No traffic yet.</p>
       ) : (
         <>
-          <Card title="Page views (14d)">
+          <AdminCard title="Page views" subtitle="Daily views over the last 14 days">
             <SignupsAreaChart data={byDay} />
-          </Card>
+          </AdminCard>
           <div className="grid gap-[var(--density-gap)] lg:grid-cols-2">
-            <Card title="Top paths (7d)">
+            <TableCard title="Top paths" count={topPaths.length}>
               <TopPathsTable rows={topPaths} />
-            </Card>
-            <Card title="Recent activity">
+            </TableCard>
+            <TableCard title="Recent activity" count={recent.length}>
               <RecentTable rows={recent} />
-            </Card>
+            </TableCard>
           </div>
         </>
       )}
@@ -51,7 +45,7 @@ export function TrafficView() {
 }
 
 function TopPathsTable({ rows }: { rows: TopPath[] }) {
-  if (rows.length === 0) return <p className="text-sm text-[var(--color-text-dim)]">No paths yet.</p>;
+  if (rows.length === 0) return <p className="px-5 py-4 text-sm text-[var(--color-text-dim)]">No paths yet.</p>;
   return (
     <table className="pp-table">
       <thead>
@@ -64,7 +58,7 @@ function TopPathsTable({ rows }: { rows: TopPath[] }) {
         {rows.map((r) => (
           <tr key={r.path}>
             <td className="font-mono-num">{r.path}</td>
-            <td className="font-mono-num">{r.count}</td>
+            <td className="font-mono-num text-[var(--color-text-dim)]">{r.count}</td>
           </tr>
         ))}
       </tbody>
@@ -73,7 +67,7 @@ function TopPathsTable({ rows }: { rows: TopPath[] }) {
 }
 
 function RecentTable({ rows }: { rows: RecentEvent[] }) {
-  if (rows.length === 0) return <p className="text-sm text-[var(--color-text-dim)]">No recent activity.</p>;
+  if (rows.length === 0) return <p className="px-5 py-4 text-sm text-[var(--color-text-dim)]">No recent activity.</p>;
   return (
     <table className="pp-table">
       <thead>
@@ -88,7 +82,7 @@ function RecentTable({ rows }: { rows: RecentEvent[] }) {
           <tr key={`${r.created_at}-${i}`}>
             <td className="font-mono-num text-[var(--color-text-dim)]">{joinedDate(r.created_at)}</td>
             <td className="font-mono-num">{r.path}</td>
-            <td className="t-tag uppercase text-[var(--color-text-dim)]">{r.signedIn ? "Yes" : "No"}</td>
+            <td className="text-xs font-medium text-[var(--color-text-dim)]">{r.signedIn ? "Yes" : "No"}</td>
           </tr>
         ))}
       </tbody>

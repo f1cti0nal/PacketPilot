@@ -267,6 +267,78 @@ body {
   .blip { animation: none !important; opacity: 1 !important; }
 }
 
+/* ============================================================================
+   Admin console — Cemdash-style layout layer (scoped to `.admin-root` ONLY).
+   The main app stays flat/violet; the admin adopts a softer, more spacious SaaS
+   dashboard skin: subtle elevation, rounder cards, generous rhythm, sentence-case
+   table headers. Everything still reads from the shared semantic tokens, so the
+   light/dark theme toggle and density toggle keep working unchanged.
+
+   NOTE: the soft shadows below are an intentional, admin-only departure from the
+   app-wide flat rule (--sh-* = none). They never leak past `.admin-root`.
+   ============================================================================ */
+.admin-root {
+  /* Re-introduce soft elevation for the admin surface only */
+  --sh-rest: 0 1px 2px rgba(15, 17, 26, 0.04), 0 1px 3px rgba(15, 17, 26, 0.05);
+  --sh-float: 0 10px 28px -8px rgba(15, 17, 26, 0.14), 0 2px 8px rgba(15, 17, 26, 0.06);
+  --sh-hero: 0 16px 48px -12px rgba(15, 17, 26, 0.18);
+  /* A step rounder + airier than the console */
+  --r-card-lg: 18px;
+  --admin-gutter: clamp(1rem, 1.4vw + 0.6rem, 1.75rem);
+  /* Trend semantics reuse the audited, AA-safe severity tokens (teal up / rose down) */
+  --admin-up: var(--color-sev-low);
+  --admin-down: var(--color-sev-critical);
+  --admin-canvas: var(--color-bg);
+  background: var(--admin-canvas);
+}
+[data-theme="light"] .admin-root {
+  /* A touch more presence for the shadows on a bright neutral canvas */
+  --sh-rest: 0 1px 2px rgba(15, 17, 26, 0.05), 0 1px 3px rgba(15, 17, 26, 0.06);
+  --sh-float: 0 12px 32px -10px rgba(15, 17, 26, 0.16), 0 2px 8px rgba(15, 17, 26, 0.06);
+  --admin-canvas: #f5f5f7;
+}
+
+/* Soft, rounded admin card (distinct from the flat cockpit `.card`). */
+.admin-card {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card-lg);
+  box-shadow: var(--sh-rest);
+}
+/* Any stray cockpit `.card` inside the admin inherits the softer skin too. */
+.admin-root .card {
+  border-radius: var(--r-card-lg);
+  box-shadow: var(--sh-rest);
+}
+/* Floating menus / popovers within the admin get real elevation. */
+.admin-menu {
+  box-shadow: var(--sh-float);
+}
+
+/* Admin data grids: sentence-case headers, roomier rows, soft hover — the base
+   `.pp-table` rules still apply; these refine them inside the admin only. */
+.admin-root .pp-table thead th {
+  background: var(--color-surface-1);
+  color: var(--color-text-faint);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--fs-micro);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+.admin-root .pp-table tbody tr {
+  border-top: 1px solid var(--color-border);
+  transition: background-color 0.12s ease;
+}
+.admin-root .pp-table tbody tr:hover {
+  background: var(--color-surface-2);
+}
+.admin-root .pp-table td {
+  padding: 12px 16px;
+  vertical-align: middle;
+}
+
 /* ---- Dark scrollbar ------------------------------------------------------ */
 * {
   scrollbar-width: thin;

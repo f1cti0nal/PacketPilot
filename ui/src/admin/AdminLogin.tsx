@@ -7,11 +7,20 @@ type LoginSession = Extract<AdminSession, { status: "anon" | "forbidden" | "unco
 /** Centered card used for every pre-shell admin state. */
 function Frame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="app-bg flex h-full min-h-0 items-center justify-center px-6 py-12 text-[var(--color-text)]">
-      <section className="card w-full max-w-sm p-6 shadow-[var(--sh-hero)]">
-        <div className="mb-4 flex items-center gap-2">
-          <ShieldCheck size={18} className="text-[var(--color-accent)]" aria-hidden />
-          <h1 className="t-title text-[var(--color-text)]">PacketPilot Admin</h1>
+    <div className="admin-root flex h-full min-h-0 items-center justify-center bg-[var(--admin-canvas)] px-6 py-12 text-[var(--color-text)]">
+      <section className="admin-card w-full max-w-sm p-7">
+        <div className="mb-5 flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-accent-deep)] text-[var(--color-on-accent)]">
+            <ShieldCheck size={20} aria-hidden />
+          </span>
+          <span>
+            <span className="block font-display text-lg font-semibold leading-tight text-[var(--color-text)]">
+              PacketPilot
+            </span>
+            <span className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-faint)]">
+              Admin Console
+            </span>
+          </span>
         </div>
         {children}
       </section>
@@ -29,8 +38,8 @@ export function AdminLogin({ session }: { session: LoginSession }) {
     return (
       <Frame>
         <p className="text-sm text-[var(--color-text-dim)]">
-          The admin backend is not configured. Set <code>VITE_SUPABASE_URL</code> and{" "}
-          <code>VITE_SUPABASE_ANON_KEY</code>, then reload.
+          The admin backend is not configured. Set <code className="font-mono-num">VITE_SUPABASE_URL</code> and{" "}
+          <code className="font-mono-num">VITE_SUPABASE_ANON_KEY</code>, then reload.
         </p>
       </Frame>
     );
@@ -46,7 +55,7 @@ export function AdminLogin({ session }: { session: LoginSession }) {
         <button
           type="button"
           onClick={() => void session.signOut()}
-          className="mt-4 inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-text-dim)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+          className="mt-5 inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-1)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]"
         >
           Sign out
         </button>
@@ -68,31 +77,29 @@ export function AdminLogin({ session }: { session: LoginSession }) {
   };
 
   const inputCls =
-    "w-full rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]";
+    "w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-accent)]";
 
   return (
     <Frame>
-      <p className="mb-4 text-sm text-[var(--color-text-dim)]">
-        Administrator access only. Sign in to continue.
-      </p>
-      <form onSubmit={submit} className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="t-label text-[var(--color-text-dim)]">Email</span>
+      <p className="mb-5 text-sm text-[var(--color-text-dim)]">Administrator access only. Sign in to continue.</p>
+      <form onSubmit={submit} className="flex flex-col gap-3.5">
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="text-xs font-medium text-[var(--color-text-dim)]">Email</span>
           <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
         </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="t-label text-[var(--color-text-dim)]">Password</span>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="text-xs font-medium text-[var(--color-text-dim)]">Password</span>
           <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
         </label>
         {error && (
-          <p role="alert" className="t-tag text-[var(--color-sev-critical)]">
+          <p role="alert" className="text-sm text-[var(--color-sev-critical)]">
             {error}
           </p>
         )}
         <button
           type="submit"
           disabled={busy}
-          className="inline-flex w-full items-center justify-center rounded-full bg-[var(--color-accent-deep)] px-4 py-1.5 text-sm font-medium text-[var(--color-on-accent)] disabled:opacity-60"
+          className="mt-1 inline-flex w-full items-center justify-center rounded-full bg-[var(--color-accent-deep)] px-4 py-2 text-sm font-medium text-[var(--color-on-accent)] transition-[filter] hover:brightness-110 disabled:opacity-60"
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>
