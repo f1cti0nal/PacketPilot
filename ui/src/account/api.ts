@@ -73,5 +73,14 @@ export async function deleteAccount(): Promise<Result> {
   if (!supabase) return NO_BACKEND;
   const { error } = await supabase.functions.invoke("delete-account");
   if (error) return { ok: false, error: await invokeErr(error) };
+  // The account and its GoTrue auth user are gone server-side; discard the now-orphaned local
+  // session so a cached JWT can't re-enter /app until it expires. Local scope only — the user no
+  // longer exists, so there's nothing to sign out server-side. Best-effort: the caller redirects
+  // away regardless.
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    /* ignore — deletion already succeeded */
+  }
   return { ok: true };
 }

@@ -44,11 +44,18 @@ describe("AuthDialog", () => {
     // disables the other provider button — so each provider is exercised in its own render.
     const { unmount } = render(<AuthDialog session={anon({ signInWithProvider })} onClose={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
-    expect(signInWithProvider).toHaveBeenCalledWith("google");
+    expect(signInWithProvider).toHaveBeenCalledWith("google", undefined);
     unmount();
     render(<AuthDialog session={anon({ signInWithProvider })} onClose={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /continue with github/i }));
-    expect(signInWithProvider).toHaveBeenCalledWith("github");
+    expect(signInWithProvider).toHaveBeenCalledWith("github", undefined);
+  });
+
+  it("passes a custom OAuth return path through to the provider sign-in", async () => {
+    const signInWithProvider = vi.fn(async () => ({ ok: true }));
+    render(<AuthDialog session={anon({ signInWithProvider })} onClose={vi.fn()} socialRedirectPath="/pricing" />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+    expect(signInWithProvider).toHaveBeenCalledWith("google", "/pricing");
   });
 
   it("surfaces an error when sign-in fails", async () => {

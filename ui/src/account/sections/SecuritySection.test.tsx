@@ -31,6 +31,21 @@ describe("SecuritySection", () => {
     expect(await screen.findByText(/password updated/i)).toBeInTheDocument();
   });
 
+  it("clears a prior success note when a later attempt fails validation", async () => {
+    render(<SecuritySection email="ada@x.com" />);
+    // First: a successful change shows the green note.
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: "hunter2pass" } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: "hunter2pass" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/password updated/i)).toBeInTheDocument();
+    // Then: a too-short attempt must replace it with the error, not show both at once.
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: "short" } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: "short" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/at least 8 characters/i)).toBeInTheDocument();
+    expect(screen.queryByText(/password updated/i)).not.toBeInTheDocument();
+  });
+
   it("rejects a too-short password without calling the API", async () => {
     render(<SecuritySection email="ada@x.com" />);
     fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: "short" } });

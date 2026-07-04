@@ -47,6 +47,14 @@ export function PricingPlans() {
     }
   };
 
+  const clearPending = () => {
+    try {
+      sessionStorage.removeItem(PENDING_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const onChoose = (plan: PlanChoice) => {
     if (session.status === "authed") void subscribe(plan);
     else {
@@ -60,7 +68,8 @@ export function PricingPlans() {
     }
   };
 
-  // After sign-in completes, resume the checkout the visitor chose.
+  // After sign-in completes, resume the checkout the visitor chose. OAuth sign-in from the dialog
+  // returns to /pricing (socialRedirectPath below) precisely so this effect can run.
   useEffect(() => {
     if (session.status !== "authed") return;
     let stored: string | null = null;
@@ -69,15 +78,15 @@ export function PricingPlans() {
     } catch {
       /* ignore */
     }
-    if (stored) {
-      try {
-        sessionStorage.removeItem(PENDING_KEY);
-      } catch {
-        /* ignore */
-      }
-      setAuthOpen(false);
-      void subscribe(stored as PlanChoice);
-    }
+    if (!stored) return;
+    // Consume the key immediately so it can never trigger an unrequested checkout on a later visit.
+    clearPending();
+    setAuthOpen(false);
+    // Only resume a genuine upgrade: never auto-send an existing Stripe customer into a second
+    // checkout, and honor a sold-out founder seat.
+    if (session.profile.hasBilling) return;
+    if (stored === "founder" && status.founder_remaining <= 0) return;
+    void subscribe(stored as PlanChoice);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.status]);
 
@@ -186,7 +195,13 @@ export function PricingPlans() {
       {authOpen && session.status === "anon" && (
         <AuthDialog
           session={session}
-          onClose={() => setAuthOpen(false)}
+          socialRedirectPath="/pricing"
+          onClose={() => {
+            // Abandoning the dialog abandons the chosen plan — don't let it linger and auto-fire
+            // a checkout the next time this tab becomes authed.
+            clearPending();
+            setAuthOpen(false);
+          }}
         />
       )}
     </div>

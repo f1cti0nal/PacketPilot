@@ -79,6 +79,32 @@ describe("PricingPlans", () => {
     expect(screen.queryByRole("button", { name: /get pro/i })).not.toBeInTheDocument();
   });
 
+  it("resumes the pending checkout once the visitor is authed, then clears the key", async () => {
+    sessionStorage.setItem("pp.pending_plan", "annual");
+    sess.useSession.mockReturnValue(authedFree);
+    render(<PricingPlans />);
+    await waitFor(() => expect(billing.startCheckout).toHaveBeenCalledWith("annual"));
+    expect(sessionStorage.getItem("pp.pending_plan")).toBeNull();
+  });
+
+  it("never auto-checks-out an existing customer holding a stale pending plan", async () => {
+    sessionStorage.setItem("pp.pending_plan", "annual");
+    sess.useSession.mockReturnValue({ ...authedFree, profile: { ...authedFree.profile, plan: "pro", hasBilling: true } });
+    render(<PricingPlans />);
+    // The stale key is consumed (so it can't fire later) but no unrequested checkout is started.
+    await waitFor(() => expect(sessionStorage.getItem("pp.pending_plan")).toBeNull());
+    expect(billing.startCheckout).not.toHaveBeenCalled();
+  });
+
+  it("does not resume a sold-out founder seat", async () => {
+    sessionStorage.setItem("pp.pending_plan", "founder");
+    pricing.usePricing.mockReturnValue({ status: { ...fullStatus, founder_remaining: 0 }, loading: false });
+    sess.useSession.mockReturnValue(authedFree);
+    render(<PricingPlans />);
+    await waitFor(() => expect(sessionStorage.getItem("pp.pending_plan")).toBeNull());
+    expect(billing.startCheckout).not.toHaveBeenCalled();
+  });
+
   it("lets a trial user (effective Pro, no billing) still convert", () => {
     sess.useSession.mockReturnValue({
       ...authedFree,

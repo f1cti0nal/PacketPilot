@@ -191,6 +191,20 @@ describe("useSession", () => {
     expect(out).toEqual({ ok: true });
   });
 
+  it("signInWithProvider honors a custom return path (defaults to /app)", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.status).toBe("anon"));
+    await act(async () => {
+      if (result.current.status === "anon") await result.current.signInWithProvider("github", "/pricing");
+    });
+    expect(h.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "github",
+        options: expect.objectContaining({ redirectTo: expect.stringContaining("/pricing") }),
+      }),
+    );
+  });
+
   it("signOut delegates to supabase.auth.signOut", async () => {
     h.session = session();
     const { result } = renderHook(() => useSession());

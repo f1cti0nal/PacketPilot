@@ -11,7 +11,17 @@ type AnonSession = Extract<SessionState, { status: "anon" }>;
  * Holds the same card as the standalone /login page, minus the brand panel, with a login↔signup
  * toggle. On sign-up with email confirmation on, it flips to a "check your inbox" state.
  */
-export function AuthDialog({ session, onClose }: { session: AnonSession; onClose: () => void }) {
+export function AuthDialog({
+  session,
+  onClose,
+  socialRedirectPath,
+}: {
+  session: AnonSession;
+  onClose: () => void;
+  /** Where an OAuth sign-in should return to (default /app). /pricing passes its own path so it
+   *  can resume the chosen checkout after the redirect instead of stranding the intent. */
+  socialRedirectPath?: string;
+}) {
   const { ref, onKeyDown } = useDialogA11y<HTMLDivElement>(onClose);
   const [mode, setMode] = useState<AuthMode>("login");
   const [busy, setBusy] = useState(false);
@@ -39,7 +49,7 @@ export function AuthDialog({ session, onClose }: { session: AnonSession; onClose
     if (busy) return;
     setBusy(true);
     setError(null);
-    const r = await session.signInWithProvider(provider);
+    const r = await session.signInWithProvider(provider, socialRedirectPath);
     // On success the browser redirects to the provider; only a failure to start returns here.
     if (!r.ok) {
       setError(r.error ?? "Sign-in failed");
