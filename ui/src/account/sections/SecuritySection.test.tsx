@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({
-  sendPasswordReset: vi.fn(),
+  updatePassword: vi.fn(),
   signOutEverywhere: vi.fn(),
   deleteAccount: vi.fn(),
 }));
@@ -11,7 +11,7 @@ import { SecuritySection } from "./SecuritySection";
 
 const origUrl = window.location;
 beforeEach(() => {
-  api.sendPasswordReset.mockResolvedValue({ ok: true });
+  api.updatePassword.mockResolvedValue({ ok: true });
   api.signOutEverywhere.mockResolvedValue({ ok: true });
   api.deleteAccount.mockResolvedValue({ ok: true });
   Object.defineProperty(window, "location", { writable: true, value: { assign: vi.fn() } });
@@ -22,18 +22,40 @@ afterEach(() => {
 });
 
 describe("SecuritySection", () => {
-  it("sends a password reset email via Auth0", async () => {
+  it("updates the password inline when both fields match", async () => {
     render(<SecuritySection email="ada@x.com" />);
-    fireEvent.click(screen.getByRole("button", { name: /send password reset email/i }));
-    await waitFor(() => expect(api.sendPasswordReset).toHaveBeenCalledWith("ada@x.com"));
-    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: "hunter2pass" } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: "hunter2pass" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    await waitFor(() => expect(api.updatePassword).toHaveBeenCalledWith("hunter2pass"));
+    expect(await screen.findByText(/password updated/i)).toBeInTheDocument();
   });
 
-  it("surfaces a reset error", async () => {
-    api.sendPasswordReset.mockResolvedValue({ ok: false, error: "Couldn't send reset email (500)" });
+  it("rejects a too-short password without calling the API", async () => {
     render(<SecuritySection email="ada@x.com" />);
-    fireEvent.click(screen.getByRole("button", { name: /send password reset email/i }));
-    expect(await screen.findByText(/couldn't send reset email/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: "short" } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: "short" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/at least 8 characters/i)).toBeInTheDocument();
+    expect(api.updatePassword).not.toHaveBeenCalled();
+  });
+
+  it("rejects mismatched passwords without calling the API", async () => {
+    render(<SecuritySection email="ada@x.com" />);
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: "hunter2pass" } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: "different99" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/passwords don't match/i)).toBeInTheDocument();
+    expect(api.updatePassword).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an update error", async () => {
+    api.updatePassword.mockResolvedValue({ ok: false, error: "Couldn't update password (500)" });
+    render(<SecuritySection email="ada@x.com" />);
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: "hunter2pass" } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: "hunter2pass" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/couldn't update password/i)).toBeInTheDocument();
   });
 
   it("notes that email + connected logins are provider-managed", () => {

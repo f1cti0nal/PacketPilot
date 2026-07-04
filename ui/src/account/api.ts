@@ -45,11 +45,20 @@ export async function removeAvatar(uid: string): Promise<Result> {
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
-/** Email the user a secure link to set a new password (Supabase recovery flow). */
+/** Email the user a secure link to set a new password (Supabase recovery flow). The link lands on
+ *  /account, where the signed-in recovery session can set a new password via `updatePassword`. */
 export async function sendPasswordReset(email: string): Promise<Result> {
   if (!supabase) return NO_BACKEND;
   const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/account` : undefined;
   const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Set a new password for the signed-in user. Works for any provider — including an OAuth-only
+ *  account (Google/GitHub) adding a password so it can also sign in with email. */
+export async function updatePassword(newPassword: string): Promise<Result> {
+  if (!supabase) return NO_BACKEND;
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
