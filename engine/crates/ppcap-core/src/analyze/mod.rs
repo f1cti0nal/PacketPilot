@@ -534,13 +534,14 @@ fn process_flow(
     // the flow's start time, with directional bytes) into the cross-flow tracker for
     // beaconing / exfil detection.
     if let Some(c) = contact_from_flow(record) {
-        tracker.observe_flow_contact(
+        tracker.observe_flow_contact_with(
             c.client,
             c.server,
             c.server_port,
             c.ts_ns,
             c.bytes_out,
             c.bytes_in,
+            record.key.transport,
         );
     }
 

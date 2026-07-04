@@ -21,8 +21,14 @@ pub enum RuleProto {
 pub struct Rule {
     pub action: String,
     pub proto: RuleProto,
-    /// `None` means the rule matched `any` port.
+    /// `None` means the rule matched `any` source port.
+    pub src_port: Option<u16>,
+    /// `None` means the rule matched `any` destination port.
     pub dst_port: Option<u16>,
+    /// `true` for a bidirectional (`<>`) rule: the src/dst port constraints may be satisfied in
+    /// either orientation, so the rule matches content in both directions of a conversation.
+    /// `false` for a unidirectional (`->`) rule.
+    pub bidirectional: bool,
     /// Decoded content bytes (ASCII + hex runs). Never empty for a rule that reached `rules`.
     pub content: Vec<u8>,
     pub msg: String,
@@ -33,21 +39,41 @@ pub struct Rule {
 }
 
 impl Rule {
-    /// Returns `true` when `(transport, dst_port, payload)` satisfies every condition in this
-    /// rule: protocol match, optional port match, and a non-empty content substring match.
-    pub fn matches(&self, transport: Transport, dst_port: u16, payload: &[u8]) -> bool {
+    /// Returns `true` when `(transport, src_port, dst_port, payload)` satisfies every condition in
+    /// this rule: protocol match, port match (honoring both the source-port constraint and the
+    /// `->`/`<>` direction operator), and a non-empty content substring match.
+    pub fn matches(
+        &self,
+        transport: Transport,
+        src_port: u16,
+        dst_port: u16,
+        payload: &[u8],
+    ) -> bool {
         let proto_ok = match self.proto {
             RuleProto::Tcp => transport == Transport::Tcp,
             RuleProto::Udp => transport == Transport::Udp,
             RuleProto::Ip => true,
         };
-        let port_ok = self.dst_port.is_none_or(|p| p == dst_port);
         proto_ok
-            && port_ok
+            && self.ports_match(src_port, dst_port)
             && !self.content.is_empty()
             && payload
                 .windows(self.content.len())
                 .any(|w| w == self.content.as_slice())
+    }
+
+    /// Whether a frame's `(src_port, dst_port)` satisfies this rule's port constraints. A `None`
+    /// constraint is `any` (always satisfied). For a unidirectional (`->`) rule the frame's source
+    /// must satisfy the rule's source constraint and its dest the dest constraint. A bidirectional
+    /// (`<>`) rule also accepts the reversed orientation, so it matches either half of the flow.
+    fn ports_match(&self, src_port: u16, dst_port: u16) -> bool {
+        let sat = |constraint: Option<u16>, actual: u16| constraint.is_none_or(|p| p == actual);
+        let forward = sat(self.src_port, src_port) && sat(self.dst_port, dst_port);
+        if !self.bidirectional {
+            return forward;
+        }
+        let reverse = sat(self.src_port, dst_port) && sat(self.dst_port, src_port);
+        forward || reverse
     }
 }
 
@@ -158,6 +184,8 @@ fn parse_one(line: &str, rules: &mut Vec<Rule>) -> Result<(), String> {
     }
     let action = tokens[0].to_string();
     let proto_str = tokens[1];
+    let sport_str = tokens[3];
+    let direction_str = tokens[4];
     let dport_str = tokens[6];
 
     let proto = match proto_str {
@@ -167,15 +195,28 @@ fn parse_one(line: &str, rules: &mut Vec<Rule>) -> Result<(), String> {
         other => return Err(format!("unsupported proto: {other}")),
     };
 
-    let dst_port: Option<u16> = if dport_str == "any" {
-        None
-    } else {
-        Some(
-            dport_str
-                .parse::<u16>()
-                .map_err(|_| format!("bad port: {dport_str}"))?,
-        )
+    // The direction operator affects matching, so an unrecognized one must skip the rule rather
+    // than be silently treated as `->` (mirrors the UNSUPPORTED-option policy below).
+    let bidirectional = match direction_str {
+        "->" => false,
+        "<>" => true,
+        other => return Err(format!("unsupported direction: {other}")),
     };
+
+    // A port token is `any` (no constraint) or a single number. Port lists (`[80,443]`), ranges
+    // (`1024:`), variables (`$HTTP_PORTS`) and negation (`!80`) fail the parse → the rule is
+    // skipped rather than admitted with the wrong (over-broad) semantics.
+    let parse_port = |s: &str| -> Result<Option<u16>, String> {
+        if s == "any" {
+            Ok(None)
+        } else {
+            s.parse::<u16>()
+                .map(Some)
+                .map_err(|_| format!("bad port: {s}"))
+        }
+    };
+    let src_port = parse_port(sport_str)?;
+    let dst_port = parse_port(dport_str)?;
 
     // ── 3. Parse options ─────────────────────────────────────────────────────
     let opts = split_options(opts_raw);
@@ -261,7 +302,9 @@ fn parse_one(line: &str, rules: &mut Vec<Rule>) -> Result<(), String> {
     rules.push(Rule {
         action,
         proto,
+        src_port,
         dst_port,
+        bidirectional,
         content,
         msg,
         sid,
@@ -573,6 +616,7 @@ pub fn apply_rules<R: std::io::Read + 'static>(
             continue;
         }
 
+        let sport = meta.src_port;
         let dport = meta.dst_port;
 
         // Skip frames with no IP (ARP, non-IP); we need string keys for dedup + Finding.
@@ -582,7 +626,7 @@ pub fn apply_rules<R: std::io::Read + 'static>(
         };
 
         for r in rules {
-            if r.matches(meta.transport, dport, payload) {
+            if r.matches(meta.transport, sport, dport, payload) {
                 let key = (r.sid, src_str.clone(), dst_str.clone(), dport);
                 if seen.insert(key) {
                     out.push(rule_finding(r, &src_str, &dst_str, dport));
@@ -686,12 +730,52 @@ mod tests {
     #[test]
     fn matches_proto_port_content() {
         let r = &parse_rules(r#"alert tcp any any -> any 443 (content:"abc"; sid:1;)"#).rules[0];
-        assert!(r.matches(Transport::Tcp, 443, b"xx abc yy"));
-        assert!(!r.matches(Transport::Tcp, 80, b"xx abc yy")); // wrong port
-        assert!(!r.matches(Transport::Udp, 443, b"xx abc yy")); // wrong proto
-        assert!(!r.matches(Transport::Tcp, 443, b"no match")); // content absent
+        assert!(r.matches(Transport::Tcp, 55555, 443, b"xx abc yy"));
+        assert!(!r.matches(Transport::Tcp, 55555, 80, b"xx abc yy")); // wrong dst port
+        assert!(!r.matches(Transport::Udp, 55555, 443, b"xx abc yy")); // wrong proto
+        assert!(!r.matches(Transport::Tcp, 55555, 443, b"no match")); // content absent
+                                                                      // A `->` rule on dst 443 must NOT match the reversed direction (src 443).
+        assert!(!r.matches(Transport::Tcp, 443, 55555, b"xx abc yy"));
         let any = &parse_rules(r#"alert ip any any -> any any (content:"z"; sid:2;)"#).rules[0];
-        assert!(any.matches(Transport::Udp, 12345, b"zzz")); // ip+any-port
+        assert!(any.matches(Transport::Udp, 40000, 12345, b"zzz")); // ip+any-port
+    }
+
+    // ── Regression: source-port constraint must be enforced, not dropped ─────
+    // `alert tcp any 443 -> any any` matches ONLY traffic sourced from port 443.
+    #[test]
+    fn enforces_src_port() {
+        let r = &parse_rules(r#"alert tcp any 443 -> any any (content:"banner"; sid:5;)"#).rules[0];
+        assert_eq!(r.src_port, Some(443));
+        assert_eq!(r.dst_port, None);
+        assert!(!r.bidirectional);
+        assert!(r.matches(Transport::Tcp, 443, 50000, b"xx banner yy")); // sourced from 443
+        assert!(!r.matches(Transport::Tcp, 50000, 80, b"xx banner yy")); // sourced from 50000 → no
+    }
+
+    // ── Regression: bidirectional `<>` rules match either direction ──────────
+    #[test]
+    fn bidirectional_matches_either_direction() {
+        let r = &parse_rules(r#"alert tcp any any <> any 443 (content:"SECRET"; sid:9;)"#).rules[0];
+        assert!(r.bidirectional);
+        assert_eq!(r.dst_port, Some(443));
+        // client → server:443 (forward)
+        assert!(r.matches(Transport::Tcp, 50000, 443, b"aa SECRET bb"));
+        // server:443 → client (reverse half of the same conversation)
+        assert!(r.matches(Transport::Tcp, 443, 50000, b"aa SECRET bb"));
+        // an unrelated flow on neither side of 443 must not match
+        assert!(!r.matches(Transport::Tcp, 50000, 80, b"aa SECRET bb"));
+    }
+
+    // ── Regression: an unrecognized direction operator is skipped, not coerced to `->` ──
+    #[test]
+    fn skips_unknown_direction() {
+        let p = parse_rules(r#"alert tcp any any => any 443 (content:"a"; sid:6;)"#);
+        assert!(
+            p.rules.is_empty(),
+            "rule with bad direction must not be admitted"
+        );
+        assert_eq!(p.skipped.len(), 1);
+        assert!(p.skipped[0].reason.contains("direction"));
     }
 
     // ── Regression: I-1 ─────────────────────────────────────────────────────
