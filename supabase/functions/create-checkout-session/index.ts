@@ -52,15 +52,20 @@ Deno.serve(async (req) => {
           : ((pricing.monthly_price_id as string | null) ?? Deno.env.get("STRIPE_PRICE_PRO") ?? null);
     if (!priceId) return json({ error: "That plan isn't available yet." }, 400);
 
-    // Founder is a capped, limited offer — enforce the cap server-side so it can't be oversold.
+    // Founder is a capped, limited offer — reserve a seat ATOMICALLY before creating the Checkout
+    // session. Counting confirmed subscriptions here can't bound the offer, because those rows are
+    // only written by the webhook AFTER payment: a concurrent pre-webhook burst would all pass a
+    // naive "count < cap" and oversell. claim_founder_seat() serializes claimers and holds the
+    // seat for a short window. Fail CLOSED on any error so a capped offer is never oversold.
     if (plan === "founder") {
       const cap = Number(pricing.founder_cap ?? 200) || 200;
-      const { count } = await admin
-        .from("subscriptions")
-        .select("id", { count: "exact", head: true })
-        .eq("price_id", priceId)
-        .in("status", ["active", "trialing"]);
-      if ((count ?? 0) >= cap) return json({ error: "Founder seats are sold out." }, 400);
+      const { data: claimed, error: claimErr } = await admin.rpc("claim_founder_seat", {
+        p_user_id: user.id,
+        p_price_id: priceId,
+        p_cap: cap,
+      });
+      if (claimErr) return json({ error: "Couldn't reserve a founder seat. Please try again." }, 400);
+      if (claimed !== true) return json({ error: "Founder seats are sold out." }, 400);
     }
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!);
