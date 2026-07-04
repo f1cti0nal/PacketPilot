@@ -5,9 +5,8 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!);
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
 
-function planForStatus(status: string): "free" | "pro" {
-  return status === "active" || status === "trialing" ? "pro" : "free";
-}
+/** Statuses that entitle a user to Pro. Mirrors expire_trials() in migration 0018. */
+const PRO_STATUSES = ["active", "trialing"];
 
 Deno.serve(async (req) => {
   const sig = req.headers.get("stripe-signature");
@@ -61,7 +60,7 @@ Deno.serve(async (req) => {
         const periodEnd =
           (item as { current_period_end?: number } | undefined)?.current_period_end ??
           (sub as { current_period_end?: number }).current_period_end ?? null;
-        await admin.from("subscriptions").upsert(
+        const { error: upErr } = await admin.from("subscriptions").upsert(
           {
             user_id: userId,
             stripe_customer_id: customerId,
@@ -75,11 +74,27 @@ Deno.serve(async (req) => {
           },
           { onConflict: "stripe_subscription_id" },
         );
+        // supabase-js resolves with {error} instead of throwing. Rethrow so the outer catch
+        // returns 500 and Stripe RETRIES the (idempotent, onConflict) event — otherwise a failed
+        // write would silently leave a paid customer un-upgraded or a downgrade unapplied.
+        if (upErr) throw upErr;
+
+        // Derive the plan from the user's AGGREGATE subscription state, not this single event's
+        // subscription: a stale/second subscription's cancellation must NOT revoke Pro from a
+        // user who still holds another active/trialing subscription. The upsert above has already
+        // committed, so this count sees the just-written status.
+        const { count, error: cntErr } = await admin
+          .from("subscriptions")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .in("status", PRO_STATUSES);
+        if (cntErr) throw cntErr;
         // A real Stripe event means this user has a billing relationship — clear any reverse-trial.
-        await admin
+        const { error: profErr } = await admin
           .from("profiles")
-          .update({ plan: planForStatus(sub.status), trial_ends_at: null })
+          .update({ plan: (count ?? 0) > 0 ? "pro" : "free", trial_ends_at: null })
           .eq("id", userId);
+        if (profErr) throw profErr;
       }
     }
     return new Response("ok", { status: 200 });
