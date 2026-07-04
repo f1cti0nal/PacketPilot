@@ -21,21 +21,26 @@ Deno.serve(async (req) => {
     const user = userData?.user;
     if (!user) return json({ error: "Unauthorized" }, 401);
 
-    // Best-effort: cancel the live Stripe subscription so a deleted account stops billing.
-    const { data: sub } = await admin
+    // Best-effort: cancel EVERY Stripe subscription on record so a deleted account stops billing.
+    // A churned user (subscribe → cancel → re-subscribe) holds multiple subscription rows, so
+    // cancelling a single arbitrary row could leave the genuinely-active subscription billing a
+    // gone account. Cancelling every known id guarantees the live one is stopped; cancelling an
+    // already-cancelled sub is a harmless no-op we swallow per id.
+    const { data: subs } = await admin
       .from("subscriptions")
       .select("stripe_subscription_id")
       .eq("user_id", user.id)
-      .not("stripe_subscription_id", "is", null)
-      .limit(1)
-      .maybeSingle();
-    const subId = sub?.stripe_subscription_id as string | undefined;
+      .not("stripe_subscription_id", "is", null);
+    const subIds = [...new Set((subs ?? []).map((s) => s.stripe_subscription_id as string).filter(Boolean))];
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (subId && stripeKey) {
-      try {
-        await new Stripe(stripeKey).subscriptions.cancel(subId);
-      } catch (_) {
-        // Never block account deletion on a Stripe error.
+    if (stripeKey && subIds.length) {
+      const stripe = new Stripe(stripeKey);
+      for (const id of subIds) {
+        try {
+          await stripe.subscriptions.cancel(id);
+        } catch (_) {
+          // Never block account deletion on a Stripe error for one subscription.
+        }
       }
     }
 
