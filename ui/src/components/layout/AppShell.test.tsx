@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, userEvent } from "../../test/render";
+import { render, screen, fireEvent, userEvent, within } from "../../test/render";
 import { AppShell } from "./AppShell";
 import type { AppShellProps } from "./AppShell";
 import { makeOutput } from "../../test/fixtures";
@@ -17,7 +17,6 @@ function minimalProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     onLoadDialogOpenChange: vi.fn(),
     onExport: vi.fn(async () => undefined),
     threats: makeOutput().summary.ip_threats ?? [],
-    activeIp: null,
     onSelectThreat: vi.fn(),
     collapsed: false,
     onToggleCollapse: vi.fn(),
@@ -37,15 +36,20 @@ describe("AppShell", () => {
     expect(screen.getByText("child content")).toBeInTheDocument();
   });
 
-  it("renders the threat rail with the provided threats", () => {
+  it("renders the sidebar view navigation", () => {
     render(<AppShell {...minimalProps()} />);
-    // Both threats from makeOutput() should appear as buttons in the rail
-    expect(
-      screen.getByRole("button", { name: /^10\.13\.37\.7/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^45\.77\.13\.37/ }),
-    ).toBeInTheDocument();
+    const nav = screen.getByRole("navigation", { name: "Views" });
+    for (const label of ["Dashboard", "Flows", "Findings", "Threats", "Recent"]) {
+      expect(within(nav).getByRole("button", { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it("clicking a sidebar nav item switches tabs", async () => {
+    const u = userEvent.setup();
+    const onTabChange = vi.fn();
+    render(<AppShell {...minimalProps({ onTabChange })} />);
+    await u.click(screen.getByRole("button", { name: "Threats" }));
+    expect(onTabChange).toHaveBeenCalledWith("threats");
   });
 
   it("Ctrl+K calls onPaletteOpenChange(true)", () => {
@@ -111,7 +115,7 @@ describe("AppShell", () => {
     expect(screen.getByLabelText("Command palette query")).toBeInTheDocument();
   });
 
-  it("mobile layout: drops the rail/top tabs for a bottom bar + threat drawer", () => {
+  it("mobile layout: drops the sidebar for a bottom tab bar with Threats as a tab", () => {
     const real = window.matchMedia;
     window.matchMedia = ((q: string) => ({
       matches: true,
@@ -124,19 +128,17 @@ describe("AppShell", () => {
       dispatchEvent: () => false,
     })) as unknown as typeof window.matchMedia;
     try {
-      render(<AppShell {...minimalProps()} />);
+      const onTabChange = vi.fn();
+      render(<AppShell {...minimalProps({ onTabChange })} />);
 
-      // No always-on rail, and the top Views switcher is gone.
-      expect(screen.queryByRole("complementary")).toBeNull();
+      // The desktop SideNav is gone on mobile.
       expect(screen.queryByRole("navigation", { name: "Views" })).toBeNull();
 
-      // Primary navigation is the bottom tab bar.
-      expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
-
-      // Tapping "Threats" opens the drawer, which exposes the rail threats.
-      fireEvent.click(screen.getByRole("button", { name: /Threat watchlist/ }));
-      expect(screen.getByRole("dialog", { name: "Threats" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /^10\.13\.37\.7/ })).toBeInTheDocument();
+      // Primary navigation is the bottom tab bar, and Threats rides it as a tab.
+      const nav = screen.getByRole("navigation", { name: "Primary" });
+      const threatsTab = within(nav).getByRole("button", { name: "Threats" });
+      fireEvent.click(threatsTab);
+      expect(onTabChange).toHaveBeenCalledWith("threats");
     } finally {
       window.matchMedia = real;
     }

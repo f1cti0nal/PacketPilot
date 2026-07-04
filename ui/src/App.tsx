@@ -31,6 +31,7 @@ import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
 import { FlowsView } from "./views/FlowsView";
 import { FindingsView } from "./views/FindingsView";
+import { ThreatsView } from "./views/ThreatsView";
 import { RecentView } from "./components/recent/RecentView";
 import { CompareView } from "./views/CompareView";
 import {
@@ -733,7 +734,6 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       onExportSigma={handleExportSigma}
       onCopySigma={handleCopySigma}
       threats={summary.status === "ready" ? summary.data?.summary.ip_threats ?? [] : []}
-      activeIp={activeIp}
       onSelectThreat={openThreat}
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed((c) => !c)}
@@ -762,6 +762,12 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
         <FindingsView
           findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}
           onJumpToFlows={jumpToFlows}
+        />
+      ) : tab === "threats" ? (
+        <ThreatsView
+          threats={summary.status === "ready" ? summary.data?.summary.ip_threats ?? [] : []}
+          activeIp={activeIp}
+          onSelect={openThreat}
         />
       ) : tab === "recent" ? (
         <RecentView
