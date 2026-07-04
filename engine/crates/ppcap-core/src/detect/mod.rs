@@ -126,7 +126,7 @@ impl StreamStats {
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use crate::model::packet::{CredScheme, DownloadKind, PiiKind, StratumRole};
+use crate::model::packet::{CredScheme, DownloadKind, PiiKind, StratumRole, Transport};
 use crate::tls::{CertIssue, WeakTlsReason};
 
 /// Identity of a directed "destination contact channel": one source reaching one
@@ -825,8 +825,9 @@ impl BehaviorTracker {
         self.observe_flow_contact(src, dst, dst_port, ts_ns, 0, 0);
     }
 
-    /// Fold one closed flow's contact: directed `src -> dst:dst_port` at `ts_ns` plus the
-    /// directional byte counts (`bytes_out` = client->server, `bytes_in` = server->client).
+    /// Fold one closed flow's contact assuming a TCP transport. Thin wrapper over
+    /// [`observe_flow_contact_with`](Self::observe_flow_contact_with) — used by the timing-only
+    /// [`observe_contact`](Self::observe_contact) helper and by tests, which are all TCP scenarios.
     pub fn observe_flow_contact(
         &mut self,
         src: IpAddr,
@@ -835,6 +836,33 @@ impl BehaviorTracker {
         ts_ns: i64,
         bytes_out: u64,
         bytes_in: u64,
+    ) {
+        self.observe_flow_contact_with(
+            src,
+            dst,
+            dst_port,
+            ts_ns,
+            bytes_out,
+            bytes_in,
+            Transport::Tcp,
+        );
+    }
+
+    /// Fold one closed flow's contact: directed `src -> dst:dst_port` at `ts_ns` plus the
+    /// directional byte counts (`bytes_out` = client->server, `bytes_in` = server->client) and the
+    /// flow's `transport`. The SYN-flood half-open signal is TCP-only (UDP and other connectionless
+    /// transports have no handshake), so non-TCP flows never contribute to it — otherwise a busy
+    /// small-request UDP service (DNS, NTP, SNMP) would be mistaken for a flood of half-opens.
+    #[allow(clippy::too_many_arguments)] // directed contact fold: src/dst/port/ts/bytes x2/transport
+    pub fn observe_flow_contact_with(
+        &mut self,
+        src: IpAddr,
+        dst: IpAddr,
+        dst_port: u16,
+        ts_ns: i64,
+        bytes_out: u64,
+        bytes_in: u64,
+        transport: Transport,
     ) {
         // Per-channel inter-arrival series + byte totals (bounded: a brand-new channel at
         // capacity is dropped — best-effort heavy-hitter signal, not an exact set).
@@ -890,7 +918,9 @@ impl BehaviorTracker {
         // services do NOT count. We key on "the client sent nothing real", NOT on `bytes_in == 0`: a
         // flood to an OPEN port still draws a SYN-ACK back, so its `bytes_in` is ~60, not 0. Orthogonal
         // to the port scan (many ports on one host); here the signal is many half-opens to one service.
-        if bytes_out < SYN_FLOOD_HALF_OPEN_BYTES {
+        // TCP-only: a "half-open handshake" is meaningless for connectionless transports, so a busy
+        // small-request UDP service (DNS/NTP/SNMP) is never miscounted as a flood.
+        if transport == Transport::Tcp && bytes_out < SYN_FLOOD_HALF_OPEN_BYTES {
             let tkey = (dst, dst_port);
             if let Some(stat) = self.syn_flood.get_mut(&tkey) {
                 stat.incomplete = stat.incomplete.saturating_add(1);
@@ -2248,6 +2278,7 @@ pub fn detect_brute_force(tracker: &BehaviorTracker, params: &BruteForceParams) 
 /// internal peers on these is the lateral-movement signature.
 pub const LATERAL_PORTS: &[u16] = &[
     22,   // SSH (T1021.004)
+    23,   // Telnet — cleartext remote login (T1021)
     135,  // RPC / DCOM / WMI (T1021.003)
     445,  // SMB / admin shares (T1021.002)
     3389, // RDP (T1021.001)
@@ -2260,6 +2291,7 @@ pub const LATERAL_PORTS: &[u16] = &[
 fn lateral_service_name(port: u16) -> &'static str {
     match port {
         22 => "SSH",
+        23 => "Telnet",
         135 => "RPC",
         445 => "SMB",
         3389 => "RDP",
@@ -3760,6 +3792,33 @@ mod tests {
         assert!(detect_syn_flood(&few, &SynFloodParams::default()).is_empty());
     }
 
+    #[test]
+    fn syn_flood_not_flagged_for_busy_udp_service() {
+        // A busy internal DNS resolver: 300 small UDP queries, each from a distinct ephemeral
+        // source port (its own flow), all with client->server bytes under the half-open floor.
+        // UDP has no handshake, so these must NOT be counted as half-open TCP connections.
+        let mut dns = BehaviorTracker::new(DetectConfig::default());
+        let resolver = ip(10, 0, 0, 1);
+        for i in 0..300u32 {
+            let client = ip(10, 0, (i >> 8) as u8, i as u8);
+            dns.observe_flow_contact_with(client, resolver, 53, 0, 80, 120, Transport::Udp);
+        }
+        assert!(
+            detect_syn_flood(&dns, &SynFloodParams::default()).is_empty(),
+            "busy UDP service must not be flagged as a SYN flood"
+        );
+
+        // The identical byte pattern over TCP (real half-opens) still fires, proving the gate is
+        // transport-specific, not a blanket suppression.
+        let mut tcp = BehaviorTracker::new(DetectConfig::default());
+        let target = ip(10, 0, 0, 2);
+        for i in 0..300u32 {
+            let client = ip(10, 0, (i >> 8) as u8, i as u8);
+            tcp.observe_flow_contact_with(client, target, 80, 0, 80, 120, Transport::Tcp);
+        }
+        assert!(!detect_syn_flood(&tcp, &SynFloodParams::default()).is_empty());
+    }
+
     // ── suspicious User-Agent (attack tools) ─────────────────────────────────────
 
     #[test]
@@ -4147,6 +4206,19 @@ mod tests {
             g[0].title.contains("VNC"),
             "title names the service: {}",
             g[0].title
+        );
+
+        // Inbound Telnet (port 23) — the classic Mirai-style exposed-Telnet vector the detector's
+        // doc claims to cover. It must be flagged and labelled "Telnet".
+        let mut telnet = BehaviorTracker::new(DetectConfig::default());
+        telnet.observe_flow_contact(ip(8, 8, 8, 8), ip(10, 0, 0, 9), 23, SEC, 4000, 8000);
+        let h = detect_exposed_remote_access(&telnet, &ExposedRemoteAccessParams::default());
+        assert_eq!(h.len(), 1, "exposed Telnet must be flagged: {h:?}");
+        assert_eq!(h[0].dst_port, Some(23));
+        assert!(
+            h[0].title.contains("Telnet"),
+            "title names the service: {}",
+            h[0].title
         );
     }
 
@@ -4536,7 +4608,6 @@ mod tests {
     #[test]
     fn contact_from_flow_picks_service_port_and_initiator() {
         use crate::model::flow::FlowKey;
-        use crate::model::packet::Transport;
         // Client 10.0.0.5:50000 -> server 203.0.113.7:443.
         let (key, _dir) = FlowKey::normalized(
             ip(10, 0, 0, 5),
@@ -4556,7 +4627,6 @@ mod tests {
     #[test]
     fn contact_from_flow_is_none_for_portless_transport() {
         use crate::model::flow::FlowKey;
-        use crate::model::packet::Transport;
         let (key, _dir) =
             FlowKey::normalized(ip(10, 0, 0, 5), 0, ip(10, 0, 0, 6), 0, Transport::Icmp);
         let rec = FlowRecord::new(key, 0);
