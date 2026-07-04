@@ -4,7 +4,7 @@ const sb = vi.hoisted(() => ({
   from: vi.fn(),
   storage: { from: vi.fn() },
   functions: { invoke: vi.fn() },
-  auth: { resetPasswordForEmail: vi.fn(), signOut: vi.fn() },
+  auth: { resetPasswordForEmail: vi.fn(), updateUser: vi.fn(), signOut: vi.fn() },
 }));
 vi.mock("../lib/supabase", () => ({ supabase: sb }));
 
@@ -20,6 +20,7 @@ beforeEach(() => {
     getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: "https://cdn/x.png" } }),
   });
   sb.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
+  sb.auth.updateUser.mockResolvedValue({ error: null });
   sb.auth.signOut.mockResolvedValue({ error: null });
 });
 afterEach(() => {
@@ -66,6 +67,16 @@ describe("account api", () => {
   it("sendPasswordReset emails a reset link", async () => {
     expect(await api.sendPasswordReset("a@b.c")).toEqual({ ok: true });
     expect(sb.auth.resetPasswordForEmail).toHaveBeenCalledWith("a@b.c", expect.any(Object));
+  });
+
+  it("updatePassword sets a new password for the signed-in user", async () => {
+    expect(await api.updatePassword("hunter2pass")).toEqual({ ok: true });
+    expect(sb.auth.updateUser).toHaveBeenCalledWith({ password: "hunter2pass" });
+  });
+
+  it("updatePassword surfaces the auth error message", async () => {
+    sb.auth.updateUser.mockResolvedValue({ error: { message: "Password too weak" } });
+    expect(await api.updatePassword("weak")).toEqual({ ok: false, error: "Password too weak" });
   });
 
   it("signOutEverywhere ends the Supabase session", async () => {

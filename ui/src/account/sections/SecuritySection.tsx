@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { sendPasswordReset, signOutEverywhere, deleteAccount } from "../api";
+import { updatePassword, signOutEverywhere, deleteAccount } from "../api";
 import { Card, fieldCls, btnCls, btnGhost } from "./ui";
 
 export function SecuritySection({ email }: { email: string }) {
   return (
     <Card title="Security" desc="Manage how you sign in — and leave.">
-      <PasswordReset email={email} />
+      <ChangePassword />
       <IdentityNote />
       <SignOutAll />
       <DangerZone email={email} />
@@ -24,38 +24,70 @@ function Err({ children }: { children: string }) {
   );
 }
 
-function PasswordReset({ email }: { email: string }) {
+function ChangePassword() {
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
+  const [done, setDone] = useState(false);
 
   const run = async () => {
     if (busy) return;
-    setBusy(true);
-    setError(null);
-    setSent(false);
-    const r = await sendPasswordReset(email);
-    setBusy(false);
-    if (!r.ok) {
-      setError(r.error ?? "Couldn't send reset email");
+    if (pw.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
-    setSent(true);
+    if (pw !== confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    const r = await updatePassword(pw);
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.error ?? "Couldn't update password");
+      return;
+    }
+    setPw("");
+    setConfirm("");
+    setDone(true);
   };
 
   return (
     <div className="flex flex-col gap-2">
       <div className="text-sm font-medium text-[var(--color-text)]">Change password</div>
       <p className="t-tag text-[var(--color-text-dim)]">
-        We'll email <span className="text-[var(--color-text)]">{email}</span> a secure link to set a new password.
+        Set a new password for signing in with email. If you only use Google or GitHub, this adds a password so you can
+        sign in with email too.
       </p>
+      <input
+        type="password"
+        autoComplete="new-password"
+        value={pw}
+        onChange={(e) => setPw(e.target.value)}
+        minLength={8}
+        className={fieldCls}
+        aria-label="New password"
+        placeholder="New password (at least 8 characters)"
+      />
+      <input
+        type="password"
+        autoComplete="new-password"
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        className={fieldCls}
+        aria-label="Confirm new password"
+        placeholder="Confirm new password"
+      />
       <div>
         <button type="button" disabled={busy} onClick={() => void run()} className={btnCls}>
-          {busy ? "Sending…" : "Send password reset email"}
+          {busy ? "Saving…" : "Update password"}
         </button>
       </div>
       {error && <Err>{error}</Err>}
-      {sent && <Note>Check your email for the reset link.</Note>}
+      {done && <Note>Password updated.</Note>}
     </div>
   );
 }
