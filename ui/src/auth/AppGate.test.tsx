@@ -137,6 +137,17 @@ describe("AppGate", () => {
     expect(window.location.reload).not.toHaveBeenCalled();
   });
 
+  it("recovers (re-enables the buttons) if the token refresh throws", async () => {
+    h.session = authed(false);
+    h.refreshSession.mockRejectedValue(new Error("network down"));
+    render(<AppGate />);
+    fireEvent.click(screen.getByRole("button", { name: /i've verified/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not verified yet/i);
+    // busy must be reset so the user isn't stranded with a dead screen.
+    expect(screen.getByRole("button", { name: /i've verified/i })).toBeEnabled();
+    expect(window.location.reload).not.toHaveBeenCalled();
+  });
+
   it("resends the verification email from the verify-email screen", async () => {
     h.session = authed(false);
     render(<AppGate />);

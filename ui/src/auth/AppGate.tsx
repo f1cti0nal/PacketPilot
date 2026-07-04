@@ -121,13 +121,19 @@ function VerifyEmailScreen({
     setBusy(true);
     setNotYet(false);
     setResent(false);
-    const { data } = supabase ? await supabase.auth.refreshSession() : { data: { session: null } };
-    if (data.session?.user?.email_confirmed_at) {
-      window.location.reload();
-      return;
+    try {
+      const { data } = supabase ? await supabase.auth.refreshSession() : { data: { session: null } };
+      if (data.session?.user?.email_confirmed_at) {
+        window.location.reload();
+        return;
+      }
+      setNotYet(true);
+    } catch {
+      // A failed token refresh must not strand the user with both buttons disabled forever.
+      setNotYet(true);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
-    setNotYet(true);
   };
 
   const resend = async () => {

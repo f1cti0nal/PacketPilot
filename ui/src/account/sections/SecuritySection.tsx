@@ -33,6 +33,9 @@ function ChangePassword() {
 
   const run = async () => {
     if (busy) return;
+    // Clear any prior success note up front so a fresh validation error can't render beside a
+    // stale "Password updated." message.
+    setDone(false);
     if (pw.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -43,7 +46,6 @@ function ChangePassword() {
     }
     setBusy(true);
     setError(null);
-    setDone(false);
     const r = await updatePassword(pw);
     setBusy(false);
     if (!r.ok) {

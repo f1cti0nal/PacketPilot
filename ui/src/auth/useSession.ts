@@ -23,9 +23,10 @@ export type SessionState =
       signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
       signUp: (email: string, password: string) => Promise<{ ok: boolean; needsConfirm?: boolean; error?: string }>;
       /** Begin an OAuth redirect (Google/GitHub). On success the browser navigates away to the
-       *  provider and back to `/app`, where the session is picked up — so the promise only resolves
-       *  with `ok: false` when starting the redirect failed. */
-      signInWithProvider: (provider: OAuthProvider) => Promise<{ ok: boolean; error?: string }>;
+       *  provider and back to `redirectPath` (default `/app`), where the session is picked up — so
+       *  the promise only resolves with `ok: false` when starting the redirect failed. Callers that
+       *  need to resume work after sign-in (e.g. /pricing checkout) pass their own return path. */
+      signInWithProvider: (provider: OAuthProvider, redirectPath?: string) => Promise<{ ok: boolean; error?: string }>;
       /** Resend the signup confirmation email (used by the "check your email" state). */
       resendVerification: (email: string) => Promise<{ ok: boolean; error?: string }>;
     }
@@ -69,13 +70,15 @@ export function useSession(): SessionState {
     return { ok: true, needsConfirm: !data.session };
   }, []);
 
-  const signInWithProvider = useCallback(async (provider: OAuthProvider) => {
+  const signInWithProvider = useCallback(async (provider: OAuthProvider, redirectPath?: string) => {
     if (!supabase) return { ok: false, error: "Accounts are unavailable" };
-    // Redirects to the provider, then back to /app where `detectSessionInUrl` (on by default, the
-    // same mechanism the email-confirm link uses) exchanges the code and fires onAuthStateChange.
+    // Redirects to the provider, then back to `redirectPath` (default /app) where
+    // `detectSessionInUrl` (on by default, the same mechanism the email-confirm link uses)
+    // exchanges the code and fires onAuthStateChange. A caller mid-flow (e.g. /pricing checkout)
+    // returns to its own page so it can pick up where the visitor left off.
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/app` },
+      options: { redirectTo: `${window.location.origin}${redirectPath ?? "/app"}` },
     });
     return error ? { ok: false, error: error.message } : { ok: true };
   }, []);

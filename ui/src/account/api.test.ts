@@ -84,9 +84,11 @@ describe("account api", () => {
     expect(sb.auth.signOut).toHaveBeenCalled();
   });
 
-  it("deleteAccount invokes the function and succeeds", async () => {
+  it("deleteAccount invokes the function, clears the local session, and succeeds", async () => {
     expect(await api.deleteAccount()).toEqual({ ok: true });
     expect(sb.functions.invoke).toHaveBeenCalledWith("delete-account");
+    // The orphaned JWT must be discarded locally so a deleted user can't re-enter /app.
+    expect(sb.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
   });
 
   it("deleteAccount surfaces the function's JSON error body", async () => {
