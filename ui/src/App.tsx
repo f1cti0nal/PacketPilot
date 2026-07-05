@@ -131,6 +131,13 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const aiGate = gate("ai_assist");
   const pcapGate = gate("pcap_export");
   const compareGate = gate("multi_capture_diff");
+  // Reputation enrichment (IP/domain/file) is a Pro feature: fold the plan gate into the master
+  // switch so EVERY reputation path (incl. the consent prompt) stays off for free/hosted users.
+  // Offline/self-host (DEFAULTS, plan_gate null) keep it on; the reputation-proxy enforces it too.
+  const repEnabled = rep.enabled && gate("reputation") === "on";
+  // Saved rule-set LIBRARY (persist + reuse across captures) is Pro. One-off "load & apply a
+  // .rules file" (rule import) stays free — only the save side-effect + saved list are gated.
+  const savedRulesAllowed = gate("saved_rules") === "on";
   const aiOn = session.status === "authed" && appSettings.ai.enabled && aiGate === "on";
   const aiModel = appSettings.ai.model;
 
@@ -330,7 +337,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   // Perform the reputation lookup and apply enriched results to the current summary IN PLACE.
   // Does NOT call applyCapture again — that would re-record to Recent and reset activeSource.
   const runReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (session.status !== "authed" || !rep.enabled) return;
+    if (session.status !== "authed" || !repEnabled) return;
     const ips = (output.summary.ip_threats ?? [])
       .filter((t) => t.ip_class === "public")
       .map((t) => t.ip);
@@ -341,12 +348,12 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
 
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyReputationWasm);
-  }, [session.status, rep.enabled, rep.providers, enrichAndCommit]);
+  }, [session.status, repEnabled, rep.providers, enrichAndCommit]);
 
   // Open the consent gate or fire the reputation pass immediately, depending on whether
   // consent has already been given. Should be called once per new capture (after applyCapture).
   const triggerReputationGate = useCallback((output: AnalysisOutput) => {
-    if (!rep.enabled) return;
+    if (!repEnabled) return;
     const publicIps = (output.summary.ip_threats ?? []).filter((t) => t.ip_class === "public");
     if (publicIps.length === 0) return;
     if (consentGiven()) {
@@ -354,38 +361,38 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
     } else {
       setConsentPrompt({ output, ipCount: publicIps.length, providers: rep.providers });
     }
-  }, [rep.enabled, rep.providers, runReputation]);
+  }, [repEnabled, rep.providers, runReputation]);
 
   // Perform domain reputation lookup and apply enriched results to the current summary IN PLACE.
   // Login + master-switch gates are stated here (not just relied on downstream), matching runReputation.
   const runDomainReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (session.status !== "authed" || !rep.enabled || !rep.domain_enabled || !rep.providers.includes("virustotal")) return;
+    if (session.status !== "authed" || !repEnabled || !rep.domain_enabled || !rep.providers.includes("virustotal")) return;
     const hosts = (output.summary.domain_threats ?? []).slice(0, 15).map((d) => d.host);
     if (hosts.length === 0) return;
     const now = Math.floor(Date.now() / 1000);
     const verdicts = await lookupDomainReputation(edgeRepHttp(), hosts, now);
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyDomainReputationWasm);
-  }, [session.status, rep.enabled, rep.domain_enabled, rep.providers, enrichAndCommit]);
+  }, [session.status, repEnabled, rep.domain_enabled, rep.providers, enrichAndCommit]);
 
   // Perform file-hash reputation lookup (VirusTotal only) and apply IN PLACE. Composed entirely in
   // TS (applyFileReputation) since carved-file verdicts are display-only — no engine/WASM rebuild.
   const runFileReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (session.status !== "authed" || !rep.enabled || !rep.file_enabled || !rep.providers.includes("virustotal")) return;
+    if (session.status !== "authed" || !repEnabled || !rep.file_enabled || !rep.providers.includes("virustotal")) return;
     const hashes = (output.summary.carved_files ?? []).slice(0, 15).map((f) => f.sha256);
     if (hashes.length === 0) return;
     const now = Math.floor(Date.now() / 1000);
     const verdicts = await lookupFileReputation(edgeRepHttp(), hashes, now);
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyFileReputation);
-  }, [session.status, rep.enabled, rep.file_enabled, rep.providers, enrichAndCommit]);
+  }, [session.status, repEnabled, rep.file_enabled, rep.providers, enrichAndCommit]);
 
   // Gate the two VirusTotal enrichment passes that send capture-derived indicators offsite — SNI
   // domains and carved-file SHA-256 hashes. These are DISTINCT indicator classes with SEPARATE
   // consent flags: a domain-only "Proceed" must never silently authorize sending file hashes (and
   // vice-versa). Whatever still needs consent is shown in the dialog and authorized only on Proceed.
   const triggerDomainReputationGate = useCallback((output: AnalysisOutput) => {
-    const vt = rep.enabled && rep.providers.includes("virustotal");
+    const vt = repEnabled && rep.providers.includes("virustotal");
     const domainCount = vt && rep.domain_enabled ? (output.summary.domain_threats ?? []).length : 0;
     const fileCount = vt && rep.file_enabled ? (output.summary.carved_files ?? []).length : 0;
     if (domainCount === 0 && fileCount === 0) return;
@@ -402,7 +409,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
         fileCount: needFileConsent ? Math.min(15, fileCount) : 0,
       });
     }
-  }, [rep.enabled, rep.domain_enabled, rep.file_enabled, rep.providers, runDomainReputation, runFileReputation]);
+  }, [repEnabled, rep.domain_enabled, rep.file_enabled, rep.providers, runDomainReputation, runFileReputation]);
 
   // Replace the active capture with a user-imported summary.json + flows.parquet (either may
   // be supplied). A summary turns it into a Recent entry; flows-only just updates the table.
@@ -667,9 +674,9 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
 
   const loadRules = useCallback(async (file: File) => {
     const text = await file.text();
-    saveRuleSet(file.name, text); // persist (non-fatal if it fails)
+    if (savedRulesAllowed) saveRuleSet(file.name, text); // persist is Pro; free users still apply one-off
     await applyRuleText(text);
-  }, [applyRuleText]);
+  }, [applyRuleText, savedRulesAllowed]);
 
   const applyRuleSet = useCallback((rs: RuleSet) => { void applyRuleText(rs.text); }, [applyRuleText]);
 
@@ -743,7 +750,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       onOpenAiChat={aiOn && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       onMatchIocs={summary.status === "ready" && summary.data ? () => setIocDialogOpen(true) : undefined}
-      rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
+      rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} canSave={savedRulesAllowed} />}
       accountMenu={<AccountMenu session={session} />}
     >
       <ErrorBoundary resetKey={`${activeId ?? ""}:${tab}`}>

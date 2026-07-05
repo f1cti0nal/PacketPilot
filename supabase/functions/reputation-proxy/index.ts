@@ -33,6 +33,12 @@ Deno.serve(async (req) => {
   const { data: userData } = token ? await admin.auth.getUser(token) : { data: { user: null } };
   const user = userData?.user;
   if (!user) return json({ error: "unauthorized" }, 401);
+  // Pro-gate: reputation enrichment is a paid feature. Enforce it SERVER-SIDE so a free user
+  // cannot spend the operator's AbuseIPDB/VirusTotal/GreyNoise keys by calling this proxy
+  // directly (the client feature gate alone is bypassable). Reverse-trial users carry plan='pro',
+  // so they pass. Fail CLOSED on a plan-read error — deny rather than risk leaking a metered feature.
+  const { data: repProf, error: repPlanErr } = await admin.from("profiles").select("plan").eq("id", user.id).single();
+  if (repPlanErr || repProf?.plan !== "pro") return json({ error: "pro plan required" }, 403);
   // Per-user rate limit — protect the operator's provider keys from abuse. Fail OPEN on error.
   try {
     const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "rep:" + user.id, p_max: 120, p_window_seconds: 60 });

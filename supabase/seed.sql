@@ -57,12 +57,14 @@ from public.profiles p
 where p.plan = 'pro'
   and not exists (select 1 from public.subscriptions s where s.user_id = p.id);
 
--- 4. Feature flags.
+-- 4. Feature flags. Pro: AI assist + reputation + saved rules. Free: carve/export + compare.
+--    (Kept in sync with migration 0027_align_plan_gates.sql and ui/src/seo/pages.json.)
 insert into public.feature_flags (key, description, enabled, plan_gate) values
-  ('ai_assist',          'AI analyst assistant',        true, null),
-  ('reputation',         'IP/domain reputation lookups',true, null),
-  ('pcap_export',        'PCAP carving/export',         true, 'pro'),
-  ('multi_capture_diff', 'Compare two captures',        true, 'pro')
+  ('ai_assist',          'AI analyst assistant',                  true, 'pro'),
+  ('reputation',         'IP/domain/file reputation enrichment',  true, 'pro'),
+  ('saved_rules',        'Saved Suricata/Snort rule-set library', true, 'pro'),
+  ('pcap_export',        'PCAP carving/export',                   true, null),
+  ('multi_capture_diff', 'Compare two captures',                  true, null)
 on conflict (key) do nothing;
 
 -- 5. App settings.

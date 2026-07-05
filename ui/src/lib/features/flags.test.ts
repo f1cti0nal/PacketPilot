@@ -29,9 +29,15 @@ describe("DEFAULTS offline invariant", () => {
   it("multi_capture_diff is on offline (plan_gate null, not pro-gated)", () => {
     expect(evaluateGate(DEFAULTS.multi_capture_diff, "free")).toBe("on");
   });
-  it("DEFAULTS contains exactly the three expected keys", () => {
+  it("reputation is on offline (plan_gate null — self-host/BYO keeps full function)", () => {
+    expect(evaluateGate(DEFAULTS.reputation, "free")).toBe("on");
+  });
+  it("saved_rules is on offline (plan_gate null, not pro-gated)", () => {
+    expect(evaluateGate(DEFAULTS.saved_rules, "free")).toBe("on");
+  });
+  it("DEFAULTS contains exactly the five expected keys", () => {
     expect(Object.keys(DEFAULTS).sort()).toEqual(
-      ["ai_assist", "multi_capture_diff", "pcap_export"],
+      ["ai_assist", "multi_capture_diff", "pcap_export", "reputation", "saved_rules"],
     );
   });
 });

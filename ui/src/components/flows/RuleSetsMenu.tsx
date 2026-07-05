@@ -6,6 +6,9 @@ export interface RuleSetsMenuProps {
   onLoadFile: () => void;
   onApply: (rs: RuleSet) => void;
   disabled: boolean;
+  /** Whether the saved rule-set LIBRARY (persist + reuse) is available. Pro-gated on hosted; the
+   *  one-off "Load .rules file…" path stays available regardless. Defaults to true (offline/self-host). */
+  canSave?: boolean;
   onNotice?: (msg: string) => void;
 }
 
@@ -13,7 +16,7 @@ export interface RuleSetsMenuProps {
  * A "Rules ▾" dropdown for loading and applying saved Suricata/Snort rule sets.
  * Mirrors the FilterProfiles open + outside-click pattern exactly.
  */
-export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotice }: RuleSetsMenuProps) {
+export function RuleSetsMenu({ onLoadFile, onApply, disabled, canSave = true, onNotice: _onNotice }: RuleSetsMenuProps) {
   const [open, setOpen] = useState(false);
   const [sets, setSets] = useState<RuleSet[]>(listRuleSets);
   const ref = useRef<HTMLDivElement>(null);
@@ -65,8 +68,17 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
           {/* Divider */}
           <div className="my-1 border-t border-[var(--color-border)]" />
 
-          {/* Saved rule sets list */}
-          {sets.length === 0 ? (
+          {/* Saved rule-set library — Pro. Free/hosted users still get one-off load+apply above. */}
+          {!canSave ? (
+            <a
+              href="/pricing"
+              role="menuitem"
+              tabIndex={-1}
+              className="block px-3 py-2 text-xs text-[var(--color-text-faint)] hover:text-[var(--color-accent)]"
+            >
+              Save &amp; reuse rule sets is a <span className="font-medium text-[var(--color-accent)]">Pro</span> feature ↗
+            </a>
+          ) : sets.length === 0 ? (
             <p className="px-3 py-2 text-xs text-[var(--color-text-faint)] italic">
               No saved rule sets yet.
             </p>
