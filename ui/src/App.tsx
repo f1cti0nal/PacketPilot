@@ -23,6 +23,7 @@ import {
   removeRecent,
   clearRecent,
 } from "./lib/recent";
+import { onStorageScopeChange } from "./lib/storageScope";
 import { AppShell } from "./components/layout/AppShell";
 import { useTheme } from "./cockpit/ThemeToggle";
 import { LoadingState } from "./components/state/LoadingState";
@@ -186,6 +187,18 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const [recent, setRecent] = useState<RecentEntry[]>(() => listRecent());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // If the signed-in account changes while App is mounted (sign in/out/switch in place), reload
+  // Recent under the new account's namespace and drop any in-view capture from the previous one.
+  // The primary fix is that useSession sets the scope before App mounts (so the initial read above
+  // is already correct); this keeps a live switch consistent too.
+  useEffect(
+    () =>
+      onStorageScopeChange(() => {
+        setRecent(listRecent());
+        setActiveId(null);
+      }),
+    [],
+  );
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [collapsed, setCollapsed] = useState(false);

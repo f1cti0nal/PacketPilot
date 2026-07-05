@@ -1,6 +1,10 @@
+import { scopedKey } from "./storageScope";
+
 export interface RuleSet { id: string; name: string; text: string }
 
-const KEY = "packetpilot.ruleSets.v1";
+// Namespaced to the signed-in account (storageScope) so saved rule sets don't leak across accounts.
+const RULE_SETS_BASE = "packetpilot.ruleSets.v1";
+const ruleSetsKey = () => scopedKey(RULE_SETS_BASE);
 const MAX_RULESET_BYTES = 256 * 1024;
 
 function isRuleSet(v: unknown): v is RuleSet {
@@ -11,7 +15,7 @@ function isRuleSet(v: unknown): v is RuleSet {
 
 export function listRuleSets(): RuleSet[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(ruleSetsKey());
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed) ? parsed.filter(isRuleSet) : [];
@@ -22,7 +26,7 @@ export function listRuleSets(): RuleSet[] {
 
 function persist(list: RuleSet[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(list));
+    localStorage.setItem(ruleSetsKey(), JSON.stringify(list));
   } catch {
     /* quota: drop silently (mirrors filterProfiles) */
   }
@@ -47,6 +51,6 @@ export function removeRuleSet(id: string): RuleSet[] {
 }
 
 export function clearRuleSets(): RuleSet[] {
-  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+  try { localStorage.removeItem(ruleSetsKey()); } catch { /* ignore */ }
   return [];
 }

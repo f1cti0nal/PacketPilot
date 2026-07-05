@@ -13,11 +13,15 @@
 
 import type { AnalysisOutput, FlowRow, RecentEntry, RecentOrigin, ReputationVerdict } from "../types";
 import { basename } from "./format";
+import { scopedKey, scopedDbName, onStorageScopeChange } from "./storageScope";
 
-const RECENT_KEY = "packetpilot.recent.v1";
+// Base names; the ACTUAL localStorage key and IndexedDB name are namespaced to the signed-in
+// account (see storageScope) so two accounts on one browser profile never share captures/analysis.
+const RECENT_BASE = "packetpilot.recent.v1";
+const recentKey = () => scopedKey(RECENT_BASE);
 const MAX_RECENT = 12;
 
-const DB_NAME = "packetpilot";
+const DB_BASE = "packetpilot";
 const DB_VERSION = 3;
 const FLOWS_STORE = "flows";
 const REPUTATION_STORE = "reputation";
@@ -29,7 +33,7 @@ const REPUTATION_STORE = "reputation";
 /** Read the recent list, newest first. Never throws; returns [] on any problem. */
 export function listRecent(): RecentEntry[] {
   try {
-    const raw = localStorage.getItem(RECENT_KEY);
+    const raw = localStorage.getItem(recentKey());
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -45,13 +49,13 @@ export function listRecent(): RecentEntry[] {
 
 function persist(list: RecentEntry[]): void {
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+    localStorage.setItem(recentKey(), JSON.stringify(list));
   } catch {
     // Quota exceeded: drop the oldest entry and retry once. The cached summaries are the
     // heavy part, so shedding one usually frees enough room.
     if (list.length > 1) {
       try {
-        localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, -1)));
+        localStorage.setItem(recentKey(), JSON.stringify(list.slice(0, -1)));
       } catch {
         /* give up silently — persistence is best-effort */
       }
@@ -132,7 +136,7 @@ export function removeRecent(id: string): RecentEntry[] {
 /** Clear the whole list and every cached flow set. */
 export function clearRecent(): RecentEntry[] {
   try {
-    localStorage.removeItem(RECENT_KEY);
+    localStorage.removeItem(recentKey());
   } catch {
     /* ignore */
   }
@@ -175,12 +179,20 @@ export function displayName(pathOrName: string): string {
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
+// When the account scope changes (sign in/out/switch), drop the cached handle so the next open
+// targets the new account's namespaced database — never the previous account's flows/reputation/AI.
+onStorageScopeChange(() => {
+  const prev = dbPromise;
+  dbPromise = null;
+  void prev?.then((db) => db?.close()).catch(() => {});
+});
+
 export function openDb(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve) => {
     try {
       if (typeof indexedDB === "undefined") return resolve(null);
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      const req = indexedDB.open(scopedDbName(DB_BASE), DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(FLOWS_STORE)) {

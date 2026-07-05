@@ -5,6 +5,7 @@ import {
   clearAnnotation,
   annotationsForCapture,
 } from "./annotations";
+import { scopedKey } from "./storageScope";
 
 beforeEach(() => localStorage.clear());
 
@@ -40,7 +41,7 @@ describe("annotations", () => {
   });
 
   it("never throws on malformed storage", () => {
-    localStorage.setItem("packetpilot.annotations.v1", "{not json");
+    localStorage.setItem(scopedKey("packetpilot.annotations.v1"), "{not json");
     expect(getAnnotation("c", "ip")).toBeNull();
     expect(() => setAnnotation("c", "ip", { status: "cleared" })).not.toThrow();
   });
