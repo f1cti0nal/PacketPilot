@@ -224,15 +224,39 @@ fn initiator_follows_client_syn_when_client_sorts_high() {
     let client = v4(10, 0, 0, 9);
     let server = v4(10, 0, 0, 1);
     let (key, _) = FlowKey::normalized(client, 50000, server, 443, Transport::Tcp);
-    assert_eq!(key.lo_ip, server, "server sorts lower, so it is the lo endpoint");
+    assert_eq!(
+        key.lo_ip, server,
+        "server sorts lower, so it is the lo endpoint"
+    );
 
     let mut rec = FlowRecord::new(key, 0);
     // Client SYN (100 bytes, ttl 64), then server SYN|ACK (200 bytes, ttl 128).
-    observe_directed(&mut rec, &key, &mk(client, 50000, server, 443, Transport::Tcp, 0x02, 64, 100, 0));
-    observe_directed(&mut rec, &key, &mk(server, 443, client, 50000, Transport::Tcp, 0x12, 128, 200, 10));
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(client, 50000, server, 443, Transport::Tcp, 0x02, 64, 100, 0),
+    );
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(
+            server,
+            443,
+            client,
+            50000,
+            Transport::Tcp,
+            0x12,
+            128,
+            200,
+            10,
+        ),
+    );
 
     let o = rec.oriented();
-    assert_eq!(o.src_ip, client, "source is the SYN sender (client), not the lo endpoint");
+    assert_eq!(
+        o.src_ip, client,
+        "source is the SYN sender (client), not the lo endpoint"
+    );
     assert_eq!(o.dst_ip, server);
     assert_eq!(o.src_port, 50000);
     assert_eq!(o.dst_port, 443);
@@ -252,8 +276,26 @@ fn oriented_forward_is_identity_when_client_sorts_low() {
     assert_eq!(key.lo_ip, client);
 
     let mut rec = FlowRecord::new(key, 0);
-    observe_directed(&mut rec, &key, &mk(client, 40000, server, 80, Transport::Tcp, 0x02, 64, 100, 0));
-    observe_directed(&mut rec, &key, &mk(server, 80, client, 40000, Transport::Tcp, 0x12, 128, 200, 10));
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(client, 40000, server, 80, Transport::Tcp, 0x02, 64, 100, 0),
+    );
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(
+            server,
+            80,
+            client,
+            40000,
+            Transport::Tcp,
+            0x12,
+            128,
+            200,
+            10,
+        ),
+    );
 
     let o = rec.oriented();
     assert_eq!(o.src_ip, client);
@@ -269,9 +311,21 @@ fn late_client_syn_overrides_tentative_first_packet() {
     let server = v4(10, 0, 0, 1);
     let (key, _) = FlowKey::normalized(client, 50000, server, 443, Transport::Tcp);
     let mut rec = FlowRecord::new(key, 0);
-    observe_directed(&mut rec, &key, &mk(server, 443, client, 50000, Transport::Tcp, 0x12, 128, 60, 0));
-    observe_directed(&mut rec, &key, &mk(client, 50000, server, 443, Transport::Tcp, 0x02, 64, 74, 5));
-    assert_eq!(rec.oriented().src_ip, client, "a real client SYN corrects the guess");
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(server, 443, client, 50000, Transport::Tcp, 0x12, 128, 60, 0),
+    );
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(client, 50000, server, 443, Transport::Tcp, 0x02, 64, 74, 5),
+    );
+    assert_eq!(
+        rec.oriented().src_ip,
+        client,
+        "a real client SYN corrects the guess"
+    );
 }
 
 #[test]
@@ -281,8 +335,20 @@ fn udp_initiator_is_first_packet_when_client_sorts_high() {
     let resolver = v4(10, 0, 0, 1);
     let (key, _) = FlowKey::normalized(client, 50000, resolver, 53, Transport::Udp);
     let mut rec = FlowRecord::new(key, 0);
-    observe_directed(&mut rec, &key, &mk(client, 50000, resolver, 53, Transport::Udp, 0, 64, 80, 0));
-    observe_directed(&mut rec, &key, &mk(resolver, 53, client, 50000, Transport::Udp, 0, 64, 200, 5));
-    assert_eq!(rec.oriented().src_ip, client, "UDP initiator = first-packet sender");
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(client, 50000, resolver, 53, Transport::Udp, 0, 64, 80, 0),
+    );
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(resolver, 53, client, 50000, Transport::Udp, 0, 64, 200, 5),
+    );
+    assert_eq!(
+        rec.oriented().src_ip,
+        client,
+        "UDP initiator = first-packet sender"
+    );
     assert_eq!(rec.oriented().bytes_c2s, 80);
 }

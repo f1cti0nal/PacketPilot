@@ -109,10 +109,21 @@ fn heuristic_c2_external_without_corroboration_held_at_medium() {
     r.pkts_rev = 3;
     r.bytes_fwd = 100;
     r.bytes_rev = 100;
-    assert!(r.app_proto_src.is_none(), "shape-only C2 has no app-proto provenance");
+    assert!(
+        r.app_proto_src.is_none(),
+        "shape-only C2 has no app-proto provenance"
+    );
     let s = score_flow(&r, &FeedMatch::default());
-    assert_eq!(s.severity, Severity::Medium, "uncorroborated heuristic C2 caps at Medium");
-    assert!(s.score <= 59, "score held below the High band, got {}", s.score);
+    assert_eq!(
+        s.severity,
+        Severity::Medium,
+        "uncorroborated heuristic C2 caps at Medium"
+    );
+    assert!(
+        s.score <= 59,
+        "score held below the High band, got {}",
+        s.score
+    );
     // The additive terms stay transparent; the cap is a reconciliation note, not a term.
     assert!(s.evidence.iter().any(|e| e == "category c2 (+45)"));
     assert!(s
@@ -182,7 +193,10 @@ fn network_service_external_is_benign() {
     r.bytes_rev = 100;
     let s = score_flow(&r, &FeedMatch::default());
     assert_eq!(s.severity, Severity::Low);
-    assert!(s.evidence.iter().any(|e| e == "category network_service (+3)"));
+    assert!(s
+        .evidence
+        .iter()
+        .any(|e| e == "category network_service (+3)"));
     assert!(!s.evidence.iter().any(|e| e.starts_with("cap:")));
 }
 

@@ -281,9 +281,7 @@ impl Classifier {
             // PUBLIC server (e.g. NTP to pool.ntp.org) classifies as low-risk instead of falling
             // to Unknown and being shape-uplifted to C2.
             (Udp, 123) => (Category::NetworkService, "ntp"),
-            (Udp, 67) | (Udp, 68) | (Udp, 546) | (Udp, 547) => {
-                (Category::NetworkService, "dhcp")
-            }
+            (Udp, 67) | (Udp, 68) | (Udp, 546) | (Udp, 547) => (Category::NetworkService, "dhcp"),
             (Udp, 161) | (Udp, 162) => (Category::NetworkService, "snmp"),
             (Udp, 514) => (Category::NetworkService, "syslog"),
 
@@ -679,7 +677,16 @@ mod tests {
 
     #[test]
     fn network_service_ports_map_to_network_service() {
-        for (p, tok) in [(123u16, "ntp"), (67, "dhcp"), (68, "dhcp"), (546, "dhcp"), (547, "dhcp"), (161, "snmp"), (162, "snmp"), (514, "syslog")] {
+        for (p, tok) in [
+            (123u16, "ntp"),
+            (67, "dhcp"),
+            (68, "dhcp"),
+            (546, "dhcp"),
+            (547, "dhcp"),
+            (161, "snmp"),
+            (162, "snmp"),
+            (514, "syslog"),
+        ] {
             assert_eq!(
                 Classifier::category_for_port(Transport::Udp, p),
                 (Category::NetworkService, tok),
@@ -690,13 +697,31 @@ mod tests {
 
     #[test]
     fn stun_turn_ports_map_to_voip() {
-        assert_eq!(Classifier::category_for_port(Transport::Udp, 3478), (Category::Voip, "stun"));
-        assert_eq!(Classifier::category_for_port(Transport::Tcp, 3478), (Category::Voip, "stun"));
+        assert_eq!(
+            Classifier::category_for_port(Transport::Udp, 3478),
+            (Category::Voip, "stun")
+        );
+        assert_eq!(
+            Classifier::category_for_port(Transport::Tcp, 3478),
+            (Category::Voip, "stun")
+        );
         // Google STUN 19302 lands in the RTP dynamic-media range -> VoIP "rtp" (still not C2).
-        assert_eq!(Classifier::category_for_port(Transport::Udp, 19302), (Category::Voip, "rtp"));
-        assert_eq!(Classifier::category_for_port(Transport::Udp, 5349), (Category::Voip, "turn"));
-        assert_eq!(Classifier::category_for_port(Transport::Tcp, 5349), (Category::Voip, "turn"));
-        assert_eq!(Classifier::category_for_port(Transport::Udp, 5350), (Category::Voip, "turn"));
+        assert_eq!(
+            Classifier::category_for_port(Transport::Udp, 19302),
+            (Category::Voip, "rtp")
+        );
+        assert_eq!(
+            Classifier::category_for_port(Transport::Udp, 5349),
+            (Category::Voip, "turn")
+        );
+        assert_eq!(
+            Classifier::category_for_port(Transport::Tcp, 5349),
+            (Category::Voip, "turn")
+        );
+        assert_eq!(
+            Classifier::category_for_port(Transport::Udp, 5350),
+            (Category::Voip, "turn")
+        );
     }
 
     #[test]
@@ -711,7 +736,11 @@ mod tests {
         f.bytes_fwd = 300;
         f.bytes_rev = 300;
         cls.classify(&mut f);
-        assert_eq!(f.category, Category::NetworkService, "NTP must not be shape-uplifted to C2");
+        assert_eq!(
+            f.category,
+            Category::NetworkService,
+            "NTP must not be shape-uplifted to C2"
+        );
         assert_eq!(f.app_proto, "ntp");
         assert_eq!(f.app_proto_src, Some("port"));
     }
@@ -729,7 +758,11 @@ mod tests {
         f.bytes_fwd = 200;
         f.bytes_rev = 200;
         cls.classify(&mut f);
-        assert_eq!(f.category, Category::Dns, "DoT must not be shape-uplifted to C2");
+        assert_eq!(
+            f.category,
+            Category::Dns,
+            "DoT must not be shape-uplifted to C2"
+        );
         assert_eq!(f.app_proto, "dot");
         assert_eq!(f.app_proto_src, Some("port"));
     }
