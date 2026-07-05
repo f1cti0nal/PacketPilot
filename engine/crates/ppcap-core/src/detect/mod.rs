@@ -1810,10 +1810,13 @@ pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<F
         }
         // High escalation, gated to keep #104's benign-service fix intact: the channel must be a
         // genuine UNKNOWN C2 — the classifier labeled a flow on it shape-only `C2` (`c2_shape`)
-        // and NEVER named it as a service (`!named_service`, which vetoes NTP/DNS/STUN/Web/…) —
+        // and NEVER named it as a service (`!named_service`, which vetoes NTP/DNS/DoT/STUN/Web/…) —
         // it must be to a non-cloud host (telemetry usually lands on a known CDN/cloud block),
         // and the callback count must be high (a single benign flow can never reach it). Anything
         // short of all four stays a visible-but-non-escalating Medium finding.
+        // NOTE: `cloud_provider` is IPv4-only, so the cloud veto is a no-op for IPv6 dsts — the
+        // `named_service` veto is the load-bearing guard there (a recognized IPv6 resolver/CDN is
+        // still named by port); IPv6 cloud attribution is deferred to the online reputation path.
         let escalate = c.c2_shape
             && !c.named_service
             && c.contacts >= params.suspect_high_contacts

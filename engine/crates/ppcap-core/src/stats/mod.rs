@@ -1044,7 +1044,7 @@ fn app_bucket_for_flow(app_proto: &str, transport: Transport) -> AppProto {
     match app_proto {
         "http" | "http-proxy" => AppProto::Http,
         "https" | "tls" | "quic" => AppProto::Tls,
-        "dns" | "mdns" => AppProto::Dns,
+        "dns" | "mdns" | "dot" => AppProto::Dns,
         _ if transport == Transport::Udp => AppProto::OtherUdp,
         _ => AppProto::OtherTcp,
     }
