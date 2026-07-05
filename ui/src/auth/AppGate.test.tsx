@@ -47,7 +47,7 @@ const authed = (emailVerified: boolean): SessionState => ({
   status: "authed",
   email: "a@b.com",
   emailVerified,
-  profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null },
+  profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false },
   resendVerification: h.resendVerification,
   signOut: h.signOut,
 });

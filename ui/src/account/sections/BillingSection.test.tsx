@@ -45,15 +45,6 @@ describe("BillingSection", () => {
     expect(screen.queryByRole("button", { name: /upgrade to pro/i })).not.toBeInTheDocument();
   });
 
-  it("shows the trial note + upgrade for a trial user", () => {
-    const trialEndsAt = new Date(Date.now() + 5 * 86_400_000).toISOString();
-    render(<BillingSection plan="pro" subscription={null} trialEndsAt={trialEndsAt} />);
-    expect(screen.getByText(/pro trial/i)).toBeInTheDocument();
-    expect(screen.getByText(/days left/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /upgrade to keep pro/i })).toHaveAttribute("href", "/pricing");
-    expect(screen.queryByRole("button", { name: /manage billing/i })).not.toBeInTheDocument();
-  });
-
   it("treats a Pro with a subscription row but no Stripe customer as comped", () => {
     render(<BillingSection plan="pro" subscription={{ ...sub, stripe_customer_id: null }} />);
     expect(screen.getByText(/granted by an administrator/i)).toBeInTheDocument();
