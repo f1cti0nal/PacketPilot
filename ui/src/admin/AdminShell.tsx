@@ -11,6 +11,7 @@ import { SettingsView } from "./settings/SettingsView";
 import { EnvironmentView } from "./environment/EnvironmentView";
 import { ADMIN_SECTIONS, sectionById, type AdminSectionId } from "./sections";
 import { trackPageView } from "../lib/analytics/track";
+import { gaPageView } from "../lib/analytics/ga";
 
 const VALID = new Set<string>(ADMIN_SECTIONS.map((s) => s.id));
 
@@ -40,6 +41,7 @@ export function AdminShell({
 
   useEffect(() => {
     trackPageView(`/admin#${active}`);
+    gaPageView(`/admin#${active}`);
   }, [active]);
 
   const select = (id: AdminSectionId) => {

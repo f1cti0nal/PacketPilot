@@ -63,7 +63,7 @@ const security: LegalContent = {
           ]
         },
         {
-          "p": "For completeness, the only other data PacketPilot ever stores is account and billing metadata, none of which is derived from your captures. Accounts (optional) hold an email and hashed password via Supabase Auth, plus an optional display name and avatar. Billing is handled by Stripe — PacketPilot stores only a Stripe customer id, subscription id, status, price, and renewal date; card and payment details are handled entirely by Stripe and never touch PacketPilot's systems. Analytics are first-party page-view counts only: an allowlisted set of canonical route tokens (e.g. \"/\", \"/app#flows\"), a random per-session id, and, if logged in, the user id. Off-allowlist paths are dropped, so a route can never carry an IP, host, hash, or query string. No capture data, no third-party ad or tracking pixels, no cross-site cookies."
+          "p": "For completeness, the only other data PacketPilot ever stores is account and billing metadata, none of which is derived from your captures. Accounts (optional) hold an email and hashed password via Supabase Auth, plus an optional display name and avatar. Billing is handled by Stripe — PacketPilot stores only a Stripe customer id, subscription id, status, price, and renewal date; card and payment details are handled entirely by Stripe and never touch PacketPilot's systems. Analytics are page-view counts only, of two kinds and neither ever includes capture data. First-party analytics record an allowlisted set of canonical route tokens (e.g. \"/\", \"/app#flows\"), a random per-session id, and, if logged in, the user id; off-allowlist paths are dropped, so a route can never carry an IP, host, hash, or query string. Separately, Google Analytics measures aggregate page views — but only if you accept the cookie banner: it is off by default, loads and sets cookies only after you consent, and receives just the same page-path tokens and standard page metadata (never any capture-derived data)."
         }
       ]
     },
@@ -81,7 +81,7 @@ const security: LegalContent = {
             "No on-prem deployment required to keep captures local — the default already does that.",
             "No data boundary crossed with enrichment off: captures never leave the workstation.",
             "Air-gapped use is supported: with no opt-in enrichment, the analyzer needs no backend calls to do its job (see the FAQ for offline specifics).",
-            "Sub-processors (Supabase for auth/database/storage, Stripe for payments, Vercel for hosting/CDN) handle accounts, billing, and page delivery — never captures. Reputation providers and the AI provider are touched only for opt-in enrichment, and only ever receive the derived summary plus public IPs/domains."
+            "Sub-processors (Supabase for auth/database/storage, Stripe for payments, Vercel for hosting/CDN) handle accounts, billing, and page delivery — never captures. Google Analytics is used only if you accept the cookie banner, and receives page-view analytics only — never captures. Reputation providers and the AI provider are touched only for opt-in enrichment, and only ever receive the derived summary plus public IPs/domains."
           ]
         }
       ]
@@ -143,7 +143,7 @@ const security: LegalContent = {
       "a": "Yes for the core analyzer. The triage engine runs locally in the browser and needs no backend to parse captures and produce findings, so it works without sending capture data anywhere. The only features that require network access are the optional, opt-in enrichment calls (reputation and AI), which are off by default — in an air-gapped or offline setting you simply leave those disabled and get the full local analysis."
     }
   ],
-  "updated": "June 29, 2026"
+  "updated": "July 5, 2026"
 };
 
 const privacy: LegalContent = {
@@ -160,7 +160,8 @@ const privacy: LegalContent = {
         {
           "bullets": [
             "Complete every [BRACKETED PLACEHOLDER]: [LEGAL ENTITY NAME], [JURISDICTION / GOVERNING LAW], [CONTACT EMAIL e.g. support@...], [EFFECTIVE DATE].",
-            "Confirm the sub-processor list still matches reality at publish time (Supabase, Stripe, Vercel; plus AbuseIPDB, GreyNoise, VirusTotal, and your configured AI/LLM provider for opt-in enrichment).",
+            "Google Analytics is now integrated (consent-gated, hard opt-in — it loads and sets cookies only after the visitor accepts the cookie banner). Confirm the GA property disables Google Signals / advertising features, that data-retention and IP handling match these disclosures, put a Data Processing Agreement with Google in place, add Google (LLC) to the sub-processor list, and have counsel confirm the consent mechanism satisfies ePrivacy/GDPR for your target regions.",
+            "Confirm the sub-processor list still matches reality at publish time (Supabase, Stripe, Vercel, Google for Google Analytics; plus AbuseIPDB, GreyNoise, VirusTotal, and your configured AI/LLM provider for opt-in enrichment).",
             "If you enable an AI provider whose terms allow training on inputs, disclose it explicitly here and reconsider — the enrichment payload contains public IPs/domains and derived findings.",
             "Counsel should confirm whether you act as a data controller and/or processor, whether a DPA/EU representative is needed, and whether US state laws (e.g. CCPA/CPRA) require additional disclosures.",
             "Verify retention periods below are operationally true (i.e., that analytics and audit rows are actually pruned on the stated schedule)."
@@ -220,7 +221,7 @@ const privacy: LegalContent = {
           "p": "3.2 Billing metadata (paid plans only). Payments are processed entirely by Stripe. We never see or store your card number or other payment details. From Stripe we retain only billing metadata needed to manage your subscription: a Stripe customer id, a Stripe subscription id, the price/plan identifier, the subscription status, the billing amount and currency, the current period end (renewal) date, and whether the subscription is set to cancel at period end."
         },
         {
-          "p": "3.3 First-party page-view analytics. We record privacy-preserving page views to understand product usage. For each view we store: an allowlisted canonical route token only (for example \"/\", \"/app#flows\", \"/admin#dashboard\"), a random per-session id (generated in your browser, not tied to your identity unless you are logged in), and — if you are logged in — your user id. Our analytics record may also include a referrer, a coarse country, and the browser user-agent string. Critically, the path is matched against a fixed allowlist and any off-list path is dropped, so a recorded path can never carry an IP address, hostname, SNI, file hash, or query string. We use no third-party advertising or tracking pixels and no cross-site tracking."
+          "p": "3.3 Page-view analytics. We record privacy-preserving page views to understand product usage, using two mechanisms; neither ever includes capture data. (a) First-party analytics: for each view we store an allowlisted canonical route token only (for example \"/\", \"/app#flows\", \"/admin#dashboard\"), a random per-session id (generated in your browser, not tied to your identity unless you are logged in), and — if you are logged in — your user id; this record may also include a referrer, a coarse country, and the browser user-agent string. The path is matched against a fixed allowlist and any off-list path is dropped, so a recorded path can never carry an IP address, hostname, SNI, file hash, or query string. (b) Google Analytics (consent-required): only if you accept our cookie banner, we also load Google Analytics, which sets cookies and reports your page views and standard web/device metadata to Google (LLC) for aggregate usage measurement. It is off by default, loads nothing until you consent, receives only page-path tokens and standard page metadata — never any capture-derived data — and you can decline. We use no third-party advertising pixels and do not enable cross-site ad tracking."
         },
         {
           "p": "3.4 Opt-in enrichment data (logged-in users who explicitly consent only). The enrichment features (reputation lookups and the AI Analyst) are OFF by default and require both an account and an explicit opt-in/consent action. When you turn them on for a given analysis, your browser sends to our own server-side functions only: a DERIVED SUMMARY (aggregate statistics and finding metadata — not raw packets) and a small number of PUBLIC IP addresses and PUBLIC domains (such as TLS SNI hostnames). Private/internal IPs, payloads, and the raw capture are never sent. Our functions forward these to the configured providers (see Section 6) to fetch reputation and AI analysis, then return the results to your browser."
@@ -259,7 +260,7 @@ const privacy: LegalContent = {
           "bullets": [
             "Performance of a contract (Art. 6(1)(b)) — operating your account, providing the Service, and processing your subscription.",
             "Legitimate interests (Art. 6(1)(f)) — privacy-preserving first-party analytics, security, fraud prevention, and basic operational logging, balanced against your rights.",
-            "Consent (Art. 6(1)(a)) — the optional, opt-in enrichment features (reputation and AI Analyst), which are off by default and which you may decline or stop at any time.",
+            "Consent (Art. 6(1)(a)) — Google Analytics and the optional, opt-in enrichment features (reputation and AI Analyst), all of which are off by default, require your explicit acceptance, and which you may decline or withdraw at any time.",
             "Legal obligation (Art. 6(1)(c)) — retaining certain billing records where required by law."
           ]
         },
@@ -282,9 +283,10 @@ const privacy: LegalContent = {
         },
         {
           "bullets": [
-            "Supabase — authentication, application database, and file storage (avatars). Hosts your account email, password hash, profile, subscription-mirror metadata, and analytics rows.",
+            "Supabase — authentication, application database, and file storage (avatars). Hosts your account email, password hash, profile, subscription-mirror metadata, and first-party analytics rows.",
             "Stripe — payment processing and subscription management. Handles your card/payment details directly; we receive only the billing metadata in Section 3.2.",
-            "Vercel — web hosting and content delivery (CDN) for the site and application."
+            "Vercel — web hosting and content delivery (CDN) for the site and application.",
+            "Google (LLC) — Google Analytics (web usage analytics). Loaded only if you accept the analytics cookie banner; it then receives page-view tokens and standard web/device metadata. It never receives captures. Consent-gated rather than strictly necessary — listed here for completeness."
           ]
         },
         {
@@ -307,17 +309,18 @@ const privacy: LegalContent = {
       "heading": "7. Cookies and local storage",
       "blocks": [
         {
-          "p": "We use only first-party browser storage strictly necessary to run the Service. We do not use third-party tracking cookies or cross-site advertising cookies."
+          "p": "We use first-party browser storage strictly necessary to run the Service, plus — only if you consent — Google Analytics cookies for aggregate usage measurement. We do not use cross-site advertising cookies."
         },
         {
           "bullets": [
             "A session id (a random value in browser storage) used to group your page views for first-party analytics. It is not shared across sites.",
             "An authentication token / session (set when you log in) so you stay signed in. Present only if you have an account and are logged in.",
-            "Preferences such as your theme (light/dark) and UI density, stored locally in your browser so the app remembers your choices."
+            "Preferences such as your theme (light/dark) and UI density, stored locally in your browser so the app remembers your choices.",
+            "Google Analytics cookies (e.g. _ga), set ONLY if you accept the cookie consent banner. They are used for aggregate usage analytics; if you decline, they are never set, and you can withdraw consent at any time."
           ]
         },
         {
-          "p": "These do not track you across other websites. Capture analysis state lives only in your browser's memory for the duration of the tab and is not persisted to our servers."
+          "p": "Apart from the optional Google Analytics cookies above, these do not track you across other websites. Capture analysis state lives only in your browser's memory for the duration of the tab and is not persisted to our servers."
         }
       ]
     },
@@ -396,7 +399,7 @@ const privacy: LegalContent = {
     },
     {
       "q": "What does the analytics actually record?",
-      "a": "First-party page views only: an allowlisted canonical route token (e.g. \"/\" or \"/app#flows\"), a random per-session id, and your user id if logged in (plus referrer, coarse country, and user-agent). Off-allowlist paths are dropped, so a recorded path can never carry an IP, hostname, file hash, or query string. There are no third-party ad or tracking pixels."
+      "a": "Two kinds, and neither carries capture data. First-party page views record an allowlisted canonical route token (e.g. \"/\" or \"/app#flows\"), a random per-session id, and your user id if logged in (plus referrer, coarse country, and user-agent); off-allowlist paths are dropped, so a recorded path can never carry an IP, hostname, file hash, or query string. Separately, if you accept the cookie banner, Google Analytics measures aggregate page views and sets cookies — it is off until you consent, receives only page-path tokens and standard page metadata, and you can decline. We use no third-party advertising pixels."
     },
     {
       "q": "Does PacketPilot store my credit card?",
@@ -407,7 +410,7 @@ const privacy: LegalContent = {
       "a": "No. It is a template that accurately reflects PacketPilot's data model, but it must be reviewed and adapted by qualified legal counsel, and every [BRACKETED PLACEHOLDER] (entity name, jurisdiction, contact email, effective date, retention periods) must be completed before use."
     }
   ],
-  "updated": "June 29, 2026"
+  "updated": "July 5, 2026"
 };
 
 const terms: LegalContent = {
@@ -538,7 +541,7 @@ const terms: LegalContent = {
             "Payments. Stripe processes payments and manages the billing portal; your payment details are handled entirely by Stripe.",
             "Opt-in enrichment (reputation). If you opt in, AbuseIPDB, GreyNoise, and VirusTotal may receive the public IPs and public domains we proxy on your behalf to return reputation information.",
             "Opt-in enrichment (AI Analyst). If you opt in, the configured LLM/AI provider may receive the derived summary and public indicators we proxy on your behalf to generate analysis. AI outputs are subject to the disclaimers below.",
-            "Analytics. We use first-party, privacy-preserving page-view counts only — an allowlisted set of canonical route tokens, a random per-session ID, and (if you are logged in) your user ID. We do not use third-party ad or tracking pixels or cross-site cookies, and no capture data is included."
+            "Analytics. We use first-party, privacy-preserving page-view counts (an allowlisted set of canonical route tokens, a random per-session ID, and, if you are logged in, your user ID) and — only if you accept our cookie banner — Google Analytics for aggregate usage measurement. Neither includes any capture data; Google Analytics is off until you consent and sets cookies only then. We do not use third-party advertising pixels."
           ]
         },
         {
@@ -666,7 +669,7 @@ const terms: LegalContent = {
       "a": "Only captures you own or are otherwise lawfully authorized to analyze. You must not process traffic you captured without authorization or in violation of applicable wiretapping, computer-misuse, surveillance, privacy, or data-protection laws."
     }
   ],
-  "updated": "June 29, 2026"
+  "updated": "July 5, 2026"
 };
 
 export const LEGAL_PAGES: Record<"/security" | "/privacy" | "/terms", LegalContent> = {

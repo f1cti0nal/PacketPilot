@@ -80,6 +80,7 @@ import { AccountMenu } from "./auth/AccountMenu";
 import { DemoBanner } from "./auth/DemoBanner";
 import { reconcileAfterCheckout } from "./auth/billing";
 import { trackPageView } from "./lib/analytics/track";
+import { gaPageView } from "./lib/analytics/ga";
 import { useFeatureFlags } from "./lib/features/useFeatureFlags";
 import { useAppSettings } from "./lib/settings/useAppSettings";
 import { AnnouncementBanner } from "./cockpit/AnnouncementBanner";
@@ -162,6 +163,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const [tab, setTab] = useState<TabId>("dashboard");
   useEffect(() => {
     trackPageView(`/app#${tab}`);
+    gaPageView(`/app#${tab}`);
   }, [tab]);
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
