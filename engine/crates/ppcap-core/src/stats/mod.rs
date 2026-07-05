@@ -336,33 +336,17 @@ impl StatsAccumulator {
         };
 
         match p.transport {
-            Transport::Tcp => {
-                self.proto.tcp += 1;
-                let app = app_proto_tcp(service_port);
-                match app {
-                    AppProto::Http => self.proto.http += 1,
-                    AppProto::Tls => self.proto.tls += 1,
-                    AppProto::Dns => self.proto.dns += 1,
-                    _ => self.proto.other_tcp += 1,
-                }
-                self.bump_path(proto_path("tcp", app), wire);
-            }
-            Transport::Udp => {
-                self.proto.udp += 1;
-                let app = app_proto_udp(service_port);
-                match app {
-                    AppProto::Dns => self.proto.dns += 1,
-                    AppProto::Http => self.proto.http += 1,
-                    AppProto::Tls => self.proto.tls += 1,
-                    _ => self.proto.other_udp += 1,
-                }
-                self.bump_path(proto_path("udp", app), wire);
-            }
+            // TCP/UDP: only the L4 packet tally here. The app-proto split (http/tls/dns/other)
+            // and the `ip.tcp|udp.<app>` hierarchy are attributed PER FLOW in `observe_flow`,
+            // using the flow's payload-aware classified `app_proto` — so the Protocol Hierarchy
+            // card agrees with the Flows table (e.g. HTTPS on 8444 counts as TLS, not "other").
+            Transport::Tcp => self.proto.tcp += 1,
+            Transport::Udp => self.proto.udp += 1,
             other => {
-                // SCTP / ICMP / ICMPv6 / Other: no app-proto refinement, recorded under
-                // their transport token in the protocol hierarchy only.
+                // SCTP / ICMP / ICMPv6 / Other: no app-proto refinement and no per-flow app
+                // classification, so record them under their transport token here, per packet.
                 let token = transport_path_token(other);
-                self.bump_path(format!("ip.{token}"), wire);
+                self.bump_path(format!("ip.{token}"), 1, wire);
             }
         }
 
@@ -421,6 +405,27 @@ impl StatsAccumulator {
         slot.flows += 1;
         slot.pkts += f.total_pkts();
         slot.bytes += f.total_bytes();
+
+        // Payload-aware app-proto split + protocol hierarchy for TCP/UDP flows: attribute the
+        // whole flow's packets/bytes to the bucket its CLASSIFIED `app_proto` implies (not the
+        // raw service port), so these agree with the per-flow Flows table. `proto.tcp`/`udp` and
+        // the non-port (ICMP/SCTP) hierarchy stay packet-level in `observe_packet`.
+        let l4 = match f.key.transport {
+            Transport::Tcp => Some("tcp"),
+            Transport::Udp => Some("udp"),
+            _ => None,
+        };
+        if let Some(l4) = l4 {
+            let app = app_bucket_for_flow(&f.app_proto, f.key.transport);
+            match app {
+                AppProto::Http => self.proto.http += f.total_pkts(),
+                AppProto::Tls => self.proto.tls += f.total_pkts(),
+                AppProto::Dns => self.proto.dns += f.total_pkts(),
+                AppProto::OtherTcp => self.proto.other_tcp += f.total_pkts(),
+                AppProto::OtherUdp => self.proto.other_udp += f.total_pkts(),
+            }
+            self.bump_path(proto_path(l4, app), f.total_pkts(), f.total_bytes());
+        }
 
         // Per-IP flow counts for both canonical endpoints. Only bump endpoints already
         // tracked, or insert under the same bounded policy used for packet tallies, so a
@@ -978,13 +983,13 @@ impl StatsAccumulator {
         );
     }
 
-    fn bump_path(&mut self, path: String, wire: u64) {
+    fn bump_path(&mut self, path: String, pkts: u64, wire: u64) {
         bump_bounded(
             &mut self.per_proto_path,
             path,
             self.cfg.max_tracked_keys,
             |s| {
-                s.pkts += 1;
+                s.pkts += pkts;
                 s.bytes += wire;
             },
             |s| s.bytes,
@@ -1030,23 +1035,18 @@ impl AppProto {
     }
 }
 
-/// Infer the application protocol for a TCP service port (the well-known side).
-fn app_proto_tcp(port: u16) -> AppProto {
-    match port {
-        53 => AppProto::Dns,
-        80 | 8080 | 8000 => AppProto::Http,
-        443 | 8443 => AppProto::Tls,
+/// Map a flow's CLASSIFIED `app_proto` token to its ProtoCounts / hierarchy bucket. Payload-aware
+/// (unlike the old port-only lookup): HTTPS on a non-standard port classifies `"https"` -> `Tls`,
+/// HTTP sniffed on an odd port -> `Http`, so the Protocol Hierarchy matches the Flows table. Any
+/// other named service (ssh/ntp/smtp/...) or an unclassified flow folds into `Other{Tcp,Udp}` —
+/// the same coarse hierarchy vocabulary the port-only version produced.
+fn app_bucket_for_flow(app_proto: &str, transport: Transport) -> AppProto {
+    match app_proto {
+        "http" | "http-proxy" => AppProto::Http,
+        "https" | "tls" | "quic" => AppProto::Tls,
+        "dns" | "mdns" => AppProto::Dns,
+        _ if transport == Transport::Udp => AppProto::OtherUdp,
         _ => AppProto::OtherTcp,
-    }
-}
-
-/// Infer the application protocol for a UDP service port (the well-known side).
-fn app_proto_udp(port: u16) -> AppProto {
-    match port {
-        53 => AppProto::Dns,
-        80 => AppProto::Http,
-        443 => AppProto::Tls, // QUIC / DTLS over the HTTPS port.
-        _ => AppProto::OtherUdp,
     }
 }
 
@@ -1484,6 +1484,17 @@ mod tests {
             80,
             0,
         ));
+        // The app-proto split (tls/http/dns) is attributed per FLOW now; fold the matching flows
+        // so the payload-aware buckets populate (proto.tcp/udp/totals stay packet-derived above).
+        let mut https = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 100);
+        https.app_proto = "https".into();
+        let mut dns = flow(Transport::Udp, ip4(10, 0, 0, 3), ip4(10, 0, 0, 2), Category::Dns, 1, 200);
+        dns.app_proto = "dns".into();
+        let mut http = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 300);
+        http.app_proto = "http".into();
+        acc.observe_flow(&https);
+        acc.observe_flow(&dns);
+        acc.observe_flow(&http);
         let s = acc.finish();
         assert_eq!(s.total_packets, 3);
         assert_eq!(s.total_bytes, 600);
@@ -1803,33 +1814,48 @@ mod tests {
     #[test]
     fn protocol_hierarchy_paths_and_order() {
         let mut acc = StatsAccumulator::new(StatsConfig::default());
-        // big https flow vs small dns flow.
-        acc.observe_packet(&pkt(
-            0,
-            0,
-            1000,
-            Transport::Tcp,
-            Some(ip4(10, 0, 0, 1)),
-            Some(ip4(10, 0, 0, 2)),
-            5000,
-            443,
-            0,
-        ));
-        acc.observe_packet(&pkt(
-            1,
-            1,
-            50,
-            Transport::Udp,
-            Some(ip4(10, 0, 0, 1)),
-            Some(ip4(10, 0, 0, 2)),
-            5000,
-            53,
-            0,
-        ));
+        // big https flow vs small dns flow — hierarchy is now sourced from classified flows.
+        let mut https = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 1000);
+        https.app_proto = "https".into();
+        let mut dns = flow(Transport::Udp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Dns, 1, 50);
+        dns.app_proto = "dns".into();
+        acc.observe_flow(&https);
+        acc.observe_flow(&dns);
         let s = acc.finish();
         assert_eq!(s.protocol_hierarchy[0].path, "ip.tcp.https");
         assert_eq!(s.protocol_hierarchy[0].bytes, 1000);
         assert_eq!(s.protocol_hierarchy[1].path, "ip.udp.dns");
+    }
+
+    #[test]
+    fn protocol_hierarchy_is_payload_aware_not_port_only() {
+        // HTTPS on a NON-standard port (8444): port-only bucketing would call it "other", but the
+        // flow classified app_proto = "https", so it must land in TLS / ip.tcp.https. And a flow
+        // on tcp/80 whose payload was NOT http (app_proto "ssh") must fold to "other", not http.
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        // flow(.., pkts, bytes_per_pkt): 1 packet of 4000 bytes.
+        let mut tls_8444 = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 4000);
+        tls_8444.app_proto = "https".into();
+        let mut not_http_80 = flow(Transport::Tcp, ip4(10, 0, 0, 3), ip4(10, 0, 0, 4), Category::RemoteAccess, 1, 200);
+        not_http_80.app_proto = "ssh".into();
+        acc.observe_flow(&tls_8444);
+        acc.observe_flow(&not_http_80);
+        let s = acc.finish();
+        assert_eq!(s.proto.tls, 1, "8444 https flow counts as TLS");
+        assert_eq!(s.proto.http, 0, "nothing is http");
+        assert_eq!(s.proto.other_tcp, 1, "the ssh flow is other_tcp");
+        assert!(s.protocol_hierarchy.iter().any(|p| p.path == "ip.tcp.https" && p.bytes == 4000));
+    }
+
+    #[test]
+    fn icmp_flow_stays_packet_level_hierarchy() {
+        // A non-port transport is recorded per-packet under ip.icmp and never touches the
+        // app-proto buckets (which only fold TCP/UDP flows).
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        acc.observe_packet(&pkt(0, 0, 64, Transport::Icmp, Some(ip4(10, 0, 0, 1)), Some(ip4(10, 0, 0, 2)), 0, 0, 0));
+        let s = acc.finish();
+        assert!(s.protocol_hierarchy.iter().any(|p| p.path == "ip.icmp"));
+        assert_eq!(s.proto.http + s.proto.tls + s.proto.dns, 0);
     }
 
     #[test]
