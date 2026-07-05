@@ -365,6 +365,8 @@ mod tests {
         assert!(is_lookupable("8.8.8.8".parse().unwrap()));
         assert!(!is_lookupable("10.0.0.1".parse().unwrap()));
         assert!(!is_lookupable("192.168.1.1".parse().unwrap()));
+        // CGNAT (RFC6598 carrier space) IS a real off-network peer — now eligible for lookup.
+        assert!(is_lookupable("100.64.0.1".parse().unwrap()));
         // Documentation-range IPs (RFC 5737) must NOT be looked up — apply_reputation skips them.
         assert!(!is_lookupable("203.0.113.7".parse().unwrap()));
     }

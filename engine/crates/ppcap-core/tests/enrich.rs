@@ -40,10 +40,14 @@ fn ip_class_table() {
     assert_eq!(classify_ip(ip("::ffff:10.0.0.1")), IpClass::Private); // mapped look-through
     assert_eq!(classify_ip(ip("::")), IpClass::Reserved);
 
-    // Only Public is "external".
+    // Public and CGNAT (carrier space) are "external"; private + doc/reserved stay internal.
     assert!(classify_ip(ip("8.8.8.8")).is_external());
     assert!(!classify_ip(ip("10.0.0.10")).is_external());
-    assert!(!classify_ip(ip("100.64.0.1")).is_external());
+    assert!(classify_ip(ip("100.64.0.1")).is_external(), "CGNAT is a real off-network peer");
+    assert!(
+        !classify_ip(ip("203.0.113.5")).is_external(),
+        "RFC5737 documentation ranges stay internal"
+    );
 }
 
 fn demo_feed() -> ThreatFeed {

@@ -161,6 +161,17 @@ fn confident_c2_external_reaches_high() {
 }
 
 #[test]
+fn cgnat_peer_scores_as_external() {
+    // A CGNAT (100.64/10) peer is a real off-network host, so it earns the +15 external term
+    // (not the -10 all-internal penalty) and is reputation-eligible.
+    let mut r = rec(Category::Web);
+    r.key.hi_ip = IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)); // CGNAT
+    let s = score_flow(&r, &FeedMatch::default());
+    assert!(s.evidence.iter().any(|e| e == "external public peer (+15)"));
+    assert!(!s.evidence.iter().any(|e| e == "all-internal peers (-10)"));
+}
+
+#[test]
 fn network_service_external_is_benign() {
     // NTP/DHCP/SNMP/etc. to a public server: +3 (benign category) +15 (external) = 18 -> Low.
     // No C2 term, no confidence cap — the category itself is now benign.
