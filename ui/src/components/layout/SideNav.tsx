@@ -81,7 +81,7 @@ export function SideNav({
               {!collapsed && tab.badge ? (
                 <span
                   aria-hidden
-                  className="inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-medium text-[var(--color-accent)]"
+                  className="inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-medium text-[var(--color-accent-badge)]"
                 >
                   {tab.badge}
                 </span>
