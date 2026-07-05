@@ -71,7 +71,8 @@ export type SummaryCategory =
   | "scan"
   | "c2"
   | "anomalous"
-  | "unknown";
+  | "unknown"
+  | "network-service";
 
 export interface CategoryBreakdownEntry {
   category: SummaryCategory;
@@ -368,7 +369,8 @@ export type FlowCategory =
   | "scan"
   | "c2"
   | "anomalous"
-  | "unknown";
+  | "unknown"
+  | "network_service";
 
 /**
  * RAW row exactly as hyparquet.parquetReadObjects returns it. VERIFIED:

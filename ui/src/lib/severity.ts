@@ -16,6 +16,7 @@ const CATEGORY_SEVERITY: Record<string, Severity> = {
   file_transfer: "info",
   voip: "info",
   iot_ot: "info", // INFO — ordinary traffic
+  network_service: "info", // INFO — benign infra (NTP/DHCP/SNMP/syslog)
   unknown: "none", // NONE — uncategorized
 };
 

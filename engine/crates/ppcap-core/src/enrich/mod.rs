@@ -530,7 +530,8 @@ pub fn attack_for(cat: Category) -> Option<AttackTechnique> {
             id: "T1095",
             name: "Non-Application Layer Protocol",
         },
-        Web | Dns | Email | FileTransfer | RemoteAccess | Voip | IotOt | Unknown => return None,
+        Web | Dns | Email | FileTransfer | RemoteAccess | Voip | IotOt | NetworkService
+        | Unknown => return None,
     })
 }
 

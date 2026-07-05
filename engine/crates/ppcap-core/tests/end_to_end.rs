@@ -90,8 +90,8 @@ fn analyze_file_counts_categories_and_reconciles() {
     };
     assert_eq!(
         s.category_breakdown.len(),
-        12,
-        "all 12 categories always listed"
+        13,
+        "all 13 categories always listed"
     );
     assert!(breakdown(Category::Web).flows > 0, "expected Web flows");
     assert!(breakdown(Category::Dns).flows > 0, "expected DNS flows");
