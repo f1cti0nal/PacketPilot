@@ -90,6 +90,76 @@ fn ioc_plus_c2_forces_critical() {
         .any(|e| e == "floor: ioc + c2/anomalous forces Critical (>= 90)"));
 }
 
+/// Build a flow whose peer is a genuinely-public IP (so the externality term is +15, not the
+/// all-internal -10). `rec()` alone is all-RFC1918.
+fn external_rec(cat: Category) -> FlowRecord {
+    let mut r = rec(cat);
+    r.key.hi_ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)); // public
+    r
+}
+
+#[test]
+fn heuristic_c2_external_without_corroboration_held_at_medium() {
+    // A small, two-way flow to a public peer that the classifier labeled C2 purely by shape
+    // (`app_proto_src == None`): +45 (c2) +15 (external) +10 (beacon-shaped) = 70, which would
+    // otherwise land High. With no IOC corroboration it must be held at Medium so a weak
+    // single-flow heuristic cannot flag a benign public IP as High.
+    let mut r = external_rec(Category::C2);
+    r.pkts_fwd = 3;
+    r.pkts_rev = 3;
+    r.bytes_fwd = 100;
+    r.bytes_rev = 100;
+    assert!(r.app_proto_src.is_none(), "shape-only C2 has no app-proto provenance");
+    let s = score_flow(&r, &FeedMatch::default());
+    assert_eq!(s.severity, Severity::Medium, "uncorroborated heuristic C2 caps at Medium");
+    assert!(s.score <= 59, "score held below the High band, got {}", s.score);
+    // The additive terms stay transparent; the cap is a reconciliation note, not a term.
+    assert!(s.evidence.iter().any(|e| e == "category c2 (+45)"));
+    assert!(s
+        .evidence
+        .iter()
+        .any(|e| e.starts_with("cap: heuristic c2 candidate")));
+}
+
+#[test]
+fn heuristic_c2_external_with_ioc_still_critical() {
+    // The IOC floor is the corroboration path to Critical and must survive the cap.
+    let mut r = external_rec(Category::C2);
+    r.pkts_fwd = 3;
+    r.pkts_rev = 3;
+    r.bytes_fwd = 100;
+    r.bytes_rev = 100;
+    let s = score_flow(
+        &r,
+        &FeedMatch {
+            ip: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(s.severity, Severity::Critical);
+    assert!(s.score >= 90);
+    assert!(
+        !s.evidence.iter().any(|e| e.starts_with("cap:")),
+        "an IOC-corroborated C2 is never capped"
+    );
+}
+
+#[test]
+fn confident_c2_external_reaches_high() {
+    // A future DPI-confident C2 (non-null app_proto_src) is NOT a mere shape candidate, so the
+    // cap does not apply and it reaches High on points: +45 +15 +10 = 70.
+    let mut r = external_rec(Category::C2);
+    r.pkts_fwd = 3;
+    r.pkts_rev = 3;
+    r.bytes_fwd = 100;
+    r.bytes_rev = 100;
+    r.app_proto_src = Some("payload");
+    let s = score_flow(&r, &FeedMatch::default());
+    assert_eq!(s.severity, Severity::High);
+    assert!(s.score >= 60);
+    assert!(!s.evidence.iter().any(|e| e.starts_with("cap:")));
+}
+
 #[test]
 fn scan_shaped_evidence() {
     let mut r = rec(Category::Scan);

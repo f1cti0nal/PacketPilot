@@ -23,6 +23,11 @@
 //!   floor, not from a fabricated public peer.
 //! - **Behavior**(+10): refines an already-categorized flow; never manufactures a verdict
 //!   alone.
+//! - **Heuristic-C2 confidence cap**: a shape-only `C2` (labeled by `classify::looks_like_beacon`,
+//!   carrying no `app_proto_src`) is a *candidate*, not a verdict. Without corroboration it is
+//!   held at Medium so `C2`(+45)+`external`(+15)=60 cannot flag a benign public peer as High on
+//!   a single weak flow. The two corroboration paths still reach High: an IOC (the floors), or a
+//!   cross-flow periodic-beacon finding that uplifts the host card afterward.
 
 use crate::enrich::{attack_for, classify_ip, FeedMatch};
 use crate::model::category::Category;
@@ -231,6 +236,23 @@ pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
         evidence.push(format!("clamp: raw {acc} -> {score}"));
     }
     let mut sev = Severity::from_score(score);
+
+    // CONFIDENCE CAP: a heuristic (non-DPI) C2 is a *candidate*, not a verdict. In Phase 0 a
+    // flow is labeled `C2` purely by shape (`classify::looks_like_beacon` — a small, two-way
+    // exchange on a port we could not name), recorded with no app-proto provenance
+    // (`app_proto_src == None`). That signal alone must not reach High: `category c2 (+45)`
+    // plus an `external public peer (+15)` already sums to 60, so a single benign public flow
+    // on an odd port (NTP, STUN, an app heartbeat, or TLS whose handshake was snaplen-clipped)
+    // would otherwise be flagged High. Hold such an uncorroborated candidate at Medium. Both
+    // corroboration paths still reach High untouched: an IOC match (the floors below, which
+    // only fire on `fm.any()`), or a cross-flow periodic-beacon finding (`detect::beacon`,
+    // High/70 to an external peer) that uplifts the host card raise-only after scoring.
+    let heuristic_c2 = rec.category == Category::C2 && rec.app_proto_src.is_none();
+    if heuristic_c2 && !fm.any() && sev.rank() > Severity::Medium.rank() {
+        sev = Severity::Medium;
+        score = score.min(59);
+        evidence.push("cap: heuristic c2 candidate held at Medium without corroboration".to_string());
+    }
 
     if fm.any() {
         // FLOOR 1: any IOC match forces at least High.
