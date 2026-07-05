@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, User } from "lucide-react";
 import type { SessionState } from "./useSession";
 import { openPortal } from "./billing";
-import { isOnTrial, trialDaysLeft } from "./trial";
 
 export function AccountMenu({ session }: { session: SessionState }) {
   const [open, setOpen] = useState(false);
@@ -98,18 +97,6 @@ export function AccountMenu({ session }: { session: SessionState }) {
             >
               {busy ? "Opening…" : "Manage billing"}
             </button>
-          ) : isOnTrial(session.profile) ? (
-            <>
-              <p className="px-2 pt-1 t-tag text-[var(--color-accent)]">
-                {trialDaysLeft(session.profile.trialEndsAt)} days left in your Pro trial
-              </p>
-              <a
-                href="/pricing"
-                className="block w-full rounded-[var(--r-micro)] px-2 py-1.5 text-left text-sm text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-2)]"
-              >
-                Upgrade to keep Pro
-              </a>
-            </>
           ) : (
             // Comped Pro (no Stripe customer): nothing to manage — explain instead of offering
             // a button that would only error. /account → Plan & billing says the same.

@@ -17,7 +17,7 @@ describe("AccountMenu", () => {
     const signOut = vi.fn().mockResolvedValue(undefined);
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, resendVerification: vi.fn(), signOut }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true }, resendVerification: vi.fn(), signOut }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -29,7 +29,7 @@ describe("AccountMenu", () => {
   it("authed menu links to the /account page", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, resendVerification: vi.fn(), signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false }, resendVerification: vi.fn(), signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -45,7 +45,7 @@ describe("AccountMenu", () => {
   it("free authed user sees an Upgrade link to /pricing", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null }, resendVerification: vi.fn(), signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false }, resendVerification: vi.fn(), signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -55,7 +55,7 @@ describe("AccountMenu", () => {
   it("pro authed user can manage billing", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, resendVerification: vi.fn(), signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true }, resendVerification: vi.fn(), signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -63,23 +63,10 @@ describe("AccountMenu", () => {
     expect(billing.openPortal).toHaveBeenCalled();
   });
 
-  it("shows the trial countdown + upgrade link for a trial user", async () => {
-    const trialEndsAt = new Date(Date.now() + 5 * 86_400_000).toISOString();
-    render(
-      <AccountMenu
-        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt }, resendVerification: vi.fn(), signOut: vi.fn() }}
-      />,
-    );
-    await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
-    expect(screen.getByText(/days left in your pro trial/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /upgrade to keep pro/i })).toHaveAttribute("href", "/pricing");
-    expect(screen.queryByRole("button", { name: /manage billing/i })).not.toBeInTheDocument();
-  });
-
   it("comped Pro (no Stripe customer) shows no Manage billing button", async () => {
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false, trialEndsAt: null }, resendVerification: vi.fn(), signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: false }, resendVerification: vi.fn(), signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));
@@ -91,7 +78,7 @@ describe("AccountMenu", () => {
     billing.openPortal.mockResolvedValueOnce({ ok: false, error: "No billing account yet" });
     render(
       <AccountMenu
-        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true, trialEndsAt: null }, resendVerification: vi.fn(), signOut: vi.fn() }}
+        session={{ status: "authed", email: "a@b.com", emailVerified: true, profile: { email: "a@b.com", full_name: "A", plan: "pro", hasBilling: true }, resendVerification: vi.fn(), signOut: vi.fn() }}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: /account menu/i }));

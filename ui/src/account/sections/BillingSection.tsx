@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { openPortal } from "../../auth/billing";
-import { isOnTrial, trialDaysLeft } from "../../auth/trial";
 import type { AccountSubscription } from "../useAccount";
 import { Card, btnCls, btnGhost } from "./ui";
 
@@ -14,11 +13,9 @@ const day = (iso: string | null) =>
 export function BillingSection({
   plan,
   subscription,
-  trialEndsAt = null,
 }: {
   plan: string;
   subscription: AccountSubscription | null;
-  trialEndsAt?: string | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +23,6 @@ export function BillingSection({
   // "Real" billing means an actual Stripe customer. A Pro plan without one is an
   // admin comp (or seed/demo) — there's no portal to open, so show a note instead.
   const hasBilling = isPro && !!subscription?.stripe_customer_id;
-  const onTrial = isOnTrial({ plan, trialEndsAt, hasBilling });
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     if (busy) return;
@@ -61,16 +57,10 @@ export function BillingSection({
             </>
           )}
         </dl>
-      ) : onTrial ? (
-        <p className="text-sm text-[var(--color-text-dim)]">
-          You're on a Pro trial —{" "}
-          <span className="text-[var(--color-accent)]">{trialDaysLeft(trialEndsAt)} days left</span>. Upgrade to keep
-          Pro features when it ends.
-        </p>
       ) : (
         <p className="text-sm text-[var(--color-text-dim)]">
-          {/* Pro without a Stripe customer or trial = access granted by an admin (comp), not a
-              purchase — there is no billing portal to open, so don't offer one below. */}
+          {/* Pro without a Stripe customer = access granted by an admin (comp), not a purchase —
+              there is no billing portal to open, so don't offer one below. */}
           {isPro
             ? "Your Pro plan was granted by an administrator — there's no billing to manage here."
             : "You're on the Free plan."}
@@ -78,9 +68,9 @@ export function BillingSection({
       )}
 
       <div className="flex items-center gap-2 empty:hidden">
-        {(!isPro || onTrial) && (
+        {!isPro && (
           <a href="/pricing" className={btnCls}>
-            {onTrial ? "Upgrade to keep Pro" : "Upgrade to Pro"}
+            Upgrade to Pro
           </a>
         )}
         {hasBilling && (

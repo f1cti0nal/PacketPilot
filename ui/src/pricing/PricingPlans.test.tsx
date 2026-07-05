@@ -105,10 +105,10 @@ describe("PricingPlans", () => {
     expect(billing.startCheckout).not.toHaveBeenCalled();
   });
 
-  it("lets a trial user (effective Pro, no billing) still convert", () => {
+  it("lets a comped Pro (no billing) still convert to a paid plan", () => {
     sess.useSession.mockReturnValue({
       ...authedFree,
-      profile: { ...authedFree.profile, plan: "pro", hasBilling: false, trialEndsAt: new Date(Date.now() + 5 * 86_400_000).toISOString() },
+      profile: { ...authedFree.profile, plan: "pro", hasBilling: false },
     });
     render(<PricingPlans />);
     expect(screen.getByRole("button", { name: /get pro/i })).toBeInTheDocument();

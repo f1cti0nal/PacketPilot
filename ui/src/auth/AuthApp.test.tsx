@@ -85,7 +85,7 @@ describe("AuthApp", () => {
       status: "authed",
       email: "a@b.com",
       emailVerified: true,
-      profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null },
+      profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false },
       resendVerification: vi.fn(async () => ({ ok: true })),
       signOut,
     } satisfies SessionState);
@@ -101,7 +101,7 @@ describe("AuthApp", () => {
       status: "authed",
       email: "a@b.com",
       emailVerified: true,
-      profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false, trialEndsAt: null },
+      profile: { email: "a@b.com", full_name: "A", plan: "free", hasBilling: false },
       resendVerification: vi.fn(async () => ({ ok: true })),
       signOut: vi.fn(async () => {}),
     } satisfies SessionState);
