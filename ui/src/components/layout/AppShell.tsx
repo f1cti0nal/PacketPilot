@@ -10,10 +10,10 @@ import type { ExportResult } from "../../lib/platform";
 import { basename } from "../../lib/format";
 import { LoadCaptureDialog } from "./LoadCaptureDialog";
 import { CommandBar } from "../../cockpit/CommandBar";
-import { ThreatRail } from "../../cockpit/ThreatRail";
+import { SideNav } from "./SideNav";
 import { CommandPalette } from "../../cockpit/CommandPalette";
 import type { PaletteAction } from "../../cockpit/CommandPalette";
-import { useIsMobile, BottomTabBar, MobileThreatDrawer } from "./MobileNav";
+import { useIsMobile, BottomTabBar } from "./MobileNav";
 import { ShortcutsOverlay } from "../../cockpit/ShortcutsOverlay";
 
 // The shell derives the capture filename from the App-owned summary state and
@@ -51,13 +51,11 @@ export interface AppShellProps {
   onCopyCef?: () => Promise<ExportResult | undefined>;
   onExportSigma?: () => Promise<ExportResult | undefined>;
   onCopySigma?: () => Promise<ExportResult | undefined>;
-  /** Threat rail data from the active capture. */
+  /** Threat data from the active capture — powers the "Threats" nav badge and palette host search. */
   threats: IpThreat[];
-  /** Currently active/focused IP in the threat rail. */
-  activeIp: string | null;
-  /** Called when the user clicks a threat in the rail. */
+  /** Called when the user picks a host (palette host search). */
   onSelectThreat: (ip: string) => void;
-  /** Whether the threat rail is collapsed to 64px. */
+  /** Whether the left SideNav is collapsed to an icon rail. */
   collapsed: boolean;
   /** Toggle the collapse state. */
   onToggleCollapse: () => void;
@@ -115,7 +113,6 @@ export function AppShell({
   onExportSigma,
   onCopySigma,
   threats,
-  activeIp,
   onSelectThreat,
   collapsed,
   onToggleCollapse,
@@ -134,9 +131,8 @@ export function AppShell({
   const [exportHint, setExportHint] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  // Mobile-first shell: under `md` the rail becomes a drawer and tabs move to a bottom bar.
+  // Mobile-first shell: under `md` the SideNav is dropped for a bottom tab bar.
   const isMobile = useIsMobile();
-  const [threatDrawerOpen, setThreatDrawerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const tabs = useMemo(
@@ -144,16 +140,12 @@ export function AppShell({
       { id: "dashboard" as const, label: "Dashboard" },
       { id: "flows" as const, label: "Flows" },
       { id: "findings" as const, label: "Findings" },
+      { id: "threats" as const, label: "Threats", badge: threats.length || undefined },
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
       ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
     ],
-    [recentCount, compareActive],
+    [recentCount, compareActive, threats.length],
   );
-
-  // Never strand an open drawer on the desktop layout (e.g. on rotate/resize).
-  useEffect(() => {
-    if (!isMobile) setThreatDrawerOpen(false);
-  }, [isMobile]);
 
   const canExport = summary.status === "ready" && !!summary.data;
 
@@ -199,7 +191,7 @@ export function AppShell({
         setShortcutsOpen(true);
         return;
       }
-      const idx = ["1", "2", "3", "4"].indexOf(e.key);
+      const idx = "123456789".indexOf(e.key);
       if (idx >= 0 && idx < tabs.length) {
         e.preventDefault();
         onTabChange(tabs[idx].id);
@@ -259,6 +251,7 @@ export function AppShell({
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
     { id: "go-findings", label: "Go to Findings", hint: "view", run: () => onTabChange("findings") },
+    { id: "go-threats", label: "Go to Threats", hint: "view", run: () => onTabChange("threats") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
     { id: "go-compare", label: "Compare captures", hint: "view", run: () => onTabChange("recent") },
     { id: "load", label: "Load capture", hint: "action", run: onRequestLoad },
@@ -286,59 +279,42 @@ export function AppShell({
   ], [onGoHome, onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, onMatchIocs, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma]);
 
   return (
-    <div data-component="AppShell" className="flex h-full min-h-0 flex-col bg-bg text-[var(--color-text)]">
-      <CommandBar
-        captureName={captureName ?? ""}
-        sha256={summary.status === "ready" ? summary.data?.source_sha256 ?? undefined : undefined}
-        activeTab={activeTab}
-        onTab={onTabChange}
-        tabs={tabs}
-        captureStatus={captureStatus}
-        captureError={summary.status === "error" ? summary.error : undefined}
-        onGoHome={onGoHome}
-        onRequestLoad={onRequestLoad}
-        exportActions={canExport ? exportActions : []}
-        exporting={exporting}
-        exportHint={exportHint ?? undefined}
-        onOpenPalette={onOpenPalette}
-        collapsed={collapsed}
-        onToggleCollapse={onToggleCollapse}
-        onOpenAiChat={onOpenAiChat}
-        rulesMenu={rulesMenu}
-        accountMenu={accountMenu}
-        showTabs={!isMobile}
-      />
-      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3 pt-3">
-        {!isMobile && (
-          <ThreatRail
-            threats={threats}
-            collapsed={collapsed}
-            activeIp={activeIp}
-            onSelect={onSelectThreat}
-          />
-        )}
+    <div data-component="AppShell" className="flex h-full min-h-0 bg-bg text-[var(--color-text)]">
+      {/* Desktop: persistent left navigation. Mobile: dropped for the BottomTabBar below. */}
+      {!isMobile && (
+        <SideNav
+          tabs={tabs}
+          activeTab={activeTab}
+          onTab={onTabChange}
+          collapsed={collapsed}
+          onToggleCollapse={onToggleCollapse}
+          onGoHome={onGoHome}
+        />
+      )}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <CommandBar
+          captureName={captureName ?? ""}
+          sha256={summary.status === "ready" ? summary.data?.source_sha256 ?? undefined : undefined}
+          captureStatus={captureStatus}
+          captureError={summary.status === "error" ? summary.error : undefined}
+          onGoHome={onGoHome}
+          showBrand={isMobile}
+          onRequestLoad={onRequestLoad}
+          exportActions={canExport ? exportActions : []}
+          exporting={exporting}
+          exportHint={exportHint ?? undefined}
+          onOpenPalette={onOpenPalette}
+          onOpenAiChat={onOpenAiChat}
+          rulesMenu={rulesMenu}
+          accountMenu={accountMenu}
+        />
         {/* overflow-x-hidden clips sub-pixel rounding overflow (e.g. the heatmap's
             many flex-1 gap-px cells at the ~768px boundary) so the shell never grows
             a horizontal scrollbar; views that need real horizontal scroll (FlowsTable)
             carry their own overflow-auto container. */}
-        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">{children}</main>
+        {isMobile && <BottomTabBar tabs={tabs} activeTab={activeTab} onTab={onTabChange} />}
       </div>
-      {isMobile && (
-        <BottomTabBar
-          tabs={tabs}
-          activeTab={activeTab}
-          onTab={onTabChange}
-          threatCount={threats.length}
-          onOpenThreats={() => setThreatDrawerOpen(true)}
-        />
-      )}
-      <MobileThreatDrawer
-        open={isMobile && threatDrawerOpen}
-        onClose={() => setThreatDrawerOpen(false)}
-        threats={threats}
-        activeIp={activeIp}
-        onSelect={onSelectThreat}
-      />
       {loadDialogOpen && (
         <LoadCaptureDialog onReplaceData={onReplaceData} onAnalyzePcap={onAnalyzePcap} onClose={() => onLoadDialogOpenChange(false)} />
       )}

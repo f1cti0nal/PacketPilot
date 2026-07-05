@@ -1,38 +1,28 @@
-// Fixed 56px glass command bar: wordmark + collapse, capture identity + live
-// status pill, view switcher and capture actions.
+// Fixed 56px top bar for the content column: capture identity + live status pill on the
+// left, capture actions and the account control on the right. Primary navigation lives in
+// the left SideNav (desktop) or the BottomTabBar (mobile) — not here. On mobile, where there
+// is no SideNav, this bar also carries the clickable brand so "return to overview" stays
+// reachable.
 import type { ReactNode } from "react";
 import {
   Radar,
-  PanelLeftClose,
-  PanelLeft,
   Upload,
   Loader2,
   Command as CommandIcon,
   CheckCircle2,
   Sparkles,
 } from "lucide-react";
-import { cn } from "../lib/cn";
 import { shortHash } from "../lib/format";
-import type { TabId } from "../types";
 import { ExportMenu } from "./ExportMenu";
 import type { ExportAction } from "./ExportMenu";
 import { ThemeToggle } from "./ThemeToggle";
 import { DensityToggle } from "./DensityToggle";
 
-const DEFAULT_TABS: ReadonlyArray<{ id: TabId; label: string; badge?: number }> = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "flows", label: "Flows" },
-];
-
 export function CommandBar({
   captureName,
   sha256,
-  activeTab,
-  onTab,
-  collapsed,
-  onToggleCollapse,
   onGoHome,
-  tabs = DEFAULT_TABS,
+  showBrand = false,
   captureStatus = "ready",
   captureError,
   onRequestLoad,
@@ -43,19 +33,13 @@ export function CommandBar({
   onOpenAiChat,
   rulesMenu,
   accountMenu,
-  showTabs = true,
 }: {
   captureName: string;
   sha256?: string;
-  activeTab: TabId;
-  onTab: (t: TabId) => void;
-  collapsed: boolean;
-  onToggleCollapse: () => void;
-  /** Return to the Home overview (unloads the active capture). Makes the wordmark clickable. */
+  /** Return to the Home overview (unloads the active capture). Makes the mobile brand clickable. */
   onGoHome?: () => void;
-  tabs?: ReadonlyArray<{ id: TabId; label: string; badge?: number }>;
-  /** Render the inline Views switcher. Off on mobile, where the bottom tab bar replaces it. */
-  showTabs?: boolean;
+  /** Render the clickable brand on the left. On for mobile (no SideNav), off on desktop. */
+  showBrand?: boolean;
   captureStatus?: "idle" | "loading" | "ready" | "error";
   captureError?: string;
   onRequestLoad?: () => void;
@@ -71,17 +55,9 @@ export function CommandBar({
 }) {
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3">
-      {/* Wordmark + collapse */}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="rounded-[var(--r-tile)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-        >
-          {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
-        </button>
-        {onGoHome ? (
+      {/* Brand (mobile only — desktop shows it in the SideNav). */}
+      {showBrand &&
+        (onGoHome ? (
           <button
             type="button"
             onClick={onGoHome}
@@ -92,14 +68,12 @@ export function CommandBar({
           </button>
         ) : (
           <BrandMark />
-        )}
-      </div>
+        ))}
 
-      {/* Capture identity (center). Deferred to lg: at the 768px md boundary the
-          capture identity + Views switcher + action cluster together overflowed
-          the bar by ~36px (horizontal scrollbar). The capture name/status is
-          secondary — the dashboard already shows the capture context. */}
-      <div className="ml-3 hidden min-w-0 items-center gap-2.5 lg:flex">
+      {/* Capture identity. Deferred to lg: at the md boundary the identity + action cluster
+          together overflowed the bar. The capture name/status is secondary — the dashboard
+          already shows the capture context. */}
+      <div className="hidden min-w-0 items-center gap-2.5 lg:flex">
         {captureStatus === "loading" && (
           <>
             <Loader2 size={13} className="animate-spin text-[var(--color-text-faint)]" aria-hidden />
@@ -132,37 +106,8 @@ export function CommandBar({
         )}
       </div>
 
-      {/* Right: view switcher + actions */}
+      {/* Right: capture actions + account. */}
       <div className="ml-auto flex items-center gap-2">
-        {showTabs && (
-        <nav aria-label="Views" className="flex items-center gap-0.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-0.5">
-          {tabs.map((tab) => {
-            const active = tab.id === activeTab;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                aria-current={active ? "page" : undefined}
-                onClick={() => onTab(tab.id)}
-                className={cn(
-                  "rounded-[var(--r-chip)] px-3 py-1 text-xs font-medium transition-colors",
-                  active
-                    ? "bg-[var(--color-bg)] text-[var(--color-text)]"
-                    : "text-[var(--color-text-dim)] hover:text-[var(--color-text)]",
-                )}
-              >
-                {tab.label}
-                {tab.badge ? (
-                  <span className="ml-1.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-medium text-[var(--color-accent)]">
-                    {tab.badge}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
-        )}
-
         <ActionButton
           icon={<Upload size={14} />}
           label="Load capture"
@@ -195,13 +140,6 @@ export function CommandBar({
           <CommandIcon size={13} />
           <span className="t-tag">K</span>
         </button>
-        {/* Account control is always visible (incl. phones). */}
-        {accountMenu}
-        {/* Density is a dashboard power-tweak — hide it (and Rules below) until lg so
-            the action cluster fits the tablet range with the larger type scale; both
-            return at lg+. (Still reachable via the ⌘K palette.) */}
-        <span className="hidden lg:contents"><DensityToggle /></span>
-        <ThemeToggle />
         {onOpenAiChat && (
           <button
             type="button"
@@ -212,13 +150,20 @@ export function CommandBar({
             <Sparkles size={14} />
           </button>
         )}
+        {/* Density is a dashboard power-tweak — hide it (and Rules) until lg so the action
+            cluster fits the tablet range with the larger type scale; both return at lg+.
+            (Still reachable via the ⌘K palette.) */}
+        <span className="hidden lg:contents"><DensityToggle /></span>
+        <ThemeToggle />
         {rulesMenu && <span className="hidden lg:contents">{rulesMenu}</span>}
+        {/* Account control is always visible (incl. phones) and anchors the far right. */}
+        {accountMenu}
       </div>
     </header>
   );
 }
 
-/** The glyph + wordmark lockup, shared by the static and clickable (go-home) brand. */
+/** The glyph + wordmark lockup used by the mobile brand. */
 function BrandMark() {
   return (
     <>

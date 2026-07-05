@@ -9,7 +9,7 @@ import { AiConsent } from "../cockpit/AiConsent";
 import { DomainConsent } from "../cockpit/DomainConsent";
 import { ReputationConsent } from "../cockpit/ReputationConsent";
 import { AiChatPanel } from "../cockpit/AiChatPanel";
-import { ThreatRail } from "../cockpit/ThreatRail";
+import { ThreatsView } from "../views/ThreatsView";
 import { ShortcutsOverlay } from "../cockpit/ShortcutsOverlay";
 import { EmptyState } from "../components/state/EmptyState";
 import { ErrorState } from "../components/state/ErrorState";
@@ -77,9 +77,9 @@ describe("accessibility (axe)", () => {
     await expectNoA11yViolations(container);
   });
 
-  it("ThreatRail has no violations", async () => {
+  it("ThreatsView has no violations", async () => {
     const { container } = render(
-      <ThreatRail threats={threats} collapsed={false} activeIp={threats[0]?.ip ?? null} onSelect={noop} />,
+      <ThreatsView threats={threats} activeIp={threats[0]?.ip ?? null} onSelect={noop} />,
     );
     await expectNoA11yViolations(container);
   });

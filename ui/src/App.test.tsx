@@ -60,13 +60,14 @@ describe("App routing", () => {
     expect(mockLoadSummary).not.toHaveBeenCalled(); // nothing auto-loads on launch
   });
 
-  it("rail click on the incident host opens its flyout on the dashboard", async () => {
+  it("Threats view: clicking the incident host opens its flyout on the dashboard", async () => {
     const u = userEvent.setup();
     await loadSampleApp();
-    // Wait for the rail (aside/complementary) to be populated (data loaded)
-    const rail = await screen.findByRole("complementary");
-    const railBtn = await within(rail).findByRole("button", { name: /^10\.13\.37\.7/ });
-    await u.click(railBtn);
+    // Open the Threats view from the sidebar nav, then click the incident host.
+    const nav = await screen.findByRole("navigation", { name: "Views" });
+    await u.click(within(nav).getByRole("button", { name: "Threats" }));
+    const hostBtn = await screen.findByRole("button", { name: /^10\.13\.37\.7/ });
+    await u.click(hostBtn);
     await waitFor(() =>
       expect(
         screen.getByRole("dialog", { name: /Incident detail for 10\.13\.37\.7/i }),
@@ -74,13 +75,13 @@ describe("App routing", () => {
     );
   });
 
-  it("rail click on a non-incident host routes to filtered Flows", async () => {
+  it("Threats view: clicking a non-incident host routes to filtered Flows", async () => {
     const u = userEvent.setup();
     await loadSampleApp();
-    // Click the rail (aside/complementary) button for the non-incident host
-    const rail = await screen.findByRole("complementary");
-    const railBtn = await within(rail).findByRole("button", { name: /^45\.77\.13\.37/ });
-    await u.click(railBtn);
+    const nav = await screen.findByRole("navigation", { name: "Views" });
+    await u.click(within(nav).getByRole("button", { name: "Threats" }));
+    const hostBtn = await screen.findByRole("button", { name: /^45\.77\.13\.37/ });
+    await u.click(hostBtn);
     const filter = await screen.findByLabelText("Filter flows");
     expect((filter as HTMLInputElement).value).toBe("45.77.13.37");
   });

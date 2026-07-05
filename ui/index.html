@@ -53,19 +53,15 @@
       })();
     </script>
     <!--
-      Type system — Geist + Geist Mono. For the air-gapped desktop build, self-host instead:
-        npm i @fontsource/geist-sans @fontsource/geist-mono
-      and import the weights in src/main.tsx. (CDN here degrades gracefully offline.)
+      Type system — Helvetica Neue for all proportional text (system font on Apple
+      platforms; falls back to Helvetica/Arial elsewhere), so no web font is loaded
+      for it. Only Geist Mono (tabular numerics: IPs, ports, hashes, scores) is
+      fetched from the CDN; it degrades gracefully offline.
     -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-    <!-- Marketing landing type — Inter Tight (display) + Inter (body). -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
   </head>
