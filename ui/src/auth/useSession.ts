@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
+import { setStorageScope } from "../lib/storageScope";
 
 export interface UserProfile {
   email: string;
@@ -105,9 +106,15 @@ export function useSession(): SessionState {
 
     const derive = async (session: { user?: { id: string; email?: string; email_confirmed_at?: string | null } } | null) => {
       if (!session?.user) {
+        // Signed-out: reset browser-local persistence to the anon namespace BEFORE any re-render,
+        // so a signed-out view never reads the previous account's captures/annotations.
+        setStorageScope(null);
         if (!cancelled) setState({ status: "anon" });
         return;
       }
+      // Namespace all device-local stores to THIS account before reading the profile (and before
+      // <App/> reads Recent) — the fix for cross-account capture leakage on a shared browser.
+      setStorageScope(session.user.id);
       const email = session.user.email ?? "";
       const emailVerified = !!session.user.email_confirmed_at;
       // Profile (plan/name) + whether a real Stripe customer exists, in parallel. Both are

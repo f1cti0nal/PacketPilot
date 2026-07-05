@@ -1,4 +1,5 @@
 import type { Severity } from "../types";
+import { scopedKey } from "./storageScope";
 
 /** The persisted subset of FlowsView filter state. */
 export interface FlowFilter {
@@ -15,12 +16,14 @@ export interface FilterProfile {
   filter: FlowFilter;
 }
 
-const KEY = "packetpilot.filterProfiles.v1";
+// Namespaced to the signed-in account (storageScope) so saved filters don't leak across accounts.
+const FILTER_PROFILES_BASE = "packetpilot.filterProfiles.v1";
+const profilesKey = () => scopedKey(FILTER_PROFILES_BASE);
 
 /** Read the saved profiles; any parse error yields an empty list (never throws). */
 export function listProfiles(): FilterProfile[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(profilesKey());
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -32,7 +35,7 @@ export function listProfiles(): FilterProfile[] {
 
 function persist(list: FilterProfile[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(list));
+    localStorage.setItem(profilesKey(), JSON.stringify(list));
   } catch {
     /* quota or serialization error: drop silently, like recent.ts */
   }
@@ -70,7 +73,7 @@ export function removeProfile(id: string): FilterProfile[] {
 
 export function clearProfiles(): FilterProfile[] {
   try {
-    localStorage.removeItem(KEY);
+    localStorage.removeItem(profilesKey());
   } catch {
     /* ignore */
   }

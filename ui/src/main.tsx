@@ -6,7 +6,13 @@ import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { LoadingState } from "./components/state/LoadingState";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { resolveRouteFor } from "./lib/route";
+import { purgeLegacyGlobalStores } from "./lib/storageScope";
 import "./index.css";
+
+// One-time cleanup of pre-namespacing browser stores (see storageScope). Runs before anything
+// reads persistence, so the orphaned global capture data from before per-account namespacing is
+// removed rather than left on a shared machine.
+purgeLegacyGlobalStores();
 
 // Pathname routing: "/" → marketing landing, "/app" → triage app, "/admin" → the
 // (lazy-loaded, role-gated) admin panel. On Vercel, /app and /admin are rewritten

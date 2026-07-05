@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { listRuleSets, saveRuleSet, removeRuleSet, clearRuleSets } from "./ruleSets";
+import { scopedKey } from "./storageScope";
 
 describe("ruleSets", () => {
   beforeEach(() => localStorage.clear());
@@ -8,7 +9,7 @@ describe("ruleSets", () => {
     const r = saveRuleSet("c2.rules", "alert tcp any any -> any 443 (content:\"x\"; sid:1;)");
     expect(r.ok).toBe(true);
     expect(listRuleSets().map((s) => s.name)).toEqual(["c2.rules"]);
-    expect(localStorage.getItem("packetpilot.ruleSets.v1")).toContain("c2.rules");
+    expect(localStorage.getItem(scopedKey("packetpilot.ruleSets.v1"))).toContain("c2.rules");
   });
 
   it("gives distinct names distinct ids (no slug collision); removeRuleSet drops only one", () => {
@@ -38,7 +39,7 @@ describe("ruleSets", () => {
     expect(listRuleSets()).toHaveLength(0);
   });
   it("survives malformed storage without throwing", () => {
-    localStorage.setItem("packetpilot.ruleSets.v1", "{ not json");
+    localStorage.setItem(scopedKey("packetpilot.ruleSets.v1"), "{ not json");
     expect(listRuleSets()).toEqual([]);
   });
 });

@@ -3,6 +3,8 @@
 // (never throws; a quota/parse error degrades to "no annotations"). A `packetpilot:annotations`
 // window event is dispatched on every write so any mounted `useAnnotation` re-reads.
 
+import { scopedKey } from "./storageScope";
+
 /** Where a host sits in the analyst's triage workflow. */
 export type TriageStatus = "new" | "investigating" | "cleared" | "escalated";
 
@@ -28,7 +30,10 @@ export interface HostAnnotation {
   updatedAt: number;
 }
 
-const KEY = "packetpilot.annotations.v1";
+// Namespaced to the signed-in account (storageScope) so triage notes don't leak across accounts
+// sharing a browser profile.
+const ANNOTATIONS_BASE = "packetpilot.annotations.v1";
+const annotationsKey = () => scopedKey(ANNOTATIONS_BASE);
 export const ANNOTATIONS_EVENT = "packetpilot:annotations";
 
 /** `{ [captureKey]: { [ip]: HostAnnotation } }`. */
@@ -36,7 +41,7 @@ type Store = Record<string, Record<string, HostAnnotation>>;
 
 function readStore(): Store {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(annotationsKey());
     if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
     return parsed && typeof parsed === "object" ? (parsed as Store) : {};
@@ -47,7 +52,7 @@ function readStore(): Store {
 
 function writeStore(store: Store): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(store));
+    localStorage.setItem(annotationsKey(), JSON.stringify(store));
   } catch {
     /* quota or serialization error: drop silently, like recent.ts */
   }

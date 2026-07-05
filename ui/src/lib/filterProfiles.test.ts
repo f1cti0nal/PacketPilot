@@ -3,6 +3,7 @@ import {
   listProfiles, saveProfile, removeProfile, clearProfiles, serializeProfiles, importProfiles,
   type FlowFilter,
 } from "./filterProfiles";
+import { scopedKey } from "./storageScope";
 
 const f = (over: Partial<FlowFilter> = {}): FlowFilter => ({ query: "10.0.0.5", category: "c2", severity: undefined, proto: undefined, ...over });
 
@@ -12,7 +13,7 @@ describe("filterProfiles", () => {
   it("saves and lists, persisting under the v1 key", () => {
     saveProfile("C2 hunt", f());
     expect(listProfiles().map((p) => p.name)).toEqual(["C2 hunt"]);
-    expect(localStorage.getItem("packetpilot.filterProfiles.v1")).toContain("C2 hunt");
+    expect(localStorage.getItem(scopedKey("packetpilot.filterProfiles.v1"))).toContain("C2 hunt");
   });
 
   it("upserts by name (same name keeps one, updated filter)", () => {
