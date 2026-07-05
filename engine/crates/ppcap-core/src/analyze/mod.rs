@@ -532,8 +532,13 @@ fn process_flow(
 
     // Behavioral substrate: fold this connection's directed contact (client -> server:port at
     // the flow's start time, with directional bytes) into the cross-flow tracker for
-    // beaconing / exfil detection.
+    // beaconing / exfil detection. Also carry the classification signal for the evasive-beacon
+    // High escalation: whether the flow was shape-only C2 (unnamed + beacon-shaped) vs a
+    // port/payload-NAMED service (which vetoes escalation — a recognized service is never C2).
     if let Some(c) = contact_from_flow(record) {
+        let is_c2_shape = record.category == crate::model::category::Category::C2
+            && record.app_proto_src.is_none();
+        let is_named = record.app_proto_src.is_some();
         tracker.observe_flow_contact_with(
             c.client,
             c.server,
@@ -542,6 +547,8 @@ fn process_flow(
             c.bytes_out,
             c.bytes_in,
             record.key.transport,
+            is_c2_shape,
+            is_named,
         );
     }
 

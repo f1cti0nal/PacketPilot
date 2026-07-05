@@ -159,6 +159,13 @@ pub struct ContactSeries {
     bytes_out: u64,
     /// Bytes sent server -> client across this channel.
     bytes_in: u64,
+    /// Sticky: this channel carried a flow the classifier labeled `C2` purely by shape
+    /// (unnamed port, no payload). The positive signal for the evasive-beacon High escalation.
+    c2_shape: bool,
+    /// Sticky: this channel carried a flow the classifier could NAME as a service (port or
+    /// payload). Vetoes High escalation — a recognized benign service (NTP/DNS/STUN/Web/…) is
+    /// never an unknown C2, even if it also looks beacon-shaped.
+    named_service: bool,
 }
 
 impl ContactSeries {
@@ -200,6 +207,12 @@ impl ContactSeries {
         self.bytes_in = self.bytes_in.saturating_add(inb);
     }
 
+    /// Fold one flow's classification signal into the sticky channel flags.
+    pub fn add_class(&mut self, is_c2_shape: bool, is_named: bool) {
+        self.c2_shape |= is_c2_shape;
+        self.named_service |= is_named;
+    }
+
     /// Total bytes sent client -> server on this channel.
     pub fn bytes_out(&self) -> u64 {
         self.bytes_out
@@ -208,6 +221,16 @@ impl ContactSeries {
     /// Total bytes sent server -> client on this channel.
     pub fn bytes_in(&self) -> u64 {
         self.bytes_in
+    }
+
+    /// True if a shape-only `C2` flow was ever seen on this channel.
+    pub fn c2_shape(&self) -> bool {
+        self.c2_shape
+    }
+
+    /// True if a port/payload-NAMED service flow was ever seen on this channel.
+    pub fn named_service(&self) -> bool {
+        self.named_service
     }
 }
 
@@ -222,6 +245,10 @@ pub struct BeaconCandidate {
     pub bytes_out: u64,
     /// Server->client bytes across the channel.
     pub bytes_in: u64,
+    /// A shape-only `C2` flow was seen on this channel (positive escalation signal).
+    pub c2_shape: bool,
+    /// A port/payload-NAMED service flow was seen on this channel (escalation veto).
+    pub named_service: bool,
 }
 
 /// A destination channel with a large asymmetric outbound transfer (exfil shape).
@@ -849,6 +876,8 @@ impl BehaviorTracker {
             bytes_out,
             bytes_in,
             Transport::Tcp,
+            false,
+            false,
         );
     }
 
@@ -857,7 +886,7 @@ impl BehaviorTracker {
     /// flow's `transport`. The SYN-flood half-open signal is TCP-only (UDP and other connectionless
     /// transports have no handshake), so non-TCP flows never contribute to it — otherwise a busy
     /// small-request UDP service (DNS, NTP, SNMP) would be mistaken for a flood of half-opens.
-    #[allow(clippy::too_many_arguments)] // directed contact fold: src/dst/port/ts/bytes x2/transport
+    #[allow(clippy::too_many_arguments)] // directed contact fold: src/dst/port/ts/bytes x2/transport/class x2
     pub fn observe_flow_contact_with(
         &mut self,
         src: IpAddr,
@@ -867,6 +896,8 @@ impl BehaviorTracker {
         bytes_out: u64,
         bytes_in: u64,
         transport: Transport,
+        is_c2_shape: bool,
+        is_named: bool,
     ) {
         // Per-channel inter-arrival series + byte totals (bounded: a brand-new channel at
         // capacity is dropped — best-effort heavy-hitter signal, not an exact set).
@@ -874,10 +905,12 @@ impl BehaviorTracker {
         if let Some(series) = self.channels.get_mut(&key) {
             series.observe(ts_ns);
             series.add_bytes(bytes_out, bytes_in);
+            series.add_class(is_c2_shape, is_named);
         } else if self.channels.len() < self.cfg.max_tracked_keys.max(1) {
             let mut series = ContactSeries::new();
             series.observe(ts_ns);
             series.add_bytes(bytes_out, bytes_in);
+            series.add_class(is_c2_shape, is_named);
             self.channels.insert(key, series);
         }
 
@@ -1232,6 +1265,8 @@ impl BehaviorTracker {
                 jitter_cv: s.jitter_cv(),
                 bytes_out: s.bytes_out(),
                 bytes_in: s.bytes_in(),
+                c2_shape: s.c2_shape(),
+                named_service: s.named_service(),
             })
             .collect();
         out.sort_by_key(|c| c.key);
@@ -1520,7 +1555,7 @@ fn worst_reason_rank(reasons: &[WeakTlsReason]) -> u8 {
     reasons.iter().map(|r| r.severity_rank()).max().unwrap_or(0)
 }
 
-use crate::enrich::classify_ip;
+use crate::enrich::{classify_ip, cloud_provider};
 use crate::model::finding::{Finding, FindingKind};
 use crate::model::flow::FlowRecord;
 use crate::model::incident::Incident;
@@ -1565,6 +1600,10 @@ pub struct BeaconParams {
     /// Laxer arm: maximum jitter CV. Wider than `max_jitter_cv` so it catches beacons that jitter
     /// to defeat the strict gate, but still rejects genuinely ad-hoc traffic.
     pub suspect_max_jitter_cv: f64,
+    /// Laxer arm: at or above this many contacts an evasive beacon may escalate from Medium to
+    /// High — but ONLY when corroborated as a genuine unknown-C2 channel (shape-only C2, never a
+    /// named service, not a known cloud host). A single flow (1 contact) can never reach this.
+    pub suspect_high_contacts: u64,
     /// Laxer arm: reject channels whose MEAN bytes-per-contact exceed this — a beacon is small,
     /// bulk transfers are not. Mirrors the classifier/scorer beacon byte ceiling.
     pub suspect_max_mean_bytes: u64,
@@ -1587,6 +1626,7 @@ impl Default for BeaconParams {
             ignore_ports: merged_ports(INTERACTIVE_AUTH_PORTS, LATERAL_PORTS),
             suspect_min_contacts: 8,
             suspect_max_jitter_cv: 0.5,
+            suspect_high_contacts: 20,
             suspect_max_mean_bytes: 4_096,
         }
     }
@@ -1747,12 +1787,10 @@ pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<F
     // small, TWO-WAY exchange to an EXTERNAL peer. Surface that residual signal for triage — but
     // keep the #104 benign-public-IP fix intact. This arm is EXTERNAL-only, requires an answered
     // small exchange (never a single flow or a bulk transfer), and is deduped against the strict
-    // pass. It emits Medium ONLY (top-of-band 59, which does NOT raise a card the cap already
-    // pinned at Medium/59): at the channel level a jittered small two-way external series is
-    // indistinguishable from benign periodic infrastructure (NTP, public DNS/DoT, STUN,
-    // telemetry), so escalating it to High would re-flag those. A genuine High still comes from
-    // an IOC or the strict low-jitter beacon — escalation here would need stronger corroboration
-    // (e.g. a C2-classified channel), left as a follow-up.
+    // pass. Baseline severity is Medium (top-of-band 59, which does NOT raise a card the cap
+    // already pinned at Medium/59). It escalates to High ONLY with channel-category corroboration
+    // that a benign periodic service (NTP, public DNS/DoT, STUN, telemetry) cannot satisfy — see
+    // the escalation gate below — so the #104 benign-public-IP fix stays intact.
     for c in tracker.beacon_candidates(params.suspect_min_contacts, params.suspect_max_jitter_cv) {
         if reported.contains(&c.key)
             || !in_window(c.interval_ns)
@@ -1770,7 +1808,22 @@ pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<F
         if !answered || !small {
             continue;
         }
-        findings.push(beacon_finding(&c, Severity::Medium, 59, true));
+        // High escalation, gated to keep #104's benign-service fix intact: the channel must be a
+        // genuine UNKNOWN C2 — the classifier labeled a flow on it shape-only `C2` (`c2_shape`)
+        // and NEVER named it as a service (`!named_service`, which vetoes NTP/DNS/STUN/Web/…) —
+        // it must be to a non-cloud host (telemetry usually lands on a known CDN/cloud block),
+        // and the callback count must be high (a single benign flow can never reach it). Anything
+        // short of all four stays a visible-but-non-escalating Medium finding.
+        let escalate = c.c2_shape
+            && !c.named_service
+            && c.contacts >= params.suspect_high_contacts
+            && cloud_provider(c.key.dst).is_none();
+        let (severity, score) = if escalate {
+            (Severity::High, 70)
+        } else {
+            (Severity::Medium, 59)
+        };
+        findings.push(beacon_finding(&c, severity, score, true));
         reported.insert(c.key);
     }
     findings
@@ -3871,7 +3924,7 @@ mod tests {
         let resolver = ip(10, 0, 0, 1);
         for i in 0..300u32 {
             let client = ip(10, 0, (i >> 8) as u8, i as u8);
-            dns.observe_flow_contact_with(client, resolver, 53, 0, 80, 120, Transport::Udp);
+            dns.observe_flow_contact_with(client, resolver, 53, 0, 80, 120, Transport::Udp, false, false);
         }
         assert!(
             detect_syn_flood(&dns, &SynFloodParams::default()).is_empty(),
@@ -3884,7 +3937,7 @@ mod tests {
         let target = ip(10, 0, 0, 2);
         for i in 0..300u32 {
             let client = ip(10, 0, (i >> 8) as u8, i as u8);
-            tcp.observe_flow_contact_with(client, target, 80, 0, 80, 120, Transport::Tcp);
+            tcp.observe_flow_contact_with(client, target, 80, 0, 80, 120, Transport::Tcp, false, false);
         }
         assert!(!detect_syn_flood(&tcp, &SynFloodParams::default()).is_empty());
     }
@@ -4625,18 +4678,88 @@ mod tests {
         assert!(f[0].title.starts_with("Suspected beacon"), "title: {}", f[0].title);
     }
 
+    /// Like `feed_bytes` but also stamps the per-flow classification signal on every contact, so
+    /// the channel-category escalation gate can be exercised. `ext` is a non-cloud public IP.
+    #[allow(clippy::too_many_arguments)]
+    fn feed_classified(
+        t: &mut BehaviorTracker,
+        src: IpAddr,
+        dst: IpAddr,
+        port: u16,
+        n: i64,
+        out: u64,
+        inb: u64,
+        is_c2_shape: bool,
+        is_named: bool,
+    ) {
+        for i in 0..n {
+            let wobble = if i % 2 == 0 { 15 } else { -15 };
+            let ts = (i * 100 + wobble).max(0) * SEC;
+            t.observe_flow_contact_with(src, dst, port, ts, out, inb, Transport::Tcp, is_c2_shape, is_named);
+        }
+    }
+
+    /// A genuinely-public IP that is NOT in the offline cloud_provider() table (so the cloud
+    /// strengthener does not veto escalation). 8.8.8.8 etc. would be vetoed as Google/cloud.
+    fn noncloud_ext() -> IpAddr {
+        ip(185, 220, 101, 5)
+    }
+
     #[test]
-    fn evasive_external_beacon_stays_medium_even_at_high_contact_count() {
-        // Deliberately NOT escalated to High even at a high callback count: a jittered small
-        // two-way external series is indistinguishable from benign periodic infra (NTP / public
-        // DNS / STUN / telemetry), so High would re-flag those and undo #104. It stays a visible
-        // Medium finding; a real High comes from an IOC or the strict low-jitter beacon.
+    fn evasive_high_count_without_c2_corroboration_stays_medium() {
+        // High callback count alone is NOT enough to escalate: without the shape-only-C2 signal
+        // (feed_bytes stamps no classification), the channel could be any benign periodic service,
+        // so it stays a visible Medium finding.
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 24, 15, 300, 120);
+        feed_bytes(&mut t, ip(10, 0, 0, 5), noncloud_ext(), 4444, 24, 15, 300, 120);
         let f = detect_beacons(&t, &BeaconParams::default());
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].severity, Severity::Medium);
         assert_eq!(f[0].score, 59);
+    }
+
+    #[test]
+    fn evasive_unknown_c2_channel_escalates_to_high() {
+        // The one channel that SHOULD reach High: shape-only C2 (unnamed), never a named service,
+        // to a non-cloud public host, with a high jittered small two-way callback count.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_classified(&mut t, ip(10, 0, 0, 5), noncloud_ext(), 4444, 24, 300, 120, true, false);
+        let f = detect_beacons(&t, &BeaconParams::default());
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].severity, Severity::High);
+        assert_eq!(f[0].score, 70);
+        assert!(f[0].title.starts_with("Suspected beacon"));
+    }
+
+    #[test]
+    fn evasive_named_service_channel_never_escalates() {
+        // The #104 regression guard: a channel the classifier NAMED as a service (NTP/DNS/STUN/…)
+        // is vetoed from High no matter the count — even if it also looks C2-shaped on some flow.
+        let mut named = BehaviorTracker::new(DetectConfig::default());
+        feed_classified(&mut named, ip(10, 0, 0, 5), noncloud_ext(), 123, 30, 90, 90, false, true);
+        assert_eq!(detect_beacons(&named, &BeaconParams::default())[0].severity, Severity::Medium);
+
+        // Mixed channel (some C2-shape AND some named) is still vetoed by named_service.
+        let mut mixed = BehaviorTracker::new(DetectConfig::default());
+        feed_classified(&mut mixed, ip(10, 0, 0, 5), noncloud_ext(), 4444, 30, 200, 200, true, true);
+        assert_eq!(detect_beacons(&mixed, &BeaconParams::default())[0].severity, Severity::Medium);
+    }
+
+    #[test]
+    fn evasive_c2_on_cloud_host_stays_medium() {
+        // Unknown-C2 shape but to a known cloud/CDN block (8.8.8.8 = Google): telemetry usually
+        // lands on cloud, so the cloud strengthener holds it at Medium.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_classified(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 24, 300, 120, true, false);
+        assert_eq!(detect_beacons(&t, &BeaconParams::default())[0].severity, Severity::Medium);
+    }
+
+    #[test]
+    fn evasive_c2_below_high_threshold_is_medium() {
+        // Corroborated unknown-C2 but only 19 callbacks (< suspect_high_contacts): stays Medium.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_classified(&mut t, ip(10, 0, 0, 5), noncloud_ext(), 4444, 19, 300, 120, true, false);
+        assert_eq!(detect_beacons(&t, &BeaconParams::default())[0].severity, Severity::Medium);
     }
 
     #[test]
