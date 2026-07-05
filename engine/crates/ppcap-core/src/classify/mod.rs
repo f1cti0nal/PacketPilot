@@ -225,6 +225,10 @@ impl Classifier {
             (Tcp, 53) | (Udp, 53) => (Category::Dns, "dns"),
             // mDNS / LLMNR / DoH-over-UDP land are out of Phase-0 scope; 5353 mDNS:
             (Udp, 5353) => (Category::Dns, "mdns"),
+            // DNS-over-TLS (853/tcp) / DoQ (853/udp): named by PORT so a resolver flow whose TLS
+            // handshake was not captured is still recognized as benign DNS (not shape-uplifted to
+            // C2) — a public resolver must never look like an unknown beacon.
+            (Tcp, 853) | (Udp, 853) => (Category::Dns, "dot"),
 
             // --- Web ----------------------------------------------------------------
             (Tcp, 80) | (Tcp, 8080) | (Tcp, 8000) | (Tcp, 8008) => (Category::Web, "http"),
@@ -709,6 +713,24 @@ mod tests {
         cls.classify(&mut f);
         assert_eq!(f.category, Category::NetworkService, "NTP must not be shape-uplifted to C2");
         assert_eq!(f.app_proto, "ntp");
+        assert_eq!(f.app_proto_src, Some("port"));
+    }
+
+    #[test]
+    fn dot_flow_shaped_like_beacon_stays_named_dns_not_c2() {
+        // Guards the evasive-beacon escalation: a DoT flow (853) whose TLS handshake was NOT
+        // captured carries only small two-way app-data — the exact beacon shape. Port 853 must
+        // name it as DNS (provenance "port") so the shape-uplift to C2 never runs and the
+        // downstream `named_service` veto holds a public resolver at Medium, not High.
+        let cls = Classifier::new(ClassifyConfig::default());
+        let mut f = tcp_flow(853, 50_000); // service port = 853 = DoT, no observed_app_proto
+        f.pkts_fwd = 3;
+        f.pkts_rev = 3;
+        f.bytes_fwd = 200;
+        f.bytes_rev = 200;
+        cls.classify(&mut f);
+        assert_eq!(f.category, Category::Dns, "DoT must not be shape-uplifted to C2");
+        assert_eq!(f.app_proto, "dot");
         assert_eq!(f.app_proto_src, Some("port"));
     }
 
