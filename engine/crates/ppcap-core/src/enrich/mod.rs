@@ -53,9 +53,14 @@ impl IpClass {
         }
     }
 
-    /// Only fully routable space counts as "external"; CGNAT/doc/reserved do NOT raise score.
+    /// Off-network peers that count as "external" (raise score, eligible for reputation lookup):
+    /// fully-routable `Public` space AND `Cgnat` (100.64/10, RFC6598 carrier-grade NAT — a real
+    /// remote peer behind a carrier/cellular NAT, not a LAN host). Documentation (RFC5737),
+    /// Reserved, Multicast, LinkLocal, Loopback and Private stay internal: they are never a
+    /// legitimate routable unicast peer, and RFC5737 doc ranges are placeholders we must not
+    /// send to online reputation.
     pub fn is_external(self) -> bool {
-        matches!(self, IpClass::Public)
+        matches!(self, IpClass::Public | IpClass::Cgnat)
     }
 }
 

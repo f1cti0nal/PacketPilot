@@ -397,27 +397,29 @@ impl FlowDto {
     /// Build a row from a finalized record, mirroring `FlowParquetWriter::write` exactly:
     /// `lo`/`hi` endpoints map to `src`/`dst`, empty strings collapse to `None`.
     fn from_record(rec: &FlowRecord, flow_id: u64) -> FlowDto {
+        // Orient src/dst + c2s/s2c by the connection INITIATOR, mirroring the Parquet writer.
+        let o = rec.oriented();
         FlowDto {
             flow_id,
             capture_id: 0,
-            src_ip: rec.key.lo_ip.to_string(),
-            dst_ip: rec.key.hi_ip.to_string(),
-            src_port: rec.key.lo_port,
-            dst_port: rec.key.hi_port,
+            src_ip: o.src_ip.to_string(),
+            dst_ip: o.dst_ip.to_string(),
+            src_port: o.src_port,
+            dst_port: o.dst_port,
             proto: rec.key.transport.ip_proto(),
             app_proto: if rec.app_proto.is_empty() {
                 None
             } else {
                 Some(rec.app_proto.clone())
             },
-            bytes_c2s: rec.bytes_fwd,
-            bytes_s2c: rec.bytes_rev,
+            bytes_c2s: o.bytes_c2s,
+            bytes_s2c: o.bytes_s2c,
             pkts: rec.total_pkts(),
             start_ts_ns: rec.first_ts_ns,
             end_ts_ns: rec.last_ts_ns,
-            tcp_flags_c2s: rec.tcp_flags_fwd,
-            tcp_flags_s2c: rec.tcp_flags_rev,
-            ttl_min_c2s: rec.ttl_min_fwd,
+            tcp_flags_c2s: o.tcp_flags_c2s,
+            tcp_flags_s2c: o.tcp_flags_s2c,
+            ttl_min_c2s: o.ttl_min_c2s,
             category: rec.category.as_str().to_string(),
             app_proto_src: rec.app_proto_src.map(|s| s.to_string()),
             sni: rec

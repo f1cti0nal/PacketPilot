@@ -17,12 +17,28 @@ const TCP_SYN: u8 = 0x02;
 const TCP_ACK: u8 = 0x10;
 
 /// Per-packet direction relative to canonical flow orientation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Direction {
     /// Packet src == lo endpoint (canonical "client -> server").
+    #[default]
     Forward,
     /// Packet src == hi endpoint.
     Reverse,
+}
+
+/// Initiator-oriented projection of a [`FlowRecord`]'s endpoint + directional columns, produced
+/// by [`FlowRecord::oriented`] and consumed only by the Parquet writer and the WASM `FlowDto`.
+/// "c2s" = client(initiator)->server, "s2c" = the reverse.
+pub struct OrientedFlow {
+    pub src_ip: IpAddr,
+    pub dst_ip: IpAddr,
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub bytes_c2s: u64,
+    pub bytes_s2c: u64,
+    pub tcp_flags_c2s: u8,
+    pub tcp_flags_s2c: u8,
+    pub ttl_min_c2s: u8,
 }
 
 /// Canonical, direction-independent flow identity.
@@ -130,8 +146,24 @@ pub struct FlowRecord {
     pub category: Category,
     /// `"dns"`,`"https"`,`"ssh"`,...; `""` if unknown.
     pub app_proto: String,
-    /// Min TTL observed forward; 0 if none.
+    /// Min TTL observed forward (lo->hi); 0 if none.
     pub ttl_min_fwd: u8,
+    /// Min TTL observed reverse (hi->lo); 0 if none. Internal mirror of `ttl_min_fwd` so
+    /// [`FlowRecord::oriented`] can report the INITIATOR's TTL when the initiator is the hi
+    /// endpoint. Not emitted as its own Parquet column. `#[serde(default)]` for back-compat.
+    #[serde(default)]
+    pub ttl_min_rev: u8,
+    /// Which physical direction opened this flow — the TCP SYN sender, or (absent a SYN: UDP,
+    /// ICMP, mid-capture start) the first packet seen. Orients ONLY the emitted src/dst +
+    /// c2s/s2c columns via [`FlowRecord::oriented`]; the canonical key and the fwd/rev
+    /// accumulators are unchanged, so aggregation and every internal detector are unaffected.
+    /// `Forward` = initiator is the lo endpoint (the historical, sort-order default).
+    #[serde(default)]
+    pub initiator: Direction,
+    /// Transient: once a TCP SYN-only packet has fixed `initiator`, later packets must not
+    /// override it. Not persisted.
+    #[serde(skip)]
+    pub initiator_locked: bool,
     /// Most-specific payload-observed L7 hint across this flow's packets (`Unknown` until a
     /// packet carries one). Input to payload-aware classification; distinct from `app_proto`
     /// (the final label the classifier chooses from payload OR port).
@@ -190,6 +222,9 @@ impl FlowRecord {
             category: Category::Unknown,
             app_proto: String::new(),
             ttl_min_fwd: 0,
+            ttl_min_rev: 0,
+            initiator: Direction::Forward,
+            initiator_locked: false,
             observed_app_proto: AppProto::Unknown,
             sni: None,
             ja3: None,
@@ -211,6 +246,18 @@ impl FlowRecord {
 
     /// Fold one packet into this record using its precomputed [`Direction`].
     pub fn observe(&mut self, p: &PacketMeta, dir: Direction) {
+        // Fix the connection initiator (used ONLY to orient emitted output). A TCP SYN-without-
+        // ACK is the client's opening packet and is authoritative; absent one (UDP/ICMP, or a
+        // capture that started mid-handshake) fall back to the first packet seen. Runs before
+        // the fwd/rev fold so `total_pkts() == 0` means "no packet folded yet".
+        if !self.initiator_locked {
+            if p.is_tcp_syn_only() {
+                self.initiator = dir;
+                self.initiator_locked = true;
+            } else if self.total_pkts() == 0 {
+                self.initiator = dir;
+            }
+        }
         if p.ts_ns < self.first_ts_ns {
             self.first_ts_ns = p.ts_ns;
         }
@@ -316,7 +363,46 @@ impl FlowRecord {
                 self.pkts_rev += 1;
                 self.bytes_rev += p.wire_len as u64;
                 self.tcp_flags_rev |= p.tcp_flags;
+                if p.ttl != 0 {
+                    self.ttl_min_rev = if self.ttl_min_rev == 0 {
+                        p.ttl
+                    } else {
+                        self.ttl_min_rev.min(p.ttl)
+                    };
+                }
             }
+        }
+    }
+
+    /// Initiator-oriented view for EMISSION (Parquet columns / `FlowDto`). When the connection
+    /// initiator is the hi endpoint (`initiator == Reverse`), src/dst and the c2s/s2c splits are
+    /// swapped relative to the canonical lo/hi key so "source" is the true opener. `Forward` is
+    /// the identity mapping (lo->src, fwd->c2s) — the historical behavior. This is the ONLY place
+    /// orientation is applied; keep every internal reader on the raw key + fwd/rev fields.
+    pub fn oriented(&self) -> OrientedFlow {
+        match self.initiator {
+            Direction::Forward => OrientedFlow {
+                src_ip: self.key.lo_ip,
+                dst_ip: self.key.hi_ip,
+                src_port: self.key.lo_port,
+                dst_port: self.key.hi_port,
+                bytes_c2s: self.bytes_fwd,
+                bytes_s2c: self.bytes_rev,
+                tcp_flags_c2s: self.tcp_flags_fwd,
+                tcp_flags_s2c: self.tcp_flags_rev,
+                ttl_min_c2s: self.ttl_min_fwd,
+            },
+            Direction::Reverse => OrientedFlow {
+                src_ip: self.key.hi_ip,
+                dst_ip: self.key.lo_ip,
+                src_port: self.key.hi_port,
+                dst_port: self.key.lo_port,
+                bytes_c2s: self.bytes_rev,
+                bytes_s2c: self.bytes_fwd,
+                tcp_flags_c2s: self.tcp_flags_rev,
+                tcp_flags_s2c: self.tcp_flags_fwd,
+                ttl_min_c2s: self.ttl_min_rev,
+            },
         }
     }
 

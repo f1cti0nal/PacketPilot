@@ -148,3 +148,141 @@ fn observe_folds_fwd_and_rev() {
     assert_eq!(rec.total_pkts(), 2);
     assert_eq!(rec.total_bytes(), 134);
 }
+
+// ---- Initiator orientation (client/server by handshake, not IP sort order) ----------------
+
+#[allow(clippy::too_many_arguments)]
+fn mk(
+    src: IpAddr,
+    sport: u16,
+    dst: IpAddr,
+    dport: u16,
+    transport: Transport,
+    tcp_flags: u8,
+    ttl: u8,
+    wire: u32,
+    ts: i64,
+) -> PacketMeta {
+    PacketMeta {
+        index: 0,
+        ts_ns: ts,
+        iface_id: 0,
+        wire_len: wire,
+        cap_len: wire,
+        l3: Protocol::Ipv4,
+        transport,
+        src_ip: Some(src),
+        dst_ip: Some(dst),
+        src_port: sport,
+        dst_port: dport,
+        tcp_flags,
+        ttl,
+        payload_len: 0,
+        vlan: None,
+        app_proto: ppcap_core::model::packet::AppProto::Unknown,
+        sni: None,
+        ja3: None,
+        ja4: None,
+        dns_qname: None,
+        dns_answers: Vec::new(),
+        cleartext_cred: None,
+        pii: None,
+        icmp_type: None,
+        tls_version: None,
+        tls_cipher: None,
+        hassh: None,
+        hassh_server: None,
+        arp: None,
+        ja3s: None,
+        http_host: None,
+        http_ua: None,
+        download: None,
+        download_disguised: false,
+        stratum: None,
+        dhcp: None,
+    }
+}
+
+/// Observe a directed packet into `rec` under the correct canonical Direction for `key`.
+fn observe_directed(rec: &mut FlowRecord, key: &FlowKey, p: &PacketMeta) {
+    let (k, dir) = FlowKey::normalized(
+        p.src_ip.unwrap(),
+        p.src_port,
+        p.dst_ip.unwrap(),
+        p.dst_port,
+        p.transport,
+    );
+    assert_eq!(&k, key, "packet must belong to the same canonical flow");
+    rec.observe(p, dir);
+}
+
+#[test]
+fn initiator_follows_client_syn_when_client_sorts_high() {
+    // Client 10.0.0.9 (sorts ABOVE server) opens to server 10.0.0.1:443. The canonical key
+    // makes the server the lo endpoint, so the OLD lo->src rule would mislabel the server as
+    // source. With initiator tracking the client SYN wins.
+    let client = v4(10, 0, 0, 9);
+    let server = v4(10, 0, 0, 1);
+    let (key, _) = FlowKey::normalized(client, 50000, server, 443, Transport::Tcp);
+    assert_eq!(key.lo_ip, server, "server sorts lower, so it is the lo endpoint");
+
+    let mut rec = FlowRecord::new(key, 0);
+    // Client SYN (100 bytes, ttl 64), then server SYN|ACK (200 bytes, ttl 128).
+    observe_directed(&mut rec, &key, &mk(client, 50000, server, 443, Transport::Tcp, 0x02, 64, 100, 0));
+    observe_directed(&mut rec, &key, &mk(server, 443, client, 50000, Transport::Tcp, 0x12, 128, 200, 10));
+
+    let o = rec.oriented();
+    assert_eq!(o.src_ip, client, "source is the SYN sender (client), not the lo endpoint");
+    assert_eq!(o.dst_ip, server);
+    assert_eq!(o.src_port, 50000);
+    assert_eq!(o.dst_port, 443);
+    assert_eq!(o.bytes_c2s, 100, "c2s = client->server bytes");
+    assert_eq!(o.bytes_s2c, 200, "s2c = server->client bytes");
+    assert_eq!(o.tcp_flags_c2s & 0x02, 0x02, "client side carries the SYN");
+    assert_eq!(o.ttl_min_c2s, 64, "c2s TTL is the client's");
+}
+
+#[test]
+fn oriented_forward_is_identity_when_client_sorts_low() {
+    // Client 10.0.0.1 sorts BELOW server 10.0.0.9 → client is already the lo endpoint, so
+    // orientation is the historical identity mapping.
+    let client = v4(10, 0, 0, 1);
+    let server = v4(10, 0, 0, 9);
+    let (key, _) = FlowKey::normalized(client, 40000, server, 80, Transport::Tcp);
+    assert_eq!(key.lo_ip, client);
+
+    let mut rec = FlowRecord::new(key, 0);
+    observe_directed(&mut rec, &key, &mk(client, 40000, server, 80, Transport::Tcp, 0x02, 64, 100, 0));
+    observe_directed(&mut rec, &key, &mk(server, 80, client, 40000, Transport::Tcp, 0x12, 128, 200, 10));
+
+    let o = rec.oriented();
+    assert_eq!(o.src_ip, client);
+    assert_eq!(o.bytes_c2s, 100);
+    assert_eq!(o.ttl_min_c2s, 64);
+}
+
+#[test]
+fn late_client_syn_overrides_tentative_first_packet() {
+    // Capture starts on the server's SYN|ACK (client SYN missed); the tentative first-packet
+    // guess is later corrected when the client's SYN-only appears.
+    let client = v4(10, 0, 0, 9);
+    let server = v4(10, 0, 0, 1);
+    let (key, _) = FlowKey::normalized(client, 50000, server, 443, Transport::Tcp);
+    let mut rec = FlowRecord::new(key, 0);
+    observe_directed(&mut rec, &key, &mk(server, 443, client, 50000, Transport::Tcp, 0x12, 128, 60, 0));
+    observe_directed(&mut rec, &key, &mk(client, 50000, server, 443, Transport::Tcp, 0x02, 64, 74, 5));
+    assert_eq!(rec.oriented().src_ip, client, "a real client SYN corrects the guess");
+}
+
+#[test]
+fn udp_initiator_is_first_packet_when_client_sorts_high() {
+    // No SYN for UDP: the first packet seen is the initiator. Client (sorts high) queries DNS.
+    let client = v4(10, 0, 0, 9);
+    let resolver = v4(10, 0, 0, 1);
+    let (key, _) = FlowKey::normalized(client, 50000, resolver, 53, Transport::Udp);
+    let mut rec = FlowRecord::new(key, 0);
+    observe_directed(&mut rec, &key, &mk(client, 50000, resolver, 53, Transport::Udp, 0, 64, 80, 0));
+    observe_directed(&mut rec, &key, &mk(resolver, 53, client, 50000, Transport::Udp, 0, 64, 200, 5));
+    assert_eq!(rec.oriented().src_ip, client, "UDP initiator = first-packet sender");
+    assert_eq!(rec.oriented().bytes_c2s, 80);
+}

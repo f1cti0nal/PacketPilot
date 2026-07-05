@@ -218,6 +218,10 @@ pub struct BeaconCandidate {
     pub contacts: u64,
     pub interval_ns: f64,
     pub jitter_cv: f64,
+    /// Client->server bytes across the channel (for the C2-shape / two-way gate).
+    pub bytes_out: u64,
+    /// Server->client bytes across the channel.
+    pub bytes_in: u64,
 }
 
 /// A destination channel with a large asymmetric outbound transfer (exfil shape).
@@ -1226,6 +1230,8 @@ impl BehaviorTracker {
                 contacts: s.contacts(),
                 interval_ns: s.interval_ns(),
                 jitter_cv: s.jitter_cv(),
+                bytes_out: s.bytes_out(),
+                bytes_in: s.bytes_in(),
             })
             .collect();
         out.sort_by_key(|c| c.key);
@@ -1553,6 +1559,15 @@ pub struct BeaconParams {
     /// lateral-movement ports keeps a brute force / lateral fan-out from also being reported as a
     /// C2 beacon (legitimate C2 rarely beacons over an interactive-login or remote-admin port).
     pub ignore_ports: Vec<u16>,
+    /// Laxer "evasive beacon" arm: minimum contacts for a repeated but jittered/low-count channel
+    /// to be a *suspect* beacon (below the strict `min_contacts`, above a single flow).
+    pub suspect_min_contacts: u64,
+    /// Laxer arm: maximum jitter CV. Wider than `max_jitter_cv` so it catches beacons that jitter
+    /// to defeat the strict gate, but still rejects genuinely ad-hoc traffic.
+    pub suspect_max_jitter_cv: f64,
+    /// Laxer arm: reject channels whose MEAN bytes-per-contact exceed this — a beacon is small,
+    /// bulk transfers are not. Mirrors the classifier/scorer beacon byte ceiling.
+    pub suspect_max_mean_bytes: u64,
 }
 
 impl Default for BeaconParams {
@@ -1570,6 +1585,9 @@ impl Default for BeaconParams {
             // (lateral-movement territory): a regular series to any of these is owned by the
             // more-specific detector, never reported as a beacon.
             ignore_ports: merged_ports(INTERACTIVE_AUTH_PORTS, LATERAL_PORTS),
+            suspect_min_contacts: 8,
+            suspect_max_jitter_cv: 0.5,
+            suspect_max_mean_bytes: 4_096,
         }
     }
 }
@@ -1643,65 +1661,117 @@ pub fn contact_from_flow(record: &FlowRecord) -> Option<Contact> {
 /// channel whose contacts are frequent enough ([`BeaconParams::min_contacts`]), regular enough
 /// ([`BeaconParams::max_jitter_cv`]), and within the plausible period window. Severity is High
 /// for an external destination, Medium for an internal one. Returned in deterministic order.
+/// Build one `FindingKind::Beacon` finding for a candidate channel. `evasive` marks the laxer
+/// (jittered / low-count) arm — same kind + ATT&CK, distinct title + an extra evidence line.
+fn beacon_finding(c: &BeaconCandidate, severity: Severity, score: u16, evasive: bool) -> Finding {
+    let dst = c.key.dst;
+    let external = classify_ip(dst).is_external();
+    let interval_secs = c.interval_ns / 1e9;
+    let mut evidence = vec![
+        format!(
+            "periodic beaconing: {} contacts to {}:{}",
+            c.contacts, dst, c.key.dst_port
+        ),
+        format!(
+            "interval ~{interval_secs:.0}s, jitter CV {:.3} (low = machine-regular)",
+            c.jitter_cv
+        ),
+        if external {
+            "external destination".to_string()
+        } else {
+            "internal destination".to_string()
+        },
+    ];
+    if evasive {
+        evidence.push(format!(
+            "evasive shape: {} small two-way check-ins ({} out / {} in bytes) despite jitter",
+            c.contacts, c.bytes_out, c.bytes_in
+        ));
+    }
+    let title = if evasive {
+        format!(
+            "Suspected beacon: {} -> {}:{} ({} irregular check-ins)",
+            c.key.src, dst, c.key.dst_port, c.contacts
+        )
+    } else {
+        format!(
+            "Periodic beacon: {} -> {}:{} every ~{interval_secs:.0}s",
+            c.key.src, dst, c.key.dst_port
+        )
+    };
+    Finding {
+        kind: FindingKind::Beacon,
+        severity,
+        score,
+        title,
+        src_ip: c.key.src.to_string(),
+        dst_ip: Some(dst.to_string()),
+        dst_port: Some(c.key.dst_port),
+        attack: vec!["T1071".to_string()],
+        evidence,
+        interval_ns: Some(c.interval_ns.round() as i64),
+        jitter_cv: Some(c.jitter_cv),
+        contacts: Some(c.contacts),
+    }
+}
+
 pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<Finding> {
     if !params.enabled {
         return Vec::new();
     }
+    // Reject periods outside the plausible beacon window (sub-second chatter / too sparse).
+    let in_window = |interval_ns: f64| {
+        interval_ns >= params.min_interval_ns as f64 && interval_ns <= params.max_interval_ns as f64
+    };
     let mut findings = Vec::new();
+    let mut reported: HashSet<ContactKey> = HashSet::new();
+
+    // --- Strict pass: a regular, low-jitter, high-count periodic beacon. High for an external
+    // destination, Medium for an internal one. A regular series to an auth/admin service is a
+    // brute force / lateral fan-out owned by those detectors, so the ignore_ports are skipped.
     for c in tracker.beacon_candidates(params.min_contacts, params.max_jitter_cv) {
-        // Reject periods outside the plausible beacon window (sub-second chatter / too sparse).
-        if c.interval_ns < params.min_interval_ns as f64
-            || c.interval_ns > params.max_interval_ns as f64
-        {
+        if !in_window(c.interval_ns) || params.ignore_ports.contains(&c.key.dst_port) {
             continue;
         }
-        // A regular, low-jitter series to an auth service is a (throttled) brute force, not a C2
-        // beacon — skip the auth ports so the two detectors never double-report one channel.
-        if params.ignore_ports.contains(&c.key.dst_port) {
-            continue;
-        }
-        let dst = c.key.dst;
-        let external = classify_ip(dst).is_external();
-        // A periodic beacon to an external peer is High; to an internal one, Medium. The score
-        // is a representative point inside the matching band (parallels per-flow threat_score).
-        let (severity, score) = if external {
+        let (severity, score) = if classify_ip(c.key.dst).is_external() {
             (Severity::High, 70)
         } else {
             (Severity::Medium, 45)
         };
-        let interval_secs = c.interval_ns / 1e9;
-        let evidence = vec![
-            format!(
-                "periodic beaconing: {} contacts to {}:{}",
-                c.contacts, dst, c.key.dst_port
-            ),
-            format!(
-                "interval ~{interval_secs:.0}s, jitter CV {:.3} (low = machine-regular)",
-                c.jitter_cv
-            ),
-            if external {
-                "external destination".to_string()
-            } else {
-                "internal destination".to_string()
-            },
-        ];
-        findings.push(Finding {
-            kind: FindingKind::Beacon,
-            severity,
-            score,
-            title: format!(
-                "Periodic beacon: {} -> {}:{} every ~{interval_secs:.0}s",
-                c.key.src, dst, c.key.dst_port
-            ),
-            src_ip: c.key.src.to_string(),
-            dst_ip: Some(dst.to_string()),
-            dst_port: Some(c.key.dst_port),
-            attack: vec!["T1071".to_string()],
-            evidence,
-            interval_ns: Some(c.interval_ns.round() as i64),
-            jitter_cv: Some(c.jitter_cv),
-            contacts: Some(c.contacts),
-        });
+        findings.push(beacon_finding(&c, severity, score, false));
+        reported.insert(c.key);
+    }
+
+    // --- Laxer "evasive beacon" pass: a real C2 beacon defeats the strict low-jitter/high-count
+    // gate by jittering its callbacks or checking in fewer times, yet still leaves a repeated,
+    // small, TWO-WAY exchange to an EXTERNAL peer. Surface that residual signal for triage — but
+    // keep the #104 benign-public-IP fix intact. This arm is EXTERNAL-only, requires an answered
+    // small exchange (never a single flow or a bulk transfer), and is deduped against the strict
+    // pass. It emits Medium ONLY (top-of-band 59, which does NOT raise a card the cap already
+    // pinned at Medium/59): at the channel level a jittered small two-way external series is
+    // indistinguishable from benign periodic infrastructure (NTP, public DNS/DoT, STUN,
+    // telemetry), so escalating it to High would re-flag those. A genuine High still comes from
+    // an IOC or the strict low-jitter beacon — escalation here would need stronger corroboration
+    // (e.g. a C2-classified channel), left as a follow-up.
+    for c in tracker.beacon_candidates(params.suspect_min_contacts, params.suspect_max_jitter_cv) {
+        if reported.contains(&c.key)
+            || !in_window(c.interval_ns)
+            || params.ignore_ports.contains(&c.key.dst_port)
+        {
+            continue;
+        }
+        if !classify_ip(c.key.dst).is_external() {
+            continue; // a repeated small INTERNAL contact is benign polling, not C2
+        }
+        // C2 shape: answered in BOTH directions AND small (mean bytes/contact within the ceiling).
+        let answered = c.bytes_out > 0 && c.bytes_in > 0;
+        let small = c.bytes_out.saturating_add(c.bytes_in)
+            <= params.suspect_max_mean_bytes.saturating_mul(c.contacts);
+        if !answered || !small {
+            continue;
+        }
+        findings.push(beacon_finding(&c, Severity::Medium, 59, true));
+        reported.insert(c.key);
     }
     findings
 }
@@ -4515,6 +4585,92 @@ mod tests {
             let ts = i * period_s * SEC + (i % 2) * SEC;
             t.observe_contact(src, dst, port, ts);
         }
+    }
+
+    /// Feed `n` two-way check-ins ~100s apart with `jitter_s` wobble (CV ~ jitter_s/100) carrying
+    /// `out`/`in` bytes each — the byte-bearing analogue of `feed_periodic` used to exercise the
+    /// laxer "evasive beacon" arm (jitter_s=15 -> CV ~0.3 evades the strict 0.15 gate).
+    #[allow(clippy::too_many_arguments)]
+    fn feed_bytes(
+        t: &mut BehaviorTracker,
+        src: IpAddr,
+        dst: IpAddr,
+        port: u16,
+        n: i64,
+        jitter_s: i64,
+        out: u64,
+        inb: u64,
+    ) {
+        for i in 0..n {
+            let wobble = if i % 2 == 0 { jitter_s } else { -jitter_s };
+            let ts = (i * 100 + wobble).max(0) * SEC;
+            t.observe_flow_contact(src, dst, port, ts, out, inb);
+        }
+    }
+
+    #[test]
+    fn evasive_jittered_external_beacon_is_medium_below_high_count() {
+        // 12 small two-way check-ins to an external peer, jittered past the strict 0.15 gate: the
+        // strict pass misses it, the laxer arm surfaces it at Medium (visible, does not defeat the
+        // per-flow cap).
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 443, 12, 15, 200, 200);
+        let f = detect_beacons(&t, &BeaconParams::default());
+        assert_eq!(f.len(), 1, "one evasive beacon finding: {f:?}");
+        assert_eq!(f[0].kind, FindingKind::Beacon);
+        assert_eq!(f[0].severity, Severity::Medium);
+        assert_eq!(f[0].score, 59, "top-of-Medium; must not raise a card the cap pinned at 59");
+        assert!(f[0].jitter_cv.unwrap() > 0.15, "evaded the strict gate");
+        assert!(f[0].jitter_cv.unwrap() <= 0.5);
+        assert!(f[0].title.starts_with("Suspected beacon"), "title: {}", f[0].title);
+    }
+
+    #[test]
+    fn evasive_external_beacon_stays_medium_even_at_high_contact_count() {
+        // Deliberately NOT escalated to High even at a high callback count: a jittered small
+        // two-way external series is indistinguishable from benign periodic infra (NTP / public
+        // DNS / STUN / telemetry), so High would re-flag those and undo #104. It stays a visible
+        // Medium finding; a real High comes from an IOC or the strict low-jitter beacon.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 24, 15, 300, 120);
+        let f = detect_beacons(&t, &BeaconParams::default());
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].severity, Severity::Medium);
+        assert_eq!(f[0].score, 59);
+    }
+
+    #[test]
+    fn evasive_arm_ignores_timing_only_zero_byte_channel() {
+        // The two-way byte gate is what keeps the strict-only tests green: a jittered zero-byte
+        // channel (no observed exchange) never trips the laxer arm.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 443, 20, 15, 0, 0);
+        assert!(detect_beacons(&t, &BeaconParams::default()).is_empty());
+    }
+
+    #[test]
+    fn evasive_arm_excludes_internal_and_bulk() {
+        // Internal destination: repeated small contact is benign polling, not C2.
+        let mut internal = BehaviorTracker::new(DetectConfig::default());
+        feed_bytes(&mut internal, ip(10, 0, 0, 5), ip(10, 0, 0, 9), 4444, 20, 15, 300, 120);
+        assert!(detect_beacons(&internal, &BeaconParams::default()).is_empty());
+
+        // Bulk two-way transfer (mean bytes/contact >> 4096): not a beacon shape.
+        let mut bulk = BehaviorTracker::new(DetectConfig::default());
+        feed_bytes(&mut bulk, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 20, 15, 100_000, 100_000);
+        assert!(detect_beacons(&bulk, &BeaconParams::default()).is_empty());
+    }
+
+    #[test]
+    fn strict_beacon_not_double_reported_by_evasive_arm() {
+        // A low-jitter high-count external channel with bytes qualifies for BOTH passes; dedup by
+        // ContactKey means it is reported exactly once, as the strict periodic beacon.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 443, 16, 1, 200, 200);
+        let f = detect_beacons(&t, &BeaconParams::default());
+        assert_eq!(f.len(), 1, "exactly one finding, not double-counted: {f:?}");
+        assert_eq!(f[0].severity, Severity::High);
+        assert!(f[0].title.starts_with("Periodic beacon"), "strict wins: {}", f[0].title);
     }
 
     #[test]
