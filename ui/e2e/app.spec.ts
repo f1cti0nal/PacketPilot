@@ -91,12 +91,15 @@ test.describe("PacketPilot — desktop", () => {
 test.describe("PacketPilot — mobile", () => {
   test.use({ viewport: { width: 390, height: 800 } });
 
-  test("uses the bottom tab bar and opens the threat drawer", async ({ page }) => {
+  test("uses the bottom tab bar and navigates to Threats", async ({ page }) => {
     await page.goto("/app");
     await waitForDashboard(page);
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
     await expect(page.getByRole("complementary")).toHaveCount(0); // no always-on rail
-    await page.getByRole("button", { name: /Threat watchlist/ }).click();
-    await expect(page.getByRole("dialog", { name: "Threats" })).toBeVisible();
+    // Threat Watch is now a first-class view reached from the bottom tab bar (the old
+    // MobileThreatDrawer was removed in the left-sidebar redesign), not a drawer dialog.
+    const threats = page.getByRole("button", { name: "Threats" });
+    await threats.click();
+    await expect(threats).toHaveAttribute("aria-current", "page");
   });
 });

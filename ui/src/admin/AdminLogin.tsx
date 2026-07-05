@@ -13,14 +13,14 @@ function Frame({ children }: { children: React.ReactNode }) {
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-accent-deep)] text-[var(--color-on-accent)]">
             <ShieldCheck size={20} aria-hidden />
           </span>
-          <span>
+          <h1 className="m-0 font-normal">
             <span className="block font-display text-lg font-semibold leading-tight text-[var(--color-text)]">
               PacketPilot
             </span>
             <span className="block text-xs font-medium uppercase tracking-wider text-[var(--color-text-faint)]">
               Admin Console
             </span>
-          </span>
+          </h1>
         </div>
         {children}
       </section>

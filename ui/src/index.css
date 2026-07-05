@@ -31,6 +31,7 @@
   --color-accent: #9d87ff;
   --color-accent-strong: #beb2ff;
   --color-accent-deep: #6c4df6;      /* filled-button bg, white text (5.2:1) */
+  --color-accent-badge: #9d87ff;     /* count-badge text on the 18% accent tint — light here, dark in light theme (AA both) */
   --color-on-accent: #ffffff;        /* text on filled accent-deep button — white in both themes */
   --color-spine-violet: #7c5cff;
 
@@ -108,6 +109,7 @@
   --color-accent: #6c4df6;
   --color-accent-strong: #5636e8;
   --color-accent-deep: #5636e8;
+  --color-accent-badge: #5636e8;     /* darker text for the badge on the light 18% tint (AA) */
   --color-on-accent: #ffffff;        /* text on filled accent-deep button — white in both themes */
   --color-spine-violet: #6135f5;
 

@@ -77,7 +77,9 @@ export function ShortcutsOverlay({
             <kbd className="t-tag">ESC</kbd>
           </button>
         </div>
-        <div className="max-h-[60vh] overflow-y-auto p-4">
+        {/* tabIndex makes the scroll region keyboard-operable (WCAG 2.1.1 / axe
+            scrollable-region-focusable) since its contents (kbd/spans) are not focusable. */}
+        <div tabIndex={0} aria-label="Keyboard shortcuts list" className="max-h-[60vh] overflow-y-auto p-4">
           {groups.map((g) => (
             <section key={g.title} className="mb-4 last:mb-0">
               <h3 className="t-label mb-2">{g.title}</h3>

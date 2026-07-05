@@ -291,7 +291,7 @@ export function AppShell({
           onGoHome={onGoHome}
         />
       )}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <CommandBar
           captureName={captureName ?? ""}
           sha256={summary.status === "ready" ? summary.data?.source_sha256 ?? undefined : undefined}
