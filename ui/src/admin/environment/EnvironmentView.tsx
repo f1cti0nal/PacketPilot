@@ -7,6 +7,7 @@ import { SectionTitle, StatusPill, TableCard } from "../ui/kit";
 const PUBLIC_VARS: { name: string; value: string | undefined; mask: (v: string | undefined) => string }[] = [
   { name: "VITE_SUPABASE_URL", value: import.meta.env.VITE_SUPABASE_URL, mask: maskUrl },
   { name: "VITE_SUPABASE_ANON_KEY", value: import.meta.env.VITE_SUPABASE_ANON_KEY, mask: maskKey },
+  { name: "VITE_GA_MEASUREMENT_ID", value: import.meta.env.VITE_GA_MEASUREMENT_ID, mask: (v) => v ?? "—" },
 ];
 
 // Static inventory — the browser CANNOT and MUST NOT query these. Names + locations only.
