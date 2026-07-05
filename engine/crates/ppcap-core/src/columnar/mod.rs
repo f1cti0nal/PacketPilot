@@ -290,12 +290,15 @@ impl FlowParquetWriter {
 
         let b = &mut self.builders;
 
+        // Orient src/dst + c2s/s2c by the connection INITIATOR (SYN sender / first packet),
+        // not the lo/hi sort order, so the "source" columns are the true client.
+        let o = rec.oriented();
         b.flow_id.append_value(flow_id);
         b.capture_id.append_value(capture_id);
-        b.src_ip.append_value(canonical_ip(rec.key.lo_ip));
-        b.dst_ip.append_value(canonical_ip(rec.key.hi_ip));
-        b.src_port.append_value(rec.key.lo_port);
-        b.dst_port.append_value(rec.key.hi_port);
+        b.src_ip.append_value(canonical_ip(o.src_ip));
+        b.dst_ip.append_value(canonical_ip(o.dst_ip));
+        b.src_port.append_value(o.src_port);
+        b.dst_port.append_value(o.dst_port);
         b.proto.append_value(rec.key.transport.ip_proto());
 
         // app_proto is nullable: empty string -> NULL.
@@ -305,14 +308,14 @@ impl FlowParquetWriter {
             b.app_proto.append_value(&rec.app_proto);
         }
 
-        b.bytes_c2s.append_value(rec.bytes_fwd);
-        b.bytes_s2c.append_value(rec.bytes_rev);
+        b.bytes_c2s.append_value(o.bytes_c2s);
+        b.bytes_s2c.append_value(o.bytes_s2c);
         b.pkts.append_value(rec.total_pkts());
         b.start_ts.append_value(rec.first_ts_ns);
         b.end_ts.append_value(rec.last_ts_ns);
-        b.tcp_flags_c2s.append_value(rec.tcp_flags_fwd);
-        b.tcp_flags_s2c.append_value(rec.tcp_flags_rev);
-        b.ttl_min_c2s.append_value(rec.ttl_min_fwd);
+        b.tcp_flags_c2s.append_value(o.tcp_flags_c2s);
+        b.tcp_flags_s2c.append_value(o.tcp_flags_s2c);
+        b.ttl_min_c2s.append_value(o.ttl_min_c2s);
         b.category.append_value(rec.category.as_str());
         // app_proto_src derivation: Some("payload"|"port") or NULL.
         match rec.app_proto_src {

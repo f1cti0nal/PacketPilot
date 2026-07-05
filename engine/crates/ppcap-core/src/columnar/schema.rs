@@ -15,7 +15,10 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 /// the only flow reader is external DuckDB (`read_parquet` in `sql/schema.sql`), which does
 /// not inspect this value; there is no in-engine reader that enforces it. Bump it whenever a
 /// column is added/removed/reordered.
-pub const FLOW_PARQUET_VERSION: u16 = 9;
+// v10: src/dst + c2s/s2c columns are now oriented by the connection INITIATOR (SYN sender /
+// first packet) instead of the lo/hi sort order. No column added/removed/reordered — a
+// value-semantics bump only, so `flow_columns_in_order` + the schema_drift guard are unaffected.
+pub const FLOW_PARQUET_VERSION: u16 = 10;
 
 /// Canonical Arrow schema for the persisted flow Parquet table.
 pub fn flow_arrow_schema() -> Arc<Schema> {
@@ -23,20 +26,20 @@ pub fn flow_arrow_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("flow_id", DataType::UInt64, false), // 1  monotonic id (assigned at write)
         Field::new("capture_id", DataType::UInt64, false), // 2
-        Field::new("src_ip", DataType::Utf8, false), // 3  initiator (= lo endpoint), canonical string
-        Field::new("dst_ip", DataType::Utf8, false), // 4  responder (= hi endpoint)
-        Field::new("src_port", DataType::UInt16, false), // 5  lo_port; 0 for portless L4
-        Field::new("dst_port", DataType::UInt16, false), // 6  hi_port; 0 for portless L4
+        Field::new("src_ip", DataType::Utf8, false), // 3  initiator (SYN sender / first packet), canonical string
+        Field::new("dst_ip", DataType::Utf8, false), // 4  responder
+        Field::new("src_port", DataType::UInt16, false), // 5  initiator port; 0 for portless L4
+        Field::new("dst_port", DataType::UInt16, false), // 6  responder port; 0 for portless L4
         Field::new("proto", DataType::UInt8, false), // 7  IANA L4 proto (6/17/1/58/132...)
         Field::new("app_proto", DataType::Utf8, true), // 8  "dns"/"https"/...; NULL if unknown
-        Field::new("bytes_c2s", DataType::UInt64, false), // 9  == bytes_fwd (lo->hi)
-        Field::new("bytes_s2c", DataType::UInt64, false), // 10 == bytes_rev (hi->lo)
-        Field::new("pkts", DataType::UInt64, false), // 11 pkts_fwd + pkts_rev
+        Field::new("bytes_c2s", DataType::UInt64, false), // 9  initiator->responder bytes
+        Field::new("bytes_s2c", DataType::UInt64, false), // 10 responder->initiator bytes
+        Field::new("pkts", DataType::UInt64, false), // 11 pkts_fwd + pkts_rev (orientation-independent)
         Field::new("start_ts", utc(), false),        // 12 first_ts_ns (UTC ns)
         Field::new("end_ts", utc(), false),          // 13 last_ts_ns  (UTC ns)
-        Field::new("tcp_flags_c2s", DataType::UInt8, false), // 14 tcp_flags_fwd
-        Field::new("tcp_flags_s2c", DataType::UInt8, false), // 15 tcp_flags_rev
-        Field::new("ttl_min_c2s", DataType::UInt8, false), // 16 ttl_min_fwd
+        Field::new("tcp_flags_c2s", DataType::UInt8, false), // 14 initiator-side TCP flags
+        Field::new("tcp_flags_s2c", DataType::UInt8, false), // 15 responder-side TCP flags
+        Field::new("ttl_min_c2s", DataType::UInt8, false), // 16 initiator-side min TTL
         Field::new("category", DataType::Utf8, false), // 17 snake_case token; never NULL ("unknown")
         Field::new("app_proto_src", DataType::Utf8, true), // 18 derivation: "port"/"payload"; NULL when neither
         Field::new("sni", DataType::Utf8, true),           // 19 TLS SNI host; NULL if none observed
