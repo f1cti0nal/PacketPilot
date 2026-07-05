@@ -1486,11 +1486,32 @@ mod tests {
         ));
         // The app-proto split (tls/http/dns) is attributed per FLOW now; fold the matching flows
         // so the payload-aware buckets populate (proto.tcp/udp/totals stay packet-derived above).
-        let mut https = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 100);
+        let mut https = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 1),
+            ip4(10, 0, 0, 2),
+            Category::Web,
+            1,
+            100,
+        );
         https.app_proto = "https".into();
-        let mut dns = flow(Transport::Udp, ip4(10, 0, 0, 3), ip4(10, 0, 0, 2), Category::Dns, 1, 200);
+        let mut dns = flow(
+            Transport::Udp,
+            ip4(10, 0, 0, 3),
+            ip4(10, 0, 0, 2),
+            Category::Dns,
+            1,
+            200,
+        );
         dns.app_proto = "dns".into();
-        let mut http = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 300);
+        let mut http = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 1),
+            ip4(10, 0, 0, 2),
+            Category::Web,
+            1,
+            300,
+        );
         http.app_proto = "http".into();
         acc.observe_flow(&https);
         acc.observe_flow(&dns);
@@ -1815,9 +1836,23 @@ mod tests {
     fn protocol_hierarchy_paths_and_order() {
         let mut acc = StatsAccumulator::new(StatsConfig::default());
         // big https flow vs small dns flow — hierarchy is now sourced from classified flows.
-        let mut https = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 1000);
+        let mut https = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 1),
+            ip4(10, 0, 0, 2),
+            Category::Web,
+            1,
+            1000,
+        );
         https.app_proto = "https".into();
-        let mut dns = flow(Transport::Udp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Dns, 1, 50);
+        let mut dns = flow(
+            Transport::Udp,
+            ip4(10, 0, 0, 1),
+            ip4(10, 0, 0, 2),
+            Category::Dns,
+            1,
+            50,
+        );
         dns.app_proto = "dns".into();
         acc.observe_flow(&https);
         acc.observe_flow(&dns);
@@ -1834,9 +1869,23 @@ mod tests {
         // on tcp/80 whose payload was NOT http (app_proto "ssh") must fold to "other", not http.
         let mut acc = StatsAccumulator::new(StatsConfig::default());
         // flow(.., pkts, bytes_per_pkt): 1 packet of 4000 bytes.
-        let mut tls_8444 = flow(Transport::Tcp, ip4(10, 0, 0, 1), ip4(10, 0, 0, 2), Category::Web, 1, 4000);
+        let mut tls_8444 = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 1),
+            ip4(10, 0, 0, 2),
+            Category::Web,
+            1,
+            4000,
+        );
         tls_8444.app_proto = "https".into();
-        let mut not_http_80 = flow(Transport::Tcp, ip4(10, 0, 0, 3), ip4(10, 0, 0, 4), Category::RemoteAccess, 1, 200);
+        let mut not_http_80 = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 3),
+            ip4(10, 0, 0, 4),
+            Category::RemoteAccess,
+            1,
+            200,
+        );
         not_http_80.app_proto = "ssh".into();
         acc.observe_flow(&tls_8444);
         acc.observe_flow(&not_http_80);
@@ -1844,7 +1893,10 @@ mod tests {
         assert_eq!(s.proto.tls, 1, "8444 https flow counts as TLS");
         assert_eq!(s.proto.http, 0, "nothing is http");
         assert_eq!(s.proto.other_tcp, 1, "the ssh flow is other_tcp");
-        assert!(s.protocol_hierarchy.iter().any(|p| p.path == "ip.tcp.https" && p.bytes == 4000));
+        assert!(s
+            .protocol_hierarchy
+            .iter()
+            .any(|p| p.path == "ip.tcp.https" && p.bytes == 4000));
     }
 
     #[test]
@@ -1852,7 +1904,17 @@ mod tests {
         // A non-port transport is recorded per-packet under ip.icmp and never touches the
         // app-proto buckets (which only fold TCP/UDP flows).
         let mut acc = StatsAccumulator::new(StatsConfig::default());
-        acc.observe_packet(&pkt(0, 0, 64, Transport::Icmp, Some(ip4(10, 0, 0, 1)), Some(ip4(10, 0, 0, 2)), 0, 0, 0));
+        acc.observe_packet(&pkt(
+            0,
+            0,
+            64,
+            Transport::Icmp,
+            Some(ip4(10, 0, 0, 1)),
+            Some(ip4(10, 0, 0, 2)),
+            0,
+            0,
+            0,
+        ));
         let s = acc.finish();
         assert!(s.protocol_hierarchy.iter().any(|p| p.path == "ip.icmp"));
         assert_eq!(s.proto.http + s.proto.tls + s.proto.dns, 0);

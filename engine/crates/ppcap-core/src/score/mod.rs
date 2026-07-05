@@ -255,7 +255,8 @@ pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
     if heuristic_c2 && !fm.any() && sev.rank() > Severity::Medium.rank() {
         sev = Severity::Medium;
         score = score.min(59);
-        evidence.push("cap: heuristic c2 candidate held at Medium without corroboration".to_string());
+        evidence
+            .push("cap: heuristic c2 candidate held at Medium without corroboration".to_string());
     }
 
     if fm.any() {

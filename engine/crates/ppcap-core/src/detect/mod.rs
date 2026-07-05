@@ -3927,7 +3927,17 @@ mod tests {
         let resolver = ip(10, 0, 0, 1);
         for i in 0..300u32 {
             let client = ip(10, 0, (i >> 8) as u8, i as u8);
-            dns.observe_flow_contact_with(client, resolver, 53, 0, 80, 120, Transport::Udp, false, false);
+            dns.observe_flow_contact_with(
+                client,
+                resolver,
+                53,
+                0,
+                80,
+                120,
+                Transport::Udp,
+                false,
+                false,
+            );
         }
         assert!(
             detect_syn_flood(&dns, &SynFloodParams::default()).is_empty(),
@@ -3940,7 +3950,17 @@ mod tests {
         let target = ip(10, 0, 0, 2);
         for i in 0..300u32 {
             let client = ip(10, 0, (i >> 8) as u8, i as u8);
-            tcp.observe_flow_contact_with(client, target, 80, 0, 80, 120, Transport::Tcp, false, false);
+            tcp.observe_flow_contact_with(
+                client,
+                target,
+                80,
+                0,
+                80,
+                120,
+                Transport::Tcp,
+                false,
+                false,
+            );
         }
         assert!(!detect_syn_flood(&tcp, &SynFloodParams::default()).is_empty());
     }
@@ -4670,15 +4690,31 @@ mod tests {
         // strict pass misses it, the laxer arm surfaces it at Medium (visible, does not defeat the
         // per-flow cap).
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 443, 12, 15, 200, 200);
+        feed_bytes(
+            &mut t,
+            ip(10, 0, 0, 5),
+            ip(8, 8, 8, 8),
+            443,
+            12,
+            15,
+            200,
+            200,
+        );
         let f = detect_beacons(&t, &BeaconParams::default());
         assert_eq!(f.len(), 1, "one evasive beacon finding: {f:?}");
         assert_eq!(f[0].kind, FindingKind::Beacon);
         assert_eq!(f[0].severity, Severity::Medium);
-        assert_eq!(f[0].score, 59, "top-of-Medium; must not raise a card the cap pinned at 59");
+        assert_eq!(
+            f[0].score, 59,
+            "top-of-Medium; must not raise a card the cap pinned at 59"
+        );
         assert!(f[0].jitter_cv.unwrap() > 0.15, "evaded the strict gate");
         assert!(f[0].jitter_cv.unwrap() <= 0.5);
-        assert!(f[0].title.starts_with("Suspected beacon"), "title: {}", f[0].title);
+        assert!(
+            f[0].title.starts_with("Suspected beacon"),
+            "title: {}",
+            f[0].title
+        );
     }
 
     /// Like `feed_bytes` but also stamps the per-flow classification signal on every contact, so
@@ -4698,7 +4734,17 @@ mod tests {
         for i in 0..n {
             let wobble = if i % 2 == 0 { 15 } else { -15 };
             let ts = (i * 100 + wobble).max(0) * SEC;
-            t.observe_flow_contact_with(src, dst, port, ts, out, inb, Transport::Tcp, is_c2_shape, is_named);
+            t.observe_flow_contact_with(
+                src,
+                dst,
+                port,
+                ts,
+                out,
+                inb,
+                Transport::Tcp,
+                is_c2_shape,
+                is_named,
+            );
         }
     }
 
@@ -4714,7 +4760,16 @@ mod tests {
         // (feed_bytes stamps no classification), the channel could be any benign periodic service,
         // so it stays a visible Medium finding.
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_bytes(&mut t, ip(10, 0, 0, 5), noncloud_ext(), 4444, 24, 15, 300, 120);
+        feed_bytes(
+            &mut t,
+            ip(10, 0, 0, 5),
+            noncloud_ext(),
+            4444,
+            24,
+            15,
+            300,
+            120,
+        );
         let f = detect_beacons(&t, &BeaconParams::default());
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].severity, Severity::Medium);
@@ -4726,7 +4781,17 @@ mod tests {
         // The one channel that SHOULD reach High: shape-only C2 (unnamed), never a named service,
         // to a non-cloud public host, with a high jittered small two-way callback count.
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_classified(&mut t, ip(10, 0, 0, 5), noncloud_ext(), 4444, 24, 300, 120, true, false);
+        feed_classified(
+            &mut t,
+            ip(10, 0, 0, 5),
+            noncloud_ext(),
+            4444,
+            24,
+            300,
+            120,
+            true,
+            false,
+        );
         let f = detect_beacons(&t, &BeaconParams::default());
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].severity, Severity::High);
@@ -4739,13 +4804,39 @@ mod tests {
         // The #104 regression guard: a channel the classifier NAMED as a service (NTP/DNS/STUN/…)
         // is vetoed from High no matter the count — even if it also looks C2-shaped on some flow.
         let mut named = BehaviorTracker::new(DetectConfig::default());
-        feed_classified(&mut named, ip(10, 0, 0, 5), noncloud_ext(), 123, 30, 90, 90, false, true);
-        assert_eq!(detect_beacons(&named, &BeaconParams::default())[0].severity, Severity::Medium);
+        feed_classified(
+            &mut named,
+            ip(10, 0, 0, 5),
+            noncloud_ext(),
+            123,
+            30,
+            90,
+            90,
+            false,
+            true,
+        );
+        assert_eq!(
+            detect_beacons(&named, &BeaconParams::default())[0].severity,
+            Severity::Medium
+        );
 
         // Mixed channel (some C2-shape AND some named) is still vetoed by named_service.
         let mut mixed = BehaviorTracker::new(DetectConfig::default());
-        feed_classified(&mut mixed, ip(10, 0, 0, 5), noncloud_ext(), 4444, 30, 200, 200, true, true);
-        assert_eq!(detect_beacons(&mixed, &BeaconParams::default())[0].severity, Severity::Medium);
+        feed_classified(
+            &mut mixed,
+            ip(10, 0, 0, 5),
+            noncloud_ext(),
+            4444,
+            30,
+            200,
+            200,
+            true,
+            true,
+        );
+        assert_eq!(
+            detect_beacons(&mixed, &BeaconParams::default())[0].severity,
+            Severity::Medium
+        );
     }
 
     #[test]
@@ -4753,16 +4844,42 @@ mod tests {
         // Unknown-C2 shape but to a known cloud/CDN block (8.8.8.8 = Google): telemetry usually
         // lands on cloud, so the cloud strengthener holds it at Medium.
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_classified(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 24, 300, 120, true, false);
-        assert_eq!(detect_beacons(&t, &BeaconParams::default())[0].severity, Severity::Medium);
+        feed_classified(
+            &mut t,
+            ip(10, 0, 0, 5),
+            ip(8, 8, 8, 8),
+            4444,
+            24,
+            300,
+            120,
+            true,
+            false,
+        );
+        assert_eq!(
+            detect_beacons(&t, &BeaconParams::default())[0].severity,
+            Severity::Medium
+        );
     }
 
     #[test]
     fn evasive_c2_below_high_threshold_is_medium() {
         // Corroborated unknown-C2 but only 19 callbacks (< suspect_high_contacts): stays Medium.
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_classified(&mut t, ip(10, 0, 0, 5), noncloud_ext(), 4444, 19, 300, 120, true, false);
-        assert_eq!(detect_beacons(&t, &BeaconParams::default())[0].severity, Severity::Medium);
+        feed_classified(
+            &mut t,
+            ip(10, 0, 0, 5),
+            noncloud_ext(),
+            4444,
+            19,
+            300,
+            120,
+            true,
+            false,
+        );
+        assert_eq!(
+            detect_beacons(&t, &BeaconParams::default())[0].severity,
+            Severity::Medium
+        );
     }
 
     #[test]
@@ -4778,12 +4895,30 @@ mod tests {
     fn evasive_arm_excludes_internal_and_bulk() {
         // Internal destination: repeated small contact is benign polling, not C2.
         let mut internal = BehaviorTracker::new(DetectConfig::default());
-        feed_bytes(&mut internal, ip(10, 0, 0, 5), ip(10, 0, 0, 9), 4444, 20, 15, 300, 120);
+        feed_bytes(
+            &mut internal,
+            ip(10, 0, 0, 5),
+            ip(10, 0, 0, 9),
+            4444,
+            20,
+            15,
+            300,
+            120,
+        );
         assert!(detect_beacons(&internal, &BeaconParams::default()).is_empty());
 
         // Bulk two-way transfer (mean bytes/contact >> 4096): not a beacon shape.
         let mut bulk = BehaviorTracker::new(DetectConfig::default());
-        feed_bytes(&mut bulk, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 20, 15, 100_000, 100_000);
+        feed_bytes(
+            &mut bulk,
+            ip(10, 0, 0, 5),
+            ip(8, 8, 8, 8),
+            4444,
+            20,
+            15,
+            100_000,
+            100_000,
+        );
         assert!(detect_beacons(&bulk, &BeaconParams::default()).is_empty());
     }
 
@@ -4792,11 +4927,24 @@ mod tests {
         // A low-jitter high-count external channel with bytes qualifies for BOTH passes; dedup by
         // ContactKey means it is reported exactly once, as the strict periodic beacon.
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 443, 16, 1, 200, 200);
+        feed_bytes(
+            &mut t,
+            ip(10, 0, 0, 5),
+            ip(8, 8, 8, 8),
+            443,
+            16,
+            1,
+            200,
+            200,
+        );
         let f = detect_beacons(&t, &BeaconParams::default());
         assert_eq!(f.len(), 1, "exactly one finding, not double-counted: {f:?}");
         assert_eq!(f[0].severity, Severity::High);
-        assert!(f[0].title.starts_with("Periodic beacon"), "strict wins: {}", f[0].title);
+        assert!(
+            f[0].title.starts_with("Periodic beacon"),
+            "strict wins: {}",
+            f[0].title
+        );
     }
 
     #[test]
