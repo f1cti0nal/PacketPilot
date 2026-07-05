@@ -35,6 +35,12 @@ Deno.serve(async (req) => {
   const { data: userData } = token ? await admin.auth.getUser(token) : { data: { user: null } };
   const user = userData?.user;
   if (!user) return json({ error: "unauthorized" }, 401);
+  // Pro-gate: the AI analyst assist is a paid feature. Enforce it SERVER-SIDE so a free user
+  // cannot spend the operator's AI_API_KEY by calling this proxy directly (the client feature
+  // gate alone is bypassable). Reverse-trial users carry plan='pro', so they pass. Fail CLOSED
+  // on a plan-read error — deny rather than risk leaking a metered feature.
+  const { data: aiProf, error: aiPlanErr } = await admin.from("profiles").select("plan").eq("id", user.id).single();
+  if (aiPlanErr || aiProf?.plan !== "pro") return json({ error: "pro plan required" }, 403);
   // Per-user rate limit — protect the operator's AI key from abuse. Fail OPEN on error so a
   // rate-limit hiccup never breaks the feature.
   try {
