@@ -161,6 +161,21 @@ fn confident_c2_external_reaches_high() {
 }
 
 #[test]
+fn network_service_external_is_benign() {
+    // NTP/DHCP/SNMP/etc. to a public server: +3 (benign category) +15 (external) = 18 -> Low.
+    // No C2 term, no confidence cap — the category itself is now benign.
+    let mut r = external_rec(Category::NetworkService);
+    r.pkts_fwd = 3;
+    r.pkts_rev = 3;
+    r.bytes_fwd = 100;
+    r.bytes_rev = 100;
+    let s = score_flow(&r, &FeedMatch::default());
+    assert_eq!(s.severity, Severity::Low);
+    assert!(s.evidence.iter().any(|e| e == "category network_service (+3)"));
+    assert!(!s.evidence.iter().any(|e| e.starts_with("cap:")));
+}
+
+#[test]
 fn scan_shaped_evidence() {
     let mut r = rec(Category::Scan);
     r.pkts_fwd = 1;

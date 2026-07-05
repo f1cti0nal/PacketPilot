@@ -787,7 +787,11 @@ fn cat_color(c: Category) -> &'static str {
         Category::Scan => "#fb923c",                     // high orange
         Category::RemoteAccess | Category::TunnelVpn => "#fbbf24", // medium amber
         Category::Voip | Category::IotOt | Category::FileTransfer => "#2dd4bf", // low teal
-        Category::Web | Category::Dns | Category::Email | Category::Unknown => "#64748b", // info slate
+        Category::Web
+        | Category::Dns
+        | Category::Email
+        | Category::NetworkService
+        | Category::Unknown => "#64748b", // info slate
     }
 }
 

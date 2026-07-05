@@ -264,6 +264,25 @@ impl Classifier {
             (Tcp, 1723) => (Category::TunnelVpn, "pptp"),
             (Udp, 1701) => (Category::TunnelVpn, "l2tp"),
 
+            // --- VoIP / RTC signalling & NAT traversal ------------------------------
+            // STUN/TURN set up interactive media (WebRTC / SIP), so they belong with VoIP. They
+            // are small, two-way, and usually to a PUBLIC server, which is exactly the shape the
+            // C2 beacon heuristic otherwise mislabels.
+            // (Google STUN 19302 is already covered as VoIP by the RTP dynamic-media range below.)
+            (Udp, 3478) | (Tcp, 3478) => (Category::Voip, "stun"),
+            (Tcp, 5349) | (Udp, 5349) | (Udp, 5350) => (Category::Voip, "turn"),
+
+            // --- Network infrastructure / management --------------------------------
+            // Benign, ubiquitous service protocols. Named here so a small two-way exchange to a
+            // PUBLIC server (e.g. NTP to pool.ntp.org) classifies as low-risk instead of falling
+            // to Unknown and being shape-uplifted to C2.
+            (Udp, 123) => (Category::NetworkService, "ntp"),
+            (Udp, 67) | (Udp, 68) | (Udp, 546) | (Udp, 547) => {
+                (Category::NetworkService, "dhcp")
+            }
+            (Udp, 161) | (Udp, 162) => (Category::NetworkService, "snmp"),
+            (Udp, 514) => (Category::NetworkService, "syslog"),
+
             // --- IoT / OT -----------------------------------------------------------
             (Tcp, 1883) => (Category::IotOt, "mqtt"),
             (Tcp, 8883) => (Category::IotOt, "mqtts"),
@@ -650,6 +669,47 @@ mod tests {
         f.tcp_flags_fwd = TCP_SYN;
         cls.classify(&mut f);
         assert_eq!(f.category, Category::Scan);
+    }
+
+    // ----- benign network-service + RTC ports (C2 shape-uplift guard) -------
+
+    #[test]
+    fn network_service_ports_map_to_network_service() {
+        for (p, tok) in [(123u16, "ntp"), (67, "dhcp"), (68, "dhcp"), (546, "dhcp"), (547, "dhcp"), (161, "snmp"), (162, "snmp"), (514, "syslog")] {
+            assert_eq!(
+                Classifier::category_for_port(Transport::Udp, p),
+                (Category::NetworkService, tok),
+                "udp/{p}"
+            );
+        }
+    }
+
+    #[test]
+    fn stun_turn_ports_map_to_voip() {
+        assert_eq!(Classifier::category_for_port(Transport::Udp, 3478), (Category::Voip, "stun"));
+        assert_eq!(Classifier::category_for_port(Transport::Tcp, 3478), (Category::Voip, "stun"));
+        // Google STUN 19302 lands in the RTP dynamic-media range -> VoIP "rtp" (still not C2).
+        assert_eq!(Classifier::category_for_port(Transport::Udp, 19302), (Category::Voip, "rtp"));
+        assert_eq!(Classifier::category_for_port(Transport::Udp, 5349), (Category::Voip, "turn"));
+        assert_eq!(Classifier::category_for_port(Transport::Tcp, 5349), (Category::Voip, "turn"));
+        assert_eq!(Classifier::category_for_port(Transport::Udp, 5350), (Category::Voip, "turn"));
+    }
+
+    #[test]
+    fn ntp_flow_shaped_like_beacon_stays_network_service_not_c2() {
+        // The regression this guards: a small, two-way NTP exchange to a time server has the exact
+        // shape `looks_like_beacon` fires on. Because port 123 now names it, the flow classifies as
+        // NetworkService (confident, provenance "port") and the C2 shape-uplift never runs.
+        let cls = Classifier::new(ClassifyConfig::default());
+        let mut f = udp_flow(123, 40_000); // service port = 123 = NTP
+        f.pkts_fwd = 3;
+        f.pkts_rev = 3;
+        f.bytes_fwd = 300;
+        f.bytes_rev = 300;
+        cls.classify(&mut f);
+        assert_eq!(f.category, Category::NetworkService, "NTP must not be shape-uplifted to C2");
+        assert_eq!(f.app_proto, "ntp");
+        assert_eq!(f.app_proto_src, Some("port"));
     }
 
     // ----- payload precedence + app_proto_src derivation --------------------

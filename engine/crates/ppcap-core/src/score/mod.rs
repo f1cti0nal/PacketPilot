@@ -138,7 +138,11 @@ pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
                 PTS_MEDIUM_RISK_CAT,
             );
         }
-        Category::Web | Category::Dns | Category::Voip | Category::IotOt => {
+        Category::Web
+        | Category::Dns
+        | Category::Voip
+        | Category::IotOt
+        | Category::NetworkService => {
             add_term(
                 &mut acc,
                 &mut evidence,

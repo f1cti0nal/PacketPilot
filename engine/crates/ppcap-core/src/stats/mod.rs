@@ -146,8 +146,8 @@ pub struct StatsAccumulator {
     per_proto_path: HashMap<String, PathStat>,
     per_second: HashMap<i64, SecStat>,
 
-    /// Fixed 12-slot category breakdown indexed by `Category::all()` position.
-    per_category: [CatStat; 12],
+    /// Fixed 13-slot category breakdown indexed by `Category::all()` position.
+    per_category: [CatStat; 13],
 
     /// Per-source distinct destination ports observed on SYN-only packets (scan signal).
     /// Bounded both in the number of sources and in the spread tracked per source.
@@ -231,7 +231,7 @@ impl StatsAccumulator {
             per_port: HashMap::new(),
             per_proto_path: HashMap::new(),
             per_second: HashMap::new(),
-            per_category: [CatStat::default(); 12],
+            per_category: [CatStat::default(); 13],
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
             per_ip_threat: HashMap::new(),
@@ -1083,6 +1083,7 @@ fn category_index(c: Category) -> usize {
         Category::C2 => 9,
         Category::Anomalous => 10,
         Category::Unknown => 11,
+        Category::NetworkService => 12,
     }
 }
 
@@ -1419,10 +1420,11 @@ mod tests {
         assert!(s.time_histogram.is_empty());
         assert_eq!(s.time_bucket_secs, 1);
         assert!(s.top_talkers.is_empty());
-        // Category breakdown always covers all 12 categories in fixed order.
-        assert_eq!(s.category_breakdown.len(), 12);
+        // Category breakdown always covers all 13 categories in fixed order.
+        assert_eq!(s.category_breakdown.len(), 13);
         assert_eq!(s.category_breakdown[0].category, Category::Web);
         assert_eq!(s.category_breakdown[11].category, Category::Unknown);
+        assert_eq!(s.category_breakdown[12].category, Category::NetworkService);
     }
 
     #[test]

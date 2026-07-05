@@ -5,7 +5,10 @@
 //! DuckDB `category_t` enum (`file_transfer`). The undecided value is `unknown`
 //! everywhere (never `unclassified`).
 
-/// Traffic taxonomy (PROJECT-SPEC §3.3). 12-value closed set; `Unknown` is the default.
+/// Traffic taxonomy (PROJECT-SPEC §3.3). 13-value closed set; `Unknown` is the default.
+///
+/// `NetworkService` is appended LAST (after `Unknown`) so every pre-existing variant keeps its
+/// histogram index — see [`ALL`] / `stats::category_index`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
 )]
@@ -24,11 +27,16 @@ pub enum Category {
     Anomalous,
     #[default]
     Unknown,
+    /// Benign network-infrastructure / management services (NTP, DHCP, SNMP, syslog). Recognized
+    /// so they classify as low-risk instead of falling to `Unknown` and being shape-uplifted to
+    /// `C2`. Appended last to keep existing category indices stable.
+    NetworkService,
 }
 
 /// Fixed display/iteration order for histograms — must stay stable (the
-/// `category_breakdown` covers this order).
-const ALL: [Category; 12] = [
+/// `category_breakdown` covers this order). `NetworkService` is appended last so existing indices
+/// (`Web`=0 .. `Unknown`=11) are unchanged.
+const ALL: [Category; 13] = [
     Category::Web,
     Category::Dns,
     Category::Email,
@@ -41,13 +49,14 @@ const ALL: [Category; 12] = [
     Category::C2,
     Category::Anomalous,
     Category::Unknown,
+    Category::NetworkService,
 ];
 
 impl Category {
     /// Stable snake_case wire token used in Parquet/DuckDB column values.
     ///
     /// `"web","dns","email","file_transfer","remote_access","voip","iot_ot",
-    /// "tunnel_vpn","scan","c2","anomalous","unknown"`. These exactly match the
+    /// "tunnel_vpn","scan","c2","anomalous","unknown","network_service"`. These exactly match the
     /// `category_t` DuckDB enum.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -63,6 +72,7 @@ impl Category {
             Category::C2 => "c2",
             Category::Anomalous => "anomalous",
             Category::Unknown => "unknown",
+            Category::NetworkService => "network_service",
         }
     }
 
@@ -87,6 +97,7 @@ impl Category {
             "c2" => Category::C2,
             "anomalous" => Category::Anomalous,
             "unknown" => Category::Unknown,
+            "network_service" => Category::NetworkService,
             _ => return None,
         })
     }
