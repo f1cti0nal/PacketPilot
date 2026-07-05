@@ -1565,10 +1565,6 @@ pub struct BeaconParams {
     /// Laxer arm: maximum jitter CV. Wider than `max_jitter_cv` so it catches beacons that jitter
     /// to defeat the strict gate, but still rejects genuinely ad-hoc traffic.
     pub suspect_max_jitter_cv: f64,
-    /// Laxer arm: at or above this many contacts the suspect beacon escalates from Medium (visible,
-    /// non-cap-defeating) to High — a high callback count on a small two-way external channel is
-    /// hard to fake benignly. A single flow (1 contact) can never reach this.
-    pub suspect_high_contacts: u64,
     /// Laxer arm: reject channels whose MEAN bytes-per-contact exceed this — a beacon is small,
     /// bulk transfers are not. Mirrors the classifier/scorer beacon byte ceiling.
     pub suspect_max_mean_bytes: u64,
@@ -1591,7 +1587,6 @@ impl Default for BeaconParams {
             ignore_ports: merged_ports(INTERACTIVE_AUTH_PORTS, LATERAL_PORTS),
             suspect_min_contacts: 8,
             suspect_max_jitter_cv: 0.5,
-            suspect_high_contacts: 20,
             suspect_max_mean_bytes: 4_096,
         }
     }
@@ -1749,11 +1744,15 @@ pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<F
 
     // --- Laxer "evasive beacon" pass: a real C2 beacon defeats the strict low-jitter/high-count
     // gate by jittering its callbacks or checking in fewer times, yet still leaves a repeated,
-    // small, TWO-WAY exchange to an EXTERNAL peer. Surface that residual signal — but keep the
-    // #104 benign-public-IP cap intact: this arm is EXTERNAL-only, requires an answered small
-    // exchange (never a single flow or a bulk transfer), and emits Medium (top-of-band 59, which
-    // does NOT raise a card the cap already pinned at Medium/59). It escalates to High only at a
-    // high callback count — a signal a single benign flow can never reach.
+    // small, TWO-WAY exchange to an EXTERNAL peer. Surface that residual signal for triage — but
+    // keep the #104 benign-public-IP fix intact. This arm is EXTERNAL-only, requires an answered
+    // small exchange (never a single flow or a bulk transfer), and is deduped against the strict
+    // pass. It emits Medium ONLY (top-of-band 59, which does NOT raise a card the cap already
+    // pinned at Medium/59): at the channel level a jittered small two-way external series is
+    // indistinguishable from benign periodic infrastructure (NTP, public DNS/DoT, STUN,
+    // telemetry), so escalating it to High would re-flag those. A genuine High still comes from
+    // an IOC or the strict low-jitter beacon — escalation here would need stronger corroboration
+    // (e.g. a C2-classified channel), left as a follow-up.
     for c in tracker.beacon_candidates(params.suspect_min_contacts, params.suspect_max_jitter_cv) {
         if reported.contains(&c.key)
             || !in_window(c.interval_ns)
@@ -1771,12 +1770,7 @@ pub fn detect_beacons(tracker: &BehaviorTracker, params: &BeaconParams) -> Vec<F
         if !answered || !small {
             continue;
         }
-        let (severity, score) = if c.contacts >= params.suspect_high_contacts {
-            (Severity::High, 70)
-        } else {
-            (Severity::Medium, 59)
-        };
-        findings.push(beacon_finding(&c, severity, score, true));
+        findings.push(beacon_finding(&c, Severity::Medium, 59, true));
         reported.insert(c.key);
     }
     findings
@@ -4632,15 +4626,17 @@ mod tests {
     }
 
     #[test]
-    fn evasive_external_beacon_reaches_high_at_high_contact_count() {
-        // 20+ jittered small two-way check-ins to an external peer: a callback count a single
-        // benign flow can never reach -> High, restoring recall for evasive C2.
+    fn evasive_external_beacon_stays_medium_even_at_high_contact_count() {
+        // Deliberately NOT escalated to High even at a high callback count: a jittered small
+        // two-way external series is indistinguishable from benign periodic infra (NTP / public
+        // DNS / STUN / telemetry), so High would re-flag those and undo #104. It stays a visible
+        // Medium finding; a real High comes from an IOC or the strict low-jitter beacon.
         let mut t = BehaviorTracker::new(DetectConfig::default());
-        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 20, 15, 300, 120);
+        feed_bytes(&mut t, ip(10, 0, 0, 5), ip(8, 8, 8, 8), 4444, 24, 15, 300, 120);
         let f = detect_beacons(&t, &BeaconParams::default());
         assert_eq!(f.len(), 1, "{f:?}");
-        assert_eq!(f[0].severity, Severity::High);
-        assert_eq!(f[0].score, 70);
+        assert_eq!(f[0].severity, Severity::Medium);
+        assert_eq!(f[0].score, 59);
     }
 
     #[test]
