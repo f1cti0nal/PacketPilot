@@ -37,4 +37,16 @@ describe("ThreatsView", () => {
     expect(screen.getByRole("button", { name: /^45\.77\.13\.37/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^10\.13\.37\.7/ })).toBeNull();
   });
+
+  it("shows an explicit 'not checked' affordance for an external host with no verdicts", () => {
+    // 45.77.13.37 is public and carries no reputation in the fixture; offline (unconfigured).
+    render(<ThreatsView threats={threats} activeIp={null} onSelect={vi.fn()} reputationConfigured={false} />);
+    expect(screen.getByText(/reputation not checked/i)).toBeInTheDocument();
+  });
+
+  it("does not show the 'not checked' affordance for an internal host", () => {
+    const internal = threats.filter((t) => t.ip_class !== "public" && t.ip_class !== "cgnat");
+    render(<ThreatsView threats={internal} activeIp={null} onSelect={vi.fn()} />);
+    expect(screen.queryByText(/reputation not (checked|looked up)/i)).toBeNull();
+  });
 });
