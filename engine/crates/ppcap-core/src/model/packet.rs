@@ -275,6 +275,10 @@ pub struct PacketMeta {
     pub index: u64,
     /// Nanoseconds since the Unix epoch (normalized from any pcapng tsresol).
     pub ts_ns: i64,
+    /// Whether `ts_ns` is a real capture timestamp. `false` only for pcapng Simple Packet Blocks
+    /// (no timestamp); such packets are still counted, but must NOT define a capture/flow time
+    /// range or land in the per-second histogram.
+    pub ts_known: bool,
     /// pcapng interface id; 0 for classic pcap.
     pub iface_id: u32,
     /// Bytes on the wire (orig_len).

@@ -1682,6 +1682,7 @@ mod tests {
         crate::reader::RawFrame {
             index,
             ts_ns,
+            ts_known: true,
             iface_id: 0,
             wire_len: buf.len() as u32,
             cap_len: buf.len() as u32,

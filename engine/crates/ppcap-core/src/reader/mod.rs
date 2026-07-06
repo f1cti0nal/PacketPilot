@@ -83,6 +83,10 @@ impl LinkType {
 pub struct RawFrame<'a> {
     pub index: u64,
     pub ts_ns: i64,
+    /// Whether `ts_ns` is a real capture timestamp. `false` for pcapng Simple Packet Blocks,
+    /// which carry no timestamp (`ts_ns` then holds a best-effort fill for ordering only and must
+    /// NOT define a capture/flow time range). EPBs and legacy pcap records are always `true`.
+    pub ts_known: bool,
     pub iface_id: u32,
     pub wire_len: u32,
     pub cap_len: u32,

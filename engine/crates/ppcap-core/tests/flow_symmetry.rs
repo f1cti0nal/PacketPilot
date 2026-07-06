@@ -85,6 +85,7 @@ fn observe_folds_fwd_and_rev() {
     let fwd = PacketMeta {
         index: 0,
         ts_ns: 500,
+        ts_known: true,
         iface_id: 0,
         wire_len: 74,
         cap_len: 74,
@@ -166,6 +167,7 @@ fn mk(
     PacketMeta {
         index: 0,
         ts_ns: ts,
+        ts_known: true,
         iface_id: 0,
         wire_len: wire,
         cap_len: wire,

@@ -422,6 +422,7 @@ mod tests {
         PacketMeta {
             index,
             ts_ns,
+            ts_known: true,
             iface_id: 0,
             wire_len,
             cap_len: wire_len,

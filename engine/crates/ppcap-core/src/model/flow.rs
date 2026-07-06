@@ -258,11 +258,15 @@ impl FlowRecord {
                 self.initiator = dir;
             }
         }
-        if p.ts_ns < self.first_ts_ns {
-            self.first_ts_ns = p.ts_ns;
-        }
-        if p.ts_ns > self.last_ts_ns {
-            self.last_ts_ns = p.ts_ns;
+        // Only a REAL timestamp defines the flow window; a pcapng SPB (ts_known == false) carries
+        // a non-authoritative fill that must not zero/skew first_ts_ns/last_ts_ns.
+        if p.ts_known {
+            if p.ts_ns < self.first_ts_ns {
+                self.first_ts_ns = p.ts_ns;
+            }
+            if p.ts_ns > self.last_ts_ns {
+                self.last_ts_ns = p.ts_ns;
+            }
         }
         // L7 aggregation (direction-independent: L7 is a flow property, not a direction).
         // Keep the most-specific hint seen (Http/Tls outrank Dns outrank Unknown); ties keep
@@ -446,6 +450,7 @@ mod tests {
         let base = PacketMeta {
             index: 0,
             ts_ns: 100,
+            ts_known: true,
             iface_id: 0,
             wire_len: 64,
             cap_len: 64,
@@ -512,6 +517,7 @@ mod tests {
         let base = PacketMeta {
             index: 0,
             ts_ns: 100,
+            ts_known: true,
             iface_id: 0,
             wire_len: 64,
             cap_len: 64,
