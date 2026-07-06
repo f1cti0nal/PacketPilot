@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { humanBytes, humanNumber, compactNumber, percent, durationHumanNs, durationHumanMs, msToTime, shortHash, basename } from "./format";
+import { humanBytes, humanNumber, compactNumber, percent, durationHumanNs, durationHumanMs, msToTime, nsToTime, nsToDateTime, localTzLabel, shortHash, basename } from "./format";
+
+const p2 = (n: number) => String(n).padStart(2, "0");
+const p3 = (n: number) => String(n).padStart(3, "0");
 
 describe("format", () => {
   it("humanBytes", () => {
@@ -32,9 +35,18 @@ describe("format", () => {
     expect(durationHumanMs(2 * 3_600_000 + 5 * 60_000)).toBe("2h 5m");
     expect(durationHumanMs(Infinity)).toBe("—");
   });
-  it("msToTime formats millisecond epoch as HH:MM:SS.mmm", () => {
-    // toISOString() is always UTC, so this is deterministic regardless of local timezone.
-    // 1_700_000_000_000 ms = 2023-11-14T22:13:20.000Z
-    expect(msToTime(1_700_000_000_000)).toBe("22:13:20.000");
+  it("time helpers render LOCAL time (tz-independent assertions)", () => {
+    // Times now render in the browser's local timezone (to match the analyst's Wireshark view),
+    // so assert against the same local getters rather than a fixed UTC string.
+    const ms = 1_700_000_000_000;
+    const d = new Date(ms);
+    const hms = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+    expect(msToTime(ms)).toBe(`${hms}.${p3(d.getMilliseconds())}`);
+    expect(nsToTime(ms * 1e6)).toBe(hms);
+    // nsToDateTime is "YYYY-MM-DD HH:MM:SS <TZ>" with a non-empty tz label.
+    const dt = nsToDateTime(ms * 1e6);
+    expect(dt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} .+$/);
+    expect(dt.endsWith(localTzLabel)).toBe(true);
+    expect(localTzLabel.length).toBeGreaterThan(0);
   });
 });
