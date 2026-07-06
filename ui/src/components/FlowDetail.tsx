@@ -33,6 +33,7 @@ import {
   humanNumber,
   durationHumanMs,
   msToTime,
+  dateLocal,
   percent,
 } from "../lib/format";
 import { SEVERITY_META } from "../lib/severity";
@@ -449,13 +450,13 @@ export function FlowDetail({
       {/* Timing */}
       <Section icon={<Clock size={13} />} title="Timing">
         <Field label="Start" mono title={startDate.toISOString()}>
-          {startDate.toISOString().slice(0, 10)}{" "}
+          {dateLocal(startDate)}{" "}
           <span className="text-[var(--color-text-faint)]">
             {msToTime(flow.startMs)}
           </span>
         </Field>
         <Field label="End" mono title={endDate.toISOString()}>
-          {endDate.toISOString().slice(0, 10)}{" "}
+          {dateLocal(endDate)}{" "}
           <span className="text-[var(--color-text-faint)]">
             {msToTime(flow.endMs)}
           </span>

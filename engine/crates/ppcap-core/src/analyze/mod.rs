@@ -256,7 +256,10 @@ pub fn run_source_visiting<'a>(
         let decoded = match source.next_frame() {
             Ok(None) => break, // clean EOF
             Ok(Some(frame)) => {
-                let frame_bytes = frame.wire_len as u64;
+                // Capture the record-header fields (wire/cap length, timestamp) so that a decode
+                // FAILURE below can still count the frame in the headline totals — the header is
+                // valid even when dissection isn't (this is why Wireshark still shows the frame).
+                let hdr = (frame.wire_len, frame.cap_len, frame.ts_ns, frame.ts_known);
                 let decode_result = crate::decode::decode_frame(&frame);
                 // Feed the TLS cert reassembler while the frame is still borrowed (it needs the
                 // raw server payload bytes, which `PacketMeta` does not retain).
@@ -264,11 +267,13 @@ pub fn run_source_visiting<'a>(
                     cert_reasm.observe(meta, &frame);
                     body_carver.observe(meta, &frame);
                 }
-                (frame_bytes, decode_result)
+                (hdr, decode_result)
             }
-            // Lenient mode: a torn/truncated final record (a non-fatal reader-level framing
-            // error) means no more frames are recoverable. Count it like a malformed packet
-            // and stop, reporting the frames already processed instead of failing the run.
+            // Lenient mode: a torn/truncated FINAL record (a non-fatal reader-level framing error)
+            // means no more frames are recoverable. Unlike a per-packet decode failure, there is no
+            // usable record header here (the framing itself failed) — so flag it as a decode error
+            // but do NOT count it in total_packets (a frame that can't be framed isn't a frame;
+            // Wireshark can't show it either). Stop and report the frames already processed.
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 stats.record_decode_error();
                 break;
@@ -276,7 +281,8 @@ pub fn run_source_visiting<'a>(
             // Strict mode, or a fatal reader error: propagate.
             Err(e) => return Err(e),
         };
-        let (frame_bytes, decode_result) = decoded;
+        let ((wire_len, cap_len, ts_ns, ts_known), decode_result) = decoded;
+        let frame_bytes = wire_len as u64;
 
         match decode_result {
             Ok(meta) => {
@@ -346,8 +352,11 @@ pub fn run_source_visiting<'a>(
                 }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
-                // Lenient mode: a single malformed/truncated packet is counted, not fatal.
-                stats.record_decode_error();
+                // Lenient mode: a frame that had a valid record header but could not be dissected
+                // (snaplen truncation mid-header, unsupported link type) is still a FRAME — count
+                // it in the headline totals so total_packets matches Wireshark's frame count, while
+                // decode_errors/proto.truncated flag it as undissected.
+                stats.observe_undecoded_frame(wire_len, cap_len, ts_ns, ts_known);
             }
             Err(e) => return Err(e), // strict mode, or a fatal error
         }

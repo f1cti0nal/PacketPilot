@@ -37,19 +37,45 @@ export function nsToDate(ns: number): Date {
   return new Date(ns / 1e6);
 }
 
-/** Nanoseconds (epoch) -> ISO-ish UTC datetime string. */
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+const pad3 = (n: number): string => String(n).padStart(3, "0");
+const timeLocal = (d: Date): string =>
+  `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+
+/** Browser's short timezone label (e.g. "PST", "GMT+5:30"), computed once. Never throws. */
+export const localTzLabel: string = (() => {
+  try {
+    const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(
+      new Date(),
+    );
+    return parts.find((p) => p.type === "timeZoneName")?.value ?? "local";
+  } catch {
+    return "local";
+  }
+})();
+
+/** LOCAL calendar date "YYYY-MM-DD" from a Date (local getters, NOT toISOString which is UTC). */
+export function dateLocal(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** Nanoseconds (epoch) -> LOCAL "YYYY-MM-DD HH:MM:SS <TZ>" so on-screen times match the analyst's
+ *  local-time Wireshark view. Exports (CSV, the WASM HTML report) stay UTC for portability. */
 export function nsToDateTime(ns: number): string {
-  return nsToDate(ns).toISOString().replace("T", " ").replace("Z", " UTC");
+  const d = nsToDate(ns);
+  return `${dateLocal(d)} ${timeLocal(d)} ${localTzLabel}`;
 }
 
-/** Nanoseconds (epoch) -> UTC HH:MM:SS. */
+/** Nanoseconds (epoch) -> LOCAL HH:MM:SS. Bare (no tz) since axis ticks repeat; the tz is surfaced
+ *  once at the axis/label level. */
 export function nsToTime(ns: number): string {
-  return nsToDate(ns).toISOString().slice(11, 19);
+  return timeLocal(nsToDate(ns));
 }
 
-/** Milliseconds (epoch) -> UTC HH:MM:SS.mmm. */
+/** Milliseconds (epoch) -> LOCAL HH:MM:SS.mmm. */
 export function msToTime(ms: number): string {
-  return new Date(ms).toISOString().slice(11, 23);
+  const d = new Date(ms);
+  return `${timeLocal(d)}.${pad3(d.getMilliseconds())}`;
 }
 
 /** Human duration from a nanosecond span, e.g. 119931568000 -> "1m 59.9s". */

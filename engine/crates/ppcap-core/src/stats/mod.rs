@@ -265,30 +265,10 @@ impl StatsAccumulator {
             self.ttl_hist[usize::from(p.ttl)] += 1;
         }
 
-        // Capture window.
-        self.first_ts = Some(match self.first_ts {
-            Some(t) => t.min(p.ts_ns),
-            None => p.ts_ns,
-        });
-        self.last_ts = Some(match self.last_ts {
-            Some(t) => t.max(p.ts_ns),
-            None => p.ts_ns,
-        });
-
-        // Per-second histogram (floor division toward negative infinity so that
-        // pre-epoch timestamps land in a stable, monotone bucket).
-        let epoch_sec = p.ts_ns.div_euclid(1_000_000_000);
-        bump_bounded(
-            &mut self.per_second,
-            epoch_sec,
-            self.cfg.max_tracked_keys,
-            |s| {
-                s.pkts += 1;
-                s.bytes += u64::from(p.wire_len);
-            },
-            |s| s.pkts,
-            SecStat::default,
-        );
+        // Capture window + per-second histogram — only for frames with a REAL timestamp (see
+        // observe_frame_time). A pcapng Simple Packet Block carries none; its filled ts must not
+        // drag the window or open a spurious second-0 bucket. The packet is still counted above.
+        self.observe_frame_time(p.ts_ns, p.wire_len, p.ts_known);
 
         // L2 host identity: an ARP claim binds an IP to a MAC (first MAC per IP wins, bounded).
         // Recorded BEFORE the IP-endpoint short-circuit, since ARP frames carry no IP layer.
@@ -391,9 +371,59 @@ impl StatsAccumulator {
 
     /// Record that a frame failed to decode (increments `decode_errors` and
     /// `proto.truncated`).
+    /// Record a decode failure that is NOT counted as a frame — a torn/truncated final record with
+    /// no usable header (the framing itself failed). Bumps `decode_errors` (the quality signal)
+    /// but NOT `total_packets` NOR `proto.truncated`: `proto.truncated` tracks only undecoded
+    /// frames that ARE in `total_packets` (the donut's "Undecoded" population), so it stays a
+    /// strict subset. Undecoded-but-framed frames go through `observe_undecoded_frame` instead.
     pub fn record_decode_error(&mut self) {
         self.decode_errors += 1;
+    }
+
+    /// Fold a frame's timestamp into the capture window + per-second histogram, but only when the
+    /// timestamp is REAL (`ts_known`). Shared by the decoded and undecoded paths.
+    fn observe_frame_time(&mut self, ts_ns: i64, wire_len: u32, ts_known: bool) {
+        if !ts_known {
+            return;
+        }
+        self.first_ts = Some(match self.first_ts {
+            Some(t) => t.min(ts_ns),
+            None => ts_ns,
+        });
+        self.last_ts = Some(match self.last_ts {
+            Some(t) => t.max(ts_ns),
+            None => ts_ns,
+        });
+        // Floor division toward negative infinity so pre-epoch timestamps land in a stable bucket.
+        let epoch_sec = ts_ns.div_euclid(1_000_000_000);
+        bump_bounded(
+            &mut self.per_second,
+            epoch_sec,
+            self.cfg.max_tracked_keys,
+            |s| {
+                s.pkts += 1;
+                s.bytes += u64::from(wire_len);
+            },
+            |s| s.pkts,
+            SecStat::default,
+        );
+    }
+
+    /// Fold a frame that had a readable record header but FAILED to dissect (snaplen truncation
+    /// mid-header, or an unsupported link type). It counts toward the headline totals + size/time
+    /// histograms so `total_packets` matches Wireshark's frame count, while still bumping
+    /// `decode_errors`/`proto.truncated` as a separate quality signal. An undecoded frame has no
+    /// known endpoints/transport/TTL, so it enters none of those partitions.
+    pub fn observe_undecoded_frame(&mut self, wire_len: u32, cap_len: u32, ts_ns: i64, ts_known: bool) {
+        self.total_packets += 1;
+        self.total_bytes += u64::from(wire_len);
+        self.captured_bytes += u64::from(cap_len);
+        self.size_buckets[size_bucket_index(wire_len)] += 1;
+        self.decode_errors += 1;
         self.proto.truncated += 1;
+        // The record-header timestamp is valid even when dissection failed (Wireshark shows it),
+        // so a decode-failed frame still contributes to the time range/histogram when ts is known.
+        self.observe_frame_time(ts_ns, wire_len, ts_known);
     }
 
     /// Fold one closed flow (flow- and category-level tallies).
@@ -1344,6 +1374,7 @@ mod tests {
         PacketMeta {
             index,
             ts_ns,
+            ts_known: true,
             iface_id: 0,
             wire_len,
             cap_len: wire_len,
@@ -1446,6 +1477,67 @@ mod tests {
         assert_eq!(s.duration_ns, 0);
         assert_eq!(s.first_ts_ns, Some(5_000_000_000));
         assert_eq!(s.last_ts_ns, Some(5_000_000_000));
+    }
+
+    #[test]
+    fn unknown_ts_packet_counts_but_never_defines_the_time_range() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        // A real-ts packet at ~2023 defines the window.
+        acc.observe_packet(&pkt(
+            0,
+            1_700_000_000_000_000_000,
+            100,
+            Transport::Tcp,
+            Some(ip4(10, 0, 0, 1)),
+            Some(ip4(10, 0, 0, 2)),
+            1234,
+            443,
+            0,
+        ));
+        // A pcapng Simple Packet Block: ts_known=false, filled ts_ns=0 (epoch). It must be COUNTED
+        // but must NOT drag first_ts to 1970 or open a second-0 per-second bucket.
+        let mut spb = pkt(
+            1,
+            0,
+            200,
+            Transport::Udp,
+            Some(ip4(10, 0, 0, 3)),
+            Some(ip4(10, 0, 0, 2)),
+            5000,
+            53,
+            0,
+        );
+        spb.ts_known = false;
+        acc.observe_packet(&spb);
+        let s = acc.finish();
+        assert_eq!(s.total_packets, 2, "both packets counted");
+        assert_eq!(s.total_bytes, 300);
+        assert_eq!(s.first_ts_ns, Some(1_700_000_000_000_000_000), "range ignores the unknown-ts frame");
+        assert_eq!(s.last_ts_ns, Some(1_700_000_000_000_000_000));
+        assert_eq!(s.duration_ns, 0);
+        // Only the real-ts packet is in the per-second histogram (no spurious second-0 bucket).
+        let hist_pkts: u64 = s.time_histogram.iter().map(|b| b.pkts).sum();
+        assert_eq!(hist_pkts, 1, "unknown-ts frame not bucketed in the timeline");
+    }
+
+    #[test]
+    fn undecoded_frame_counts_in_totals_but_not_partitions() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        // A snaplen-clipped frame: 500 bytes on the wire, only 96 captured, real record-header ts.
+        acc.observe_undecoded_frame(500, 96, 1_700_000_000_000_000_000, true);
+        let s = acc.finish();
+        assert_eq!(s.total_packets, 1, "counted as a frame (matches Wireshark's count)");
+        assert_eq!(s.total_bytes, 500, "wire length");
+        assert_eq!(s.captured_bytes, 96, "captured < wire (clipped)");
+        assert_eq!(s.decode_errors, 1, "still flagged undissected");
+        assert_eq!(s.proto.truncated, 1);
+        // No endpoints/transport/category for an undecoded frame.
+        assert_eq!(s.proto.tcp + s.proto.udp, 0);
+        assert_eq!(s.non_ip_frames, 0);
+        // Its record-header timestamp is valid, so it IS in the time range/histogram.
+        assert_eq!(s.first_ts_ns, Some(1_700_000_000_000_000_000));
+        let hist: u64 = s.time_histogram.iter().map(|b| b.pkts).sum();
+        assert_eq!(hist, 1);
     }
 
     #[test]
@@ -1553,8 +1645,9 @@ mod tests {
         acc.record_decode_error();
         let s = acc.finish();
         assert_eq!(s.decode_errors, 2);
-        assert_eq!(s.proto.truncated, 2);
-        // decode errors do NOT inflate total_packets.
+        // A headerless torn record is NOT counted as a frame and is NOT part of the donut's
+        // undecoded population (proto.truncated tracks only undecoded frames that ARE in total).
+        assert_eq!(s.proto.truncated, 0);
         assert_eq!(s.total_packets, 0);
     }
 

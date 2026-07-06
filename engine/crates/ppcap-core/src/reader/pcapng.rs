@@ -70,6 +70,10 @@ pub struct PcapNgSource<R: std::io::Read> {
     index: u64,
     /// Deferred consume offset for the circular buffer (see the legacy source for details).
     pending_consume: Option<usize>,
+    /// Last REAL timestamp seen (from an EPB). Simple Packet Blocks carry no timestamp, so their
+    /// frame inherits this as a non-authoritative fill (keeps ordering/eviction monotone) while
+    /// being marked `ts_known = false` so it never defines a capture/flow time range.
+    last_ts_ns: i64,
     size_hint: Option<u64>,
 }
 
@@ -83,6 +87,7 @@ impl<R: std::io::Read> PcapNgSource<R> {
             primary_link_type: LinkType::Unsupported(0),
             index: 0,
             pending_consume: None,
+            last_ts_ns: 0,
             size_hint,
         }
     }
@@ -237,6 +242,8 @@ struct LocatedPacket {
     /// `true` for an Enhanced Packet Block, `false` for a Simple Packet Block. Used to
     /// re-borrow the correct variant in step 3.
     is_enhanced: bool,
+    /// Whether `ts_ns` is a real timestamp (EPB) vs a carried-forward fill (SPB).
+    ts_known: bool,
 }
 
 impl<R: std::io::Read> PacketSource for PcapNgSource<R> {
@@ -385,6 +392,9 @@ impl<R: std::io::Read> PacketSource for PcapNgSource<R> {
                     // A new section may redefine the interface table from scratch.
                     self.interfaces.clear();
                     self.primary_link_type = LinkType::Unsupported(0);
+                    // Reset the SPB timestamp fill too: an SPB early in the new section must not
+                    // inherit the PREVIOUS section's last timestamp.
+                    self.last_ts_ns = 0;
                     if let State::Active(reader) = &mut self.state {
                         reader.consume(offset);
                     }
@@ -426,6 +436,7 @@ impl<R: std::io::Read> PacketSource for PcapNgSource<R> {
                         cap_len: caplen,
                         link_type: iface.link_type,
                         is_enhanced: true,
+                        ts_known: true,
                     };
                 }
                 Step::Spb {
@@ -446,13 +457,17 @@ impl<R: std::io::Read> PacketSource for PcapNgSource<R> {
                     };
                     break LocatedPacket {
                         consume_offset: offset,
-                        // SPBs carry no timestamp; use 0 (epoch) deterministically.
-                        ts_ns: iface.ticks_to_ns(0),
+                        // SPBs carry NO timestamp. Inherit the last real (EPB) timestamp as a
+                        // non-authoritative fill so ordering/eviction stay monotone; `ts_known`
+                        // is false so it never defines a capture/flow time range (was: epoch 0,
+                        // which dragged the whole capture window back to 1970).
+                        ts_ns: self.last_ts_ns,
                         iface_id: 0,
                         wire_len: origlen,
                         cap_len: caplen,
                         link_type: iface.link_type,
                         is_enhanced: false,
+                        ts_known: false,
                     };
                 }
             }
@@ -483,10 +498,15 @@ impl<R: std::io::Read> PacketSource for PcapNgSource<R> {
         };
         self.pending_consume = Some(located.consume_offset);
         self.index += 1;
+        // Remember the last real timestamp so a following SPB can inherit it as its fill.
+        if located.ts_known {
+            self.last_ts_ns = located.ts_ns;
+        }
 
         Ok(Some(RawFrame {
             index,
             ts_ns: located.ts_ns,
+            ts_known: located.ts_known,
             iface_id: located.iface_id,
             wire_len: located.wire_len,
             cap_len: located.cap_len,

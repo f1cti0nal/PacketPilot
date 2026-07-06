@@ -48,6 +48,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
     let mut meta = PacketMeta {
         index: frame.index,
         ts_ns: frame.ts_ns,
+        ts_known: frame.ts_known,
         iface_id: frame.iface_id,
         wire_len: frame.wire_len,
         cap_len: frame.cap_len,
@@ -1409,6 +1410,7 @@ mod tests {
         PacketMeta {
             index: 0,
             ts_ns: 0,
+            ts_known: true,
             iface_id: 0,
             wire_len: 0,
             cap_len: 0,
@@ -1505,6 +1507,7 @@ mod tests {
         RawFrame {
             index: 7,
             ts_ns: 1_234,
+            ts_known: true,
             iface_id: 0,
             wire_len: data.len() as u32,
             cap_len: data.len() as u32,

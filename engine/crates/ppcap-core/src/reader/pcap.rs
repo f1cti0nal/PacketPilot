@@ -356,6 +356,7 @@ impl<R: std::io::Read> PacketSource for LegacyPcapSource<R> {
         Ok(Some(RawFrame {
             index,
             ts_ns,
+            ts_known: true,
             iface_id: 0,
             wire_len,
             cap_len,

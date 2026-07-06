@@ -9,6 +9,26 @@ const COLOR: Record<RepStatus, string> = {
   notfound: "var(--color-text-faint)", unavailable: "var(--color-text-faint)",
 };
 
+/** Explicit "reputation not checked" affordance for an EXTERNAL IP that carries no verdicts, so an
+ *  empty reputation is never read as "clean / benign" (mirrors the engine's "absence is never
+ *  innocence"). `configured=false` = no connectors set up (offline default); `true` = configured
+ *  but this host wasn't queried. Deliberately neutral gray — never a verdict hue. */
+export function ReputationNotChecked({ configured }: { configured: boolean }) {
+  const label = configured ? "reputation not looked up" : "reputation not checked";
+  const title = configured
+    ? "This host was not queried (quota / priority cap / lookup failure)."
+    : "No reputation connectors configured (offline) — absence is not innocence.";
+  return (
+    <span className="t-tag inline-flex items-center gap-1 text-[var(--color-text-faint)]" title={title}>
+      <span
+        aria-hidden
+        style={{ width: 6, height: 6, borderRadius: 9999, background: "var(--color-text-faint)", opacity: 0.55 }}
+      />
+      {label}
+    </span>
+  );
+}
+
 /** Compact reputation summary (worst status) that expands to the full per-provider breakdown on click. */
 export function ReputationChip({ reputation }: { reputation: ReputationVerdict[] }) {
   const [open, setOpen] = useState(false);

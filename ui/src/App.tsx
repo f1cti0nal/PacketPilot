@@ -790,6 +790,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
           threats={summary.status === "ready" ? summary.data?.summary.ip_threats ?? [] : []}
           activeIp={activeIp}
           onSelect={openThreat}
+          reputationConfigured={repEnabled}
         />
       ) : tab === "recent" ? (
         <RecentView

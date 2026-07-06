@@ -11,6 +11,7 @@ fn frame<'a>(link_type: LinkType, data: &'a [u8]) -> RawFrame<'a> {
     RawFrame {
         index: 0,
         ts_ns: 1_000,
+        ts_known: true,
         iface_id: 0,
         wire_len: data.len() as u32,
         cap_len: data.len() as u32,

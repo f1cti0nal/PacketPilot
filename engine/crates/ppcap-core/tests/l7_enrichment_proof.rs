@@ -222,6 +222,7 @@ fn decode_eth(l3: &[u8], index: u64, ts_ns: i64) -> ppcap_core::PacketMeta {
     let frame = RawFrame {
         index,
         ts_ns,
+        ts_known: true,
         iface_id: 0,
         wire_len: eth.len() as u32,
         cap_len: eth.len() as u32,

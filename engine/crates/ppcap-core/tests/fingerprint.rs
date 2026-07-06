@@ -180,6 +180,7 @@ fn assert_pipeline_parity(ch_payload: &[u8], label: &str) {
     let frame = RawFrame {
         index: 0,
         ts_ns: 1_000_000_000,
+        ts_known: true,
         iface_id: 0,
         wire_len: raw.len() as u32,
         cap_len: raw.len() as u32,
@@ -300,6 +301,7 @@ fn flow_ja3_ja4_sticky_on_subsequent_packets() {
     let frame1 = RawFrame {
         index: 0,
         ts_ns: 1_000,
+        ts_known: true,
         iface_id: 0,
         wire_len: raw1.len() as u32,
         cap_len: raw1.len() as u32,
@@ -313,6 +315,7 @@ fn flow_ja3_ja4_sticky_on_subsequent_packets() {
     let frame2 = RawFrame {
         index: 1,
         ts_ns: 2_000,
+        ts_known: true,
         iface_id: 0,
         wire_len: raw2.len() as u32,
         cap_len: raw2.len() as u32,

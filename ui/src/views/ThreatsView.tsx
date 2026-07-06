@@ -5,7 +5,7 @@ import { SEVERITY_META, SEVERITY_ORDER } from "../lib/severity";
 import { humanBytes, humanNumber } from "../lib/format";
 import { sevColor } from "../cockpit/viz";
 import { ScoreBar, IocDot, Toolbar } from "../cockpit/primitives";
-import { ReputationChip } from "../cockpit/ReputationChip";
+import { ReputationChip, ReputationNotChecked } from "../cockpit/ReputationChip";
 import { EmptyState } from "../components/state/EmptyState";
 import { cn } from "../lib/cn";
 
@@ -15,6 +15,9 @@ export interface ThreatsViewProps {
   activeIp?: string | null;
   /** Pivot into a host: opens its incident on the dashboard, or its filtered flows. */
   onSelect: (ip: string) => void;
+  /** Whether reputation connectors are configured. Drives the "not checked" vs "not looked up"
+   *  copy on external hosts that carry no verdicts (default false = offline/local mode). */
+  reputationConfigured?: boolean;
 }
 
 /** Worst-severity first, then highest score — the same ranking the old threat rail used. */
@@ -27,7 +30,7 @@ const worstFirst = (a: IpThreat, b: IpThreat) =>
  * card pivots into the host (incident on the dashboard, or filtered Flows) via `onSelect`.
  * Cards are real buttons, so the watchlist stays keyboard-navigable exactly like the old rail.
  */
-export function ThreatsView({ threats, activeIp = null, onSelect }: ThreatsViewProps) {
+export function ThreatsView({ threats, activeIp = null, onSelect, reputationConfigured = false }: ThreatsViewProps) {
   const [query, setQuery] = useState("");
 
   const sorted = useMemo(() => [...threats].sort(worstFirst), [threats]);
@@ -90,7 +93,7 @@ export function ThreatsView({ threats, activeIp = null, onSelect }: ThreatsViewP
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((t) => (
               <li key={t.ip}>
-                <ThreatCard threat={t} active={activeIp === t.ip} onSelect={onSelect} />
+                <ThreatCard threat={t} active={activeIp === t.ip} onSelect={onSelect} reputationConfigured={reputationConfigured} />
               </li>
             ))}
           </ul>
@@ -104,12 +107,15 @@ function ThreatCard({
   threat,
   active,
   onSelect,
+  reputationConfigured,
 }: {
   threat: IpThreat;
   active: boolean;
   onSelect: (ip: string) => void;
+  reputationConfigured: boolean;
 }) {
   const color = sevColor(threat.severity);
+  const external = threat.ip_class === "public" || threat.ip_class === "cgnat";
   return (
     <button
       type="button"
@@ -137,7 +143,11 @@ function ThreatCard({
         <span className="t-tag uppercase">{threat.ip_class}</span>
         <span className="font-mono-num t-tag">{humanNumber(threat.flows)} flows</span>
         <span className="font-mono-num t-tag">{humanBytes(threat.bytes)}</span>
-        {threat.reputation && threat.reputation.length > 0 && <ReputationChip reputation={threat.reputation} />}
+        {threat.reputation && threat.reputation.length > 0 ? (
+          <ReputationChip reputation={threat.reputation} />
+        ) : external ? (
+          <ReputationNotChecked configured={reputationConfigured} />
+        ) : null}
       </div>
     </button>
   );

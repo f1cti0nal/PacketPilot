@@ -164,6 +164,13 @@ pub struct FlowRecord {
     /// override it. Not persisted.
     #[serde(skip)]
     pub initiator_locked: bool,
+    /// Transient: whether the flow window (`first_ts_ns`/`last_ts_ns`) has been set by a REAL
+    /// timestamp yet. `new()` seeds the window from the first packet's ts even when that packet
+    /// is a pcapng SPB (a non-authoritative fill); this flag makes the first `ts_known` packet
+    /// OVERWRITE that seed rather than only widen it, so an SPB-first flow's window is defined by
+    /// its first real packet, not the fill (which could be epoch 0). Not persisted.
+    #[serde(skip)]
+    pub ts_window_set: bool,
     /// Most-specific payload-observed L7 hint across this flow's packets (`Unknown` until a
     /// packet carries one). Input to payload-aware classification; distinct from `app_proto`
     /// (the final label the classifier chooses from payload OR port).
@@ -225,6 +232,7 @@ impl FlowRecord {
             ttl_min_rev: 0,
             initiator: Direction::Forward,
             initiator_locked: false,
+            ts_window_set: false,
             observed_app_proto: AppProto::Unknown,
             sni: None,
             ja3: None,
@@ -258,11 +266,24 @@ impl FlowRecord {
                 self.initiator = dir;
             }
         }
-        if p.ts_ns < self.first_ts_ns {
-            self.first_ts_ns = p.ts_ns;
-        }
-        if p.ts_ns > self.last_ts_ns {
-            self.last_ts_ns = p.ts_ns;
+        // Only a REAL timestamp defines the flow window; a pcapng SPB (ts_known == false) carries
+        // a non-authoritative fill that must not zero/skew first_ts_ns/last_ts_ns. The FIRST real
+        // packet OVERWRITES the seed `new()` planted (which may be an SPB fill, even epoch 0),
+        // rather than only widening it — otherwise an SPB-first flow's first_ts_ns would stay
+        // stuck at the fill (the update path only ever moves first_ts_ns DOWN).
+        if p.ts_known {
+            if !self.ts_window_set {
+                self.first_ts_ns = p.ts_ns;
+                self.last_ts_ns = p.ts_ns;
+                self.ts_window_set = true;
+            } else {
+                if p.ts_ns < self.first_ts_ns {
+                    self.first_ts_ns = p.ts_ns;
+                }
+                if p.ts_ns > self.last_ts_ns {
+                    self.last_ts_ns = p.ts_ns;
+                }
+            }
         }
         // L7 aggregation (direction-independent: L7 is a flow property, not a direction).
         // Keep the most-specific hint seen (Http/Tls outrank Dns outrank Unknown); ties keep
@@ -446,6 +467,7 @@ mod tests {
         let base = PacketMeta {
             index: 0,
             ts_ns: 100,
+            ts_known: true,
             iface_id: 0,
             wire_len: 64,
             cap_len: 64,
@@ -512,6 +534,7 @@ mod tests {
         let base = PacketMeta {
             index: 0,
             ts_ns: 100,
+            ts_known: true,
             iface_id: 0,
             wire_len: 64,
             cap_len: 64,
