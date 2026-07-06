@@ -77,8 +77,10 @@ export interface ProtoSeg {
 /**
  * Leaf protocol partition that sums EXACTLY to total_packets. Per the engine
  * invariants (http+tls+other_tcp == tcp, dns+other_udp == udp, tcp+udp+non_ipv4
- * == packets), tls/http/dns are SUBSETS of tcp/udp — so we must never mix the
- * L4 parents and their L7 children in one denominator (that double-counts).
+ * + truncated == packets), tls/http/dns are SUBSETS of tcp/udp — so we must never
+ * mix the L4 parents and their L7 children in one denominator (that double-counts).
+ * `truncated` (undecoded frames — e.g. snaplen-clipped) are now counted in
+ * total_packets, so they get their own segment to keep the donut reconciled.
  */
 export function protoSegments(proto: ProtoCounts): ProtoSeg[] {
   const accent = cssVar("--color-accent", "#38bdf8");
@@ -93,6 +95,7 @@ export function protoSegments(proto: ProtoCounts): ProtoSeg[] {
     { key: "dns", label: "DNS", color: teal },
     { key: "other_udp", label: "Other UDP", color: violet },
     { key: "non_ipv4", label: "Non-IPv4", color: dim },
+    { key: "truncated", label: "Undecoded", color: cssVar("--color-text-dim", "#8b98a5") },
   ];
   return defs
     .map((d) => ({ ...d, value: proto[d.key] ?? 0 }))

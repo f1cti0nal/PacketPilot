@@ -43,11 +43,12 @@ fn golden_conservation_and_fidelity() {
     // The single truncated edge frame fails to decode in lenient mode.
     assert_eq!(s.decode_errors, 1, "exactly one truncated edge frame");
 
-    // 1. Every non-erroring frame was counted; total + errors == authored packets.
+    // 1. Every framed packet is counted, including the one that could not be dissected — so the
+    //    headline count equals the authored frame count (matches Wireshark). decode_errors is now
+    //    a SUBSET of total_packets, not an addend.
     assert_eq!(
-        s.total_packets + s.decode_errors,
-        m.packets_written,
-        "total_packets + decode_errors == packets_written"
+        s.total_packets, m.packets_written,
+        "total_packets == packets_written (undecoded frames are counted too)"
     );
 
     // 2. Protocol fidelity on the decoded population. The truncated frame was planned as a
@@ -66,20 +67,21 @@ fn golden_conservation_and_fidelity() {
     assert!(s.proto.tls >= m.counts.tls, "tls >= planned");
     assert!(s.proto.dns >= m.counts.dns, "dns >= planned");
 
-    // 3. Category-breakdown packets + non-IP frames reconcile to total_packets (decode errors
-    //    are not part of total_packets).
+    // 3. Category-breakdown packets + non-IP frames + undecoded frames reconcile to total_packets.
+    //    (An undecoded frame has no category/endpoints, so it is only in the decode_errors subset.)
     let cat_pkts: u64 = s.category_breakdown.iter().map(|c| c.pkts).sum();
     assert_eq!(
-        cat_pkts + s.non_ip_frames,
+        cat_pkts + s.non_ip_frames + s.decode_errors,
         s.total_packets,
-        "Σ category.pkts + non_ip_frames == total_packets"
+        "Σ category.pkts + non_ip_frames + decode_errors == total_packets"
     );
 
-    // 4. tcp + udp + non_ip == total_packets (these are the only Ok-arm increments).
+    // 4. tcp + udp + non_ip + undecoded == total_packets (tcp/udp/non_ip are the decoded arms;
+    //    an undecoded frame has no transport, so it lands only in decode_errors).
     assert_eq!(
-        s.proto.tcp + s.proto.udp + s.non_ip_frames,
+        s.proto.tcp + s.proto.udp + s.non_ip_frames + s.decode_errors,
         s.total_packets,
-        "tcp + udp + non_ip == total_packets"
+        "tcp + udp + non_ip + decode_errors == total_packets"
     );
 
     // 5. Time histogram conserves packets.
