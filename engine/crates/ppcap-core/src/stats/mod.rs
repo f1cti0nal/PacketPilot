@@ -371,9 +371,13 @@ impl StatsAccumulator {
 
     /// Record that a frame failed to decode (increments `decode_errors` and
     /// `proto.truncated`).
+    /// Record a decode failure that is NOT counted as a frame — a torn/truncated final record with
+    /// no usable header (the framing itself failed). Bumps `decode_errors` (the quality signal)
+    /// but NOT `total_packets` NOR `proto.truncated`: `proto.truncated` tracks only undecoded
+    /// frames that ARE in `total_packets` (the donut's "Undecoded" population), so it stays a
+    /// strict subset. Undecoded-but-framed frames go through `observe_undecoded_frame` instead.
     pub fn record_decode_error(&mut self) {
         self.decode_errors += 1;
-        self.proto.truncated += 1;
     }
 
     /// Fold a frame's timestamp into the capture window + per-second histogram, but only when the
@@ -1641,8 +1645,9 @@ mod tests {
         acc.record_decode_error();
         let s = acc.finish();
         assert_eq!(s.decode_errors, 2);
-        assert_eq!(s.proto.truncated, 2);
-        // decode errors do NOT inflate total_packets.
+        // A headerless torn record is NOT counted as a frame and is NOT part of the donut's
+        // undecoded population (proto.truncated tracks only undecoded frames that ARE in total).
+        assert_eq!(s.proto.truncated, 0);
         assert_eq!(s.total_packets, 0);
     }
 

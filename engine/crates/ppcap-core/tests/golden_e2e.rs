@@ -67,21 +67,23 @@ fn golden_conservation_and_fidelity() {
     assert!(s.proto.tls >= m.counts.tls, "tls >= planned");
     assert!(s.proto.dns >= m.counts.dns, "dns >= planned");
 
-    // 3. Category-breakdown packets + non-IP frames + undecoded frames reconcile to total_packets.
-    //    (An undecoded frame has no category/endpoints, so it is only in the decode_errors subset.)
+    // 3. Category-breakdown packets + non-IP frames + undecoded FRAMES reconcile to total_packets.
+    //    (An undecoded frame has no category/endpoints; it is only in the proto.truncated subset.
+    //    proto.truncated ⊆ total_packets — unlike decode_errors, which also includes a headerless
+    //    torn record that is NOT a frame.)
     let cat_pkts: u64 = s.category_breakdown.iter().map(|c| c.pkts).sum();
     assert_eq!(
-        cat_pkts + s.non_ip_frames + s.decode_errors,
+        cat_pkts + s.non_ip_frames + s.proto.truncated,
         s.total_packets,
-        "Σ category.pkts + non_ip_frames + decode_errors == total_packets"
+        "Σ category.pkts + non_ip_frames + proto.truncated == total_packets"
     );
 
-    // 4. tcp + udp + non_ip + undecoded == total_packets (tcp/udp/non_ip are the decoded arms;
-    //    an undecoded frame has no transport, so it lands only in decode_errors).
+    // 4. tcp + udp + non_ip + undecoded == total_packets (tcp/udp/non_ip are the decoded arms; an
+    //    undecoded frame has no transport, so it lands only in proto.truncated).
     assert_eq!(
-        s.proto.tcp + s.proto.udp + s.non_ip_frames + s.decode_errors,
+        s.proto.tcp + s.proto.udp + s.non_ip_frames + s.proto.truncated,
         s.total_packets,
-        "tcp + udp + non_ip + decode_errors == total_packets"
+        "tcp + udp + non_ip + proto.truncated == total_packets"
     );
 
     // 5. Time histogram conserves packets.

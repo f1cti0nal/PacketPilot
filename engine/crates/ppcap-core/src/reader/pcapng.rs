@@ -392,6 +392,9 @@ impl<R: std::io::Read> PacketSource for PcapNgSource<R> {
                     // A new section may redefine the interface table from scratch.
                     self.interfaces.clear();
                     self.primary_link_type = LinkType::Unsupported(0);
+                    // Reset the SPB timestamp fill too: an SPB early in the new section must not
+                    // inherit the PREVIOUS section's last timestamp.
+                    self.last_ts_ns = 0;
                     if let State::Active(reader) = &mut self.state {
                         reader.consume(offset);
                     }

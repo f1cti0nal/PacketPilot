@@ -354,3 +354,28 @@ fn udp_initiator_is_first_packet_when_client_sorts_high() {
     );
     assert_eq!(rec.oriented().bytes_c2s, 80);
 }
+
+#[test]
+fn spb_first_flow_window_is_defined_by_the_first_real_packet_not_the_fill() {
+    // A flow whose FIRST packet is a pcapng Simple Packet Block (ts_known=false, filled ts=0) must
+    // NOT get a 1970 first_ts_ns. `new()` is seeded from the fill (0, exactly as FlowTable does),
+    // and the first REAL packet must OVERWRITE the window — not just widen it.
+    let client = v4(10, 0, 0, 1);
+    let server = v4(10, 0, 0, 2);
+    let (key, _) = FlowKey::normalized(client, 50000, server, 443, Transport::Tcp);
+    let mut rec = FlowRecord::new(key, 0); // seeded from the SPB fill, like FlowTable::observe
+
+    let mut spb = mk(client, 50000, server, 443, Transport::Tcp, 0x02, 64, 100, 0);
+    spb.ts_known = false; // SPB carries no timestamp
+    observe_directed(&mut rec, &key, &spb);
+
+    const REAL: i64 = 1_700_000_000_000_000_000; // ~2023, not 1970
+    observe_directed(
+        &mut rec,
+        &key,
+        &mk(server, 443, client, 50000, Transport::Tcp, 0x12, 64, 200, REAL),
+    );
+    assert_eq!(rec.first_ts_ns, REAL, "window set by the first REAL packet, not the SPB fill (0)");
+    assert_eq!(rec.last_ts_ns, REAL);
+    assert_eq!(rec.total_pkts(), 2, "the SPB is still counted");
+}
