@@ -48,7 +48,7 @@ describe("ProtocolMix", () => {
     render(
       <ProtocolMix
         proto={{
-          tcp: 0, udp: 0, dns: 0, http: 0, tls: 0,
+          tcp: 0, udp: 0, dns: 0, http: 0, tls: 0, quic: 0,
           other_tcp: 0, other_udp: 0, truncated: 0, non_ipv4: 0,
         }}
       />,

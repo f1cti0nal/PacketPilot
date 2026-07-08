@@ -120,7 +120,7 @@ impl Classifier {
         //    see `decode::l7_hint`), so it must NOT fabricate "payload" provenance. DNS is
         //    instead named by the port table below, correctly recording src="port".
         let payload = match record.observed_app_proto {
-            AppProto::Http | AppProto::Tls => {
+            AppProto::Http | AppProto::Tls | AppProto::Quic | AppProto::Http3 => {
                 Some((Category::Web, record.observed_app_proto.as_str()))
             }
             AppProto::Dns | AppProto::Unknown => None,

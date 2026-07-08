@@ -175,6 +175,8 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           " " +
           (r.appProto ?? "") +
           " " +
+          // HTTP/3 flows also match a "quic" query (the donut merges them into one slice).
+          (r.appProto === "http3" ? "quic " : "") +
           (r.sni ?? "") +
           " " +
           (r.httpHost ?? "") +

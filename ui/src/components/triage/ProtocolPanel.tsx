@@ -92,6 +92,13 @@ export function ProtocolPanel({ proto, protocolHierarchy }: ProtocolPanelProps) 
         cssVar: "--color-sev-medium",
       },
       {
+        key: "quic",
+        label: "QUIC / HTTP-3",
+        count: proto.quic ?? 0, // tolerate summaries serialized before this field
+        icon: Lock,
+        cssVar: "--color-spine-cyan",
+      },
+      {
         key: "other",
         label: "Other",
         count: l7Other,
@@ -99,7 +106,7 @@ export function ProtocolPanel({ proto, protocolHierarchy }: ProtocolPanelProps) 
         cssVar: "--color-sev-none",
       },
     ],
-    [proto.dns, proto.http, proto.tls, l7Other],
+    [proto.dns, proto.http, proto.tls, proto.quic, l7Other],
   );
 
   const l7Total = useMemo(

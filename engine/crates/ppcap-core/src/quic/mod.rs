@@ -25,8 +25,125 @@ pub(crate) mod crypto;
 
 use crypto::{aes128_gcm_open, hkdf_expand_label, hkdf_extract, Aes128};
 
+/// A recognized QUIC version, parsed from the 4-byte long-header version field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuicVersion {
+    /// RFC 9000 / RFC 9001 (`0x00000001`).
+    V1,
+    /// RFC 9369 (`0x6b3343cf`).
+    V2,
+    /// An `draft-ietf-quic-transport-NN` version (`0xff0000NN`).
+    Draft(u8),
+    /// A Version Negotiation packet (version field `0x00000000`).
+    Negotiation,
+    /// Any other (forced-negotiation / experimental / future) version.
+    Other(u32),
+}
+
+impl QuicVersion {
+    fn from_u32(v: u32) -> QuicVersion {
+        match v {
+            0x0000_0000 => QuicVersion::Negotiation,
+            VERSION_1 => QuicVersion::V1,
+            VERSION_2 => QuicVersion::V2,
+            v if v & 0xffff_ff00 == 0xff00_0000 => QuicVersion::Draft((v & 0xff) as u8),
+            other => QuicVersion::Other(other),
+        }
+    }
+}
+
+/// The long-header packet type, normalized across version-specific codepoints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuicLongKind {
+    Initial,
+    ZeroRtt,
+    Handshake,
+    Retry,
+}
+
+/// The result of structurally identifying a QUIC packet from a UDP payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuicInfo {
+    pub version: QuicVersion,
+    /// The long-header packet kind, or `None` for a Version Negotiation packet
+    /// (which carries no packet type).
+    pub kind: Option<QuicLongKind>,
+}
+
+/// Map a v1-style 2-bit long packet type codepoint (RFC 9000 §17.2).
+fn v1_long_kind(bits: u8) -> QuicLongKind {
+    match bits & 0x03 {
+        0b00 => QuicLongKind::Initial,
+        0b01 => QuicLongKind::ZeroRtt,
+        0b10 => QuicLongKind::Handshake,
+        _ => QuicLongKind::Retry,
+    }
+}
+
+/// Map a v2 2-bit long packet type codepoint (RFC 9369 §3.2 remapping).
+fn v2_long_kind(bits: u8) -> QuicLongKind {
+    match bits & 0x03 {
+        0b01 => QuicLongKind::Initial,
+        0b10 => QuicLongKind::ZeroRtt,
+        0b11 => QuicLongKind::Handshake,
+        _ => QuicLongKind::Retry,
+    }
+}
+
+/// Structurally identify a QUIC packet from the UDP payload, keylessly.
+///
+/// Recognizes **long-header** packets (Initial / 0-RTT / Handshake / Retry) of a
+/// known version (v1, v2, or an `0xff0000NN` draft), and Version Negotiation
+/// packets. Short-header (1-RTT) packets cannot be identified from a single
+/// datagram without connection state, so they return `None` here — a flow that
+/// only ever shows 1-RTT packets is instead recognized once its handshake was
+/// seen, or falls back to the UDP/443 port heuristic.
+///
+/// Only accepts *recognized* versions so arbitrary UDP payloads whose first byte
+/// happens to have the high bit set are not misread as QUIC. Pure, bounded, and
+/// panic-free.
+pub(crate) fn identify_quic(udp_payload: &[u8]) -> Option<QuicInfo> {
+    let first = *udp_payload.first()?;
+    // Long header form: high bit set (RFC 9000 §17.2).
+    if first & 0x80 == 0 {
+        return None;
+    }
+    let vb = udp_payload.get(1..5)?;
+    let raw = u32::from_be_bytes([vb[0], vb[1], vb[2], vb[3]]);
+    let version = QuicVersion::from_u32(raw);
+
+    // Version Negotiation: version field is zero; no packet type, fixed bit may
+    // be unset. (RFC 9000 §17.2.1.)
+    if version == QuicVersion::Negotiation {
+        return Some(QuicInfo {
+            version,
+            kind: None,
+        });
+    }
+
+    let type_bits = (first >> 4) & 0x03;
+    let kind = match version {
+        QuicVersion::V1 | QuicVersion::Draft(_) => v1_long_kind(type_bits),
+        QuicVersion::V2 => v2_long_kind(type_bits),
+        // Unknown version: too risky to claim QUIC from a lone byte pattern.
+        QuicVersion::Other(_) | QuicVersion::Negotiation => return None,
+    };
+
+    // Real v1/v2 packets set the fixed bit (0x40); require it to keep the false
+    // positive rate near zero for unrecognized UDP traffic.
+    if first & 0x40 == 0 {
+        return None;
+    }
+    Some(QuicInfo {
+        version,
+        kind: Some(kind),
+    })
+}
+
 /// QUIC version 1 (RFC 9000 / RFC 9001).
 const VERSION_1: u32 = 0x0000_0001;
+/// QUIC version 2 (RFC 9369).
+const VERSION_2: u32 = 0x6b33_43cf;
 
 /// RFC 9001 §5.2 initial salt for QUIC v1.
 const V1_SALT: [u8; 20] = [
@@ -34,18 +151,28 @@ const V1_SALT: [u8; 20] = [
     0xcc, 0xbb, 0x7f, 0x0a,
 ];
 
+/// RFC 9369 §3.3.1 initial salt for QUIC v2.
+const V2_SALT: [u8; 20] = [
+    0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93, 0x81, 0xbe, 0x6e, 0x26, 0x9d, 0xcb,
+    0xf9, 0xbd, 0x2e, 0xd9,
+];
+
 /// Per-version derivation parameters: (initial salt, client-secret label,
-/// key label, iv label, hp label).
+/// key label, iv label). The client-secret label (`"client in"`) is unchanged
+/// in v2; only the salt and the packet-protection labels differ (RFC 9369 §3.3).
 ///
-/// Only QUIC v1 (`0x00000001`) is in scope. QUIC v2 (`0x6b3343cf`, RFC 9369)
-/// uses a different salt and `"quicv2 *"` labels; it is intentionally not
-/// implemented here (returns `None`) until it can be pinned against RFC 9369
-/// Appendix A.
+/// v1 (`0x00000001`, RFC 9001) and v2 (`0x6b3343cf`, RFC 9369) are supported.
+/// NOTE: the v2 constants are transcribed from RFC 9369 §3.3 and verified by a
+/// round-trip test here; they were not pinned against the RFC 9369 Appendix A
+/// golden vector because this build environment's network policy blocks
+/// rfc-editor.org. Any mismatch degrades gracefully to `None` (no SNI), never a
+/// panic — see `extract_initial_client_hello`.
 fn version_params(
     version: u32,
 ) -> Option<(&'static [u8], &'static str, &'static str, &'static str)> {
     match version {
         VERSION_1 => Some((&V1_SALT, "client in", "quic key", "quic iv")),
+        VERSION_2 => Some((&V2_SALT, "client in", "quicv2 key", "quicv2 iv")),
         _ => None,
     }
 }
@@ -55,6 +182,7 @@ fn version_params(
 fn hp_label(version: u32) -> Option<&'static str> {
     match version {
         VERSION_1 => Some("quic hp"),
+        VERSION_2 => Some("quicv2 hp"),
         _ => None,
     }
 }
@@ -202,9 +330,16 @@ pub(crate) fn extract_initial_client_hello(udp_payload: &[u8]) -> Option<Vec<u8>
         version_bytes[3],
     ]);
 
-    // Long packet type must be Initial. For v1 the type is bits (first>>4)&0x03,
-    // and Initial == 0b00. Reject other long-header packet types.
-    if version == VERSION_1 && (first >> 4) & 0x03 != 0 {
+    // Long packet type must be Initial. The 2-bit type codepoint is version-
+    // specific: v1 (RFC 9000 §17.2) uses Initial == 0b00; v2 (RFC 9369 §3.2)
+    // remaps Initial to 0b01. Reject other long-header packet types.
+    let type_bits = (first >> 4) & 0x03;
+    let initial_type = match version {
+        VERSION_1 => 0b00,
+        VERSION_2 => 0b01,
+        _ => return None, // unsupported version — no keys anyway
+    };
+    if type_bits != initial_type {
         return None;
     }
 
@@ -282,6 +417,117 @@ pub(crate) fn extract_initial_client_hello(udp_payload: &[u8]) -> Option<Vec<u8>
     reassemble_crypto(&plaintext)
 }
 
+/// Test-only builders for synthetic QUIC Initial packets, shared by the QUIC and
+/// decode test suites (round-trips through the real protection/derivation code).
+#[cfg(test)]
+pub(crate) mod testkit {
+    use super::*;
+    use crate::quic::crypto::aes128_gcm_seal;
+
+    /// Build a raw TLS 1.3 ClientHello (handshake bytes, first byte 0x01) with the
+    /// given SNI and ALPN list.
+    pub(crate) fn client_hello(sni: &str, alpns: &[&str]) -> Vec<u8> {
+        // SNI extension (0x0000).
+        let mut sni_ext_body = Vec::new();
+        let name = sni.as_bytes();
+        let list_len = (name.len() + 3) as u16;
+        sni_ext_body.extend_from_slice(&list_len.to_be_bytes());
+        sni_ext_body.push(0); // host_name
+        sni_ext_body.extend_from_slice(&(name.len() as u16).to_be_bytes());
+        sni_ext_body.extend_from_slice(name);
+
+        // ALPN extension (0x0010).
+        let mut alpn_protos = Vec::new();
+        for a in alpns {
+            alpn_protos.push(a.len() as u8);
+            alpn_protos.extend_from_slice(a.as_bytes());
+        }
+        let mut alpn_ext_body = Vec::new();
+        alpn_ext_body.extend_from_slice(&(alpn_protos.len() as u16).to_be_bytes());
+        alpn_ext_body.extend_from_slice(&alpn_protos);
+
+        // supported_versions (0x002b) advertising TLS 1.3.
+        let sv_body = [0x02u8, 0x03, 0x04];
+
+        let mut exts = Vec::new();
+        let push_ext = |exts: &mut Vec<u8>, ty: u16, body: &[u8]| {
+            exts.extend_from_slice(&ty.to_be_bytes());
+            exts.extend_from_slice(&(body.len() as u16).to_be_bytes());
+            exts.extend_from_slice(body);
+        };
+        push_ext(&mut exts, 0x0000, &sni_ext_body);
+        push_ext(&mut exts, 0x0010, &alpn_ext_body);
+        push_ext(&mut exts, 0x002b, &sv_body);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0x03, 0x03]); // client_version TLS 1.2
+        body.extend_from_slice(&[0x11; 32]); // random
+        body.push(0); // session_id len
+        body.extend_from_slice(&2u16.to_be_bytes()); // cipher_suites len
+        body.extend_from_slice(&[0x13, 0x01]); // TLS_AES_128_GCM_SHA256
+        body.push(1); // compression methods len
+        body.push(0); // null
+        body.extend_from_slice(&(exts.len() as u16).to_be_bytes());
+        body.extend_from_slice(&exts);
+
+        let mut hs = vec![0x01u8]; // ClientHello
+        hs.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..4]);
+        hs.extend_from_slice(&body);
+        hs
+    }
+
+    /// Build a protected QUIC Initial packet carrying `handshake`, under `version`,
+    /// keyed from `dcid`. This is the exact inverse of `extract_initial_client_hello`:
+    /// derive keys → CRYPTO-frame + PADDING → seal → apply header protection.
+    pub(crate) fn protected_initial(version: u32, dcid: &[u8], handshake: &[u8]) -> Vec<u8> {
+        let (key, iv, hp) =
+            derive_client_initial_keys(version, dcid).expect("keys for supported version");
+
+        // Plaintext: one CRYPTO frame (type 0x06, offset 0, len varint, data) then
+        // PADDING (zero bytes) so the packet is comfortably longer than the sample.
+        let mut plaintext = vec![0x06u8, 0x00];
+        // 2-byte varint length (valid for < 16384).
+        plaintext.push(0x40 | ((handshake.len() >> 8) as u8));
+        plaintext.push((handshake.len() & 0xff) as u8);
+        plaintext.extend_from_slice(handshake);
+        while plaintext.len() < 64 {
+            plaintext.push(0x00);
+        }
+
+        let pn_len = 1usize;
+        let type_bits: u8 = if version == VERSION_2 { 0b01 } else { 0b00 };
+        let first = 0x80 | 0x40 | (type_bits << 4) | ((pn_len as u8) - 1);
+
+        let mut hdr = vec![first];
+        hdr.extend_from_slice(&version.to_be_bytes());
+        hdr.push(dcid.len() as u8);
+        hdr.extend_from_slice(dcid);
+        hdr.push(0); // scid len 0
+        hdr.push(0x00); // token len varint 0
+        let length = pn_len + plaintext.len() + 16; // pn + ciphertext + tag
+        hdr.push(0x40 | ((length >> 8) as u8));
+        hdr.push((length & 0xff) as u8);
+        let pn_offset = hdr.len();
+        hdr.push(0x00); // packet number = 0 (1 byte)
+
+        // AAD is the header with unprotected first byte + PN; nonce = iv (PN=0).
+        let ct_and_tag = aes128_gcm_seal(&key, &iv, &hdr, &plaintext);
+
+        let mut pkt = hdr;
+        pkt.extend_from_slice(&ct_and_tag);
+
+        // Apply header protection: sample at pn_offset+4.
+        let sample_start = pn_offset + 4;
+        let sample: [u8; 16] = pkt[sample_start..sample_start + 16].try_into().unwrap();
+        let mask = Aes128::new(&hp).encrypt_block(&sample);
+        pkt[0] ^= mask[0] & 0x0f;
+        for i in 0..pn_len {
+            pkt[pn_offset + i] ^= mask[1 + i];
+        }
+        pkt
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,12 +557,16 @@ mod tests {
         assert_eq!(to_hex(&hp), "9f50449e04a0e810283a1e9933adedd2", "hp");
     }
 
-    /// Unsupported version (e.g. v2 0x6b3343cf) yields no keys.
+    /// Unsupported versions (Version Negotiation, a draft, an experimental value)
+    /// yield no keys. v1 and v2 are the supported versions.
     #[test]
     fn derive_client_initial_keys_rejects_unknown_version() {
         let dcid = hex("8394c8f03e515708");
-        assert_eq!(derive_client_initial_keys(0x6b33_43cf, &dcid), None);
         assert_eq!(derive_client_initial_keys(0x0000_0000, &dcid), None);
+        assert_eq!(derive_client_initial_keys(0xff00_001d, &dcid), None);
+        assert_eq!(derive_client_initial_keys(0xdead_beef, &dcid), None);
+        // v2 is now supported (derivation succeeds).
+        assert!(derive_client_initial_keys(VERSION_2, &dcid).is_some());
     }
 
     /// QUIC varint decoding across all four length prefixes (RFC 9000 §16).
@@ -538,5 +788,118 @@ mod tests {
         let last = pkt.len() - 1;
         pkt[last] ^= 0x01;
         assert_eq!(extract_initial_client_hello(&pkt), None);
+    }
+
+    // ── Structural identification (identify_quic) ────────────────────────────
+
+    #[test]
+    fn identify_quic_recognizes_versions_and_types() {
+        // v1 Initial (0xC0 = long+fixed, type 0b00), version 1.
+        let v1_initial = [0xc0, 0x00, 0x00, 0x00, 0x01, 0x00];
+        assert_eq!(
+            identify_quic(&v1_initial),
+            Some(QuicInfo {
+                version: QuicVersion::V1,
+                kind: Some(QuicLongKind::Initial),
+            })
+        );
+        // v2 Initial: type codepoint 0b01 (RFC 9369), first byte 0xD0.
+        let v2_initial = [0xd0, 0x6b, 0x33, 0x43, 0xcf, 0x00];
+        assert_eq!(
+            identify_quic(&v2_initial),
+            Some(QuicInfo {
+                version: QuicVersion::V2,
+                kind: Some(QuicLongKind::Initial),
+            })
+        );
+        // v1 Handshake (type 0b10 → 0xE0).
+        let v1_hs = [0xe0, 0x00, 0x00, 0x00, 0x01, 0x00];
+        assert_eq!(
+            identify_quic(&v1_hs).unwrap().kind,
+            Some(QuicLongKind::Handshake)
+        );
+        // Version Negotiation (version 0): kind None, still QUIC.
+        let vneg = [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00];
+        assert_eq!(
+            identify_quic(&vneg),
+            Some(QuicInfo {
+                version: QuicVersion::Negotiation,
+                kind: None,
+            })
+        );
+        // A draft version (0xff00001d) maps with v1-style types.
+        let draft = [0xc0, 0xff, 0x00, 0x00, 0x1d, 0x00];
+        assert_eq!(
+            identify_quic(&draft).unwrap().version,
+            QuicVersion::Draft(0x1d)
+        );
+    }
+
+    #[test]
+    fn identify_quic_rejects_non_quic() {
+        // Short header (high bit clear) — not identifiable from one datagram.
+        assert_eq!(identify_quic(&[0x40, 0x00, 0x00, 0x00, 0x01]), None);
+        // Long header but unknown version → not claimed as QUIC.
+        assert_eq!(identify_quic(&[0xc0, 0xde, 0xad, 0xbe, 0xef, 0x00]), None);
+        // Long header, known version, but fixed bit clear → rejected.
+        assert_eq!(identify_quic(&[0x80, 0x00, 0x00, 0x00, 0x01, 0x00]), None);
+        // A DNS-looking UDP payload (first byte 0x00) → not QUIC.
+        assert_eq!(identify_quic(&[0x00, 0x01, 0x02, 0x03, 0x04]), None);
+        assert_eq!(identify_quic(&[]), None);
+    }
+
+    // ── v1/v2 Initial round-trip (build → protect → extract) ─────────────────
+
+    fn roundtrip_recovers_sni_alpn(version: u32) {
+        let dcid = hex("8394c8f03e515708");
+        let ch = testkit::client_hello("quic.example.net", &["h3", "h3-29"]);
+        let pkt = testkit::protected_initial(version, &dcid, &ch);
+
+        // identify_quic must classify it as an Initial of the right version.
+        let info = identify_quic(&pkt).expect("must identify as QUIC");
+        assert_eq!(info.kind, Some(QuicLongKind::Initial));
+
+        // Extraction recovers the exact handshake bytes.
+        let recovered = extract_initial_client_hello(&pkt).expect("must decrypt Initial");
+        assert_eq!(recovered, ch, "recovered handshake must match the input");
+
+        // Wrapped in a record, the fingerprint parser recovers SNI + ALPN.
+        let mut record = vec![22u8, 0x03, 0x03];
+        record.extend_from_slice(&(recovered.len() as u16).to_be_bytes());
+        record.extend_from_slice(&recovered);
+        let fp = crate::fingerprint::fingerprint_tls_client_hello(
+            &record,
+            crate::fingerprint::Ja4Transport::Quic,
+        )
+        .expect("fingerprint must parse the recovered ClientHello");
+        assert_eq!(fp.sni.as_deref(), Some("quic.example.net"));
+        assert!(fp.alpn.iter().any(|a| a == "h3"), "ALPN must include h3");
+        assert!(fp.ja4.starts_with('q'), "QUIC JA4 must start with 'q'");
+    }
+
+    #[test]
+    fn v1_initial_roundtrip() {
+        roundtrip_recovers_sni_alpn(VERSION_1);
+    }
+
+    /// QUIC v2 (RFC 9369) keyless Initial: build → protect → extract round-trips,
+    /// recovering SNI + ALPN. This exercises the v2 salt/labels and the v2 Initial
+    /// packet-type codepoint. (Round-trip self-consistency; see the version_params
+    /// note re: the Appendix A golden vector being unreachable in this sandbox.)
+    #[test]
+    fn v2_initial_roundtrip() {
+        roundtrip_recovers_sni_alpn(VERSION_2);
+    }
+
+    /// v2 keys must differ from v1 keys for the same DCID (proves the salt/labels
+    /// actually changed rather than silently reusing v1).
+    #[test]
+    fn v2_keys_differ_from_v1() {
+        let dcid = hex("8394c8f03e515708");
+        let v1 = derive_client_initial_keys(VERSION_1, &dcid).unwrap();
+        let v2 = derive_client_initial_keys(VERSION_2, &dcid).unwrap();
+        assert_ne!(v1.0, v2.0, "v2 key must differ from v1");
+        assert_ne!(v1.1, v2.1, "v2 iv must differ from v1");
+        assert_ne!(v1.2, v2.2, "v2 hp must differ from v1");
     }
 }
