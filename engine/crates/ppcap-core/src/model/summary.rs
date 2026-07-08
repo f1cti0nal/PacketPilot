@@ -268,6 +268,11 @@ pub struct CarvedFile {
     /// executable"]`). Empty when nothing matched.
     #[serde(default)]
     pub signatures: Vec<String>,
+    /// Local filesystem path the decoded body was written to when opt-in extraction (`--carve-dir`)
+    /// is enabled; `None` otherwise (the default — no bytes retained). Serde-default so older
+    /// summaries without the field still deserialize.
+    #[serde(default)]
+    pub extracted_path: Option<String>,
 }
 
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.

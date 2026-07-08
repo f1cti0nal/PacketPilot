@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::path::PathBuf;
 
 use crate::analyze::Sha256 as Sha256Stream;
 use crate::model::packet::{PacketMeta, Transport};
@@ -78,6 +79,9 @@ pub(crate) struct CarveObservation {
     pub known_bad: bool,
     /// Content signatures the body matched, streamed alongside the hash (no bytes retained).
     pub signatures: Vec<SigHit>,
+    /// Local filesystem path the decoded body was written to, when opt-in extraction
+    /// (`--carve-dir`) is enabled; `None` otherwise (the default — no bytes retained).
+    pub extracted_path: Option<String>,
 }
 
 /// Embedded known-bad SHA-256 set. Deliberately tiny and curated (the EICAR anti-malware test file
@@ -291,9 +295,153 @@ impl SigScanner {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Opt-in artifact extraction (carve-to-disk)
+// ---------------------------------------------------------------------------------------------
+//
+// Off by default: the carver otherwise retains no body bytes (O(1) per flow). When a caller passes
+// an output directory (`--carve-dir`), each *decoded* download body is teed — the same bytes the
+// hasher and scanner see — to a per-flow temp file, then atomically renamed to `<sha256>[.<ext>]`
+// once the body completes and its hash is known. A gap-aborted, oversized, or otherwise abandoned
+// carve leaves no file behind (the temp file is deleted on drop). Memory stays O(1): bytes go to
+// disk, not RAM.
+
+/// Owns the output directory and hands out one [`ExtractSink`] per download. Held by the carver.
+pub(crate) struct Extractor {
+    dir: PathBuf,
+    /// Monotonic temp-file counter (the engine has no clock/RNG) → unique temp names.
+    seq: u64,
+}
+
+impl Extractor {
+    fn new(dir: PathBuf) -> std::io::Result<Extractor> {
+        std::fs::create_dir_all(&dir)?;
+        Ok(Extractor { dir, seq: 0 })
+    }
+
+    /// Open a fresh temp file for one download. `None` (extraction silently skipped for this file,
+    /// hashing still proceeds) if the file can't be created.
+    fn open_tmp(&mut self) -> Option<ExtractSink> {
+        self.seq += 1;
+        let tmp_path = self.dir.join(format!(".ppcap-carve-{}.tmp", self.seq));
+        let file = std::fs::File::create(&tmp_path).ok()?;
+        Some(ExtractSink {
+            tmp_path,
+            writer: Some(std::io::BufWriter::new(file)),
+            failed: false,
+            committed: false,
+        })
+    }
+}
+
+/// One in-flight extraction: a temp file the decoded body streams into, renamed to its content hash
+/// on completion. If dropped without a successful `commit`, the temp file is removed — so an aborted
+/// or oversized carve never leaves a partial file on disk.
+struct ExtractSink {
+    tmp_path: PathBuf,
+    /// `None` after `commit` takes (and closes) it. `Option` so we can close the file *before*
+    /// renaming — a still-open handle blocks rename on Windows.
+    writer: Option<std::io::BufWriter<std::fs::File>>,
+    /// A write error occurred → don't claim an extracted file (Drop removes the temp).
+    failed: bool,
+    /// `commit` renamed the temp away → Drop must not try to delete it.
+    committed: bool,
+}
+
+impl ExtractSink {
+    fn write(&mut self, bytes: &[u8]) {
+        use std::io::Write;
+        if self.failed {
+            return;
+        }
+        if let Some(w) = self.writer.as_mut() {
+            if w.write_all(bytes).is_err() {
+                self.failed = true;
+            }
+        }
+    }
+
+    /// Flush, close, and atomically rename the temp file to `<hash_hex>[.<ext>][.quarantine]`.
+    /// Returns the final path, or `None` (leaving the temp for Drop to clean up) on any I/O error.
+    /// A known-bad or signature-suspicious body gets a `.quarantine` suffix so it won't launch on a
+    /// double-click.
+    fn commit(mut self, hash_hex: &str, ext: &str, quarantine: bool) -> Option<String> {
+        use std::io::Write;
+        if self.failed {
+            return None;
+        }
+        // Flush + close the file (drop the writer) before renaming, for Windows compatibility.
+        match self.writer.take() {
+            Some(mut w) => {
+                if w.flush().is_err() {
+                    return None;
+                }
+                // `w` (and its file handle) drops here, closing the file before the rename below.
+            }
+            None => return None,
+        }
+        let mut name = String::with_capacity(hash_hex.len() + 16);
+        name.push_str(hash_hex);
+        if !ext.is_empty() {
+            name.push('.');
+            name.push_str(ext);
+        }
+        if quarantine {
+            name.push_str(".quarantine");
+        }
+        let final_path = self.tmp_path.with_file_name(name);
+        if std::fs::rename(&self.tmp_path, &final_path).is_err() {
+            return None;
+        }
+        self.committed = true;
+        Some(final_path.to_string_lossy().into_owned())
+    }
+}
+
+impl Drop for ExtractSink {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = std::fs::remove_file(&self.tmp_path);
+        }
+    }
+}
+
+/// File extension for a carved body, inferred from its file-type magic signature (the first that
+/// matched); `"bin"` when the type is unrecognized. Extension only — the analyst gets the real
+/// bytes regardless.
+fn file_ext_for(hits: &[SigHit]) -> &'static str {
+    for h in hits {
+        if let Some(e) = ext_for_label(h.label) {
+            return e;
+        }
+    }
+    "bin"
+}
+
+/// Map a file-type-magic signature label to a conventional extension (`None` for non-file-type
+/// labels such as suspicious content markers).
+fn ext_for_label(label: &str) -> Option<&'static str> {
+    Some(match label {
+        "PE/DOS executable" => "exe",
+        "ELF executable" => "elf",
+        "Mach-O executable" => "macho",
+        "Java class file" => "class",
+        "ZIP/Office archive" => "zip",
+        "PDF document" => "pdf",
+        "gzip archive" => "gz",
+        "7-Zip archive" => "7z",
+        "RAR archive" => "rar",
+        "OLE2 document (legacy Office/MSI)" => "ole",
+        "Windows shortcut (.lnk)" => "lnk",
+        "Microsoft Cabinet" => "cab",
+        _ => return None,
+    })
+}
+
 /// Write sink that streams response-body plaintext through the SHA-256 + signature scanner, bounded
 /// by `MAX_BODY`. Owned by the content decoder, so decompressed output is hashed + scanned as it is
-/// produced — the body is never buffered (preserving the carver's O(1)-per-flow invariant).
+/// produced — the body is never buffered (preserving the carver's O(1)-per-flow invariant). When
+/// opt-in extraction is enabled it also tees those same decoded bytes to `extract` (a temp file).
 struct CarveSink {
     hasher: Sha256Stream,
     scanner: SigScanner,
@@ -302,15 +450,18 @@ struct CarveSink {
     /// recorded under the hash of a truncated prefix (matching the "skip oversized, never hash wrong
     /// bytes" policy).
     overflow: bool,
+    /// Opt-in carve-to-disk target; `None` (the default) retains no bytes.
+    extract: Option<ExtractSink>,
 }
 
 impl CarveSink {
-    fn new() -> CarveSink {
+    fn with_extract(extract: Option<ExtractSink>) -> CarveSink {
         CarveSink {
             hasher: Sha256Stream::new(),
             scanner: SigScanner::new(),
             size: 0,
             overflow: false,
+            extract,
         }
     }
     fn feed(&mut self, bytes: &[u8]) {
@@ -321,6 +472,9 @@ impl CarveSink {
         let take = bytes.len().min(room);
         self.hasher.update(&bytes[..take]);
         self.scanner.feed(&bytes[..take]);
+        if let Some(es) = self.extract.as_mut() {
+            es.write(&bytes[..take]);
+        }
         self.size += take as u64;
     }
 }
@@ -347,10 +501,10 @@ struct Inflate {
 }
 
 impl Inflate {
-    fn new() -> Inflate {
+    fn new(extract: Option<ExtractSink>) -> Inflate {
         Inflate {
             dec: flate2::Decompress::new(true), // expect a zlib header (HTTP "deflate")
-            sink: CarveSink::new(),
+            sink: CarveSink::with_extract(extract),
             ended: false,
             errored: false,
         }
@@ -402,11 +556,13 @@ enum Decode {
 }
 
 impl Decode {
-    fn new(enc: Encoding) -> Decode {
+    fn new(enc: Encoding, extract: Option<ExtractSink>) -> Decode {
         match enc {
-            Encoding::Identity => Decode::Plain(CarveSink::new()),
-            Encoding::Gzip => Decode::Gzip(flate2::write::GzDecoder::new(CarveSink::new())),
-            Encoding::Deflate => Decode::Deflate(Inflate::new()),
+            Encoding::Identity => Decode::Plain(CarveSink::with_extract(extract)),
+            Encoding::Gzip => Decode::Gzip(flate2::write::GzDecoder::new(CarveSink::with_extract(
+                extract,
+            ))),
+            Encoding::Deflate => Decode::Deflate(Inflate::new(extract)),
         }
     }
     /// Feed de-framed body bytes. Returns `false` if the decoder errored (malformed compression).
@@ -579,8 +735,21 @@ impl CarveState {
     }
 
     /// Place a server payload at its sequence offset and fold the in-order fresh bytes. Returns a
-    /// completed [`CarveObservation`] when the declared body length is reached.
+    /// completed [`CarveObservation`] when the declared body length is reached. Hash-only (no
+    /// extraction); [`CarveState::feed_ex`] is the extraction-aware variant.
+    #[cfg(test)]
     fn feed(&mut self, seq: u32, payload: &[u8]) -> Option<CarveObservation> {
+        self.feed_ex(seq, payload, None)
+    }
+
+    /// As [`feed`], but tees each completed download's decoded body to a local file when `extract`
+    /// is `Some` (opt-in carve-to-disk).
+    fn feed_ex(
+        &mut self,
+        seq: u32,
+        payload: &[u8],
+        extract: Option<&mut Extractor>,
+    ) -> Option<CarveObservation> {
         if self.done() || payload.is_empty() {
             return None;
         }
@@ -604,17 +773,22 @@ impl CarveState {
         let skip = (self.consumed - off) as usize;
         let fresh = &payload[skip..];
         self.consumed = end;
-        self.consume(fresh)
+        self.consume(fresh, extract)
     }
 
     /// Route in-order fresh bytes: into the header buffer until the CRLFCRLF terminator, then into
-    /// the body hasher.
-    fn consume(&mut self, bytes: &[u8]) -> Option<CarveObservation> {
+    /// the body hasher. `extract` is consumed at header-parse time to open the carve-to-disk temp
+    /// file (only for a response that actually carries a body).
+    fn consume(
+        &mut self,
+        bytes: &[u8],
+        extract: Option<&mut Extractor>,
+    ) -> Option<CarveObservation> {
         if self.body.is_none() {
             self.head.extend_from_slice(bytes);
             match find_crlfcrlf(&self.head) {
                 Some(pos) => {
-                    let plan = parse_response_headers(&self.head[..pos]);
+                    let plan = parse_response_headers(&self.head[..pos], extract);
                     // Any bytes already past the header terminator are the start of the body.
                     let body_head: Vec<u8> = self.head[pos + 4..].to_vec();
                     self.head = Vec::new();
@@ -673,7 +847,7 @@ impl CarveState {
             return None;
         }
         // Body complete — flush the decoder and recover the hash + size + signatures.
-        let sink = match p.decode.take()?.finish() {
+        let mut sink = match p.decode.take()?.finish() {
             Some(s) => s,
             None => {
                 self.aborted = true;
@@ -688,13 +862,25 @@ impl CarveState {
             return None; // an empty decoded body is not a file
         }
         let sha256 = sink.hasher.finalize_bytes();
+        let signatures = sink.scanner.hits();
+        let kb = known_bad(&sha256);
+        // Commit the extracted file (if extraction was enabled): rename the temp to <sha256>.<ext>,
+        // quarantine-suffixed when known-bad or signature-suspicious. `None` (extraction off, or an
+        // I/O failure) leaves no path — the temp, if any, is removed on drop.
+        let quarantine = kb || signatures.iter().any(|s| s.suspicious);
+        let ext = file_ext_for(&signatures);
+        let extracted_path = sink
+            .extract
+            .take()
+            .and_then(|es| es.commit(&crate::analyze::hex_of(&sha256), ext, quarantine));
         Some(CarveObservation {
             client: self.client,
             server: self.server,
             sha256,
             size: sink.size,
-            known_bad: known_bad(&sha256),
-            signatures: sink.scanner.hits(),
+            known_bad: kb,
+            signatures,
+            extracted_path,
         })
     }
 }
@@ -703,6 +889,8 @@ impl CarveState {
 pub(crate) struct HttpBodyCarver {
     states: HashMap<(IpAddr, u16, IpAddr, u16), CarveState>,
     observations: Vec<CarveObservation>,
+    /// Opt-in carve-to-disk. `None` (the default) retains no body bytes.
+    extract: Option<Extractor>,
 }
 
 impl HttpBodyCarver {
@@ -710,7 +898,18 @@ impl HttpBodyCarver {
         HttpBodyCarver {
             states: HashMap::new(),
             observations: Vec::new(),
+            extract: None,
         }
+    }
+
+    /// A carver that also extracts each carved HTTP download's decoded body to `dir` (created if
+    /// absent). Errors only if the directory can't be created.
+    pub(crate) fn with_extraction(dir: PathBuf) -> std::io::Result<HttpBodyCarver> {
+        Ok(HttpBodyCarver {
+            states: HashMap::new(),
+            observations: Vec::new(),
+            extract: Some(Extractor::new(dir)?),
+        })
     }
 
     /// Fold one decoded packet. Cheap on the common path (returns immediately unless this is a TCP
@@ -750,7 +949,7 @@ impl HttpBodyCarver {
         }
         let done = if let Some(st) = self.states.get_mut(&key) {
             st.last_ts = meta.ts_ns;
-            if let Some(obs) = st.feed(seq, payload) {
+            if let Some(obs) = st.feed_ex(seq, payload, self.extract.as_mut()) {
                 if self.observations.len() < MAX_OBSERVATIONS {
                     self.observations.push(obs);
                 }
@@ -798,7 +997,7 @@ fn find_crlfcrlf(buf: &[u8]) -> Option<usize> {
 /// body that is empty or over the size cap. The body is de-framed (Content-Length or chunked) and
 /// content-decoded (gzip/deflate) on the fly, so a chunked or compressed download is still carved on
 /// its real bytes.
-fn parse_response_headers(head: &[u8]) -> Option<BodyPlan> {
+fn parse_response_headers(head: &[u8], extract: Option<&mut Extractor>) -> Option<BodyPlan> {
     if is_bodyless(head) {
         return None;
     }
@@ -811,9 +1010,12 @@ fn parse_response_headers(head: &[u8]) -> Option<BodyPlan> {
         }
         Framing::Length(content_len)
     };
+    // Only now — once we know this response really carries a carveable body — open a temp file (when
+    // extraction is enabled), so bodyless/undelimitable responses never create files.
+    let sink = extract.and_then(|e| e.open_tmp());
     Some(BodyPlan {
         framing,
-        decode: Some(Decode::new(content_encoding(head))),
+        decode: Some(Decode::new(content_encoding(head), sink)),
     })
 }
 
@@ -1752,5 +1954,155 @@ mod tests {
             "completed carve's slot is reclaimed"
         );
         assert_eq!(carver.observations.len(), 1, "the download was carved");
+    }
+
+    // --- opt-in artifact extraction (carve-to-disk) ---
+
+    /// A fresh, empty scratch directory unique to `name` (tests run in parallel; names are unique).
+    fn tmp_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ppcap-carve-test-{name}"));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("create scratch dir");
+        d
+    }
+
+    /// The files present in `dir` (excluding the transient `.ppcap-carve-*.tmp` temp files).
+    fn extracted_files(dir: &std::path::Path) -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .map(|rd| {
+                rd.filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| {
+                        !p.file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| n.starts_with(".ppcap-carve-"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The default (no `--carve-dir`) run writes nothing and reports no path.
+    #[test]
+    fn extraction_is_off_by_default() {
+        let body = b"a plain download body";
+        let mut resp =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
+        resp.extend_from_slice(body);
+        let obs = state().feed(1000, &resp).expect("carved");
+        assert!(
+            obs.extracted_path.is_none(),
+            "no path when extraction is off"
+        );
+    }
+
+    /// A plain download is written to disk and the on-disk bytes hash to exactly the reported SHA-256.
+    #[test]
+    fn extracts_a_plain_download_to_its_content_hash() {
+        let dir = tmp_dir("plain");
+        let mut ex = Extractor::new(dir.clone()).unwrap();
+        let body = b"the exact bytes of a carved download, verbatim on disk";
+        let mut resp =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
+        resp.extend_from_slice(body);
+
+        let obs = state().feed_ex(1000, &resp, Some(&mut ex)).expect("carved");
+        let path = obs.extracted_path.expect("extracted path");
+        let on_disk = std::fs::read(&path).expect("read extracted file");
+        assert_eq!(on_disk, body, "on-disk bytes are the file's bytes");
+        assert_eq!(
+            sha256_hex(&on_disk),
+            hex_of(&obs.sha256),
+            "on-disk hash == reported hash"
+        );
+        // The filename is the content hash (no known extension → .bin).
+        assert!(path.ends_with(&format!("{}.bin", hex_of(&obs.sha256))));
+        assert_eq!(extracted_files(&dir).len(), 1, "exactly one file written");
+    }
+
+    /// A gzip-compressed download is written DECODED (its real bytes), hashing to the reported hash.
+    #[test]
+    fn extracts_the_decoded_bytes_of_a_gzip_download() {
+        let dir = tmp_dir("gzip");
+        let mut ex = Extractor::new(dir.clone()).unwrap();
+        let body = b"MZ\x90\x00 a benign PE-shaped payload delivered gzip-compressed on the wire";
+        let gz = {
+            use std::io::Write;
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            e.write_all(body).unwrap();
+            e.finish().unwrap()
+        };
+        let mut resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Encoding: gzip\r\n\r\n",
+            gz.len()
+        )
+        .into_bytes();
+        resp.extend_from_slice(&gz);
+
+        let obs = state().feed_ex(1000, &resp, Some(&mut ex)).expect("carved");
+        let path = obs.extracted_path.expect("extracted path");
+        let on_disk = std::fs::read(&path).expect("read extracted file");
+        assert_eq!(
+            on_disk, body,
+            "the DECODED (decompressed) bytes are on disk"
+        );
+        assert_eq!(sha256_hex(&on_disk), hex_of(&obs.sha256));
+        // PE magic ("MZ") → .exe extension.
+        assert!(path.ends_with(".exe"), "PE magic → .exe, got {path}");
+    }
+
+    /// A chunked download reassembled across packets is de-chunked on disk.
+    #[test]
+    fn extracts_a_chunked_download_dechunked() {
+        let dir = tmp_dir("chunked");
+        let mut ex = Extractor::new(dir.clone()).unwrap();
+        let mut st = state();
+        let p1 = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel";
+        let p2 = b"lo\r\n6\r\n world\r\n0\r\n\r\n";
+        assert!(st.feed_ex(1000, p1, Some(&mut ex)).is_none());
+        let obs = st
+            .feed_ex(1000 + p1.len() as u32, p2, Some(&mut ex))
+            .expect("carved");
+        let on_disk = std::fs::read(obs.extracted_path.unwrap()).unwrap();
+        assert_eq!(on_disk, b"hello world", "de-chunked bytes on disk");
+        assert_eq!(sha256_hex(&on_disk), hex_of(&obs.sha256));
+    }
+
+    /// A known-bad download (EICAR) is written with a `.quarantine` suffix so it can't be launched
+    /// by a double-click.
+    #[test]
+    fn quarantines_a_known_bad_download() {
+        let dir = tmp_dir("quarantine");
+        let mut ex = Extractor::new(dir.clone()).unwrap();
+        let eicar = br#"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"#;
+        let mut resp =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", eicar.len()).into_bytes();
+        resp.extend_from_slice(eicar);
+        let obs = state().feed_ex(1000, &resp, Some(&mut ex)).expect("carved");
+        assert!(obs.known_bad);
+        let path = obs.extracted_path.expect("extracted");
+        assert!(
+            path.ends_with(".quarantine"),
+            "known-bad file is quarantine-suffixed, got {path}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), eicar);
+    }
+
+    /// A gap-aborted carve leaves NO file on disk — not even the partial temp — once the state drops.
+    #[test]
+    fn a_gap_aborted_carve_leaves_no_file() {
+        let dir = tmp_dir("gap");
+        let mut ex = Extractor::new(dir.clone()).unwrap();
+        let head = b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nhel";
+        let mut st = state();
+        st.feed_ex(1000, head, Some(&mut ex));
+        // A 2-byte gap (lost segment) → the carve aborts.
+        let gapped = 1000 + head.len() as u32 + 2;
+        assert!(st.feed_ex(gapped, b"world", Some(&mut ex)).is_none());
+        assert!(st.aborted);
+        drop(st); // dropping the state removes the temp file
+        assert!(
+            extracted_files(&dir).is_empty() && std::fs::read_dir(&dir).unwrap().next().is_none(),
+            "no file (not even a temp) remains after an aborted carve"
+        );
     }
 }

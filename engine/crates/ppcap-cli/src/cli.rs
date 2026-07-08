@@ -54,6 +54,10 @@ pub enum Command {
         /// Local IOC threat-feed JSON (offline enrichment); omit => no enrichment.
         #[arg(long = "threat-feed")]
         threat_feed: Option<PathBuf>,
+        /// Opt-in: extract each carved cleartext HTTP download to this directory (`<sha256>.<ext>`;
+        /// known-bad/suspicious files get a `.quarantine` suffix). Off by default — no bytes written.
+        #[arg(long = "carve-dir")]
+        carve_dir: Option<PathBuf>,
         /// Export behavioral findings as CSV to this path.
         #[arg(long)]
         csv: Option<PathBuf>,
@@ -135,6 +139,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             hash,
             quiet,
             threat_feed,
+            carve_dir,
             csv,
             stix,
             reputation,
@@ -160,6 +165,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 hash_source: hash,
                 flows_parquet: parquet.clone(),
                 threat_feed: threat_feed.clone(),
+                carve_dir: carve_dir.clone(),
                 writer: ppcap_core::columnar::WriterConfig {
                     capture_id: fnv1a64(input.to_string_lossy().as_bytes()),
                     ..Default::default()

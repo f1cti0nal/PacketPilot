@@ -414,7 +414,13 @@ impl StatsAccumulator {
     /// histograms so `total_packets` matches Wireshark's frame count, while still bumping
     /// `decode_errors`/`proto.truncated` as a separate quality signal. An undecoded frame has no
     /// known endpoints/transport/TTL, so it enters none of those partitions.
-    pub fn observe_undecoded_frame(&mut self, wire_len: u32, cap_len: u32, ts_ns: i64, ts_known: bool) {
+    pub fn observe_undecoded_frame(
+        &mut self,
+        wire_len: u32,
+        cap_len: u32,
+        ts_ns: i64,
+        ts_known: bool,
+    ) {
         self.total_packets += 1;
         self.total_bytes += u64::from(wire_len);
         self.captured_bytes += u64::from(cap_len);
@@ -1512,12 +1518,19 @@ mod tests {
         let s = acc.finish();
         assert_eq!(s.total_packets, 2, "both packets counted");
         assert_eq!(s.total_bytes, 300);
-        assert_eq!(s.first_ts_ns, Some(1_700_000_000_000_000_000), "range ignores the unknown-ts frame");
+        assert_eq!(
+            s.first_ts_ns,
+            Some(1_700_000_000_000_000_000),
+            "range ignores the unknown-ts frame"
+        );
         assert_eq!(s.last_ts_ns, Some(1_700_000_000_000_000_000));
         assert_eq!(s.duration_ns, 0);
         // Only the real-ts packet is in the per-second histogram (no spurious second-0 bucket).
         let hist_pkts: u64 = s.time_histogram.iter().map(|b| b.pkts).sum();
-        assert_eq!(hist_pkts, 1, "unknown-ts frame not bucketed in the timeline");
+        assert_eq!(
+            hist_pkts, 1,
+            "unknown-ts frame not bucketed in the timeline"
+        );
     }
 
     #[test]
@@ -1526,7 +1539,10 @@ mod tests {
         // A snaplen-clipped frame: 500 bytes on the wire, only 96 captured, real record-header ts.
         acc.observe_undecoded_frame(500, 96, 1_700_000_000_000_000_000, true);
         let s = acc.finish();
-        assert_eq!(s.total_packets, 1, "counted as a frame (matches Wireshark's count)");
+        assert_eq!(
+            s.total_packets, 1,
+            "counted as a frame (matches Wireshark's count)"
+        );
         assert_eq!(s.total_bytes, 500, "wire length");
         assert_eq!(s.captured_bytes, 96, "captured < wire (clipped)");
         assert_eq!(s.decode_errors, 1, "still flagged undissected");
