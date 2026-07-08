@@ -103,6 +103,16 @@ pub enum AppProto {
     Dns,
     Http,
     Tls,
+    /// Modbus/TCP (MBAP framing) — industrial control.
+    Modbus,
+    /// DNP3 (0x0564 link layer) — SCADA.
+    Dnp3,
+    /// Siemens S7comm (TPKT/COTP + S7 0x32).
+    S7comm,
+    /// BACnet/IP (BVLC 0x81) — building automation.
+    Bacnet,
+    /// EtherNet/IP + CIP (encapsulation header).
+    EnipCip,
 }
 
 impl AppProto {
@@ -114,7 +124,24 @@ impl AppProto {
             AppProto::Dns => "dns",
             AppProto::Http => "http",
             AppProto::Tls => "tls",
+            AppProto::Modbus => "modbus",
+            AppProto::Dnp3 => "dnp3",
+            AppProto::S7comm => "s7comm",
+            AppProto::Bacnet => "bacnet",
+            AppProto::EnipCip => "ethernet-ip",
         }
+    }
+
+    /// True for the industrial (OT/ICS) protocols identified structurally.
+    pub fn is_ot(self) -> bool {
+        matches!(
+            self,
+            AppProto::Modbus
+                | AppProto::Dnp3
+                | AppProto::S7comm
+                | AppProto::Bacnet
+                | AppProto::EnipCip
+        )
     }
 
     /// True for any concrete payload-observed protocol; `Unknown` is the empty hint.
@@ -130,6 +157,13 @@ impl AppProto {
             AppProto::Dns => 1,
             AppProto::Http => 2,
             AppProto::Tls => 2,
+            // OT protocols are structurally framed (length-validated) — highly specific,
+            // so they outrank a coincidental TLS/HTTP sniff on the same flow.
+            AppProto::Modbus
+            | AppProto::Dnp3
+            | AppProto::S7comm
+            | AppProto::Bacnet
+            | AppProto::EnipCip => 3,
         }
     }
 }

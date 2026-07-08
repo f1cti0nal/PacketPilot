@@ -88,6 +88,10 @@ cargo run -p ppcap-cli --release -- analyze sample.pcap \
 # Emit the DuckDB schema (for the external sidecar / DuckDB-Wasm)
 cargo run -p ppcap-cli --release -- init-db --out schema.sql
 ```
+
+OT/ICS captures (Modbus / DNP3 / S7comm / BACnet / EtherNet-IP) are identified from packet
+structure — even on non-standard ports — and land in the **IoT/OT** category and the
+`ip.<l4>.ot` protocol-hierarchy node.
 The HTML report is self-contained — open it in any browser and **print to PDF**.
 
 ### Desktop app — `cd ui`
@@ -124,6 +128,9 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - Streaming, bounded-memory ingest (pcap + pcapng); chain-of-custody SHA-256.
 - L2–L4 decode + L7 (HTTP/DNS/TLS) + **TLS SNI**; payload-aware classification.
 - Bidirectional flow reconstruction; traffic taxonomy (web/dns/email/file/remote/voip/iot/tunnel/scan/c2/anomalous).
+- **OT/ICS protocol triage** — payload-based, length-validated identification of Modbus/TCP, DNP3,
+  S7comm, BACnet/IP, and EtherNet/IP-CIP (recognized on non-standard ports, not just by port), so
+  industrial traffic surfaces in the IoT/OT category and protocol hierarchy.
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3), MITRE ATT&CK.
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.

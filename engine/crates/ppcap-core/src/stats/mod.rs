@@ -457,6 +457,13 @@ impl StatsAccumulator {
                 AppProto::Http => self.proto.http += f.total_pkts(),
                 AppProto::Tls => self.proto.tls += f.total_pkts(),
                 AppProto::Dns => self.proto.dns += f.total_pkts(),
+                // OT/IoT gets its own `ip.<l4>.ot` hierarchy path (see `proto_path`); its
+                // packet tally folds into the existing L4 "other" ProtoCounts bucket so no
+                // summary-schema field is added.
+                AppProto::Ot => match f.key.transport {
+                    Transport::Udp => self.proto.other_udp += f.total_pkts(),
+                    _ => self.proto.other_tcp += f.total_pkts(),
+                },
                 AppProto::OtherTcp => self.proto.other_tcp += f.total_pkts(),
                 AppProto::OtherUdp => self.proto.other_udp += f.total_pkts(),
             }
@@ -1055,6 +1062,8 @@ enum AppProto {
     Http,
     Tls,
     Dns,
+    /// IoT/OT industrial protocols (Modbus/DNP3/S7comm/BACnet/EtherNet-IP/MQTT/CoAP).
+    Ot,
     OtherTcp,
     OtherUdp,
 }
@@ -1065,6 +1074,7 @@ impl AppProto {
             AppProto::Http => "http",
             AppProto::Tls => "https",
             AppProto::Dns => "dns",
+            AppProto::Ot => "ot",
             AppProto::OtherTcp => "other",
             AppProto::OtherUdp => "other",
         }
@@ -1081,6 +1091,9 @@ fn app_bucket_for_flow(app_proto: &str, transport: Transport) -> AppProto {
         "http" | "http-proxy" => AppProto::Http,
         "https" | "tls" | "quic" => AppProto::Tls,
         "dns" | "mdns" | "dot" => AppProto::Dns,
+        "modbus" | "dnp3" | "s7comm" | "bacnet" | "ethernet-ip" | "mqtt" | "mqtts" | "coap" => {
+            AppProto::Ot
+        }
         _ if transport == Transport::Udp => AppProto::OtherUdp,
         _ => AppProto::OtherTcp,
     }
