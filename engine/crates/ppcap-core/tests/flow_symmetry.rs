@@ -373,9 +373,22 @@ fn spb_first_flow_window_is_defined_by_the_first_real_packet_not_the_fill() {
     observe_directed(
         &mut rec,
         &key,
-        &mk(server, 443, client, 50000, Transport::Tcp, 0x12, 64, 200, REAL),
+        &mk(
+            server,
+            443,
+            client,
+            50000,
+            Transport::Tcp,
+            0x12,
+            64,
+            200,
+            REAL,
+        ),
     );
-    assert_eq!(rec.first_ts_ns, REAL, "window set by the first REAL packet, not the SPB fill (0)");
+    assert_eq!(
+        rec.first_ts_ns, REAL,
+        "window set by the first REAL packet, not the SPB fill (0)"
+    );
     assert_eq!(rec.last_ts_ns, REAL);
     assert_eq!(rec.total_pkts(), 2, "the SPB is still counted");
 }
