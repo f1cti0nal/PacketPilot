@@ -656,6 +656,50 @@ export interface CarveQuery {
   end_ns: number;
 }
 
+/** Safe Share sanitize options — mirrors `ppcap_core::SanitizeOptions` (all optional; engine defaults are the privacy-safest). */
+export interface SanitizeOptions {
+  payload?: "scrub" | "keep";
+  keep_first?: number;
+  preserve_prefix?: boolean;
+  preserve_oui?: boolean;
+  redact_l7?: boolean;
+  time_shift_secs?: number;
+  format?: "pcap" | "pcapng";
+}
+
+/** Safe Share manifest — the chain-of-custody sidecar the engine emits (counts only; never values or keys). */
+export interface SanitizeManifest {
+  tool: string;
+  tool_version: string;
+  created_unix_secs: number;
+  options: Required<SanitizeOptions>;
+  input_sha256: string;
+  output_sha256: string;
+  counts: {
+    packets_read: number;
+    packets_written: number;
+    passthrough_frames: number;
+    opaque_l3_scrubbed: number;
+    ipv4_rewritten: number;
+    ipv6_rewritten: number;
+    macs_rewritten: number;
+    arp_rewritten: number;
+    unique_ipv4: number;
+    unique_ipv6: number;
+    unique_macs: number;
+    dns_names_redacted: number;
+    http_fields_redacted: number;
+    tls_snis_redacted: number;
+    credentials_redacted: number;
+    rdata_addrs_rewritten: number;
+    embedded_headers_rewritten: number;
+    payload_bytes_scrubbed: number;
+    l3_checksums_recomputed: number;
+    l4_checksums_recomputed: number;
+    l4_checksums_zeroed: number;
+  };
+}
+
 export interface SummaryState {
   status: "idle" | "loading" | "ready" | "error";
   data?: AnalysisOutput;

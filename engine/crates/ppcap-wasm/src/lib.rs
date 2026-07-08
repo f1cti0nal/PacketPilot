@@ -356,6 +356,46 @@ pub fn decrypt_tls_flow(
     serde_json::to_string(&res).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+// ---------------------------------------------------------------------------
+// sanitize — Safe Share: anonymize a capture for sharing
+// ---------------------------------------------------------------------------
+
+/// Sanitize a raw capture entirely in the browser (Safe Share).
+///
+/// `options_json` mirrors `ppcap_core::SanitizeOptions` (missing fields take the
+/// privacy-safest defaults). `key` must be 32 bytes from `crypto.getRandomValues`
+/// — wasm has no OS entropy, so the page supplies the per-run secret; it exists
+/// only in memory and is never part of the output. Returns a JSON string
+/// `{ manifest, pcap_b64 }`; the capture never leaves the device.
+#[wasm_bindgen]
+pub fn sanitize(
+    bytes: &[u8],
+    options_json: &str,
+    key: &[u8],
+    created_unix_secs: i64,
+) -> Result<String, JsValue> {
+    use base64::Engine as _;
+
+    let opts: ppcap_core::SanitizeOptions =
+        serde_json::from_str(options_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let key: [u8; 32] = key
+        .try_into()
+        .map_err(|_| JsValue::from_str("sanitize key must be exactly 32 bytes"))?;
+    let (out, manifest) = ppcap_core::sanitize::sanitize_bytes(bytes, key, &opts, created_unix_secs)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+    #[derive(Serialize)]
+    struct SanitizeDto {
+        manifest: ppcap_core::SanitizeManifest,
+        pcap_b64: String,
+    }
+    let dto = SanitizeDto {
+        manifest,
+        pcap_b64: base64::engine::general_purpose::STANDARD.encode(&out),
+    };
+    serde_json::to_string(&dto).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// One analyzed flow — same fields, names, and semantics as the Parquet `flows` schema.
 /// Integer timestamps are nanoseconds since the Unix epoch (the frontend divides to ms).
 #[derive(Serialize)]

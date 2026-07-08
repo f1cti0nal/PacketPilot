@@ -58,6 +58,30 @@ test.describe("PacketPilot — exports & recent", () => {
     }
   });
 
+  test("Safe Share exports a sanitized capture plus its manifest", async ({ page }) => {
+    await uploadPcap(page); // Safe Share needs the raw capture bytes
+    await page.getByRole("button", { name: /export/i }).click();
+    await page.getByRole("menuitem", { name: /Sanitized capture/i }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Export sanitized capture" });
+    await expect(dialog).toBeVisible();
+    // Defaults: scrub payloads + preserve subnet structure.
+    await expect(dialog.getByText(/Scrub payloads/)).toBeVisible();
+
+    const downloads: string[] = [];
+    page.on("download", (d) => downloads.push(d.suggestedFilename()));
+    await dialog.getByRole("button", { name: "Export" }).click();
+
+    // The dialog flips to the run summary once the WASM pass finishes.
+    await expect(dialog.getByText(/Done — [\d,]+ packets sanitized/)).toBeVisible({ timeout: 30_000 });
+    await expect(dialog.getByText(/output sha256 [0-9a-f]{64}/)).toBeVisible();
+    expect(downloads.some((n) => /-sanitized\.pcap$/i.test(n)), downloads.join(", ")).toBe(true);
+    expect(downloads.some((n) => /\.manifest\.json$/i.test(n)), downloads.join(", ")).toBe(true);
+
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(dialog).toBeHidden();
+  });
+
   test("an uploaded capture is recorded in Recent and can be reopened", async ({ page }) => {
     await uploadPcap(page);
     await expect(page.getByText("cap.pcap")).toBeVisible();
