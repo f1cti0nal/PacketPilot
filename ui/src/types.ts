@@ -237,6 +237,9 @@ export interface CarvedFile {
   known_bad: boolean;
   /** Content-signature labels the engine matched while streaming (file type + suspicious markers). */
   signatures?: string[];
+  /** Local path the decoded body was written to when opt-in extraction (`--carve-dir`) is enabled;
+   *  absent otherwise (the default — no bytes retained). */
+  extracted_path?: string;
   /** VirusTotal file-hash verdict, attached client-side post-analysis (the engine never sets this). */
   reputation?: ReputationVerdict[];
 }

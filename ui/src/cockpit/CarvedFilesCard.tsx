@@ -42,8 +42,9 @@ function RepBadge({ file }: { file: CarvedFile }) {
  * also raises a Critical finding). Content-signature chips (file type + suspicious markers like a
  * UPX packer or PowerShell cradle, matched in-stream) give triage context; a suspicious match also
  * raises a Malware Signature finding. When file-hash reputation is enabled + consented, a `VT` badge
- * shows the VirusTotal verdict (red w/ threat label when flagged, links to the report). No file
- * bytes are retained — only the hash. Display-only; hidden when nothing was carved.
+ * shows the VirusTotal verdict (red w/ threat label when flagged, links to the report). By default no
+ * file bytes are retained — only the hash; when opt-in extraction (`--carve-dir`) is enabled, an
+ * `extracted` line shows the saved filename. Display-only; hidden when nothing was carved.
  */
 export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
   const rows = files ?? [];
@@ -101,6 +102,17 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
                     {s}
                   </span>
                 ))}
+              </div>
+            )}
+            {f.extracted_path && (
+              <div
+                className="flex items-baseline gap-1 pt-0.5 text-[0.6rem] text-[var(--color-text-faint)]"
+                title={f.extracted_path}
+              >
+                <span className="uppercase tracking-wide">extracted</span>
+                <span className="font-mono-num truncate">
+                  {f.extracted_path.split(/[/\\]/).pop()}
+                </span>
               </div>
             )}
           </li>

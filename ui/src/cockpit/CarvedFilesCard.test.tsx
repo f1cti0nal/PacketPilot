@@ -83,6 +83,29 @@ describe("CarvedFilesCard", () => {
     expect(screen.queryByText(/VT/)).toBeNull();
   });
 
+  it("shows the extracted filename when opt-in extraction wrote the file to disk", () => {
+    render(
+      <CarvedFilesCard
+        files={[{
+          client: "10.0.0.9", server: "1.2.3.4", sha256: "b".repeat(64), size: 4096, known_bad: false,
+          extracted_path: "/cases/carved/" + "b".repeat(64) + ".exe",
+        }]}
+      />,
+    );
+    expect(screen.getByText("extracted")).toBeInTheDocument();
+    // Only the basename is shown (not the full path).
+    expect(screen.getByText("b".repeat(64) + ".exe")).toBeInTheDocument();
+  });
+
+  it("shows no extracted line by default (no --carve-dir → no bytes written)", () => {
+    render(
+      <CarvedFilesCard
+        files={[{ client: "10.0.0.9", server: "1.2.3.4", sha256: "c".repeat(64), size: 4096, known_bad: false }]}
+      />,
+    );
+    expect(screen.queryByText("extracted")).toBeNull();
+  });
+
   it("renders no badge for an inconclusive (suspicious-only / unknown) verdict — only confirmed-malicious gets a chip", () => {
     render(
       <CarvedFilesCard

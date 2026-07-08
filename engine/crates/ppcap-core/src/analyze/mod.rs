@@ -48,6 +48,9 @@ pub struct PipelineConfig {
     pub flows_parquet: Option<PathBuf>,
     /// Local IOC threat-feed JSON for offline enrichment; `None` => no enrichment.
     pub threat_feed: Option<PathBuf>,
+    /// Opt-in artifact extraction: directory to write each carved cleartext HTTP download's decoded
+    /// body into (`<sha256>[.<ext>]`), or `None` (the default) to retain no body bytes.
+    pub carve_dir: Option<PathBuf>,
     /// Run flow eviction every N packets.
     pub evict_interval_pkts: u64,
     /// Compute the source SHA-256 (an extra read pass).
@@ -103,6 +106,7 @@ impl Default for PipelineConfig {
         PipelineConfig {
             flows_parquet: None,
             threat_feed: None,
+            carve_dir: None,
             // Drain cadence for closed/cap-evicted flows. Kept small so the cap-eviction
             // victim buffer (`pending`) cannot accumulate up to a full interval of flows
             // between drains — that buffer, not the live map, was the residual peak-heap
@@ -227,8 +231,13 @@ pub fn run_source_visiting<'a>(
     // out of band from the same packets, for the certificate-health detector. Drained at EOF.
     let mut cert_reasm = TlsCertReassembler::new();
     // Bounded HTTP file carver: reassembles cleartext download bodies in TCP order and streams them
-    // through SHA-256 (no body buffering), for file-hash IOC surfacing + known-bad detection.
-    let mut body_carver = crate::carve::HttpBodyCarver::new();
+    // through SHA-256 (no body buffering), for file-hash IOC surfacing + known-bad detection. With
+    // `carve_dir` set (opt-in) it also writes each decoded body to disk (`<sha256>.<ext>`).
+    let mut body_carver = match &cfg.carve_dir {
+        Some(dir) => crate::carve::HttpBodyCarver::with_extraction(dir.clone())
+            .map_err(|e| PpError::io(format!("create carve dir {}", dir.display()), e))?,
+        None => crate::carve::HttpBodyCarver::new(),
+    };
     let mut writer: Option<FlowParquetWriter> = match &cfg.flows_parquet {
         Some(p) => Some(FlowParquetWriter::create(p, cfg.writer.clone())?),
         None => None,
@@ -479,6 +488,7 @@ pub fn run_source_visiting<'a>(
             size: c.size,
             known_bad: c.known_bad,
             signatures: c.signatures.iter().map(|s| s.label.to_string()).collect(),
+            extracted_path: c.extracted_path.clone(),
         })
         .collect();
     carved_files.sort_by(|a, b| {
@@ -999,6 +1009,7 @@ mod tests {
             size: 1000,
             known_bad: false,
             signatures: sigs,
+            extracted_path: None,
         };
         let hit = |label, technique, suspicious, exec_gated, tier, executable| SigHit {
             label,
