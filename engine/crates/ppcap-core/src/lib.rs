@@ -53,6 +53,7 @@ pub mod report;
 pub mod score;
 pub(crate) mod ssh;
 pub mod stats;
+pub mod timemachine;
 pub mod tls;
 
 pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
@@ -88,6 +89,10 @@ pub use packets::{
 };
 pub use report::render_html;
 pub use score::{score_flow, ScoredFlow};
+pub use timemachine::{
+    build_index, rescan, CaptureIndex, Indicator, IndicatorKind, RescanHit, RescanReport,
+    INDEX_SCHEMA_VERSION,
+};
 pub use tls::decrypt::{DecryptedCarvedFile, TlsDecryptRecord, TlsDecryptResult};
 pub use tls::decrypted_http::HttpTxn;
 
