@@ -71,6 +71,25 @@ pub enum Command {
         /// Apply a Suricata-style ruleset (content matches → findings).
         #[arg(long)]
         rules: Option<PathBuf>,
+        /// Time Machine: also write a compact capture-indicator index (JSON) here for
+        /// later `ppcap rescan` against updated threat intel.
+        #[arg(long)]
+        index: Option<PathBuf>,
+    },
+    /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
+    /// reporting indicators that were clean at capture time but are dirty now.
+    Rescan {
+        /// One or more capture-index JSON files (from `analyze --index`).
+        indices: Vec<PathBuf>,
+        /// Updated threat-feed JSON to re-evaluate against.
+        #[arg(long = "threat-feed")]
+        threat_feed: PathBuf,
+        /// Write the full JSON report here; omit => human summary to stderr only.
+        #[arg(long)]
+        json: Option<String>,
+        /// Also report indicators that were ALREADY flagged at capture time.
+        #[arg(long)]
+        include_known: bool,
     },
     /// Generate a synthetic capture for testing.
     Gen {
@@ -180,6 +199,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             stix,
             reputation,
             rules,
+            index,
         } => {
             // IMPL:
             //  - Build ppcap_core::PipelineConfig::default(), then set:
@@ -351,6 +371,87 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     .with_context(|| format!("write STIX bundle to {}", stix_path.display()))?;
                 if !quiet {
                     eprintln!("wrote STIX 2.1 bundle -> {}", stix_path.display());
+                }
+            }
+
+            if let Some(index_path) = index.as_ref() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let idx = ppcap_core::build_index(&out, now);
+                let n = idx.indicators.len();
+                std::fs::write(index_path, idx.to_json_pretty()?)
+                    .with_context(|| format!("write capture index to {}", index_path.display()))?;
+                if !quiet {
+                    eprintln!(
+                        "wrote Time Machine index ({n} indicators) -> {}",
+                        index_path.display()
+                    );
+                }
+            }
+            Ok(())
+        }
+        Command::Rescan {
+            indices,
+            threat_feed,
+            json,
+            include_known,
+        } => {
+            if indices.is_empty() {
+                return Err(anyhow!("rescan needs at least one capture-index file"));
+            }
+            let feed = ppcap_core::ThreatFeed::load(&threat_feed)
+                .with_context(|| format!("load threat feed {}", threat_feed.display()))?;
+
+            let mut loaded = Vec::with_capacity(indices.len());
+            for p in &indices {
+                let text = std::fs::read_to_string(p)
+                    .with_context(|| format!("read capture index {}", p.display()))?;
+                let idx = ppcap_core::CaptureIndex::from_json_str(&text)
+                    .with_context(|| format!("parse capture index {}", p.display()))?;
+                loaded.push(idx);
+            }
+
+            let report = ppcap_core::rescan(&loaded, &feed);
+
+            // Human summary → stderr.
+            eprintln!(
+                "rescan: {} indices, {} indicators evaluated — {} newly flagged, {} already known",
+                report.indices_scanned,
+                report.indicators_evaluated,
+                report.newly_flagged.len(),
+                report.still_flagged.len(),
+            );
+            for h in &report.newly_flagged {
+                eprintln!(
+                    "  NEW  {:<6} {}  ({}){}",
+                    h.kind.as_str(),
+                    h.value,
+                    h.source_path,
+                    h.label
+                        .as_ref()
+                        .map(|l| format!(" [{l}]"))
+                        .unwrap_or_default(),
+                );
+            }
+            if include_known {
+                for h in &report.still_flagged {
+                    eprintln!(
+                        "  known {:<6} {}  ({})",
+                        h.kind.as_str(),
+                        h.value,
+                        h.source_path
+                    );
+                }
+            }
+
+            if let Some(path) = json.as_deref() {
+                let s = serde_json::to_string_pretty(&report)?;
+                match path {
+                    "-" => println!("{s}"),
+                    p => std::fs::write(p, &s)
+                        .with_context(|| format!("write rescan report to {p}"))?,
                 }
             }
             Ok(())
@@ -596,5 +697,55 @@ mod reputation_cli_tests {
             }
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn analyze_index_flag_parses() {
+        let cli = Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--index", "cap.index.json"])
+            .unwrap();
+        match cli.command {
+            Command::Analyze { index, .. } => {
+                assert_eq!(
+                    index.as_deref(),
+                    Some(std::path::Path::new("cap.index.json"))
+                )
+            }
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn rescan_parses_indices_and_feed() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "rescan",
+            "a.index.json",
+            "b.index.json",
+            "--threat-feed",
+            "feed.json",
+            "--json",
+            "-",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Rescan {
+                indices,
+                threat_feed,
+                json,
+                include_known,
+            } => {
+                assert_eq!(indices.len(), 2);
+                assert_eq!(threat_feed, std::path::Path::new("feed.json"));
+                assert_eq!(json.as_deref(), Some("-"));
+                assert!(!include_known);
+            }
+            _ => panic!("expected Rescan"),
+        }
+    }
+
+    #[test]
+    fn rescan_requires_a_feed() {
+        // Missing the required --threat-feed → clap parse error.
+        assert!(Cli::try_parse_from(["ppcap", "rescan", "a.index.json"]).is_err());
     }
 }

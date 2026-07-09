@@ -96,6 +96,10 @@ cargo run -p ppcap-cli --release -- init-db --out schema.sql
 # Safe Share: write a sanitized copy + chain-of-custody manifest (scrubs payloads,
 # pseudonymizes IP/MAC, redacts DNS/HTTP/SNI/credentials, recomputes checksums)
 cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.pcap
+
+# Time Machine: emit a capture-indicator index, then re-scan it later vs an updated feed
+cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --hash --index sample.index.json
+cargo run -p ppcap-cli --release -- rescan sample.index.json --threat-feed updated-feed.json
 ```
 
 OT/ICS captures (Modbus / DNP3 / S7comm / BACnet / EtherNet-IP) are identified from packet
@@ -143,6 +147,10 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   industrial traffic surfaces in the IoT/OT category and protocol hierarchy. Modbus **write/control
   commands to a PLC** raise an explainable *ICS control command* finding (ATT&CK for ICS T0855/T0831).
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3), MITRE ATT&CK.
+- **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
+  indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
+  indicators that were clean at capture time but are dirty now — no pcap re-read, fully offline.
+  See [docs/time-machine.md](docs/time-machine.md).
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.
@@ -158,6 +166,8 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   See [docs/ai-assist.md](docs/ai-assist.md).
 
 ## Roadmap (optional)
+- Time Machine follow-ups: scheduled re-scans, live feed subscriptions (MISP/Sigma), file-hash
+  re-matching, and a shared team case store.
 - gzip-capture ingest; `packet_index` Parquet for packet-level drill-down.
 - AI: SNI-domain context in chat; multi-session conversation memory.
 - Self-hosted team server (shared cases, RBAC) — the "hybrid" other half.
@@ -167,5 +177,6 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - [docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md) — full specification & gap analysis.
 - [docs/reputation.md](docs/reputation.md) — online reputation enrichment operator guide.
 - [docs/ai-assist.md](docs/ai-assist.md) — AI analyst assist operator guide.
+- [docs/time-machine.md](docs/time-machine.md) — retrospective re-scan (Time Machine) guide.
 - [engine/README.md](engine/README.md) — engine internals, build, schema.
 - [engine/BENCHMARK.md](engine/BENCHMARK.md) — performance methodology & results.
