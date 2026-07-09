@@ -34,6 +34,7 @@
   --color-accent-badge: #9d87ff;     /* count-badge text on the 18% accent tint — light here, dark in light theme (AA both) */
   --color-on-accent: #ffffff;        /* text on filled accent-deep button — white in both themes */
   --color-spine-violet: #7c5cff;
+  --color-spine-cyan: #22d3ee;       /* QUIC / HTTP-3 protocol accent */
 
   /* Severity — byte-identical to the engine contract */
   --color-sev-critical: #f43f5e;     /* engine contract — do NOT change; chip AA is solved by outlined style, not hue */
@@ -112,6 +113,7 @@
   --color-accent-badge: #5636e8;     /* darker text for the badge on the light 18% tint (AA) */
   --color-on-accent: #ffffff;        /* text on filled accent-deep button — white in both themes */
   --color-spine-violet: #6135f5;
+  --color-spine-cyan: #0891b2;       /* QUIC / HTTP-3 protocol accent (light theme) */
 
   /* Severity — darkened so each reads as text (AA ≥4.5:1) on white AND on its own tinted chip */
   --color-sev-critical: #c5183f; /* was #e11d48 (3.75:1 on tint) */

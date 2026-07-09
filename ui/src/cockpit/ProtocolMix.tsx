@@ -8,7 +8,7 @@ import type { ProtoCounts } from "../types";
 
 /** Segment keys whose token cleanly filters the Flows view (matches a flow's appProto). The
  *  "other_tcp" / "other_udp" / "non_ipv4" segments have no clean flow-filter token, so stay static. */
-const FILTERABLE = new Set(["dns", "http", "tls"]);
+const FILTERABLE = new Set(["dns", "http", "tls", "quic"]);
 
 export function ProtocolMix({
   proto,

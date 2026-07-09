@@ -103,6 +103,11 @@ pub enum AppProto {
     Dns,
     Http,
     Tls,
+    /// QUIC transport identified structurally (any recognized long-header packet),
+    /// where HTTP/3 could not be confirmed via ALPN.
+    Quic,
+    /// HTTP/3 — QUIC whose Initial ClientHello advertised the `h3` ALPN.
+    Http3,
 }
 
 impl AppProto {
@@ -114,6 +119,8 @@ impl AppProto {
             AppProto::Dns => "dns",
             AppProto::Http => "http",
             AppProto::Tls => "tls",
+            AppProto::Quic => "quic",
+            AppProto::Http3 => "http3",
         }
     }
 
@@ -122,14 +129,18 @@ impl AppProto {
         !matches!(self, AppProto::Unknown)
     }
 
-    /// Specificity rank for flow aggregation: structural payload matches (Http/Tls) outrank
-    /// a port-only match (Dns), which outranks Unknown. Keeps the most-specific hint seen.
+    /// Specificity rank for flow aggregation: structural payload matches (Http/Tls/Quic/Http3)
+    /// outrank a port-only match (Dns), which outranks Unknown. Keeps the most-specific hint
+    /// seen. QUIC identification is structural and version-checked, so it outranks a coincidental
+    /// TLS sniff; HTTP/3 (ALPN-confirmed) outranks bare QUIC so an early Initial's verdict sticks.
     pub fn rank(self) -> u8 {
         match self {
             AppProto::Unknown => 0,
             AppProto::Dns => 1,
             AppProto::Http => 2,
             AppProto::Tls => 2,
+            AppProto::Quic => 3,
+            AppProto::Http3 => 4,
         }
     }
 }
