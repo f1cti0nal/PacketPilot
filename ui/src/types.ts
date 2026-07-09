@@ -279,6 +279,7 @@ export type FindingKind =
   | "malware_download"
   | "malware_signature"
   | "exposed_remote_access"
+  | "ics_control_command"
   | "ioc_match";
 
 /**

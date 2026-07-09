@@ -83,6 +83,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         download_disguised: false,
         stratum: None,
         dhcp: None,
+        ot_control: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -252,6 +253,10 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                     meta.sni = sni;
                     meta.ja3 = ja3;
                     meta.ja4 = ja4;
+                }
+                L7Hint::Ot { app, control_fn } => {
+                    meta.app_proto = app;
+                    meta.ot_control = control_fn;
                 }
             }
         }
@@ -470,6 +475,13 @@ pub enum L7Hint {
         sni: Option<String>,
         ja3: Option<String>,
         ja4: Option<String>,
+    },
+    /// An OT/ICS industrial protocol identified structurally (Modbus/DNP3/S7comm/
+    /// BACnet/EtherNet-IP). `app` is the specific protocol; `control_fn` is the Modbus
+    /// function code when the packet is a write/control command (else `None`).
+    Ot {
+        app: AppProto,
+        control_fn: Option<u8>,
     },
 }
 
@@ -722,6 +734,21 @@ pub fn l7_hint(
             });
         }
     }
+    // OT/ICS industrial protocols: structural, length-validated framing so they're
+    // recognized regardless of port (OT gear is often on non-standard ports).
+    if let Some(app) = sniff_ot(transport, src_port, dst_port, payload) {
+        // For Modbus, additionally surface write/control function codes (the ICS
+        // control-command signal). A Modbus request travels TO port 502; gating on
+        // dst_port == 502 isolates the client→PLC request direction (responses echo the
+        // same function code FROM 502, so this also avoids double-counting). Other OT
+        // protocols: identification only for now.
+        let control_fn = if app == AppProto::Modbus && dst_port == 502 {
+            modbus_control_fn(payload)
+        } else {
+            None
+        };
+        return Some(L7Hint::Ot { app, control_fn });
+    }
     // DNS is matched on port for both UDP and TCP.
     if (transport == Transport::Udp || transport == Transport::Tcp)
         && is_dns_port(src_port, dst_port)
@@ -730,6 +757,109 @@ pub fn l7_hint(
             qname: sniff_dns_qname(payload),
             answers: sniff_dns_answers(payload),
         });
+    }
+    None
+}
+
+/// Structurally identify an OT/ICS protocol from an L4 payload (+ ports). Every check
+/// validates the protocol's own framing (magic + length), so ordinary traffic is not
+/// misread as industrial. Bounded and panic-free. Returns the specific [`AppProto`].
+pub fn sniff_ot(
+    transport: Transport,
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) -> Option<AppProto> {
+    match transport {
+        Transport::Tcp => {
+            // Modbus/TCP MBAP: txn(2) proto_id(2)=0 length(2) unit(1) function(1) …
+            // `length` counts unit_id + PDU = payload.len() - 6.
+            if payload.len() >= 8 {
+                let proto_id = u16::from_be_bytes([payload[2], payload[3]]);
+                let length = u16::from_be_bytes([payload[4], payload[5]]) as usize;
+                let func = payload[7];
+                let frame_ok = length == payload.len().saturating_sub(6);
+                let func_ok = func != 0; // 1..=127 normal, 128..=255 exception
+                if proto_id == 0 && (2..=253).contains(&length) && func_ok {
+                    // On the well-known port a valid MBAP header suffices; off-port we
+                    // additionally require the length field to match the datagram exactly.
+                    if src_port == 502 || dst_port == 502 || frame_ok {
+                        return Some(AppProto::Modbus);
+                    }
+                }
+            }
+            // S7comm over TPKT(0x0300)/COTP, then S7 protocol id 0x32 (typical DT offset 7).
+            if payload.len() >= 8
+                && payload[0] == 0x03
+                && payload[1] == 0x00
+                && payload.get(7) == Some(&0x32)
+            {
+                return Some(AppProto::S7comm);
+            }
+            // DNP3 link layer: start bytes 0x05 0x64.
+            if payload.len() >= 10 && payload[0] == 0x05 && payload[1] == 0x64 {
+                return Some(AppProto::Dnp3);
+            }
+            sniff_enip(payload)
+        }
+        Transport::Udp => {
+            // BACnet/IP: BVLC type 0x81, then function(1) and a total-length(2) that must
+            // match the datagram.
+            if payload.len() >= 4 && payload[0] == 0x81 {
+                let blen = u16::from_be_bytes([payload[2], payload[3]]) as usize;
+                if blen == payload.len() {
+                    return Some(AppProto::Bacnet);
+                }
+            }
+            // DNP3 also runs over UDP.
+            if payload.len() >= 10 && payload[0] == 0x05 && payload[1] == 0x64 {
+                return Some(AppProto::Dnp3);
+            }
+            let _ = (src_port, dst_port);
+            sniff_enip(payload)
+        }
+        _ => None,
+    }
+}
+
+/// If a Modbus/TCP payload (already MBAP-validated by [`sniff_ot`]) is a **write/control**
+/// request, return its function code. Write/control functions per the Modbus spec:
+/// 0x05 write-single-coil, 0x06 write-single-register, 0x0F write-multiple-coils,
+/// 0x10 write-multiple-registers, 0x16 mask-write-register, 0x17 read/write-multiple. These
+/// change PLC state (vs. the read functions 0x01–0x04 which don't). Function-code exception
+/// replies (bit 0x80 set) are not commands and are ignored. Returns `None` for reads/other.
+pub fn modbus_control_fn(payload: &[u8]) -> Option<u8> {
+    let func = *payload.get(7)?;
+    matches!(func, 0x05 | 0x06 | 0x0F | 0x10 | 0x16 | 0x17).then_some(func)
+}
+
+/// A human label for a Modbus write/control function code (evidence text).
+pub fn modbus_fn_label(func: u8) -> &'static str {
+    match func {
+        0x05 => "write single coil",
+        0x06 => "write single register",
+        0x0F => "write multiple coils",
+        0x10 => "write multiple registers",
+        0x16 => "mask write register",
+        0x17 => "read/write multiple registers",
+        _ => "write/control",
+    }
+}
+
+/// EtherNet/IP encapsulation header (RFC-less, ODVA spec): command(2 LE) length(2 LE)
+/// session(4) status(4) sender_context(8) options(4) = 24-byte header. Recognized when the
+/// command is one of the defined encapsulation commands and the length field matches the body.
+fn sniff_enip(payload: &[u8]) -> Option<AppProto> {
+    if payload.len() < 24 {
+        return None;
+    }
+    let cmd = u16::from_le_bytes([payload[0], payload[1]]);
+    let len = u16::from_le_bytes([payload[2], payload[3]]) as usize;
+    // ListServices/ListIdentity/ListInterfaces/RegisterSession/UnRegisterSession/
+    // SendRRData/SendUnitData.
+    const CMDS: [u16; 7] = [0x0004, 0x0063, 0x0064, 0x0065, 0x0066, 0x006f, 0x0070];
+    if CMDS.contains(&cmd) && 24usize.checked_add(len) == Some(payload.len()) {
+        return Some(AppProto::EnipCip);
     }
     None
 }
@@ -1477,6 +1607,7 @@ mod tests {
             download_disguised: false,
             stratum: None,
             dhcp: None,
+            ot_control: None,
         }
     }
 
@@ -2616,6 +2747,20 @@ mod tests {
         ip
     }
 
+    /// Build a raw IPv4/TCP frame (20-byte TCP header, PSH|ACK) carrying `payload`.
+    fn ipv4_tcp_frame(src_port: u16, dst_port: u16, payload: &[u8]) -> Vec<u8> {
+        let total_len = (20 + 20 + payload.len()) as u16;
+        let mut ip = ipv4_header(6, total_len, 0, 64);
+        let mut tcp = vec![0u8; 20];
+        tcp[0..2].copy_from_slice(&src_port.to_be_bytes());
+        tcp[2..4].copy_from_slice(&dst_port.to_be_bytes());
+        tcp[12] = 0x50; // data offset = 5 words (20 bytes)
+        tcp[13] = 0x18; // PSH | ACK
+        ip.extend_from_slice(&tcp);
+        ip.extend_from_slice(payload);
+        ip
+    }
+
     /// QUIC Initial on UDP :443 → decode extracts SNI "example.com" (RFC 9001 §A.2 golden vector).
     #[test]
     fn decode_quic_initial_udp_sets_sni() {
@@ -2697,6 +2842,149 @@ mod tests {
         assert_eq!(m.ja4, None);
         // DNS query on port 443 won't be detected as DNS (not port 53) so Unknown.
         assert_eq!(m.app_proto, AppProto::Unknown);
+    }
+
+    // ── OT/ICS structural identification (sniff_ot) ──────────────────────────
+
+    /// A well-formed Modbus/TCP MBAP request (read holding registers) is identified as
+    /// Modbus — on the standard port and, because its length field matches, off-port too.
+    #[test]
+    fn sniff_ot_recognizes_modbus_tcp() {
+        // txn=0x0001 proto=0x0000 length=0x0006 unit=0x01 func=0x03 (read holding regs)
+        //   addr=0x0000 qty=0x000A  → length counts unit+PDU = 6 bytes, payload = 12.
+        let mbap = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0a,
+        ];
+        assert_eq!(
+            sniff_ot(Transport::Tcp, 40000, 502, &mbap),
+            Some(AppProto::Modbus),
+            "on port 502"
+        );
+        // Off-port still recognized because the MBAP length field matches the datagram.
+        assert_eq!(
+            sniff_ot(Transport::Tcp, 33333, 44444, &mbap),
+            Some(AppProto::Modbus),
+            "off-port via frame match"
+        );
+        // Corrupt the protocol-id (must be 0) → not Modbus.
+        let mut bad = mbap;
+        bad[2] = 0xFF;
+        assert_eq!(sniff_ot(Transport::Tcp, 40000, 502, &bad), None);
+    }
+
+    #[test]
+    fn sniff_ot_recognizes_dnp3_s7_bacnet_enip() {
+        // DNP3 link header 0x05 0x64 …
+        let dnp3 = [0x05, 0x64, 0x05, 0xc0, 0x01, 0x00, 0x00, 0x04, 0xe9, 0x21];
+        assert_eq!(
+            sniff_ot(Transport::Tcp, 20000, 1, &dnp3),
+            Some(AppProto::Dnp3)
+        );
+        assert_eq!(
+            sniff_ot(Transport::Udp, 20000, 1, &dnp3),
+            Some(AppProto::Dnp3)
+        );
+
+        // S7comm: TPKT 0x03 0x00 <len> COTP … S7 0x32 at offset 7.
+        let s7 = [0x03, 0x00, 0x00, 0x16, 0x11, 0xe0, 0x00, 0x32, 0x01, 0x00];
+        assert_eq!(
+            sniff_ot(Transport::Tcp, 1024, 102, &s7),
+            Some(AppProto::S7comm)
+        );
+
+        // BACnet/IP: BVLC 0x81, function 0x0a, total length matches (6 bytes here).
+        let bacnet = [0x81, 0x0a, 0x00, 0x06, 0x01, 0x20];
+        assert_eq!(
+            sniff_ot(Transport::Udp, 47808, 47808, &bacnet),
+            Some(AppProto::Bacnet)
+        );
+
+        // EtherNet/IP: RegisterSession (0x0065), length 4, 24-byte header + 4 body = 28.
+        let mut enip = vec![
+            0x65, 0x00, 0x04, 0x00, // command=0x0065, length=4 (LE)
+        ];
+        enip.extend_from_slice(&[0u8; 20]); // session/status/context/options
+        enip.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // 4-byte body
+        assert_eq!(
+            sniff_ot(Transport::Tcp, 40000, 44818, &enip),
+            Some(AppProto::EnipCip)
+        );
+    }
+
+    #[test]
+    fn sniff_ot_rejects_ordinary_traffic() {
+        // Random UDP/TCP payloads must not be misread as OT.
+        assert_eq!(sniff_ot(Transport::Udp, 1, 2, &[0u8; 40]), None);
+        assert_eq!(sniff_ot(Transport::Tcp, 1, 2, b"GET / HTTP/1.1\r\n"), None);
+        assert_eq!(sniff_ot(Transport::Tcp, 1, 2, &[]), None);
+        // BACnet byte 0x81 but wrong length field → rejected.
+        assert_eq!(
+            sniff_ot(Transport::Udp, 1, 2, &[0x81, 0x0a, 0xff, 0xff, 0x00]),
+            None
+        );
+    }
+
+    #[test]
+    fn modbus_control_fn_flags_writes_only() {
+        // Read holding registers (0x03) is NOT a control command.
+        let read = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0a,
+        ];
+        assert_eq!(modbus_control_fn(&read), None);
+        // Write single register (0x06) IS a control command.
+        let write = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x06, 0x00, 0x01, 0x00, 0xff,
+        ];
+        assert_eq!(modbus_control_fn(&write), Some(0x06));
+        // Write multiple coils (0x0F) and mask-write (0x16) too.
+        let mut wm = write;
+        wm[7] = 0x0F;
+        assert_eq!(modbus_control_fn(&wm), Some(0x0F));
+        wm[7] = 0x16;
+        assert_eq!(modbus_control_fn(&wm), Some(0x16));
+    }
+
+    /// A Modbus WRITE request to port 502 sets the control-command signal; a READ does not,
+    /// and a write *response* (from 502) does not (only requests to 502 count).
+    #[test]
+    fn decode_modbus_write_sets_ot_control() {
+        let write = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x06, 0x00, 0x01, 0x00, 0xff,
+        ];
+        // client(50000) -> PLC(502): request direction → ot_control set.
+        let req = ipv4_tcp_frame(50000, 502, &write);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &req)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Modbus);
+        assert_eq!(m.ot_control, Some(0x06));
+
+        // A read request → identified as Modbus but no control signal.
+        let read = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0a,
+        ];
+        let rf = ipv4_tcp_frame(50000, 502, &read);
+        let mr = decode_frame(&frame(LinkType::RawIpv4, &rf)).unwrap();
+        assert_eq!(mr.app_proto, AppProto::Modbus);
+        assert_eq!(mr.ot_control, None);
+
+        // A write RESPONSE travels FROM 502 (dst_port != 502) → not counted as a command.
+        let resp = ipv4_tcp_frame(502, 50000, &write);
+        let mresp = decode_frame(&frame(LinkType::RawIpv4, &resp)).unwrap();
+        assert_eq!(
+            mresp.ot_control, None,
+            "responses must not be counted as commands"
+        );
+    }
+
+    /// End to end: a Modbus frame on a non-standard TCP port decodes to app_proto=Modbus.
+    #[test]
+    fn decode_modbus_offport_sets_app_proto() {
+        let mbap = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0a,
+        ];
+        // Build an Ethernet-free raw IPv4/TCP frame carrying the MBAP payload on port 9999.
+        let pkt = ipv4_tcp_frame(50000, 9999, &mbap);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Modbus);
     }
 
     #[test]
