@@ -60,9 +60,9 @@ pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, Sk
 pub use detect::{
     fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
     CleartextCredsParams, CryptominingParams, DetectConfig, DgaParams, DisguisedDownloadParams,
-    DnsTunnelParams, ExfilParams, IcmpTunnelParams, LateralMovementParams, PiiExposureParams,
-    PortScanParams, SuspiciousUaParams, SweepParams, SynFloodParams, TlsCertHealthParams,
-    WeakTlsParams,
+    DnsTunnelParams, ExfilParams, IcmpTunnelParams, IcsControlParams, LateralMovementParams,
+    PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams, SynFloodParams,
+    TlsCertHealthParams, WeakTlsParams,
 };
 pub use enrich::{
     apply_domain_reputation, apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher,

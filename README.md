@@ -130,7 +130,8 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - Bidirectional flow reconstruction; traffic taxonomy (web/dns/email/file/remote/voip/iot/tunnel/scan/c2/anomalous).
 - **OT/ICS protocol triage** — payload-based, length-validated identification of Modbus/TCP, DNP3,
   S7comm, BACnet/IP, and EtherNet/IP-CIP (recognized on non-standard ports, not just by port), so
-  industrial traffic surfaces in the IoT/OT category and protocol hierarchy.
+  industrial traffic surfaces in the IoT/OT category and protocol hierarchy. Modbus **write/control
+  commands to a PLC** raise an explainable *ICS control command* finding (ATT&CK for ICS T0855/T0831).
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3), MITRE ATT&CK.
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
