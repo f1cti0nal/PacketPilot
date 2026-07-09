@@ -731,6 +731,7 @@ dependencies = [
 name = "ppcap-wasm"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "ppcap-core",
  "serde",
  "serde_json",

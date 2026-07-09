@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { ActiveSource, AnalysisOutput, FlowRow, WireFlowPackets } from "../types";
+import type { ActiveSource, AnalysisOutput, FlowRow, SanitizeManifest, SanitizeOptions, WireFlowPackets } from "../types";
 import { loadFlows } from "./data";
 import { isTauri } from "./tauri-detect";
 export { isTauri } from "./tauri-detect";
-import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm } from "./wasmEngine";
+import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm, sanitizeCaptureWasm } from "./wasmEngine";
 export type { RuleApplyResult } from "./wasmEngine";
 
 interface AnalyzeDto {
@@ -310,6 +310,60 @@ export async function copySigma(summary: AnalysisOutput): Promise<ExportResult> 
     return copyText(s);
   } catch (e) {
     return { ok: false, message: `Copy failed: ${e}` };
+  }
+}
+
+// ── Safe Share: sanitized capture export ────────────────────────────────────
+
+/**
+ * Export a sanitized/anonymized copy of the active capture (Safe Share).
+ * - Desktop (path source): native save dialog, then the `sanitize_capture` Tauri
+ *   command writes the capture + `<out>.manifest.json` sidecar.
+ * - Browser (bytes source): runs via WASM in-page (key from WebCrypto) and
+ *   downloads both the capture and the manifest. Nothing leaves the device.
+ * Returns the manifest so the UI can summarize what was transformed.
+ */
+export async function exportSanitized(
+  source: ActiveSource,
+  summary: AnalysisOutput,
+  options: SanitizeOptions,
+): Promise<ExportResult & { manifest?: SanitizeManifest }> {
+  if (!source) {
+    return { ok: false, message: "Safe Share needs the raw capture — reload the pcap first" };
+  }
+  const ext = options.format === "pcapng" ? "pcapng" : "pcap";
+  const base = `${captureBase(summary)}-sanitized`;
+
+  if (source.kind === "path") {
+    const path = await save({
+      defaultPath: `${base}.${ext}`,
+      filters: [{ name: "Capture", extensions: [ext] }],
+    });
+    if (!path) return { ok: false, message: "" }; // cancelled
+    try {
+      const json = await invoke<string>("sanitize_capture", {
+        pathIn: source.path,
+        pathOut: path,
+        options,
+      });
+      const manifest = JSON.parse(json) as SanitizeManifest;
+      return { ok: true, message: "Sanitized capture + manifest saved", manifest };
+    } catch (e) {
+      return { ok: false, message: `Sanitize failed: ${e}` };
+    }
+  }
+
+  try {
+    const { manifest, pcap } = await sanitizeCaptureWasm(source.bytes, options);
+    downloadBinary(pcap, `${base}.${ext}`, "application/vnd.tcpdump.pcap");
+    downloadText(
+      JSON.stringify(manifest, null, 2),
+      `${base}.${ext}.manifest.json`,
+      "application/json",
+    );
+    return { ok: true, message: "Sanitized capture + manifest downloaded", manifest };
+  } catch (e) {
+    return { ok: false, message: `Sanitize failed: ${e instanceof Error ? e.message : e}` };
   }
 }
 

@@ -4,7 +4,7 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, FlowRow, ReputationVerdict, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
+import type { AnalysisOutput, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
 import initWasm, {
@@ -21,6 +21,7 @@ import initWasm, {
   export_sigma as wasmExportSigma,
   carve_pcap as wasmCarvePcap,
   render_report as wasmRenderReport,
+  sanitize as wasmSanitize,
 } from "../wasm/ppcap_wasm.js";
 
 export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): Promise<WireFlowPackets> {
@@ -217,6 +218,30 @@ export async function applyRulesWasm(
   await ensureWasm();
   const json = wasmApplyRules(new Uint8Array(bytes), rulesText, JSON.stringify(output)) as string;
   return JSON.parse(json) as RuleApplyResult;
+}
+
+/**
+ * Safe Share: sanitize a capture entirely in the browser. The per-run key comes
+ * from `crypto.getRandomValues` and never leaves this function; the returned
+ * manifest records counts + hashes only. The capture bytes never leave the page.
+ */
+export async function sanitizeCaptureWasm(
+  bytes: ArrayBuffer,
+  options: SanitizeOptions,
+): Promise<{ manifest: SanitizeManifest; pcap: Uint8Array }> {
+  await ensureWasm();
+  const key = crypto.getRandomValues(new Uint8Array(32));
+  const json = wasmSanitize(
+    new Uint8Array(bytes),
+    JSON.stringify(options),
+    key,
+    BigInt(Math.floor(Date.now() / 1000)),
+  ) as string;
+  const dto = JSON.parse(json) as { manifest: SanitizeManifest; pcap_b64: string };
+  const bin = atob(dto.pcap_b64);
+  const pcap = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) pcap[i] = bin.charCodeAt(i);
+  return { manifest: dto.manifest, pcap };
 }
 
 /** Carve a sub-pcap in the browser. Returns the raw pcap bytes for the matching frames. */

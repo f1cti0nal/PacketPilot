@@ -74,6 +74,7 @@ import { pickRuleBase } from "./lib/ruleBase";
 import { saveRuleSet, type RuleSet } from "./lib/ruleSets";
 import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
 import { IocDialog } from "./cockpit/IocDialog";
+import { SafeShareDialog } from "./components/SafeShareDialog";
 import { matchIocs, parseIocs } from "./lib/ioc/ioc";
 import { useSession } from "./auth/useSession";
 import { AccountMenu } from "./auth/AccountMenu";
@@ -229,6 +230,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const [ruleNotice, setRuleNotice] = useState<string | null>(null);
   const rulesInputRef = useRef<HTMLInputElement | null>(null);
   const [iocDialogOpen, setIocDialogOpen] = useState(false);
+  const [safeShareOpen, setSafeShareOpen] = useState(false);
 
   // The app no longer auto-loads the bundled sample — launch lands on the Home surface
   // (upload-first hero for new visitors, workspace overview for returning ones). The sample
@@ -765,6 +767,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       onOpenAiChat={aiOn && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       onMatchIocs={summary.status === "ready" && summary.data ? () => setIocDialogOpen(true) : undefined}
+      onExportSanitized={summary.status === "ready" && summary.data && activeSource ? () => setSafeShareOpen(true) : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} canSave={savedRulesAllowed} />}
       accountMenu={<AccountMenu session={session} />}
     >
@@ -862,6 +865,13 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
     )}
     {summary.status === "ready" && summary.data && (
       <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} model={aiModel} />
+    )}
+    {safeShareOpen && summary.status === "ready" && summary.data && (
+      <SafeShareDialog
+        source={activeSource}
+        summary={summary.data}
+        onClose={() => setSafeShareOpen(false)}
+      />
     )}
     {iocDialogOpen && (
       <IocDialog onMatch={applyIocs} onClose={() => setIocDialogOpen(false)} />
