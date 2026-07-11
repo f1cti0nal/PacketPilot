@@ -34,6 +34,9 @@ capture.pcap ──▶ streaming Rust engine ──▶ triage dashboard ──�
   **threat report cards**.
 - **Present** a summary-first dashboard + a virtualized flows table (millions of rows at 60 fps)
   + drill-down, and **export** a self-contained HTML report (print-to-PDF) or JSON.
+- **Triage a whole folder** with `analyze --batch <dir>`: one ranked case index (`case.json` /
+  `case.html`) + cross-capture indicator correlation (IP / SNI / JA3 seen across captures),
+  bounded-memory and local-first. See [`docs/batch-triage.md`](docs/batch-triage.md).
 
 ## The gap it fills
 

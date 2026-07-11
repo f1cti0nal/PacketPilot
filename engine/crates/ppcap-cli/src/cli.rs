@@ -27,12 +27,30 @@ pub struct Cli {
 }
 
 /// Subcommands.
+// The `Analyze` variant intentionally carries every analyze flag as a field (clap ergonomics);
+// it dwarfs `Gen`/`InitDb`, but boxing clap-derive fields is awkward and this enum is only ever
+// held briefly on the stack during dispatch.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Analyze a pcap/pcapng (optionally .gz): summary JSON (+ optional flows Parquet).
+    ///
+    /// Batch mode: pass `--batch <DIR>` (instead of a single `input`) to triage a *folder* of
+    /// captures into one case directory + a ranked `case.json` / `case.html` with cross-capture
+    /// indicator correlation.
     Analyze {
-        /// Input capture path (.pcap / .pcapng, optionally .gz).
-        input: PathBuf,
+        /// Input capture path (.pcap / .pcapng, optionally .gz). Omit when using `--batch`.
+        input: Option<PathBuf>,
+        /// Batch mode: analyze every capture under this directory (mutually exclusive with `input`).
+        #[arg(long, conflicts_with = "input")]
+        batch: Option<PathBuf>,
+        /// Batch mode: recurse into subdirectories when discovering captures.
+        #[arg(long)]
+        recursive: bool,
+        /// Batch mode: case output root (holds `parquet/`, `captures/`, `case.json`, `case.html`).
+        /// Defaults to `./case`.
+        #[arg(long = "case-out")]
+        case_out: Option<PathBuf>,
         /// JSON output path; "-" or omitted => stdout.
         #[arg(long)]
         json: Option<String>,
@@ -132,6 +150,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         Command::Analyze {
             input,
+            batch,
+            recursive,
+            case_out,
             json,
             html,
             parquet,
@@ -145,6 +166,23 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             reputation,
             rules,
         } => {
+            // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
+            // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
+            // not apply here; the case artifacts live under --case-out.
+            if let Some(dir) = batch.as_ref() {
+                return dispatch_batch(
+                    dir,
+                    recursive,
+                    case_out.as_deref(),
+                    threat_feed.as_deref(),
+                    hash,
+                    strict,
+                    quiet,
+                );
+            }
+
+            let input = input
+                .ok_or_else(|| anyhow!("analyze needs an input capture path or --batch <DIR>"))?;
             // IMPL:
             //  - Build ppcap_core::PipelineConfig::default(), then set:
             //      strict_decode = strict; hash_source = hash;
@@ -385,6 +423,74 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+/// Batch / case triage dispatch: analyze every capture under `dir` into a case directory and
+/// write `case.json` + `case.html`. Per-capture errors are skipped (recorded in the index) unless
+/// `strict`. Progress is one line per capture on stderr unless `quiet`.
+fn dispatch_batch(
+    dir: &std::path::Path,
+    recursive: bool,
+    case_out: Option<&std::path::Path>,
+    threat_feed: Option<&std::path::Path>,
+    hash: bool,
+    strict: bool,
+    quiet: bool,
+) -> anyhow::Result<()> {
+    use std::io::Write as _;
+
+    let case_out = case_out
+        .unwrap_or_else(|| std::path::Path::new("case"))
+        .to_path_buf();
+
+    let case_cfg = ppcap_core::CaseConfig {
+        case_out: case_out.clone(),
+        recursive,
+        strict,
+        per_capture_html: true,
+    };
+    // Per-capture base pipeline: same detection/enrichment as a single-capture run. `hash_source`
+    // carries each capture's SHA-256 into its summary JSON (useful case provenance).
+    let base = ppcap_core::PipelineConfig {
+        hash_source: hash,
+        threat_feed: threat_feed.map(|p| p.to_path_buf()),
+        ..Default::default()
+    };
+
+    let generated = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let on_capture = |idx: usize, total: usize, path: &std::path::Path| {
+        if !quiet {
+            let mut err = std::io::stderr();
+            let _ = writeln!(err, "[{}/{}] {}", idx + 1, total, path.display());
+        }
+    };
+
+    let case = ppcap_core::run_case(dir, &case_cfg, &base, generated, on_capture)?;
+
+    // Case-level artifacts (pure serializations of the returned summary).
+    std::fs::create_dir_all(&case_out)
+        .with_context(|| format!("create case dir {}", case_out.display()))?;
+    let case_json = case_out.join("case.json");
+    std::fs::write(&case_json, case.to_json_pretty()?)
+        .with_context(|| format!("write {}", case_json.display()))?;
+    let case_html = case_out.join("case.html");
+    std::fs::write(&case_html, ppcap_core::case_html(&case, generated))
+        .with_context(|| format!("write {}", case_html.display()))?;
+
+    if !quiet {
+        eprintln!(
+            "case: {} captures ({} error), {} shared indicators -> {}",
+            case.total_captures,
+            case.error_captures,
+            case.shared_indicators.len(),
+            case_out.display()
+        );
+    }
+    Ok(())
 }
 
 /// FNV-1a 64-bit hash of a byte slice. Used to derive a stable, non-zero capture id from the
