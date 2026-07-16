@@ -20,15 +20,25 @@ async function uploadPcap(page: Page) {
   await expect(dialog).toBeVisible();
   await dialog.locator('input[type="file"]').setInputFiles(PCAP);
   await expect(dialog).toBeHidden({ timeout: 30_000 });
-  // A capture with TLS SNI hostnames pops a one-time domain-reputation consent dialog
-  // (full-screen overlay); decline it so later clicks aren't intercepted. Tolerant of
-  // captures that don't trigger it.
-  const consent = page.getByRole("dialog", { name: "Domain reputation consent" });
-  await consent
-    .getByRole("button", { name: "Cancel" })
-    .click({ timeout: 5_000 })
-    .catch(() => {});
-  await expect(consent).toBeHidden();
+  await dismissReputationConsents(page);
+}
+
+/** Enrichment is opt-in for everyone: analyzing a capture with public IPs / SNI hostnames pops
+ *  one-time reputation consent dialogs ("Reputation consent", "VirusTotal reputation consent" —
+ *  full-screen overlays, possibly stacked). Decline each so later clicks aren't intercepted.
+ *  Tolerant of captures/configs that don't trigger any. */
+async function dismissReputationConsents(page: Page) {
+  const consent = page.getByRole("dialog", { name: /reputation consent/i });
+  for (let i = 0; i < 3; i++) {
+    const dismissed = await consent
+      .first()
+      .getByRole("button", { name: "Cancel" })
+      .click({ timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!dismissed) break;
+  }
+  await expect(consent).toHaveCount(0);
 }
 
 // Every "download" export format goes through the WASM exporters + downloadText/downloadBinary.

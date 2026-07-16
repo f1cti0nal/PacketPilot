@@ -28,8 +28,6 @@ import { CarvedFilesCard } from "../cockpit/CarvedFilesCard";
 import { LocalHostsCard } from "../cockpit/LocalHostsCard";
 import { DownloadsCard } from "../cockpit/DownloadsCard";
 import { PacketDistributionsCard } from "../cockpit/PacketDistributionsCard";
-import { AiUpsellCard } from "../cockpit/AiUpsellCard";
-import type { FeatureGate } from "../lib/features/flags";
 import { TriageBadge } from "../cockpit/TriageAnnotation";
 import { captureKey } from "../lib/ai/cache";
 import { DomainThreatsPanel } from "./triage/DomainThreatsPanel";
@@ -63,14 +61,11 @@ export interface DashboardProps {
   onSelectIncident: (incident: Incident | null) => void;
   /** Active capture source — enables per-host pcap carve when retained (carve disabled without it). */
   activeSource?: ActiveSource;
-  /** Gate for the AI assist surfaces (default on). */
-  aiGate?: FeatureGate;
+  /** Gate for the AI assist surfaces (default on) — "off" when the hosted AI proxy is disabled. */
+  aiGate?: "on" | "off";
   /** Admin-managed AI model name, forwarded to AiSummaryCard for cache + consent display. */
   aiModel?: string;
-  /**
-   * When false the per-host PCAP carve button is hidden (Pro flag gate, online authed only).
-   * Defaults to true so offline/anon users always have carve available (offline invariant).
-   */
+  /** When false the per-host PCAP carve button is hidden. Defaults to true (always on now). */
   pcapExport?: boolean;
 }
 
@@ -143,11 +138,9 @@ export function Dashboard({
       <div className="mx-auto flex max-w-[1600px] flex-col gap-[var(--density-gap)] p-4 sm:p-5">
         {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
         <KpiCluster output={output} />
-        {aiGate === "on" ? (
+        {aiGate === "on" && (
           <AiSummaryCard output={output} captureId={captureKey(output)} model={aiModel} />
-        ) : aiGate === "upsell" ? (
-          <AiUpsellCard />
-        ) : null}
+        )}
 
         {/* Zone 2 — kill-chain incident hero (only the top critical breathes) */}
         {hero && (

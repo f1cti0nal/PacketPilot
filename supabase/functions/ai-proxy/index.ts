@@ -1,5 +1,8 @@
-// ai-proxy: authenticated LLM proxy. Uses the operator's AI_API_KEY (env) + admin-managed
+// ai-proxy: public LLM proxy. Uses the operator's AI_API_KEY (env) + admin-managed
 // ai_config (provider/model). Streams the upstream completion back to the browser.
+// PacketPilot is free for everyone with no accounts, so there is no auth or plan check;
+// the operator's key is protected by per-IP and global rate limits plus the admin
+// kill-switch (ai_config.enabled).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
@@ -19,6 +22,13 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...cors, "content-type": "application/json" } });
 }
 
+/** First hop of x-forwarded-for — the client IP as seen by the edge runtime. */
+function clientIp(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for") ?? "";
+  const first = fwd.split(",")[0]?.trim();
+  return first || "unknown";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
@@ -28,24 +38,16 @@ Deno.serve(async (req) => {
   const aiKey = Deno.env.get("AI_API_KEY") ?? "";
 
   const admin = createClient(url, serviceRole);
-  // Auth: require a logged-in user (Supabase GoTrue access token). getUser(token)
-  // validates the JWT against the auth server (catches revoked/expired tokens).
-  const authz = req.headers.get("Authorization") ?? "";
-  const token = authz.startsWith("Bearer ") ? authz.slice(7).trim() : "";
-  const { data: userData } = token ? await admin.auth.getUser(token) : { data: { user: null } };
-  const user = userData?.user;
-  if (!user) return json({ error: "unauthorized" }, 401);
-  // Pro-gate: the AI analyst assist is a paid feature. Enforce it SERVER-SIDE so a free user
-  // cannot spend the operator's AI_API_KEY by calling this proxy directly (the client feature
-  // gate alone is bypassable). Reverse-trial users carry plan='pro', so they pass. Fail CLOSED
-  // on a plan-read error — deny rather than risk leaking a metered feature.
-  const { data: aiProf, error: aiPlanErr } = await admin.from("profiles").select("plan").eq("id", user.id).single();
-  if (aiPlanErr || aiProf?.plan !== "pro") return json({ error: "pro plan required" }, 403);
-  // Per-user rate limit — protect the operator's AI key from abuse. Fail OPEN on error so a
-  // rate-limit hiccup never breaks the feature.
+  // Rate limits — the only guard on the operator's AI key now that access is anonymous.
+  // Per-IP to stop a single client hammering, plus a GLOBAL backstop so a distributed
+  // caller can't drain the key either. Fail OPEN on error so a rate-limit hiccup never
+  // breaks the feature.
   try {
-    const { data: ok } = await admin.rpc("check_rate_limit", { p_key: "ai:" + user.id, p_max: 20, p_window_seconds: 60 });
-    if (ok === false) return json({ error: "rate limit exceeded, slow down" }, 429);
+    const [{ data: ipOk }, { data: globalOk }] = await Promise.all([
+      admin.rpc("check_rate_limit", { p_key: "ai:ip:" + clientIp(req), p_max: 20, p_window_seconds: 60 }),
+      admin.rpc("check_rate_limit", { p_key: "ai:global", p_max: 300, p_window_seconds: 1800 }),
+    ]);
+    if (ipOk === false || globalOk === false) return json({ error: "rate limit exceeded, slow down" }, 429);
   } catch { /* fail open */ }
 
   // Admin-managed config (service-role read; app_settings is admin-RLS, so bypass via service role).

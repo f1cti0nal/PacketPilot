@@ -1020,131 +1020,6 @@
   }
   .pp-orbit-fallback { display: none; }
 
-  /* ─────────────────────────────  11. PRICING  ───────────────────────────── */
-  .pp-toggle {
-    display: inline-flex;
-    gap: 4px;
-    margin-top: 26px;
-    padding: 4px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-  }
-  .pp-toggle-btn {
-    appearance: none;
-    border: none;
-    background: none;
-    padding: 8px 20px;
-    border-radius: 999px;
-    font-family: var(--sans);
-    font-size: 13.5px;
-    font-weight: 500;
-    color: var(--ink-2);
-    cursor: pointer;
-    transition: background 0.16s, color 0.16s;
-  }
-  .pp-toggle-btn[aria-pressed="true"] { background: var(--pill); color: var(--on-pill); }
-  .pp-toggle-save {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent);
-    margin-left: 4px;
-  }
-  .pp-toggle-btn[aria-pressed="true"] .pp-toggle-save { color: #b7a6ff; }
-
-  .pp-price-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 18px;
-    align-items: stretch;
-  }
-  .pp-price-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
-    padding: 30px 28px;
-  }
-  .pp-price-card.featured {
-    background: var(--pill);
-    border-color: var(--pill);
-    color: #fff;
-    box-shadow: var(--shadow-deep);
-  }
-  .pp-price-tag {
-    position: absolute;
-    top: 24px;
-    right: 24px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    padding: 4px 11px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: #fff;
-  }
-  .pp-plan-name {
-    font-family: var(--display);
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--ink);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .pp-price-card.featured .pp-plan-name { color: #fff; }
-  .pp-plan-note {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--ink-3);
-    background: var(--bg-soft);
-    border-radius: 999px;
-    padding: 2px 9px;
-  }
-  .pp-price-card.featured .pp-plan-note { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.7); }
-  .pp-price-amt { display: flex; align-items: baseline; gap: 5px; margin-top: 16px; }
-  .pp-price-big {
-    font-family: var(--display);
-    font-size: 44px;
-    font-weight: 600;
-    letter-spacing: -0.03em;
-    line-height: 1;
-    color: var(--ink);
-  }
-  .pp-price-card.featured .pp-price-big { color: #fff; }
-  .pp-price-per { font-size: 14px; color: var(--ink-3); }
-  .pp-price-card.featured .pp-price-per { color: rgba(255,255,255,0.6); }
-  .pp-price-note { margin-top: 7px; font-size: 12.5px; color: var(--ink-3); }
-  .pp-price-card.featured .pp-price-note { color: rgba(255,255,255,0.65); }
-  .pp-price-annual { display: none; }
-  .pp-price-feats {
-    display: flex;
-    flex-direction: column;
-    gap: 11px;
-    margin: 24px 0;
-    padding-top: 22px;
-    border-top: 1px solid var(--line);
-    flex: 1;
-  }
-  .pp-price-card.featured .pp-price-feats { border-top-color: rgba(255,255,255,0.14); }
-  .pp-price-feat {
-    display: flex;
-    align-items: flex-start;
-    gap: 9px;
-    font-size: 13.5px;
-    line-height: 1.5;
-    color: var(--ink-2);
-  }
-  .pp-price-card.featured .pp-price-feat { color: rgba(255,255,255,0.82); }
-  .pp-price-feat svg { flex-shrink: 0; margin-top: 3px; color: var(--sev-low); }
-  .pp-price-card.featured .pp-price-feat svg { color: #9d87ff; }
-  @media (max-width: 900px) {
-    .pp-price-grid { grid-template-columns: 1fr; max-width: 440px; margin: 0 auto; }
-  }
-
   /* ─────────────────────────────  12. FINAL CTA  ───────────────────────────── */
   .pp-final { padding: 40px 0 0; }
   .pp-final-panel {
@@ -1309,7 +1184,6 @@
       <a href="#features">Features</a>
       <a href="#workflow">Workflow</a>
       <a href="#privacy">Privacy</a>
-      <a href="/pricing">Pricing</a>
       <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">Docs</a>
     </div>
     <div class="pp-nav-actions">
@@ -1324,7 +1198,6 @@
     <a href="#features">Features</a>
     <a href="#workflow">Workflow</a>
     <a href="#privacy">Privacy</a>
-    <a href="/pricing">Pricing</a>
     <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">Docs</a>
     <a class="pp-btn pp-btn-primary" href="/app">Launch app&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
   </div>
@@ -1800,7 +1673,7 @@
             <h3 class="pp-step-title">Export the evidence</h3>
             <p class="pp-step-desc">Hand off findings in the formats your stack already understands: STIX 2.1, MISP, CEF, Sigma, CSV — or a self-contained HTML report you can share as-is.</p>
             <div class="pp-step-meta">STIX &middot; MISP &middot; CEF &middot; Sigma &middot; CSV &middot; HTML</div>
-            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/pricing">See what's included&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Open the app&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
           </div>
           <div class="pp-step-visual" aria-hidden="true">
             <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
@@ -1989,64 +1862,16 @@
   </div>
 </section>
 
-<!-- ═══════════════ 11. PRICING ═══════════════ -->
+<!-- ═══════════════ 11. FREE FOR EVERYONE ═══════════════ -->
 <section class="pp-section" id="pricing" style="padding-top: 40px;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Pricing</span>
-      <h2 class="pp-section-title">Simple, transparent pricing.</h2>
-      <p class="pp-section-sub">The analyzer is free forever. Upgrade to Pro for the full analyst toolkit. Cancel anytime.</p>
-      <div class="pp-toggle" role="group" aria-label="Billing period">
-        <button class="pp-toggle-btn" type="button" data-pp-period="monthly" aria-pressed="true">Monthly</button>
-        <button class="pp-toggle-btn" type="button" data-pp-period="annual" aria-pressed="false">Yearly <span class="pp-toggle-save">&minus;17%</span></button>
-      </div>
-    </div>
-
-    <div class="pp-price-grid">
-      <!-- Free -->
-      <div class="pp-price-card" data-pp-reveal>
-        <div class="pp-plan-name">Free</div>
-        <div class="pp-price-amt"><span class="pp-price-big">$0</span></div>
-        <div class="pp-price-note">Free forever</div>
-        <div class="pp-price-feats">
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited in-browser triage</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Behavioral detectors, MITRE mapping, dashboards</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Runs offline / air-gapped</div>
-        </div>
-        <a class="pp-btn pp-btn-secondary" href="/app">Open the app</a>
-      </div>
-
-      <!-- Pro (featured dark) -->
-      <div class="pp-price-card featured" data-pp-reveal>
-        <span class="pp-price-tag">Popular</span>
-        <div class="pp-plan-name">Pro</div>
-        <div class="pp-price-amt" data-pp-price="monthly">
-          <span class="pp-price-big">$19</span><span class="pp-price-per">/mo</span>
-        </div>
-        <div class="pp-price-amt pp-price-annual" data-pp-price="annual">
-          <span class="pp-price-big">$190</span><span class="pp-price-per">/yr</span>
-        </div>
-        <div class="pp-price-note" data-pp-price="monthly">Billed monthly. Cancel anytime.</div>
-        <div class="pp-price-note pp-price-annual" data-pp-price="annual">2 months free &middot; billed annually</div>
-        <div class="pp-price-feats">
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited captures &amp; larger files</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>All exports — STIX, MISP, CEF, Sigma, CSV, HTML report</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>AI analyst summary + reputation enrichment</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>PCAP &amp; file carving, multi-capture compare, saved rules</div>
-        </div>
-        <a class="pp-btn pp-btn-accent" href="/pricing">Get Pro</a>
-      </div>
-
-      <!-- Founder -->
-      <div class="pp-price-card" data-pp-reveal>
-        <div class="pp-plan-name">Founder<span class="pp-plan-note">annual only</span></div>
-        <div class="pp-price-amt"><span class="pp-price-big">$149</span><span class="pp-price-per">/yr</span></div>
-        <div class="pp-price-note">Rate locked for life &middot; limited seats</div>
-        <div class="pp-price-feats">
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Everything in Pro, at a price that never goes up</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Back an indie tool early and help shape the roadmap</div>
-        </div>
-        <a class="pp-btn pp-btn-secondary" href="/pricing">Claim a founder seat</a>
+      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Free for everyone</span>
+      <h2 class="pp-section-title">Every feature. No account. $0.</h2>
+      <p class="pp-section-sub">PacketPilot is completely free — the full analyzer, every detector, all exports, AI analyst summaries, reputation enrichment, carving, and saved rules. No sign-up, no plans, no paywall. Open the app and drop a capture.</p>
+      <div class="pp-final-ctas" style="justify-content: center;">
+        <a class="pp-btn pp-btn-primary" href="/app">Open the app&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
+        <a class="pp-btn pp-btn-secondary" href="/app?sample=1">See a live capture</a>
       </div>
     </div>
   </div>
@@ -2063,10 +1888,10 @@
         <div class="pp-final-chip f4">ATT&amp;CK</div>
       </div>
       <h2 class="pp-final-title">Ready to triage<br>your first capture?</h2>
-      <p class="pp-final-sub">Drop a .pcap and get severity-ranked findings in seconds. Free to start. No upload — no data leaves your device.</p>
+      <p class="pp-final-sub">Drop a .pcap and get severity-ranked findings in seconds. Free for everyone — no account needed. No upload — no data leaves your device.</p>
       <div class="pp-final-ctas">
         <a class="pp-btn pp-btn-primary pp-btn-lg" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
-        <a class="pp-btn pp-btn-ghost-light pp-btn-lg" href="/pricing">View pricing</a>
+        <a class="pp-btn pp-btn-ghost-light pp-btn-lg" href="/app?sample=1">See a live capture</a>
       </div>
     </div>
   </div>
@@ -2091,7 +1916,6 @@
           <a href="#features">Features</a>
           <a href="#workflow">Workflow</a>
           <a href="#privacy">Privacy</a>
-          <a href="/pricing">Pricing</a>
           <a href="/blog">Blog</a>
         </div>
       </div>

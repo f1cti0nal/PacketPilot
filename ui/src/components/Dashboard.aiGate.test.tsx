@@ -4,7 +4,6 @@ import { Dashboard } from "./Dashboard";
 import { makeOutput } from "../test/fixtures";
 
 vi.mock("../cockpit/AiSummaryCard", () => ({ AiSummaryCard: () => <div>AI_SUMMARY_STUB</div> }));
-vi.mock("../cockpit/AiUpsellCard", () => ({ AiUpsellCard: () => <div>AI_UPSELL_STUB</div> }));
 
 const base = { output: makeOutput(), selectedIncident: null, onSelectIncident: vi.fn() };
 
@@ -12,16 +11,9 @@ describe("Dashboard AI gate", () => {
   it("renders the AI summary when on (default)", () => {
     render(<Dashboard {...base} />);
     expect(screen.getByText("AI_SUMMARY_STUB")).toBeInTheDocument();
-    expect(screen.queryByText("AI_UPSELL_STUB")).not.toBeInTheDocument();
   });
-  it("renders the upsell when upsell", () => {
-    render(<Dashboard {...base} aiGate="upsell" />);
-    expect(screen.getByText("AI_UPSELL_STUB")).toBeInTheDocument();
-    expect(screen.queryByText("AI_SUMMARY_STUB")).not.toBeInTheDocument();
-  });
-  it("renders neither when off", () => {
+  it("renders no AI summary when off", () => {
     render(<Dashboard {...base} aiGate="off" />);
     expect(screen.queryByText("AI_SUMMARY_STUB")).not.toBeInTheDocument();
-    expect(screen.queryByText("AI_UPSELL_STUB")).not.toBeInTheDocument();
   });
 });

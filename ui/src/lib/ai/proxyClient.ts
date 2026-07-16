@@ -1,20 +1,19 @@
-import { supabase, accessToken } from "../supabase";
+import { supabase } from "../supabase";
 import { SseAccumulator } from "./sse";
 import type { AiMessage } from "./client";
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/ai-proxy`;
 
-/** Send messages to the ai-proxy Edge Function and stream the completion back. */
+/** Send messages to the ai-proxy Edge Function and stream the completion back. The proxy is
+ *  public (no sign-in — PacketPilot has no accounts), so only the anon apikey is sent; the
+ *  operator's AI key never reaches the browser. */
 export async function runViaProxy(messages: AiMessage[], onToken: (t: string) => void): Promise<string> {
   if (!supabase) throw new Error("AI is unavailable.");
-  const token = await accessToken();
-  if (!token) throw new Error("Sign in to use the AI Analyst.");
   const resp = await fetch(FN_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? "",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ messages }),
   });

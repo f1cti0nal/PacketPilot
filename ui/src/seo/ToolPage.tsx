@@ -24,7 +24,7 @@ export function ToolPage({ page }: { page: SeoPage }) {
           <a href="/app?sample=1" className="text-sm text-[var(--color-accent-strong)] hover:underline">
             or try a sample capture
           </a>
-          <span className="t-tag text-[var(--color-text-faint)]">Free to start · nothing uploaded</span>
+          <span className="t-tag text-[var(--color-text-faint)]">Free for everyone · nothing uploaded</span>
         </div>
       </header>
 

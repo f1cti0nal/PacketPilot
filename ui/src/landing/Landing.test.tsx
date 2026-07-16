@@ -15,11 +15,6 @@ vi.mock("./landing.html?raw", () => ({
     <div class="pp-mockup-wrap"><div data-pp-tilt></div></div>
     <div class="pp-stats"><span data-pp-count="20">20+</span></div>
     <div data-pp-reveal>reveal me</div>
-    <button data-pp-period="monthly" aria-pressed="true">Monthly</button>
-    <button data-pp-period="annual" aria-pressed="false">Annual</button>
-    <div class="pp-price-amt" data-pp-price="monthly">$19</div>
-    <div class="pp-price-amt pp-price-annual" data-pp-price="annual">$190</div>
-    <div class="pp-price-note" data-pp-price="monthly">Billed monthly</div>
     <div data-pp-carousel>
       <div data-pp-slide class="is-active">one</div>
       <div data-pp-slide>two</div>
@@ -85,21 +80,6 @@ describe("Landing", () => {
         .querySelector<HTMLElement>('[data-pp-tab="triage"]')!
         .getAttribute("aria-selected"),
     ).toBe("true");
-  });
-
-  it("switches pricing rows on billing-period toggle", () => {
-    const { container } = render(<Landing />);
-    const annualBtn = container.querySelector<HTMLElement>('[data-pp-period="annual"]')!;
-    fireEvent.click(annualBtn);
-    expect(annualBtn.getAttribute("aria-pressed")).toBe("true");
-    const annualPrice = container.querySelector<HTMLElement>(
-      '.pp-price-amt[data-pp-price="annual"]',
-    )!;
-    const monthlyPrice = container.querySelector<HTMLElement>(
-      '.pp-price-amt[data-pp-price="monthly"]',
-    )!;
-    expect(annualPrice.style.display).toBe("flex");
-    expect(monthlyPrice.style.display).toBe("none");
   });
 
   it("advances the carousel with next and dot controls", () => {

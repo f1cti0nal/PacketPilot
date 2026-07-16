@@ -73,8 +73,6 @@ export interface AppShellProps {
   onMatchIocs?: () => void;
   /** Slot rendered in the CommandBar in place of the old ShieldAlert button (e.g. RuleSetsMenu). */
   rulesMenu?: ReactNode;
-  /** End-user account control rendered in the command bar. */
-  accountMenu?: ReactNode;
   /** Whether a capture comparison is active (shows the Compare tab). */
   compareActive?: boolean;
   /** Return to the Home overview (unloads the active capture). Wires the clickable wordmark + palette action. */
@@ -123,7 +121,6 @@ export function AppShell({
   onLoadRules,
   onMatchIocs,
   rulesMenu,
-  accountMenu,
   compareActive = false,
   onGoHome,
   children,
@@ -306,7 +303,6 @@ export function AppShell({
           onOpenPalette={onOpenPalette}
           onOpenAiChat={onOpenAiChat}
           rulesMenu={rulesMenu}
-          accountMenu={accountMenu}
         />
         {/* overflow-x-hidden clips sub-pixel rounding overflow (e.g. the heatmap's
             many flex-1 gap-px cells at the ~768px boundary) so the shell never grows

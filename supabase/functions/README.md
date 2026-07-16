@@ -1,18 +1,20 @@
-# Stripe billing Edge Functions
+# Edge Functions
 
-Three functions sync Stripe ⇄ the app:
-- `create-checkout-session` (JWT required) — starts a Pro Checkout.
-- `create-portal-session` (JWT required) — opens the Billing Portal.
-- `stripe-webhook` (JWT OFF — Stripe-signed) — upserts `subscriptions` + sets `profiles.plan`.
+PacketPilot is free for everyone with no user accounts. The functions that remain operational:
 
-## Setup (test mode)
-1. Stripe: create a Pro product with a $19/month recurring price; note the price id (`price_…`).
-2. Set Edge Function secrets (Supabase dashboard → Edge Functions → Secrets, or `supabase secrets set`):
-   `STRIPE_SECRET_KEY=sk_test_…`, `STRIPE_PRICE_PRO=price_…`, `STRIPE_WEBHOOK_SECRET=whsec_…`.
-   (`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` are auto-injected.)
-3. Deploy all three (Supabase MCP `deploy_edge_function` or `supabase functions deploy`); webhook with `--no-verify-jwt`.
-4. Stripe → Developers → Webhooks: add the deployed `stripe-webhook` URL; subscribe to
-   `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`; copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
+- `ai-proxy` (JWT OFF — public, rate-limited) — streams AI analyst completions using the
+  operator's `AI_API_KEY`; provider/model come from admin-managed `app_settings.ai_config`.
+- `reputation-proxy` (JWT OFF — public, rate-limited) — relays reputation lookups to an exact
+  host allowlist, injecting the operator's provider keys server-side.
+- `stripe-webhook` (JWT OFF — Stripe-signed) — still deployed to keep `subscriptions` /
+  `profiles.plan` records consistent while the operator winds down the legacy paid-era
+  subscriptions directly in Stripe. Secrets: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
+  Do not remove until every legacy subscription is cancelled.
 
-## Verify
-Upgrade in-app with test card 4242 4242 4242 4242 → `profiles.plan` becomes `pro`; cancel in the portal → `free`.
+Tombstones (deployed as permanent 410s so stale clients get a clear answer, not a gateway 404):
+`create-checkout-session`, `create-portal-session`, `delete-account`.
+
+Rate limiting: both proxies call the `check_rate_limit` RPC (migration 0021) with a per-IP key
+and a global backstop key — the cost brake on the operator's AI/reputation keys now that the
+proxies are anonymous. The admin kill-switches (`ai_config.enabled` / `rep_config.enabled`)
+remain the hard off switch.
