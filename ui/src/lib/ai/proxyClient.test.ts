@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AiMessage } from "./client";
 
 // ── Module-level mocks ────────────────────────────────────────────────────
-const mockToken = vi.hoisted(() => vi.fn());
-vi.mock("../supabase", () => ({ supabase: {}, accessToken: mockToken }));
+vi.mock("../supabase", () => ({ supabase: {} }));
 
 // We'll stub global fetch per-test.
 
@@ -31,8 +30,7 @@ describe("runViaProxy", () => {
     runViaProxy = mod.runViaProxy;
   });
 
-  it("POSTs to the ai-proxy function URL with bearer token and messages", async () => {
-    mockToken.mockResolvedValue("tok-abc");
+  it("POSTs to the ai-proxy function URL anonymously (apikey only, no Authorization)", async () => {
     const fetchMock = vi.fn(async () => new Response(makeSseStream(["Hello"]), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -42,13 +40,12 @@ describe("runViaProxy", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain("/functions/v1/ai-proxy");
-    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer tok-abc");
+    expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
     expect(typeof (init.headers as Record<string, string>)["apikey"]).toBe("string");
     expect(JSON.parse(init.body as string)).toEqual({ messages });
   });
 
   it("streams deltas to onToken and returns the full assembled text", async () => {
-    mockToken.mockResolvedValue("tok-abc");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(makeSseStream(["Hello", " world"]), { status: 200 })));
 
     const tokens: string[] = [];
@@ -59,22 +56,14 @@ describe("runViaProxy", () => {
   });
 
   it("throws a friendly error on non-OK response", async () => {
-    mockToken.mockResolvedValue("tok-abc");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "not configured" }), { status: 503 })));
 
     await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI is not enabled/i);
   });
 
   it("throws a generic error for non-503 non-OK status", async () => {
-    mockToken.mockResolvedValue("tok-abc");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("bad", { status: 502 })));
 
     await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI request failed/i);
-  });
-
-  it("throws when there is no active session", async () => {
-    mockToken.mockResolvedValue(null);
-
-    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/Sign in/i);
   });
 });

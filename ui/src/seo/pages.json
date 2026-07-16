@@ -42,7 +42,7 @@
             ]
           },
           {
-            "p": "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) is opt-in and login-gated, and it only ever sends a derived summary and public IPs — never the capture. You can also import Suricata-style rules to match your own content signatures against the traffic."
+            "p": "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) is opt-in, and it only ever sends a derived summary and public IPs — never the capture. You can also import Suricata-style rules to match your own content signatures against the traffic."
           }
         ]
       },
@@ -60,7 +60,7 @@
               "Privacy by construction — the capture is never uploaded, so there is nothing to leak, retain, or subpoena",
               "No size-limited upload queue — analysis starts as soon as the file is read locally",
               "Safe for sensitive captures — internal hosts, credentials, and PII never transit a third party",
-              "Same engine, free tier — the full analyzer is free; Pro ($19/mo) adds login-gated extras"
+              "Same engine, completely free — the full analyzer is free for everyone, no account or sign-up needed"
             ]
           }
         ]
@@ -69,7 +69,7 @@
     "faq": [
       {
         "q": "Is my PCAP uploaded anywhere?",
-        "a": "No. The analysis engine is compiled to WebAssembly and runs entirely inside your browser, so the capture is decoded and analyzed locally on your machine. The .pcap bytes are never serialized into a network request and never leave the tab. The only optional feature that touches a server is reputation enrichment, which is off by default, login-gated, and sends only a derived summary plus public IPs — never the capture itself."
+        "a": "No. The analysis engine is compiled to WebAssembly and runs entirely inside your browser, so the capture is decoded and analyzed locally on your machine. The .pcap bytes are never serialized into a network request and never leave the tab. The only optional feature that touches a server is reputation enrichment, which is off by default, strictly opt-in, and sends only a derived summary plus public IPs — never the capture itself."
       },
       {
         "q": "What capture formats are supported?",
@@ -77,11 +77,11 @@
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full analyzer — all ~20 detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows views, and exports — works on the free tier with a free account. Pro is $19/mo and adds login-gated extras such as reputation enrichment from AbuseIPDB, GreyNoise, and VirusTotal."
+        "a": "Yes. The full analyzer — all ~20 detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows views, and exports — is free for everyone, with no account or sign-up needed. Opt-in extras such as reputation enrichment from AbuseIPDB, GreyNoise, and VirusTotal are included at no cost too."
       },
       {
         "q": "Do I need to install anything?",
-        "a": "No. There is nothing to download or install — PacketPilot runs in a modern browser. Create a free account, drag your .pcap onto the page, and the in-browser engine produces a scored, MITRE-mapped verdict in seconds. You can also preview a live sample capture without an account."
+        "a": "No. There is nothing to download or install — PacketPilot runs in a modern browser, and there is no account or sign-up either. Open the app, drag your .pcap onto the page, and the in-browser engine produces a scored, MITRE-mapped verdict in seconds. You can also preview a live sample capture first."
       },
       {
         "q": "How fast is the analysis?",
@@ -143,7 +143,7 @@
             "bullets": [
               "Protocol intelligence: JA3, JA4, JA4-Q, JA3S, and HASSH fingerprints; SNI from TLS and QUIC/HTTP3; passive DNS; HTTP metadata; and DoH/DoT visibility.",
               "File awareness: SHA-256 file carving from HTTP transfers, with disguised-download and malware-download detection.",
-              "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) that is opt-in and login-gated, and sends only a derived summary plus public IPs — never your capture.",
+              "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) that is opt-in, and sends only a derived summary plus public IPs — never your capture.",
               "Share and integrate: export a polished HTML report, STIX 2.1, CSV, MISP, CEF, or Sigma rules; import Suricata rules; diff multiple captures."
             ]
           }
@@ -156,7 +156,7 @@
             "p": "The reason a browser-based analyzer is even credible for security work is the privacy model. PacketPilot analyzes .pcap, .pcapng, .cap, and .gz files entirely client-side via a Rust→WebAssembly engine. The capture is never uploaded to any server — it stays in the tab, on your machine, the same as it would in Wireshark."
           },
           {
-            "p": "That's the real distinction from cloud PCAP uploaders like CloudShark or A-Packets, which ship your packets offsite to analyze them. With PacketPilot the analysis comes to the data, not the other way around. The full analyzer is free with a free account; Pro is $19/mo for teams that want more."
+            "p": "That's the real distinction from cloud PCAP uploaders like CloudShark or A-Packets, which ship your packets offsite to analyze them. With PacketPilot the analysis comes to the data, not the other way around. The full analyzer — exports, enrichment, carving, and saved rules included — is free for everyone, no account needed."
           }
         ]
       }
@@ -176,11 +176,11 @@
       },
       {
         "q": "Is my capture uploaded anywhere?",
-        "a": "No. Analysis runs entirely client-side in your browser via a Rust/WebAssembly engine, so your .pcap, .pcapng, .cap, or .gz never leaves your device — it's never sent to any server. That's the core difference from cloud PCAP uploaders. The only optional exception is reputation enrichment, which is opt-in, login-gated, and sends just a derived summary and public IPs, never the capture itself."
+        "a": "No. Analysis runs entirely client-side in your browser via a Rust/WebAssembly engine, so your .pcap, .pcapng, .cap, or .gz never leaves your device — it's never sent to any server. That's the core difference from cloud PCAP uploaders. The only optional exception is reputation enrichment, which is opt-in and sends just a derived summary and public IPs, never the capture itself."
       },
       {
         "q": "Do I need to install anything or create an account?",
-        "a": "Nothing to install — PacketPilot runs in any modern browser, so you can triage captures on machines where you can't or shouldn't install Wireshark. Analyzing your own capture needs a free account (Pro is $19/mo for added capabilities); you can preview a live sample capture without one."
+        "a": "No to both. Nothing to install — PacketPilot runs in any modern browser, so you can triage captures on machines where you can't or shouldn't install Wireshark. There's no account or sign-up either: open the app and drop in your own capture, or preview a live sample capture first."
       }
     ]
   },
@@ -202,7 +202,7 @@
               "Drag in a .pcap, .pcapng, .cap, or gzip-compressed .pcap.gz / .pcapng.gz file",
               "Parsing and detection run in the browser tab via a Rust/WASM engine — no backend round-trip",
               "The capture is never uploaded; close the tab and nothing persists server-side",
-              "Works on the free tier — create a free account and start reading immediately"
+              "Free for everyone — open the app and start reading immediately, no account or sign-up needed"
             ]
           }
         ]
@@ -254,7 +254,7 @@
               "Polished HTML report, STIX 2.1, CSV, MISP, CEF, and Sigma rules",
               "PCAP flow and host carving to hand a scoped capture to another analyst",
               "Multi-capture diff to compare two captures and spot what changed",
-              "Optional, opt-in, login-gated reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) that sends only a derived summary plus public IPs — never the capture itself",
+              "Optional, opt-in reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) that sends only a derived summary plus public IPs — never the capture itself",
               "Suricata rule import to run your own signatures against the traffic"
             ]
           }
@@ -272,11 +272,11 @@
       },
       {
         "q": "Is my capture uploaded anywhere?",
-        "a": "No. The analysis engine is compiled to WebAssembly and runs entirely inside your browser tab, so the capture file is read locally and is never sent to any server. The only optional exception is reputation enrichment, which is opt-in and login-gated and transmits only a derived summary plus public IP addresses — never the packets themselves."
+        "a": "No. The analysis engine is compiled to WebAssembly and runs entirely inside your browser tab, so the capture file is read locally and is never sent to any server. The only optional exception is reputation enrichment, which is opt-in and transmits only a derived summary plus public IP addresses — never the packets themselves."
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full analyzer — opening captures, the flows table, packet inspector, all of the detectors, the dashboards, and exports — works on the free tier with a free account. A Pro plan ($19/month) is available for more, and you can preview a live sample capture without an account."
+        "a": "Yes. The full analyzer — opening captures, the flows table, packet inspector, all of the detectors, the dashboards, and exports — is free for everyone, with no account or sign-up needed. Everything is one click away at the app, and you can preview a live sample capture first."
       },
       {
         "q": "How is this different from Wireshark or other online PCAP viewers?",
@@ -303,7 +303,7 @@
           {
             "bullets": [
               "Drag and drop a .pcapng (or .pcap / .cap) file, or click to browse — analysis starts immediately.",
-              "Free tier: the complete analyzer is free with a free account.",
+              "Free for everyone: the complete analyzer — exports, enrichment, carving, and saved rules included — costs nothing, no account needed.",
               "Works offline once loaded — the engine is local WebAssembly, not a remote API."
             ]
           }
@@ -338,7 +338,7 @@
             ]
           },
           {
-            "p": "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) is opt-in and login-gated. Even then, only a derived summary plus public IP addresses are sent for lookup — the capture itself never goes anywhere."
+            "p": "Optional reputation enrichment (AbuseIPDB, GreyNoise, VirusTotal) is opt-in. Even then, only a derived summary plus public IP addresses are sent for lookup — the capture itself never goes anywhere."
           }
         ]
       },
@@ -346,7 +346,7 @@
         "heading": "Open a pcapng capture now",
         "blocks": [
           {
-            "p": "There is nothing to install. Create a free account, drop your .pcapng (or .pcapng.gz) file, and read the scored findings. If you decide you want reputation enrichment or Pro exports later, that's there too — but the full pcapng analysis is free and runs without ever uploading a packet."
+            "p": "There is nothing to install and no account or sign-up. Open the app, drop your .pcapng (or .pcapng.gz) file, and read the scored findings. If you decide you want opt-in reputation enrichment or the exports later, they're there too — the full pcapng analysis is free for everyone and runs without ever uploading a packet."
           }
         ]
       }
@@ -366,7 +366,7 @@
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full pcapng analyzer — all detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows/packet views, and exports — works free with a free account. There's an optional Pro tier ($19/mo) and opt-in, login-gated reputation enrichment, but the core analysis is free."
+        "a": "Yes. The full pcapng analyzer — all detectors, severity scoring, MITRE ATT&CK mapping, the dashboard and flows/packet views, and exports — is free for everyone, with no account or sign-up needed. Opt-in reputation enrichment is included at no cost too; every part of the analysis is free."
       },
       {
         "q": "How large a capture can I analyze in the browser?",
@@ -377,7 +377,7 @@
   {
     "slug": "pcap-to-csv",
     "metaTitle": "PCAP to CSV — Convert Captures in Your Browser | PacketPilot",
-    "metaDescription": "Convert a PCAP to CSV entirely in your browser — flows, fingerprints, and severity per row. Nothing is uploaded. Free to start. Also exports STIX, MISP, CEF, Sigma.",
+    "metaDescription": "Convert a PCAP to CSV entirely in your browser — flows, fingerprints, and severity per row. Nothing is uploaded. Free. Also exports STIX, MISP, CEF, Sigma.",
     "h1": "PCAP to CSV — convert captures to flow rows in your browser",
     "lead": "PacketPilot turns a .pcap, .pcapng, .cap, or .gz capture into a structured CSV of network flows without uploading a single packet. The analysis runs entirely client-side in a Rust-to-WebAssembly engine, so your capture stays on your machine — there is no server round-trip and no packets leaving the browser. Drop a file in, filter the flows you care about, and export them as CSV (or STIX, MISP, CEF, or Sigma).",
     "sections": [
@@ -391,7 +391,7 @@
             "bullets": [
               "Runs client-side via a Rust→WASM engine — the capture is parsed in the tab, not on a host you don't control.",
               "Accepts .pcap, .pcapng, .cap, and gzip-compressed .pcap.gz / .pcapng.gz directly.",
-              "Free on the free tier: the core analyzer and CSV export need only a free account.",
+              "Free for everyone: the analyzer and CSV export need no account or sign-up.",
               "No upload step means no file-size queue, no offsite copy, and no retention to reason about."
             ]
           }
@@ -451,7 +451,7 @@
             "p": "The CSV isn't just a protocol decode — the severity and category columns come from roughly 20 behavioral detectors with MITRE ATT&CK mapping, so the rows you export already carry triage context. Detectors include port scan, brute force, lateral movement, cleartext credentials, PII exposure, DGA, malware download with SHA-256 file carving, weak/deprecated TLS, ARP spoof, SYN flood, cryptomining, DNS tunneling, and more."
           },
           {
-            "p": "Create a free account, drop in a capture, and you get the triage dashboard, threat graph, findings table, and the filterable Flows view that drives the CSV export."
+            "p": "Open the app, drop in a capture, and you get the triage dashboard, threat graph, findings table, and the filterable Flows view that drives the CSV export."
           }
         ]
       }
@@ -463,11 +463,11 @@
       },
       {
         "q": "Is my capture uploaded anywhere?",
-        "a": "No. The PCAP is parsed entirely in your browser by a Rust-to-WebAssembly engine. The raw capture is never sent to any server — there is no upload step at all. Only opt-in, login-gated reputation enrichment ever sends anything outbound, and even then it's a derived summary plus public IPs, never the capture."
+        "a": "No. The PCAP is parsed entirely in your browser by a Rust-to-WebAssembly engine. The raw capture is never sent to any server — there is no upload step at all. Only opt-in reputation enrichment ever sends anything outbound, and even then it's a derived summary plus public IPs, never the capture."
       },
       {
         "q": "Is the PCAP-to-CSV converter free?",
-        "a": "Yes. The full analyzer and CSV export are free with a free account. Pro ($19/mo) adds extra capabilities, but converting a capture to CSV and exporting filtered flows is part of the free tier."
+        "a": "Yes. The full analyzer and CSV export are free for everyone — no account or sign-up needed. Converting a capture to CSV and exporting filtered flows costs nothing, the same as every other feature."
       },
       {
         "q": "Can I export only certain flows instead of the whole capture?",
@@ -547,7 +547,7 @@
             "p": "This is the line that matters for anyone handling sensitive captures: your PCAP is parsed and carved entirely client-side by the WebAssembly engine. It is never uploaded, never staged on a server, and never leaves the browser tab. That's the deliberate difference from cloud PCAP tools like CloudShark or A-Packets, which ship your packets offsite to analyze them."
           },
           {
-            "p": "The full analyzer — carving, hashing, malware-download detection, detectors, fingerprints, flows, and exports to HTML, STIX 2.1, CSV, MISP, CEF, and Sigma — works on the free tier with a free account. Only optional IP reputation enrichment is login-gated, and even then it sends a derived summary plus public IPs, never the capture. Drop a PCAP in and pull the files out — free, in your browser, right now."
+            "p": "The full analyzer — carving, hashing, malware-download detection, detectors, fingerprints, flows, and exports to HTML, STIX 2.1, CSV, MISP, CEF, and Sigma — is free for everyone, with no account or sign-up needed. Optional IP reputation enrichment is opt-in, and even then it sends a derived summary plus public IPs, never the capture. Drop a PCAP in and pull the files out — free, in your browser, right now."
           }
         ]
       }
@@ -567,7 +567,7 @@
       },
       {
         "q": "Is it free?",
-        "a": "Yes. The full analyzer — HTTP file carving, SHA-256 hashing, malware-download detection, the roughly 20 behavioral detectors, flow/host PCAP carving, fingerprints, and all exports — runs on the free tier with a free account. A $19/mo Pro tier adds extras, and optional IP-reputation enrichment is login-gated, but file extraction itself costs nothing."
+        "a": "Yes. The full analyzer — HTTP file carving, SHA-256 hashing, malware-download detection, the roughly 20 behavioral detectors, flow/host PCAP carving, fingerprints, and all exports — is free for everyone, with no account or sign-up needed. Optional IP-reputation enrichment is opt-in, and file extraction itself costs nothing."
       },
       {
         "q": "How does it flag malicious downloads?",
@@ -616,7 +616,7 @@
                 ["File carving + hash reputation", "SHA-256 carving; opt-in AbuseIPDB / GreyNoise / VirusTotal", "Manual object export", "No"],
                 ["Threat-intel exports (STIX / MISP / CEF / Sigma)", "Yes", "No (pcap, CSV, text)", "No"],
                 ["Team sharing & capture repository", "Single-analyst; shareable HTML report", "File-based", "Yes — its core strength"],
-                ["Cost", "Free tier; Pro $19/mo", "Free, open source", "Paid (subscription or appliance licence)"],
+                ["Cost", "Free", "Free, open source", "Paid (subscription or appliance licence)"],
                 ["Best for", "Fast, private threat triage", "Deep manual packet forensics", "Team collaboration & capture storage"]
               ]
             }
@@ -659,7 +659,7 @@
               "The capture is processed in the browser tab and is never uploaded — the privacy guarantee is structural, and you can confirm it in devtools",
               "Nothing to install and nothing to deploy — it works on locked-down or air-gapped hosts where you can't install Wireshark or reach a cloud service",
               "Threat-intel exports (STIX 2.1, MISP, CEF, Sigma, CSV) and a shareable HTML report, plus SHA-256 file carving and opt-in IP reputation",
-              "Free tier with a free account; Pro is $19/mo for exports, enrichment, carving, and saved rules"
+              "Free for everyone — exports, enrichment, carving, and saved rules included; no account or sign-up needed"
             ]
           },
           {
@@ -687,7 +687,7 @@
       },
       {
         "q": "Is PacketPilot really free?",
-        "a": "The full analyzer — all the detectors, severity scoring, MITRE mapping, the dashboards and flows views, file carving, and exports — works on the free tier with a free account. Pro is $19/mo (or $190/yr) and adds reputation enrichment, the AI analyst summary, and saved rules. You can also try a live sample capture with no account at all."
+        "a": "Yes. The full analyzer — all the detectors, severity scoring, MITRE mapping, the dashboards and flows views, file carving, and exports — is free for everyone, and so are opt-in reputation enrichment, the AI analyst summary, and saved rules. There's no account, sign-up, or paid tier, and you can try a live sample capture first."
       }
     ]
   }

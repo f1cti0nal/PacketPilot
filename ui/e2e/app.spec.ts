@@ -19,6 +19,13 @@ test.describe("PacketPilot — desktop", () => {
     await waitForDashboard(page);
   });
 
+  // Free-pivot regression: /app must open for everyone with zero gating — no redirect to a
+  // sign-in page, even when the Supabase env vars are configured (the old AppGate armed on them).
+  test("/app opens directly with no sign-in redirect", async ({ page }) => {
+    expect(new URL(page.url()).pathname).toBe("/app");
+    await expect(page.getByText(/sign in/i)).toHaveCount(0);
+  });
+
   test("loads the dashboard, threat rail, and brand chrome", async ({ page }) => {
     await expect(page.getByText("PacketPilot").first()).toBeVisible();
     await expect(page.getByText("Packets").first()).toBeVisible();

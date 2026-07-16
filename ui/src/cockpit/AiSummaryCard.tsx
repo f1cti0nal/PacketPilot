@@ -35,7 +35,7 @@ export function AiSummaryCard({ output, captureId, model }: { output: AnalysisOu
       setSt({ status: "ready", text: full });
       await putAiSummary(captureId, full, model, Math.floor(Date.now() / 1000));
     } catch (e) {
-      setSt({ status: "error", text: "", error: `AI request failed: ${e instanceof Error ? e.message : String(e)}` });
+      setSt({ status: "error", text: "", error: e instanceof Error ? e.message : String(e) });
     }
   }
 

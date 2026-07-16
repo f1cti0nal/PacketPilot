@@ -141,47 +141,6 @@ export function Landing() {
       }
     }
 
-    // ── (3) Monthly / annual pricing toggle ───────────────────────────────────
-    const periodBtns = Array.from(
-      root.querySelectorAll<HTMLElement>("[data-pp-period]"),
-    );
-    const priceEls = Array.from(
-      root.querySelectorAll<HTMLElement>("[data-pp-price]"),
-    );
-    if (periodBtns.length) {
-      const applyPeriod = (period: string) => {
-        periodBtns.forEach((btn) => {
-          const active = btn.getAttribute("data-pp-period") === period;
-          btn.setAttribute("aria-pressed", active ? "true" : "false");
-        });
-        priceEls.forEach((el) => {
-          const match = el.getAttribute("data-pp-price") === period;
-          // Set an explicit display when shown — clearing to "" would let the
-          // stylesheet's `.pp-price-annual { display: none }` re-hide annual rows.
-          // Price amounts are flex rows; the billing note is a block.
-          const shown = el.classList.contains("pp-price-amt") ? "flex" : "block";
-          el.style.display = match ? shown : "none";
-        });
-      };
-      const handlers: Array<[HTMLElement, (e: Event) => void]> = [];
-      periodBtns.forEach((btn) => {
-        const onClick = () => {
-          const period = btn.getAttribute("data-pp-period") || "monthly";
-          applyPeriod(period);
-        };
-        btn.addEventListener("click", onClick);
-        handlers.push([btn, onClick]);
-      });
-      // Initialise from whichever button is already pressed, defaulting to monthly.
-      const pressed = periodBtns.find(
-        (b) => b.getAttribute("aria-pressed") === "true",
-      );
-      applyPeriod(pressed?.getAttribute("data-pp-period") || "monthly");
-      cleanups.push(() => {
-        handlers.forEach(([btn, fn]) => btn.removeEventListener("click", fn));
-      });
-    }
-
     // ── (4) Carousel: [data-pp-slide] / prev / next / dots ─────────────────────
     const carousel = root.querySelector<HTMLElement>("[data-pp-carousel]");
     if (carousel) {

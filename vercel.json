@@ -23,22 +23,22 @@
       "has": [{ "type": "host", "value": "packetpilot.app" }],
       "destination": "https://admin.packetpilot.app/$1",
       "permanent": false
-    }
+    },
+    { "source": "/login", "destination": "/app", "permanent": true },
+    { "source": "/signup", "destination": "/app", "permanent": true },
+    { "source": "/logout", "destination": "/", "permanent": true },
+    { "source": "/account", "destination": "/app", "permanent": true },
+    { "source": "/account/(.*)", "destination": "/app", "permanent": true },
+    { "source": "/pricing", "destination": "/", "permanent": true }
   ],
   "rewrites": [
     { "source": "/app", "destination": "/" },
     { "source": "/app/(.*)", "destination": "/" },
     { "source": "/admin", "destination": "/" },
     { "source": "/admin/(.*)", "destination": "/" },
-    { "source": "/account", "destination": "/" },
-    { "source": "/account/(.*)", "destination": "/" },
-    { "source": "/login", "destination": "/" },
-    { "source": "/signup", "destination": "/" },
-    { "source": "/logout", "destination": "/" },
     { "source": "/security", "destination": "/" },
     { "source": "/privacy", "destination": "/" },
-    { "source": "/terms", "destination": "/" },
-    { "source": "/pricing", "destination": "/" }
+    { "source": "/terms", "destination": "/" }
   ],
   "headers": [
     {
@@ -57,11 +57,6 @@
     },
     { "source": "/admin", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
     { "source": "/admin/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
-    { "source": "/account", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
-    { "source": "/account/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
-    { "source": "/login", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
-    { "source": "/signup", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
-    { "source": "/logout", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }] },
     {
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "admin.packetpilot.app" }],
