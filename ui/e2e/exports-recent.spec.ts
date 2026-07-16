@@ -30,8 +30,11 @@ async function uploadPcap(page: Page) {
 async function dismissReputationConsents(page: Page) {
   const consent = page.getByRole("dialog", { name: /reputation consent/i });
   for (let i = 0; i < 3; i++) {
+    // Dismiss the TOP-MOST dialog first: when both the IP and VirusTotal consents stack they are
+    // sibling full-screen overlays, so the DOM-later one (.last()) paints on top and the earlier
+    // one (.first()) is covered — clicking the covered one fails the actionability hit-test.
     const dismissed = await consent
-      .first()
+      .last()
       .getByRole("button", { name: "Cancel" })
       .click({ timeout: 3_000 })
       .then(() => true)

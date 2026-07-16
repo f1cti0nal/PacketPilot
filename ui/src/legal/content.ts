@@ -490,7 +490,7 @@ const terms: LegalContent = {
           "bullets": [
             "No payment data. Because nothing is sold, we do not collect, store, or process any payment details.",
             "Future offerings. We may introduce optional paid offerings in the future; if we do, they will be announced with reasonable notice and governed by pricing and terms presented at that time.",
-            "Legacy subscriptions. Subscriptions purchased under PacketPilot's retired paid tier are being wound down by the operator and will not renew; no further charges will be made under them. [FOUNDER/COUNSEL: confirm the wind-down and refund treatment of legacy subscribers — e.g., pro-rated refunds versus service through the end of the already-paid period — and reflect it here.]"
+            "Legacy subscriptions. Subscriptions purchased under PacketPilot's retired paid tier are being wound down by the operator and will be cancelled before their next renewal. [FOUNDER/COUNSEL: the wind-down is a manual operator task in Stripe — confirm each legacy subscription is cancelled so this statement holds, and set the refund treatment of legacy subscribers (e.g., pro-rated refunds versus service through the end of the already-paid period) here.]"
           ]
         }
       ]

@@ -34,7 +34,7 @@ export function AiChatPanel({ open, onClose, output, model }: { open: boolean; o
     } catch (e) {
       // Surface failures as a real alert (not a faint assistant bubble that assistive tech / a
       // scanning user might miss).
-      setError(`AI request failed: ${e instanceof Error ? e.message : String(e)}`);
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
       setStreaming("");

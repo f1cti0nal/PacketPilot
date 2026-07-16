@@ -18,7 +18,10 @@ export async function runViaProxy(messages: AiMessage[], onToken: (t: string) =>
     body: JSON.stringify({ messages }),
   });
   if (!resp.ok || !resp.body) {
-    throw new Error(resp.status === 503 ? "AI is not enabled." : `AI request failed (${resp.status}).`);
+    if (resp.status === 503) throw new Error("AI is not enabled.");
+    // The shared free endpoint returns 429 when busy — a normal transient state, not a failure.
+    if (resp.status === 429) throw new Error("The AI analyst is busy right now — try again in a minute.");
+    throw new Error(`AI request failed (${resp.status}).`);
   }
   const reader = resp.body.getReader();
   const dec = new TextDecoder();
