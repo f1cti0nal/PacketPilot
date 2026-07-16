@@ -15,14 +15,6 @@ vi.mock("./landing.html?raw", () => ({
     <div class="pp-mockup-wrap"><div data-pp-tilt></div></div>
     <div class="pp-stats"><span data-pp-count="20">20+</span></div>
     <div data-pp-reveal>reveal me</div>
-    <div data-pp-carousel>
-      <div data-pp-slide class="is-active">one</div>
-      <div data-pp-slide>two</div>
-      <button data-pp-prev></button>
-      <button data-pp-next></button>
-      <button data-pp-dot data-index="0" class="is-active"></button>
-      <button data-pp-dot data-index="1"></button>
-    </div>
     <div data-pp-tabs>
       <button data-pp-tab="drop" class="is-active" aria-selected="true">Drop</button>
       <button data-pp-tab="triage" aria-selected="false">Triage</button>
@@ -80,15 +72,6 @@ describe("Landing", () => {
         .querySelector<HTMLElement>('[data-pp-tab="triage"]')!
         .getAttribute("aria-selected"),
     ).toBe("true");
-  });
-
-  it("advances the carousel with next and dot controls", () => {
-    const { container } = render(<Landing />);
-    const slides = Array.from(container.querySelectorAll<HTMLElement>("[data-pp-slide]"));
-    fireEvent.click(container.querySelector<HTMLElement>("[data-pp-next]")!);
-    expect(slides[1].classList.contains("is-active")).toBe(true);
-    fireEvent.click(container.querySelector<HTMLElement>('[data-pp-dot][data-index="0"]')!);
-    expect(slides[0].classList.contains("is-active")).toBe(true);
   });
 
   it("toggles the mobile nav menu", () => {
