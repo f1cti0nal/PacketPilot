@@ -11,7 +11,7 @@ export function BlogIndex() {
           The PacketPilot blog
         </h1>
         <p className="mt-3 text-base leading-relaxed text-[var(--color-text-dim)]">
-          Network-forensics teardowns, detection notes, and how the engine thinks — all analyzed in the browser,
+          Network-forensics teardowns, detection notes, and how the engine thinks, all analyzed in the browser,
           nothing uploaded.
         </p>
       </header>

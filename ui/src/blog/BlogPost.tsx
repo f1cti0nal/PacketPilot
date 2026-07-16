@@ -43,7 +43,7 @@ export function BlogPost({ post }: { post: Post }) {
 
         <div className="rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-6 text-center">
           <p className="text-sm text-[var(--color-text-dim)]">
-            Reproduce this in about ten seconds — no account required.
+            Reproduce this in about ten seconds. No account required.
           </p>
           <a
             href="/app?sample=1"

@@ -19,7 +19,7 @@ export function BlogApp() {
   const post = isIndex ? undefined : blogBySlug[slug];
 
   useEffect(() => {
-    document.title = isIndex ? INDEX_TITLE : post ? post.metaTitle : "Not found — PacketPilot Blog";
+    document.title = isIndex ? INDEX_TITLE : post ? post.metaTitle : "Not found | PacketPilot Blog";
     const desc = isIndex ? INDEX_DESC : post?.metaDescription;
     if (!desc) return;
     let m = document.querySelector('meta[name="description"]');
