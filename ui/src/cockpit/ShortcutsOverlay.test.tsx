@@ -30,7 +30,7 @@ describe("ShortcutsOverlay", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Close keyboard shortcuts" }));
     expect(onClose).toHaveBeenCalledTimes(2);
-    fireEvent.click(container.querySelector(".bg-black\\/40")!);
+    fireEvent.click(container.querySelector(".bg-black\\/50")!);
     expect(onClose).toHaveBeenCalledTimes(3);
   });
 });

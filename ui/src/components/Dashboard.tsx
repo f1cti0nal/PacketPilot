@@ -94,6 +94,12 @@ export function Dashboard({
 
   const incidents = useMemo(() => [...(s.incidents ?? [])].sort(worstFirst), [s.incidents]);
   const [hero, ...secondary] = incidents;
+  // A beacon incident must actually exist before ProtocolMix may frame a
+  // TLS-heavy mix as "consistent with the C2 beacon profile".
+  const hasBeaconIncident = useMemo(
+    () => incidents.some((i) => i.findings.some((f) => f.kind === "beacon")),
+    [incidents],
+  );
   const incidentByHost = useMemo(() => new Map(incidents.map((i) => [i.host, i])), [incidents]);
   const threatByHost = useMemo(() => new Map((s.ip_threats ?? []).map((t) => [t.ip, t])), [s.ip_threats]);
   // Passive-DNS domain + L2 MAC, keyed by host IP, for inline identity in the flyout.
@@ -135,7 +141,7 @@ export function Dashboard({
 
   return (
     <div className="app-bg min-h-full">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-[var(--density-gap)] p-4 sm:p-5">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-[var(--density-gap)] p-2">
         {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
         <KpiCluster output={output} />
         {aiGate === "on" && (
@@ -207,7 +213,7 @@ export function Dashboard({
             <CaptureIntegrity output={output} />
           </div>
           <div className="lg:col-span-6">
-            <ProtocolMix proto={s.proto} onSelect={toFlowsQuery} />
+            <ProtocolMix proto={s.proto} onSelect={toFlowsQuery} beaconIncident={hasBeaconIncident} />
           </div>
           <div className="lg:col-span-6">
             <TopTalkersCard talkers={s.top_talkers} onSelect={openHost} />
@@ -335,7 +341,7 @@ function ThreatWatchlist({
                     e.stopPropagation();
                     onCarveHost(t.ip);
                   }}
-                  className={`absolute bottom-1.5 right-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 transition-colors ${
+                  className={`absolute bottom-1.5 right-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 transition-colors ${
                     canCarve
                       ? "text-[var(--color-text-faint)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-accent)]"
                       : "cursor-not-allowed text-[var(--color-text-faint)] opacity-40"

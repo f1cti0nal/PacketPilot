@@ -55,6 +55,12 @@ export const TAB_ICON: Record<TabId, LucideIcon> = {
   compare: GitCompare,
 };
 
+/**
+ * Deliberately NOT the shared COUNT_BADGE tint recipe: this badge overlaps the tab icon's
+ * corner, and COUNT_BADGE's translucent 18%-accent background would let the icon strokes
+ * bleed through behind the tiny digits, killing legibility. A filled disc keeps the count
+ * readable over any icon in both themes.
+ */
 function Badge({ children, tone = "accent" }: { children: ReactNode; tone?: "accent" | "critical" }) {
   return (
     <span

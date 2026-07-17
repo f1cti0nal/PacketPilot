@@ -22,7 +22,7 @@ export function ConsentBanner() {
     <div role="region" aria-label="Analytics cookie consent" style={banner}>
       <p style={text}>
         We use Google Analytics to understand product usage. It sets cookies only if you accept.
-        Your packet captures are never uploaded — this is site analytics only.{" "}
+        Your packet captures are never uploaded; this is site analytics only.{" "}
         <a href="/privacy" style={link}>Privacy Policy</a>.
       </p>
       <div style={actions}>

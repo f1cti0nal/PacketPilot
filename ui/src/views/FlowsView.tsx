@@ -24,7 +24,7 @@ import { EmptyState } from "../components/state/EmptyState";
 import { FlowsTable } from "../components/flows/FlowsTable";
 import { FlowDetail } from "../components/FlowDetail";
 import { PacketInspector } from "../cockpit/PacketInspector";
-import { Panel, Toolbar } from "../cockpit/primitives";
+import { BTN_OUTLINE, INPUT_BASE, Panel, Toolbar } from "../cockpit/primitives";
 
 export interface FlowsViewProps {
   state: FlowsState;
@@ -255,12 +255,6 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
     );
   }
 
-  const inputBase =
-    "rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] " +
-    "text-[length:var(--fs-body)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] " +
-    "focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] " +
-    "focus:border-[var(--color-accent)]";
-
   return (
     <div
       data-component="FlowsView"
@@ -279,7 +273,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by IP, port, category, or SNI…"
             aria-label="Filter flows"
-            className={cn(inputBase, "w-full py-1.5 pl-8 pr-8 font-mono-num")}
+            className={cn(INPUT_BASE, "w-full py-1.5 pl-8 pr-8 font-mono-num")}
           />
           {query && (
             <button
@@ -299,7 +293,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             aria-label="Filter by category"
-            className={cn(inputBase, "py-1.5 pl-2.5 pr-7")}
+            className={cn(INPUT_BASE, "py-1.5 pl-2.5 pr-7")}
           >
             <option value={ALL_CATEGORIES}>All categories</option>
             {categories.map((c) => (
@@ -323,7 +317,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             <button
               type="button"
               onClick={clearFilters}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:border-[var(--color-accent)]"
+              className={BTN_OUTLINE}
             >
               Clear filters
             </button>
@@ -333,7 +327,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             onClick={exportCsv}
             disabled={filtered.length === 0}
             title="Export the filtered flows to CSV"
-            className="inline-flex items-center gap-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-50"
+            className={BTN_OUTLINE}
           >
             <Download className="h-3.5 w-3.5" aria-hidden />
             Export CSV

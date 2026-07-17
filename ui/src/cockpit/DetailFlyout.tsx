@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { ArrowRight, X } from "lucide-react";
 import type { Incident, ScoreTerm } from "../types";
 import { sevColor } from "./viz";
-import { SeverityChip, SeverityDot, MitreTag, SectionLabel } from "./primitives";
+import { SeverityChip, SeverityDot, MitreTag, SectionLabel, OVERLAY_BACKDROP } from "./primitives";
 import { EvidenceList } from "../components/transparency/EvidenceList";
 import { FindingMetrics } from "../components/transparency/FindingMetrics";
 import { ScoreWaterfall } from "../components/transparency/ScoreWaterfall";
@@ -76,8 +76,8 @@ export function DetailFlyout({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={`Incident detail for ${incident.host}`}>
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div ref={panelRef} className="glass-band relative flex h-full w-[480px] max-w-full flex-col border-l" style={{ boxShadow: "var(--sh-float)" }}>
+      <div className={OVERLAY_BACKDROP} onClick={onClose} />
+      <div ref={panelRef} className="glass-band pp-slide-in-r relative flex h-full w-[480px] max-w-full flex-col border-l" style={{ boxShadow: "var(--sh-float)" }}>
         {/* Header */}
         <header className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
           <div className="min-w-0">

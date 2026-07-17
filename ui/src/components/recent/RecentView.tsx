@@ -17,7 +17,8 @@ import type { RecentEntry, RecentOrigin } from "../../types";
 import { compactNumber, humanBytes, humanNumber, relativeTime } from "../../lib/format";
 import { captureVerdict, workspaceRollup } from "../../lib/workspace";
 import { cn } from "../../lib/cn";
-import { Panel } from "../../cockpit/primitives";
+import { BTN_GHOST_ICON, BTN_OUTLINE, Panel } from "../../cockpit/primitives";
+import { EmptyState } from "../state/EmptyState";
 import { VerdictChip } from "../VerdictChip";
 
 export interface RecentViewProps {
@@ -136,13 +137,13 @@ function RecentRow({
           >
             {entry.name}
             {active && (
-              <span className="ml-2 rounded-sm bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 py-0.5 text-[9px] text-[var(--color-accent)]">
+              <span className="ml-2 rounded-[var(--r-micro)] bg-[color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1.5 py-0.5 t-tag uppercase text-[var(--color-accent)]">
                 Active
               </span>
             )}
           </div>
           <div
-            className="mt-0.5 flex items-center gap-1 text-[10px] uppercase tracking-wider text-[var(--color-text-faint)]"
+            className="mt-0.5 flex items-center gap-1 t-tag uppercase text-[var(--color-text-faint)]"
             title={origin.title}
           >
             <OriginIcon className="h-3 w-3" aria-hidden />
@@ -209,7 +210,7 @@ function RecentRow({
             type="button"
             onClick={() => onOpen(entry)}
             disabled={busy}
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
+            className={BTN_OUTLINE}
           >
             Open
           </button>
@@ -218,7 +219,7 @@ function RecentRow({
             onClick={() => onReanalyze(entry)}
             disabled={busy}
             title="Re-run the engine on the original file"
-            className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
+            className={BTN_OUTLINE}
           >
             {busy ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -233,7 +234,7 @@ function RecentRow({
             disabled={busy}
             aria-label={`Remove ${entry.name}`}
             title="Remove from recent"
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-sev-high)] hover:text-[var(--color-sev-high)] disabled:opacity-50"
+            className={cn(BTN_GHOST_ICON, "disabled:opacity-50")}
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden />
           </button>
@@ -276,6 +277,8 @@ export function RecentView({
     setSelectedIds(new Set());
   };
 
+  // No "Load capture" here: the CommandBar carries the global affordance and the
+  // empty state below has its own CTA, so the view keeps exactly one in-view CTA.
   const toolbar = (
     <div className="flex items-center gap-2">
       {selectable && (
@@ -283,26 +286,14 @@ export function RecentView({
           type="button"
           onClick={startCompare}
           disabled={selectedIds.size !== 2}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
+          className={BTN_OUTLINE}
         >
           <GitCompare className="h-3.5 w-3.5" aria-hidden />
           Compare ({selectedIds.size}/2)
         </button>
       )}
-      <button
-        type="button"
-        onClick={onLoadNew}
-        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-      >
-        <Upload className="h-3.5 w-3.5" aria-hidden />
-        Load capture
-      </button>
       {entries.length > 0 && (
-        <button
-          type="button"
-          onClick={onClear}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-sev-high)] hover:text-[var(--color-sev-high)]"
-        >
+        <button type="button" onClick={onClear} className={BTN_OUTLINE}>
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
           Clear all
         </button>
@@ -318,7 +309,7 @@ export function RecentView({
             Recent captures
           </h1>
           <p className="text-xs text-[var(--color-text-dim)]">
-            Last opened files with their cached stats — open to restore instantly, or
+            Last opened files with their cached stats. Open to restore instantly, or
             re-analyze from the original.
           </p>
         </div>
@@ -328,39 +319,28 @@ export function RecentView({
       {entries.length > 0 && <RecentRollup entries={entries} />}
 
       {entries.length === 0 ? (
-        <Panel className="flex-1">
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center">
-            <FileStack className="h-8 w-8 text-[var(--color-text-faint)]" aria-hidden />
-            <div className="text-sm text-[var(--color-text)]">No recent captures yet</div>
-            <p className="max-w-sm text-xs text-[var(--color-text-dim)]">
-              Load a <span className="font-mono-num">.pcap</span> /{" "}
-              <span className="font-mono-num">.pcapng</span> capture and it will appear here,
-              with its stats saved so you can reopen it in one click.
-            </p>
-            <button
-              type="button"
-              onClick={onLoadNew}
-              className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-            >
-              <Upload className="h-3.5 w-3.5" aria-hidden />
-              Load capture
-            </button>
-          </div>
-        </Panel>
+        // The shared first-run screen, so every empty surface in the console reads the same.
+        <div className="min-h-0 flex-1">
+          <EmptyState
+            title="No recent captures yet"
+            hint="Load a .pcap or .pcapng capture and it will appear here, with its stats saved so you can reopen it in one click."
+            onLoad={onLoadNew}
+          />
+        </div>
       ) : (
         <Panel className="overflow-auto">
           <table className="pp-table">
             <thead>
               <tr>
                 {selectable && <th className="w-8 px-3 py-2 text-left" />}
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">Capture</th>
-                <th className="w-28 px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">Verdict</th>
-                <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] sm:table-cell">Flows</th>
-                <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] md:table-cell">Packets</th>
-                <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] lg:table-cell">Size</th>
-                <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] xl:table-cell">Analyzed</th>
-                <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] lg:table-cell">Hosts</th>
-                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">Actions</th>
+                <th className="t-label px-3 py-2 text-left">Capture</th>
+                <th className="t-label w-28 px-3 py-2 text-left">Verdict</th>
+                <th className="t-label hidden px-3 py-2 text-left sm:table-cell">Flows</th>
+                <th className="t-label hidden px-3 py-2 text-left md:table-cell">Packets</th>
+                <th className="t-label hidden px-3 py-2 text-left lg:table-cell">Size</th>
+                <th className="t-label hidden px-3 py-2 text-left xl:table-cell">Analyzed</th>
+                <th className="t-label hidden px-3 py-2 text-left lg:table-cell">Hosts</th>
+                <th className="t-label px-3 py-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>

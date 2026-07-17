@@ -217,16 +217,16 @@ export function AppShell({
   const exportActions = useMemo(
     () => [
       { id: "report", label: "HTML report", run: () => void runExport(onExport) },
-      { id: "csv", label: "CSV — download", run: () => void runExport(onExportCsv) },
-      { id: "csv-copy", label: "CSV — copy", run: () => void runExport(onCopyCsv) },
-      { id: "stix", label: "STIX bundle — download", run: () => void runExport(onExportStix) },
-      { id: "stix-copy", label: "STIX bundle — copy", run: () => void runExport(onCopyStix) },
-      { id: "misp", label: "MISP event — download", run: () => void runExport(onExportMisp) },
-      { id: "misp-copy", label: "MISP event — copy", run: () => void runExport(onCopyMisp) },
-      { id: "cef", label: "CEF — download", run: () => void runExport(onExportCef) },
-      { id: "cef-copy", label: "CEF — copy", run: () => void runExport(onCopyCef) },
-      { id: "sigma", label: "Sigma rules — download", run: () => void runExport(onExportSigma) },
-      { id: "sigma-copy", label: "Sigma rules — copy", run: () => void runExport(onCopySigma) },
+      { id: "csv", label: "Download CSV", run: () => void runExport(onExportCsv) },
+      { id: "csv-copy", label: "Copy CSV", run: () => void runExport(onCopyCsv) },
+      { id: "stix", label: "Download STIX bundle", run: () => void runExport(onExportStix) },
+      { id: "stix-copy", label: "Copy STIX bundle", run: () => void runExport(onCopyStix) },
+      { id: "misp", label: "Download MISP event", run: () => void runExport(onExportMisp) },
+      { id: "misp-copy", label: "Copy MISP event", run: () => void runExport(onCopyMisp) },
+      { id: "cef", label: "Download CEF", run: () => void runExport(onExportCef) },
+      { id: "cef-copy", label: "Copy CEF", run: () => void runExport(onCopyCef) },
+      { id: "sigma", label: "Download Sigma rules", run: () => void runExport(onExportSigma) },
+      { id: "sigma-copy", label: "Copy Sigma rules", run: () => void runExport(onCopySigma) },
     ],
     [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma],
   );
@@ -308,7 +308,7 @@ export function AppShell({
             many flex-1 gap-px cells at the ~768px boundary) so the shell never grows
             a horizontal scrollbar; views that need real horizontal scroll (FlowsTable)
             carry their own overflow-auto container. */}
-        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">{children}</main>
+        <main data-app-main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">{children}</main>
         {isMobile && <BottomTabBar tabs={tabs} activeTab={activeTab} onTab={onTabChange} />}
       </div>
       {loadDialogOpen && (

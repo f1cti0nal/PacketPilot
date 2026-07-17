@@ -36,7 +36,7 @@ export function AttackMatrixCard({ findings }: { findings: Finding[] }) {
                   href={attackUrl(tech.id)}
                   target="_blank"
                   rel="noreferrer"
-                  title={`${tech.id} · ${tech.name} — open on attack.mitre.org`}
+                  title={`${tech.id} · ${tech.name}: open on attack.mitre.org`}
                   className="group flex flex-col gap-0.5 rounded-[var(--r-tile)] border bg-[var(--color-surface-2)] px-2 py-1.5 transition-colors hover:bg-[var(--color-surface-3)]"
                   style={{ borderColor: "var(--color-border)", borderLeftColor: color, borderLeftWidth: 2 }}
                 >

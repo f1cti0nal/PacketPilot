@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { shortHash } from "../lib/format";
+import { BTN_GHOST_ICON, BTN_OUTLINE } from "./primitives";
 import { ExportMenu } from "./ExportMenu";
 import type { ExportAction } from "./ExportMenu";
 import { ThemeToggle } from "./ThemeToggle";
@@ -87,8 +88,7 @@ export function CommandBar({
                 {shortHash(sha256, 8, 6)}
               </span>
             )}
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+            <span className="inline-flex items-center rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
               <span className="t-tag font-medium uppercase text-[var(--color-accent)]">Analyzed</span>
             </span>
           </>
@@ -142,7 +142,7 @@ export function CommandBar({
             type="button"
             aria-label="Ask AI"
             onClick={onOpenAiChat}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
+            className={BTN_GHOST_ICON}
           >
             <Sparkles size={14} />
           </button>
@@ -190,7 +190,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-default disabled:opacity-50"
+      className={BTN_OUTLINE}
     >
       {icon}
       <span className="hidden lg:inline">{label}</span>

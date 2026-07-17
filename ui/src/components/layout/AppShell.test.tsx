@@ -90,11 +90,11 @@ describe("AppShell", () => {
     render(<AppShell {...minimalProps({ onExportSigma, onCopySigma })} />);
 
     await u.click(screen.getByRole("button", { name: /export/i }));
-    await u.click(screen.getByText("Sigma rules — download"));
+    await u.click(screen.getByText("Download Sigma rules"));
     expect(onExportSigma).toHaveBeenCalled();
 
     await u.click(screen.getByRole("button", { name: /export/i }));
-    await u.click(screen.getByText("Sigma rules — copy"));
+    await u.click(screen.getByText("Copy Sigma rules"));
     expect(onCopySigma).toHaveBeenCalled();
   });
 

@@ -43,16 +43,16 @@ export function PacketDistributionsCard({
       <div className="grid gap-6 sm:grid-cols-2">
         {hasSizes && (
           <div>
-            <div className="t-tag mb-2 text-[var(--color-text-dim)]">Wire size (bytes)</div>
+            <div className="t-tag mb-2 uppercase text-[var(--color-text-faint)]">Wire size (bytes)</div>
             <ul className="flex flex-col gap-1.5">
               {sizeRows.map((b) => (
                 <li key={b.label} className="flex items-center gap-2 text-xs">
                   <span className="font-mono-num w-[4.5rem] shrink-0 text-right text-[var(--color-text-dim)]">
                     {b.label}
                   </span>
-                  <span className="relative h-3 flex-1 overflow-hidden rounded-sm bg-[var(--color-surface-2)]">
+                  <span className="relative h-3 flex-1 overflow-hidden rounded-[var(--r-micro)] bg-[var(--color-surface-2)]">
                     <span
-                      className="absolute inset-y-0 left-0 rounded-sm bg-[var(--color-accent)]"
+                      className="absolute inset-y-0 left-0 rounded-[var(--r-micro)] bg-[var(--color-accent)]"
                       style={{ width: `${(b.pkts / sizeMax) * 100}%` }}
                     />
                   </span>
@@ -66,7 +66,7 @@ export function PacketDistributionsCard({
         )}
         {ttlRows.length > 0 && (
           <div>
-            <div className="t-tag mb-2 text-[var(--color-text-dim)]">TTL / hop limit</div>
+            <div className="t-tag mb-2 uppercase text-[var(--color-text-faint)]">TTL / hop limit</div>
             <ul className="flex flex-col gap-1.5">
               {ttlRows.map((t) => {
                 const hint = ttlHint(t.ttl);
@@ -75,12 +75,12 @@ export function PacketDistributionsCard({
                     <span className="font-mono-num w-8 shrink-0 text-right text-[var(--color-text)]">
                       {t.ttl}
                     </span>
-                    <span className="w-[4.5rem] shrink-0 text-[0.65rem] text-[var(--color-text-faint)]">
+                    <span className="w-[4.5rem] shrink-0 t-tag text-[var(--color-text-faint)]">
                       {hint}
                     </span>
-                    <span className="relative h-3 flex-1 overflow-hidden rounded-sm bg-[var(--color-surface-2)]">
+                    <span className="relative h-3 flex-1 overflow-hidden rounded-[var(--r-micro)] bg-[var(--color-surface-2)]">
                       <span
-                        className="absolute inset-y-0 left-0 rounded-sm bg-[var(--color-sev-low)]"
+                        className="absolute inset-y-0 left-0 rounded-[var(--r-micro)] bg-[var(--color-sev-low)]"
                         style={{ width: `${(t.pkts / ttlMax) * 100}%` }}
                       />
                     </span>
