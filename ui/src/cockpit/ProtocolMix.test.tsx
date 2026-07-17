@@ -19,10 +19,19 @@ describe("ProtocolMix", () => {
     expect(screen.getByText("0.2%")).toBeInTheDocument();
   });
 
-  it("renders the TLS-heavy caption when TLS dominates", () => {
+  it("renders a neutral TLS-heavy caption when TLS dominates (no beacon claim by default)", () => {
     const proto = makeOutput().summary.proto;
     render(<ProtocolMix proto={proto} />);
-    expect(screen.getByText(/TLS-heavy/i)).toBeInTheDocument();
+    expect(screen.getByText("TLS-heavy traffic mix")).toBeInTheDocument();
+    expect(screen.queryByText(/C2 beacon/i)).toBeNull();
+  });
+
+  it("mentions the C2 beacon profile only when a beacon incident is confirmed", () => {
+    const proto = makeOutput().summary.proto;
+    render(<ProtocolMix proto={proto} beaconIncident />);
+    expect(
+      screen.getByText("TLS-heavy, consistent with the C2 beacon profile"),
+    ).toBeInTheDocument();
   });
 
   it("renders TLS and HTTP legend labels", () => {

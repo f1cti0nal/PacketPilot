@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { useDialogA11y } from "../lib/useDialogA11y";
+import { OVERLAY_BACKDROP } from "./primitives";
 
 // The command-palette / per-flow shortcuts are bound to Cmd on macOS, Ctrl elsewhere.
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -59,9 +60,9 @@ export function ShortcutsOverlay({
       aria-labelledby={labelId}
       className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[12vh]"
     >
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
+      <div className={OVERLAY_BACKDROP} onClick={onClose} aria-hidden />
       <div
-        className="glass-band relative w-full max-w-md rounded-[var(--r-card)] border border-[var(--color-border)]"
+        className="glass-band pp-pop-in relative w-full max-w-md rounded-[var(--r-card)] border border-[var(--color-border)]"
         style={{ boxShadow: "var(--sh-float)" }}
       >
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
@@ -91,7 +92,7 @@ export function ShortcutsOverlay({
                       {it.keys.map((k) => (
                         <kbd
                           key={k}
-                          className="font-mono-num rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[11px] text-[var(--color-text)]"
+                          className="font-mono-num rounded-[var(--r-micro)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[11px] text-[var(--color-text)]"
                         >
                           {k}
                         </kbd>

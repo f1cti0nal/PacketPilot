@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { BTN_OUTLINE, MENU_PANEL } from "../../cockpit/primitives";
 import { listRuleSets, removeRuleSet, type RuleSet } from "../../lib/ruleSets";
 import { useMenuKeyboard } from "../../lib/useMenuKeyboard";
 
@@ -42,13 +44,14 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotic
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        className={BTN_OUTLINE}
       >
-        Rules ▾
+        Rules
+        <ChevronDown size={13} aria-hidden />
       </button>
 
       {open && (
-        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Rule sets" className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1">
+        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Rule sets" className={`${MENU_PANEL} absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden`}>
           {/* Load .rules file row */}
           <button
             type="button"

@@ -5,6 +5,7 @@ import { getAiSummary, putAiSummary } from "../lib/ai/cache";
 import { generateSummary } from "../lib/ai/run";
 import { Markdown } from "../lib/markdown";
 import { AiConsent } from "./AiConsent";
+import { BTN_OUTLINE, Card } from "./primitives";
 
 type State = { status: "idle" | "loading" | "ready" | "error"; text: string; error?: string };
 
@@ -64,20 +65,22 @@ export function AiSummaryCard({ output, captureId, model }: { output: AnalysisOu
 
   return (
     <>
-      <section className="rounded-lg bg-[var(--color-surface)] p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">AI Analyst Summary</h2>
-          <button className="t-tag font-medium" onClick={run} disabled={st.status === "loading"}>
+      <Card
+        label="AI"
+        title="AI Analyst Summary"
+        right={
+          <button type="button" className={BTN_OUTLINE} onClick={run} disabled={st.status === "loading"}>
             {st.status === "ready" ? "Regenerate" : st.status === "loading" ? "Generating…" : "Generate"}
           </button>
-        </div>
-        {st.error && <p role="alert" className="mt-2 text-xs text-[var(--color-sev-critical)]">{st.error}</p>}
+        }
+      >
+        {st.error && <p role="alert" className="text-xs text-[var(--color-sev-critical)]">{st.error}</p>}
         {st.text && (
-          <div aria-live="polite" aria-busy={st.status === "loading"} className="mt-2 text-xs text-[var(--color-text)]">
+          <div aria-live="polite" aria-busy={st.status === "loading"} className="text-xs text-[var(--color-text)]">
             <Markdown text={st.text} />
           </div>
         )}
-      </section>
+      </Card>
       {showConsent && (
         <AiConsent
           model={model}

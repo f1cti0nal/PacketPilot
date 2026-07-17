@@ -23,7 +23,7 @@ export function DownloadsCard({ downloads }: { downloads: DownloadEvent[] }) {
 
   return (
     <Card
-      label="FILES"
+      label="DOWNLOADS"
       title="Downloads"
       right={
         <span className="font-mono-num t-tag text-[var(--color-text-dim)]">
@@ -38,7 +38,7 @@ export function DownloadsCard({ downloads }: { downloads: DownloadEvent[] }) {
             className="flex items-baseline gap-2 py-1.5 text-xs"
           >
             <span
-              className="shrink-0 rounded px-1 text-[0.65rem] font-medium uppercase"
+              className="shrink-0 rounded-[var(--r-micro)] px-1 t-tag uppercase"
               style={{ color: KIND_ACCENT[d.kind] ?? "var(--color-text-dim)" }}
             >
               {d.kind}
@@ -51,7 +51,7 @@ export function DownloadsCard({ downloads }: { downloads: DownloadEvent[] }) {
               {d.server}
             </span>
             {d.count > 1 && (
-              <span className="font-mono-num ml-auto shrink-0 text-[0.65rem] text-[var(--color-text-faint)]">
+              <span className="font-mono-num ml-auto shrink-0 t-tag text-[var(--color-text-faint)]">
                 ×{humanNumber(d.count)}
               </span>
             )}

@@ -20,7 +20,7 @@ export async function runViaProxy(messages: AiMessage[], onToken: (t: string) =>
   if (!resp.ok || !resp.body) {
     if (resp.status === 503) throw new Error("AI is not enabled.");
     // The shared free endpoint returns 429 when busy — a normal transient state, not a failure.
-    if (resp.status === 429) throw new Error("The AI analyst is busy right now — try again in a minute.");
+    if (resp.status === 429) throw new Error("The AI analyst is busy right now; try again in a minute.");
     throw new Error(`AI request failed (${resp.status}).`);
   }
   const reader = resp.body.getReader();

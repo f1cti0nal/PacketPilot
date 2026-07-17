@@ -30,6 +30,13 @@ describe("ThreatsView", () => {
     expect(screen.getByRole("button", { name: /^10\.13\.37\.7/ })).toHaveAttribute("aria-current", "true");
   });
 
+  it("pluralizes the flow count (1 flow, n flows)", () => {
+    const one = { ...threats[0], flows: 1 };
+    render(<ThreatsView threats={[one]} activeIp={null} onSelect={vi.fn()} />);
+    expect(screen.getByText("1 flow")).toBeInTheDocument();
+    expect(screen.queryByText("1 flows")).toBeNull();
+  });
+
   it("filters the watchlist by host", async () => {
     const u = userEvent.setup();
     render(<ThreatsView threats={threats} activeIp={null} onSelect={vi.fn()} />);

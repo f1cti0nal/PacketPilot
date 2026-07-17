@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
+import { BTN_GHOST_ICON } from "./primitives";
 import {
   resolveTheme,
   applyTheme,
@@ -60,7 +61,7 @@ export function ThemeToggle() {
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
       aria-pressed={!isDark}
       title={isDark ? "Switch to light theme" : "Switch to dark theme"}
-      className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
+      className={BTN_GHOST_ICON}
     >
       {isDark ? <Sun size={14} aria-hidden /> : <Moon size={14} aria-hidden />}
     </button>

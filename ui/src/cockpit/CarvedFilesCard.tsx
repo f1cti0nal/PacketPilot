@@ -14,9 +14,9 @@ function RepBadge({ file }: { file: CarvedFile }) {
         href={v.link ?? undefined}
         target="_blank"
         rel="noreferrer noopener"
-        className="shrink-0 truncate rounded px-1 text-[0.6rem] font-medium uppercase hover:underline"
+        className="shrink-0 truncate rounded-[var(--r-micro)] px-1 t-tag uppercase hover:underline"
         style={{ color: "var(--color-sev-critical)" }}
-        title={`VirusTotal: ${v.score ?? "?"}% of engines flagged this${v.tags[0] ? ` — ${v.tags[0]}` : ""}`}
+        title={`VirusTotal: ${v.score ?? "?"}% of engines flagged this${v.tags[0] ? ` (${v.tags[0]})` : ""}`}
       >
         VT ✕ {label}
       </a>
@@ -25,7 +25,7 @@ function RepBadge({ file }: { file: CarvedFile }) {
   if (v.status === "clean") {
     return (
       <span
-        className="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase text-[var(--color-text-faint)]"
+        className="shrink-0 rounded-[var(--r-micro)] px-1 t-tag uppercase text-[var(--color-text-faint)]"
         title="VirusTotal: no engine detections"
       >
         VT ✓
@@ -52,7 +52,7 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
 
   return (
     <Card
-      label="FILES"
+      label="CARVED FILES"
       title="Carved files"
       right={
         <span className="font-mono-num t-tag text-[var(--color-text-dim)]">
@@ -72,18 +72,18 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
               </span>
               {f.known_bad && (
                 <span
-                  className="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase"
+                  className="shrink-0 rounded-[var(--r-micro)] px-1 t-tag uppercase"
                   style={{ color: "var(--color-sev-critical)" }}
                 >
                   known-bad
                 </span>
               )}
               <RepBadge file={f} />
-              <span className="font-mono-num ml-auto shrink-0 text-[0.65rem] text-[var(--color-text-faint)]">
+              <span className="font-mono-num ml-auto shrink-0 t-tag text-[var(--color-text-faint)]">
                 {humanBytes(f.size)}
               </span>
             </div>
-            <div className="flex items-baseline gap-1.5 text-[0.65rem] text-[var(--color-text-dim)]">
+            <div className="flex items-baseline gap-1.5 t-tag text-[var(--color-text-dim)]">
               <span className="font-mono-num truncate" title={f.client}>
                 {f.client}
               </span>
@@ -97,7 +97,7 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
                 {f.signatures!.slice(0, 6).map((s) => (
                   <span
                     key={s}
-                    className="rounded bg-[var(--color-surface-2)] px-1 text-[0.6rem] text-[var(--color-text-dim)]"
+                    className="rounded-[var(--r-micro)] bg-[var(--color-surface-2)] px-1 t-tag text-[var(--color-text-dim)]"
                   >
                     {s}
                   </span>
@@ -106,7 +106,7 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
             )}
             {f.extracted_path && (
               <div
-                className="flex items-baseline gap-1 pt-0.5 text-[0.6rem] text-[var(--color-text-faint)]"
+                className="flex items-baseline gap-1 pt-0.5 t-tag text-[var(--color-text-faint)]"
                 title={f.extracted_path}
               >
                 <span className="uppercase tracking-wide">extracted</span>
