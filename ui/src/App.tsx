@@ -31,6 +31,7 @@ import { ErrorState } from "./components/state/ErrorState";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
 import { FlowsView } from "./views/FlowsView";
+import { QueryView } from "./views/QueryView";
 import { FindingsView } from "./views/FindingsView";
 import { ThreatsView } from "./views/ThreatsView";
 import { RecentView } from "./components/recent/RecentView";
@@ -149,6 +150,10 @@ export function App() {
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
   );
+  // Query-console cross-filter: a flow_id set lifted from a query result into the
+  // Flows tab. Cleared on capture change (stale ids would filter everything out)
+  // and whenever a dashboard deep-link sets its own facet filter.
+  const [queryFlowIds, setQueryFlowIds] = useState<Set<number> | null>(null);
   const [compareIds, setCompareIds] = useState<[string, string] | null>(null);
   const [compareSwapped, setCompareSwapped] = useState(false);
   const startCompare = useCallback((beforeId: string, afterId: string) => {
@@ -218,6 +223,7 @@ export function App() {
     setActiveSource(null); // the bundled sample has no re-extractable source
     setSelectedIncident(null);
     setActiveIp(null);
+    setQueryFlowIds(null);
     setTab("dashboard");
 
     setSummary({ status: "loading" });
@@ -263,6 +269,7 @@ export function App() {
       if (input.flows) setFlows({ status: "ready", rows: input.flows });
       setSelectedIncident(null);
       setActiveIp(null);
+      setQueryFlowIds(null);
       setActiveSource(input.source ?? null);
 
       const name = input.fileName ?? basename(data.source_path);
@@ -427,6 +434,7 @@ export function App() {
       } else if (next.flows) {
         setFlows({ status: "ready", rows: next.flows });
         setActiveSource(null); // swapped flows out of band — old source no longer matches
+        setQueryFlowIds(null);
       }
     },
     [applyCapture, triggerReputationGate, triggerDomainReputationGate],
@@ -503,6 +511,7 @@ export function App() {
     setTab("dashboard");
     setSelectedIncident(null);
     setActiveIp(null);
+    setQueryFlowIds(null);
     // Recent entries restore cached stats only — we no longer hold the original pcap bytes,
     // so packet drill-down stays disabled until the capture is re-analyzed.
     setActiveSource(null);
@@ -573,6 +582,7 @@ export function App() {
     setActiveSource(null);
     setSelectedIncident(null);
     setActiveIp(null);
+    setQueryFlowIds(null);
     setTab("dashboard");
   }, []);
 
@@ -632,10 +642,19 @@ export function App() {
         ip: filter.ip,
         query: filter.query,
       });
+      // A facet deep-link intersecting a leftover query-result filter would be
+      // confusing — the explicit facet wins.
+      setQueryFlowIds(null);
       setTab("flows");
     },
     [],
   );
+
+  // Query console → Flows: filter the flows table down to a result's flow_ids.
+  const openQueryResultInFlows = useCallback((ids: Set<number>) => {
+    setQueryFlowIds(ids);
+    setTab("flows");
+  }, []);
 
   const openThreat = useCallback((ip: string) => {
     setActiveIp(ip);
@@ -754,7 +773,15 @@ export function App() {
           return <CompareView before={before} after={after} onSwap={() => setCompareSwapped((s) => !s)} />;
         })()
       ) : tab === "flows" ? (
-        <FlowsView state={flows} initialFilter={flowsFilter} activeSource={activeSource} />
+        <FlowsView
+          state={flows}
+          initialFilter={flowsFilter}
+          activeSource={activeSource}
+          flowIdFilter={queryFlowIds}
+          onClearFlowIdFilter={() => setQueryFlowIds(null)}
+        />
+      ) : tab === "query" ? (
+        <QueryView state={flows} onOpenInFlows={openQueryResultInFlows} aiOn={aiOn} aiModel={aiModel} />
       ) : tab === "findings" ? (
         <FindingsView
           findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}
