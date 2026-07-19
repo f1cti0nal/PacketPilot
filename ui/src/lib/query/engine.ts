@@ -35,6 +35,20 @@ import { FLOW_TABLE_DDL } from "./schema";
 export const MAX_RESULT_ROWS = 5000;
 /** Wall-clock budget per query before it is cancelled in the worker. */
 export const QUERY_TIMEOUT_MS = 20_000;
+/**
+ * Ingestion ceiling: captures beyond this many flows are queryable only for
+ * their first N rows (the UI says so explicitly — never a silent degrade).
+ * Far above what the bounded-memory engine emits for realistic captures;
+ * benchmarked at this scale in e2e/query-perf.spec.ts.
+ */
+export const QUERY_ROW_CEILING = 1_000_000;
+
+export interface LoadedFlows {
+  /** Rows actually ingested into the `flow` table. */
+  loaded: number;
+  /** True when the dataset exceeded {@link QUERY_ROW_CEILING} and was cut off. */
+  capped: boolean;
+}
 
 export interface QueryResultColumn {
   name: string;
@@ -59,7 +73,10 @@ export class QueryEngine {
   /** Serializes loadFlows/run — one in-flight operation per connection. */
   private queue: Promise<unknown> = Promise.resolve();
 
-  private constructor(private readonly conn: duckdb.AsyncDuckDBConnection) {}
+  private constructor(
+    private readonly db: duckdb.AsyncDuckDB,
+    private readonly conn: duckdb.AsyncDuckDBConnection,
+  ) {}
 
   static async create(): Promise<QueryEngine> {
     const bundle = await duckdb.selectBundle({
@@ -77,7 +94,21 @@ export class QueryEngine {
     // the configuration so guarded SQL cannot turn them back on.
     await conn.query("SET enable_external_access = false");
     await conn.query("SET lock_configuration = true");
-    return new QueryEngine(conn);
+    return new QueryEngine(db, conn);
+  }
+
+  /** Best-effort teardown: close the connection and terminate the worker. */
+  async dispose(): Promise<void> {
+    try {
+      await this.conn.close();
+    } catch {
+      /* connection may already be gone (worker crash) */
+    }
+    try {
+      await this.db.terminate();
+    } catch {
+      /* worker may already be dead */
+    }
   }
 
   private enqueue<T>(op: () => Promise<T>): Promise<T> {
@@ -90,22 +121,28 @@ export class QueryEngine {
   }
 
   /**
-   * (Re)build the `flow` table from the capture's normalized rows. No-op when
-   * `captureKey` matches the already-loaded capture.
+   * (Re)build the `flow` table from the capture's normalized rows (up to
+   * {@link QUERY_ROW_CEILING}). No-op when `captureKey` matches the
+   * already-loaded capture.
    */
-  loadFlows(rows: FlowRow[], captureKey: string): Promise<void> {
+  loadFlows(rows: FlowRow[], captureKey: string): Promise<LoadedFlows> {
+    const capped = rows.length > QUERY_ROW_CEILING;
+    const toLoad = capped ? rows.slice(0, QUERY_ROW_CEILING) : rows;
     return this.enqueue(async () => {
-      if (this.loadedCaptureKey === captureKey) return;
+      if (this.loadedCaptureKey === captureKey) {
+        return { loaded: toLoad.length, capped };
+      }
       this.loadedCaptureKey = null;
       await this.conn.query("DROP TABLE IF EXISTS flow");
       await this.conn.query(`DROP TABLE IF EXISTS ${FLOW_INGEST_TABLE}`);
       await this.conn.query(FLOW_TABLE_DDL);
-      await this.conn.insertArrowTable(buildFlowArrowTable(rows), {
+      await this.conn.insertArrowTable(buildFlowArrowTable(toLoad), {
         name: FLOW_INGEST_TABLE,
       });
       await this.conn.query(buildFlowInsertSql());
       await this.conn.query(`DROP TABLE ${FLOW_INGEST_TABLE}`);
       this.loadedCaptureKey = captureKey;
+      return { loaded: toLoad.length, capped };
     });
   }
 
@@ -199,4 +236,26 @@ export function getQueryEngine(): Promise<QueryEngine> {
     });
   }
   return enginePromise;
+}
+
+/**
+ * Tear down the singleton (terminating its worker) so the next
+ * getQueryEngine() boots fresh. The user-facing recovery path for a failed
+ * boot or a wedged engine — wired to the Query tab's Retry button.
+ */
+export async function resetQueryEngine(): Promise<void> {
+  const previous = enginePromise;
+  enginePromise = null;
+  if (!previous) return;
+  try {
+    // A wedged boot (e.g. the wasm fetch died inside the worker) may never
+    // settle — don't let recovery hang on it; the orphaned worker is abandoned.
+    const engine = await Promise.race([
+      previous,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+    ]);
+    if (engine) await engine.dispose();
+  } catch {
+    /* the boot itself failed — nothing to dispose */
+  }
 }

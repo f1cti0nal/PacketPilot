@@ -67,11 +67,14 @@ export function buildFlowArrowTable(rows: FlowRow[]): Table {
     dstPort[i] = r.dstPort;
     proto[i] = r.proto;
     appProto[i] = r.appProto;
-    bytesC2s[i] = BigInt(r.bytesC2s);
-    bytesS2c[i] = BigInt(r.bytesS2c);
-    pkts[i] = BigInt(r.pkts);
-    startTs[i] = BigInt(r.startMs);
-    endTs[i] = BigInt(r.endMs);
+    // Math.round before BigInt: wasm-analyzed captures carry FRACTIONAL ms
+    // (start_ts_ns / 1e6) and BigInt() throws on non-integers — a single such
+    // row would brick the whole table build.
+    bytesC2s[i] = BigInt(Math.round(r.bytesC2s));
+    bytesS2c[i] = BigInt(Math.round(r.bytesS2c));
+    pkts[i] = BigInt(Math.round(r.pkts));
+    startTs[i] = BigInt(Math.round(r.startMs));
+    endTs[i] = BigInt(Math.round(r.endMs));
     tcpFlagsC2s[i] = r.tcpFlagsC2s;
     tcpFlagsS2c[i] = r.tcpFlagsS2c;
     ttlMinC2s[i] = r.ttlMinC2s;

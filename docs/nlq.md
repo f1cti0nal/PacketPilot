@@ -60,6 +60,28 @@ the SQL + error text back to the model; after that, the query stays in the edito
 fixing. Questions the flow table can't answer (payload contents, packet bytes) come back as an
 error rather than a hallucinated query.
 
+## Performance & scale
+
+Measured by the benchmark harness (`ui/e2e/query-perf.spec.ts`, run with `PP_PERF=1`) on a
+CPU-constrained CI-class container, single-threaded DuckDB-Wasm, synthetic flows with
+realistic cardinalities:
+
+| Rows | Table build (once per capture) | Top talkers (2× scan + group) | Per-second histogram | Point lookup | Sort + LIMIT |
+|---|---|---|---|---|---|
+| 100 000 | 1.5 s | 70 ms | 47 ms | 13 ms | 32 ms |
+| 1 000 000 | 23.6 s | 292 ms | 66 ms | 10 ms | 17 ms |
+
+Plan budgets (≤ 2 s build, ≤ 500 ms bundled queries per 100k rows) are met. The build runs in
+the worker (no UI jank) and happens once per capture switch. Guards:
+
+- **Ingestion ceiling** `QUERY_ROW_CEILING = 1,000,000` flows — beyond it the status line
+  says "first N of M flows loaded" (explicit, never silent). Far above what the
+  bounded-memory engine emits for realistic captures.
+- **Boot watchdog** (60 s for wasm boot + table build) — a dead asset fetch can wedge
+  instantiation inside the worker forever; the watchdog fails it into a visible error with a
+  **Retry** button that terminates the worker and boots fresh.
+- Capture switches drop stale results and invalidate in-flight runs before the rebuild.
+
 ## Limitations
 
 - DuckDB SQL dialect; the six bundled queries (from `engine/crates/ppcap-core/sql/queries/`)

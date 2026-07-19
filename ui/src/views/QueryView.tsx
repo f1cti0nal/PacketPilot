@@ -51,6 +51,13 @@ function rowsIdentityKey(rows: FlowRow[]): string {
 type EngineStatus = "booting" | "ready" | "error";
 
 /**
+ * Deadline for wasm boot + flow-table build. A dead asset fetch inside the
+ * duckdb worker can leave instantiation pending forever — without this the
+ * view would sit on "Preparing query engine…" with no way out.
+ */
+const BOOT_TIMEOUT_MS = 60_000;
+
+/**
  * Query console: run read-only DuckDB SQL against the loaded capture's flows,
  * entirely in-browser (the engine is a lazy-loaded wasm worker — nothing ever
  * leaves the device). Phase 2 of the NLQ plan; the natural-language input
@@ -62,6 +69,12 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
   const [engineStatus, setEngineStatus] = useState<EngineStatus>("booting");
   const [engineError, setEngineError] = useState<string | null>(null);
   const engineRef = useRef<QueryEngine | null>(null);
+  /** Bumped by Retry to re-run the boot effect after resetQueryEngine(). */
+  const [bootNonce, setBootNonce] = useState(0);
+  /** Non-null when the dataset exceeded the ingestion ceiling (explicit, never silent). */
+  const [capInfo, setCapInfo] = useState<{ loaded: number; total: number } | null>(null);
+  /** Dataset identity last seen by the boot effect — a change means capture switch. */
+  const lastKeyRef = useRef<string | null>(null);
 
   const [sql, setSql] = useState<string>(SAMPLE_QUERIES[0].sql);
   const [running, setRunning] = useState(false);
@@ -88,28 +101,73 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
   // Boot the engine and (re)load the flow table whenever the dataset changes.
   useEffect(() => {
     if (state.status !== "ready" || rows.length === 0) return;
+    const key = rowsIdentityKey(rows);
+    if (lastKeyRef.current !== null && lastKeyRef.current !== key) {
+      // Capture switch: stale results/errors describe the old dataset — drop
+      // them and invalidate any in-flight run before the table rebuilds.
+      runGen.current++;
+      setResult(null);
+      setError(null);
+      setIntent(null);
+      nlGenRef.current = null;
+    }
+    lastKeyRef.current = key;
     let alive = true;
+    let deadline: number | undefined;
     setEngineStatus((s) => (s === "ready" ? s : "booting"));
     void (async () => {
       try {
         // Dynamic import keeps duckdb-wasm out of the main bundle (see engine.ts).
-        const { getQueryEngine } = await import("../lib/query/engine");
-        const engine = await getQueryEngine();
-        await engine.loadFlows(rows, rowsIdentityKey(rows));
+        const boot = (async () => {
+          const { getQueryEngine } = await import("../lib/query/engine");
+          const engine = await getQueryEngine();
+          const info = await engine.loadFlows(rows, key);
+          return { engine, info };
+        })();
+        // A late settle after the deadline raced is intentionally ignored.
+        boot.catch(() => {});
+        const { engine, info } = await Promise.race([
+          boot,
+          new Promise<never>((_, reject) => {
+            deadline = window.setTimeout(
+              () =>
+                reject(
+                  new Error("The query engine took too long to start — Retry to reboot it."),
+                ),
+              BOOT_TIMEOUT_MS,
+            );
+          }),
+        ]);
         if (!alive) return;
         engineRef.current = engine;
+        setCapInfo(info.capped ? { loaded: info.loaded, total: rows.length } : null);
         setEngineStatus("ready");
         setEngineError(null);
       } catch (err: unknown) {
         if (!alive) return;
         setEngineStatus("error");
         setEngineError(String((err as Error)?.message ?? err));
+      } finally {
+        window.clearTimeout(deadline);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [state.status, rows]);
+  }, [state.status, rows, bootNonce]);
+
+  // Recovery path for a failed boot or wedged engine: tear the singleton down
+  // (terminating its worker) and boot fresh.
+  const retryEngine = useCallback(() => {
+    setEngineStatus("booting");
+    setEngineError(null);
+    void (async () => {
+      const { resetQueryEngine } = await import("../lib/query/engine");
+      await resetQueryEngine();
+      engineRef.current = null;
+      setBootNonce((n) => n + 1);
+    })();
+  }, []);
 
   // Auto-dismiss transient notices (save/delete confirmations).
   useEffect(() => {
@@ -464,14 +522,25 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
             Ctrl/⌘ + Enter
           </span>
           <span
-            className="ml-auto text-[length:var(--fs-label)] text-[var(--color-text-dim)]"
+            className="ml-auto flex items-center gap-2 text-[length:var(--fs-label)] text-[var(--color-text-dim)]"
             role="status"
           >
-            {engineStatus === "booting"
-              ? "Preparing query engine…"
-              : engineStatus === "error"
-                ? "Query engine unavailable"
-                : `${humanNumber(rows.length)} flows loaded · local only`}
+            {engineStatus === "booting" ? (
+              "Preparing query engine…"
+            ) : engineStatus === "error" ? (
+              <>
+                Query engine unavailable
+                <button type="button" onClick={retryEngine} className={BTN_OUTLINE}>
+                  Retry
+                </button>
+              </>
+            ) : capInfo ? (
+              <span title="This capture exceeds the query engine's ingestion ceiling; only the first flows are queryable.">
+                {`first ${humanNumber(capInfo.loaded)} of ${humanNumber(capInfo.total)} flows loaded · local only`}
+              </span>
+            ) : (
+              `${humanNumber(rows.length)} flows loaded · local only`
+            )}
           </span>
         </div>
         {(error || engineError) && (

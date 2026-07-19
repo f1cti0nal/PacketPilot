@@ -100,6 +100,16 @@ describe("buildFlowArrowTable", () => {
     expect(table.getChild("start_ts")?.get(0)).toBe(1752900000000n);
     expect(table.getChild("end_ts")?.get(0)).toBe(1752900004500n);
   });
+
+  it("rounds fractional ms (wasm-analyzed captures: start_ts_ns / 1e6)", () => {
+    // Regression: BigInt(1700000000000.827) throws — one such row must not
+    // brick the table build.
+    const t = buildFlowArrowTable([
+      makeFlowRow({ startMs: 1700000000000.827, endMs: 1700000001000.4 }),
+    ]);
+    expect(t.getChild("start_ts")?.get(0)).toBe(1700000000001n);
+    expect(t.getChild("end_ts")?.get(0)).toBe(1700000001000n);
+  });
 });
 
 describe("buildFlowInsertSql", () => {
