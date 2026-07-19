@@ -136,6 +136,7 @@ export function AppShell({
     () => [
       { id: "dashboard" as const, label: "Dashboard" },
       { id: "flows" as const, label: "Flows" },
+      { id: "query" as const, label: "Query" },
       { id: "findings" as const, label: "Findings" },
       { id: "threats" as const, label: "Threats", badge: threats.length || undefined },
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
@@ -247,6 +248,7 @@ export function AppShell({
     ...(onGoHome ? [{ id: "go-home", label: "Go to overview", hint: "view", run: onGoHome }] : []),
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
+    { id: "go-query", label: "Go to Query", hint: "view", run: () => onTabChange("query") },
     { id: "go-findings", label: "Go to Findings", hint: "view", run: () => onTabChange("findings") },
     { id: "go-threats", label: "Go to Threats", hint: "view", run: () => onTabChange("threats") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },

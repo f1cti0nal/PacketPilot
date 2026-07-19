@@ -10,7 +10,7 @@
  * fixture (which the engine's `schema_drift` test also checks).
  */
 
-import { FLOW_COLUMNS, type FlowColumn } from "../../types.ts";
+import { FLOW_COLUMNS, type FlowColumn } from "../../types";
 
 /**
  * Mirrors `FLOW_PARQUET_VERSION` in engine/crates/ppcap-core/src/columnar/schema.rs.

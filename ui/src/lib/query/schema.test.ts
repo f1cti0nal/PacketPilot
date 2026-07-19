@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FLOW_COLUMNS } from "../../types.ts";
+import { FLOW_COLUMNS } from "../../types";
 import fixture from "./flow_columns.json";
 import {
   FLOW_CATEGORY_TOKENS,
@@ -8,7 +8,7 @@ import {
   FLOW_SCHEMA_VERSION,
   FLOW_SEVERITY_TOKENS,
   FLOW_TABLE_DDL,
-} from "./schema.ts";
+} from "./schema";
 
 describe("flow schema drift guard (UI side)", () => {
   it("FLOW_COLUMNS has all 31 canonical columns", () => {

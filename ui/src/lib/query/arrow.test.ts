@@ -1,14 +1,14 @@
 import { Decimal, Utf8 } from "apache-arrow";
 import { describe, expect, it } from "vitest";
 
-import { FLOW_COLUMNS, type FlowRow } from "../../types.ts";
+import { FLOW_COLUMNS, type FlowRow } from "../../types";
 import {
   FLOW_INGEST_TABLE,
   buildFlowArrowTable,
   buildFlowInsertSql,
   decodeDecimal,
   makeValueConverter,
-} from "./arrow.ts";
+} from "./arrow";
 
 function makeFlowRow(overrides: Partial<FlowRow> = {}): FlowRow {
   return {

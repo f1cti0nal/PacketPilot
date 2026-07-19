@@ -16,8 +16,8 @@
 
 import { Bool, DataType, Table, Utf8, makeVector, vectorFromArray } from "apache-arrow";
 
-import { FLOW_COLUMNS, type FlowRow } from "../../types.ts";
-import { FLOW_COLUMN_TYPES } from "./schema.ts";
+import { FLOW_COLUMNS, type FlowRow } from "../../types";
+import { FLOW_COLUMN_TYPES } from "./schema";
 
 /** Staging table the Arrow data lands in before the typed INSERT into `flow`. */
 export const FLOW_INGEST_TABLE = "flow_ingest";

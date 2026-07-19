@@ -21,15 +21,15 @@ import workerMvp from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url
 import wasmEh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 import workerEh from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 
-import type { FlowRow } from "../../types.ts";
+import type { FlowRow } from "../../types";
 import {
   FLOW_INGEST_TABLE,
   buildFlowArrowTable,
   buildFlowInsertSql,
   makeValueConverter,
-} from "./arrow.ts";
-import { guardSql } from "./guard.ts";
-import { FLOW_TABLE_DDL } from "./schema.ts";
+} from "./arrow";
+import { guardSql } from "./guard";
+import { FLOW_TABLE_DDL } from "./schema";
 
 /** Materialization cap; queries producing more rows are truncated + cancelled. */
 export const MAX_RESULT_ROWS = 5000;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_ROW_LIMIT, guardSql } from "./guard.ts";
+import { DEFAULT_ROW_LIMIT, guardSql } from "./guard";
 
 const allowed = (sql: string) => {
   const r = guardSql(sql);
