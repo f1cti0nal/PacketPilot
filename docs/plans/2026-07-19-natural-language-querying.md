@@ -169,8 +169,8 @@ verification gate. Effort marks: S (≤ half day), M (~1 day), L (2–3 days).
 Fix the known drift so every later phase builds on one truthful schema definition.
 
 1. **Complete `FLOW_COLUMNS`** in `ui/src/types.ts` to all 31 names in Parquet order
-   (insert `ja3, ja4, ja3s, http_host, http_ua, tls_version, tls_cipher, hassh,
-   hassh_server` between `sni` and `severity`, matching `flow_columns_in_order()`).
+   (insert `ja3, ja4, tls_version, tls_cipher, hassh, hassh_server, ja3s, http_host,
+   http_ua` between `sni` and `severity`, matching `flow_columns_in_order()`).
    Audit the few usages of `FlowColumn` for fallout.
 2. **New `ui/src/lib/query/schema.ts`** — the single browser-side schema source:
    `FLOW_TABLE_DDL` (CREATE TABLE with the 31 columns, typed for DuckDB), a
