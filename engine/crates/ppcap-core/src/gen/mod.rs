@@ -49,6 +49,10 @@ pub enum Scenario {
     PortScan,
     Beacon,
     BulkTransfer,
+    /// A multi-host attack chain: an attacker sweeps + brute-forces a victim, which then beacons to
+    /// an external C2 and exfiltrates — the pivot (victim becomes actor) that `reconstruct_attack_chains`
+    /// fuses into one cross-host chain.
+    AttackChain,
 }
 
 impl Scenario {
@@ -61,6 +65,7 @@ impl Scenario {
             "scan" | "port-scan" | "portscan" => Some(Scenario::PortScan),
             "beacon" => Some(Scenario::Beacon),
             "bulk" | "bulk-transfer" | "bulktransfer" => Some(Scenario::BulkTransfer),
+            "chain" | "attack-chain" | "attackchain" => Some(Scenario::AttackChain),
             _ => None,
         }
     }
@@ -74,6 +79,7 @@ impl Scenario {
             Scenario::PortScan,
             Scenario::Beacon,
             Scenario::BulkTransfer,
+            Scenario::AttackChain,
         ]
     }
 }
@@ -369,6 +375,9 @@ impl SynthGen {
         // single-channel beacon (it picks a fresh random host pair per packet).
         if self.cfg.scenario == Scenario::Beacon {
             return self.next_beacon();
+        }
+        if self.cfg.scenario == Scenario::AttackChain {
+            return self.next_attack_chain();
         }
         let kind = self.schedule.next_kind(&mut self.rng)?;
         let ts = self.cursor_ts;
@@ -699,6 +708,124 @@ impl SynthGen {
 
         self.emitted += 1;
         Some((ts, kind, frame))
+    }
+
+    /// Dedicated emission for [`Scenario::AttackChain`]: a **multi-host** pivot. An attacker A
+    /// (`beacon_client`) sweeps internal hosts and brute-forces one victim B (`beacon_brute_victim`);
+    /// then B — the pivot — beacons to an external C2 and exfiltrates. Because the C2 beacon and the
+    /// exfil are sourced from B (not A), `reconstruct_attack_chains` fuses A's discovery/credential
+    /// stages with B's C2/exfil stages into one cross-host chain (A → B → C2). Stages are time-staged
+    /// so A precedes B and the causal pivot gate accepts the handoff.
+    fn next_attack_chain(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
+        let i = self.emitted;
+        let sweep_count = self.beacon_sweep_count();
+        let brute_count = self.beacon_brute_count();
+        let exfil_count = self.beacon_exfil_count();
+        let prefix = sweep_count + brute_count + exfil_count;
+
+        // Stage 1 (Discovery): A sweeps internal hosts on 445; B (10.66.0.1) is among them.
+        if i < sweep_count {
+            let frame = self.build_beacon_sweep(i);
+            let ts = self.cfg.start_ts_ns.saturating_add(i as i64 * 100_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::OtherTcp, frame));
+        }
+
+        // Stage 2 (Credential Access): A brute-forces B on SSH (22) — the compromise handoff.
+        if i < sweep_count + brute_count {
+            let k = i - sweep_count;
+            let frame = self.build_beacon_brute(k);
+            let ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(2_500_000_000)
+                .saturating_add(k as i64 * 10_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::OtherTcp, frame));
+        }
+
+        // Stage 4 (Exfiltration): B — now the pivot actor — uploads a large asymmetric transfer to
+        // an external drop server.
+        if i < sweep_count + brute_count + exfil_count {
+            let k = i - sweep_count - brute_count;
+            let frame = self.build_chain_exfil();
+            let ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(60_000_000_000)
+                .saturating_add(k as i64 * 1_000_000);
+            self.emitted += 1;
+            return Some((ts, FrameKind::Tls, frame));
+        }
+
+        // Stage 3 (C2): B beacons to the external C2 on the explicit period grid, + benign
+        // background on an independent (non-periodic) clock. The C2 window opens ~10 s after the
+        // brute-force, keeping B's activity after A's.
+        let j = i - prefix;
+        let pos = j % BEACON_CYCLE_LEN;
+        let (ts, kind, frame) = if pos == 0 {
+            let cycle = j / BEACON_CYCLE_LEN;
+            let callback_ts = self
+                .cfg
+                .start_ts_ns
+                .saturating_add(10_000_000_000)
+                .saturating_add((cycle as i64).saturating_mul(BEACON_PERIOD_NS))
+                .saturating_add(self.beacon_jitter(cycle));
+            (
+                callback_ts,
+                FrameKind::Tls,
+                self.build_chain_callback(cycle),
+            )
+        } else {
+            let bg_ts = self.bg_cursor;
+            self.bg_cursor = self.bg_cursor.saturating_add(self.beacon_bg_gap());
+            let bg_kind = match self.rng.below(3) {
+                0 => FrameKind::Http,
+                1 => FrameKind::Dns,
+                _ => FrameKind::Tls,
+            };
+            (bg_ts, bg_kind, self.build_frame(bg_kind))
+        };
+        self.emitted += 1;
+        Some((ts, kind, frame))
+    }
+
+    /// Build one C2 callback from the PIVOT victim B (the brute-forced host) to the external C2 — the
+    /// beacon whose actor is B, not A, which is what makes this a cross-host chain.
+    fn build_chain_callback(&mut self, cycle: u64) -> Vec<u8> {
+        let client = beacon_brute_victim(); // B — the pivot actor
+        let c2 = beacon_c2();
+        let sport = 49152 + (cycle % 16000) as u16;
+        self.record_flow(client, c2, sport, 443, IP_PROTO_TCP);
+        let payload = frames::tls_client_hello_payload(BEACON_SNI);
+        let tcp = frames::build_tcp(client, c2, sport, 443, TCP_PSH | TCP_ACK, &payload);
+        let ip = frames::build_ipv4(client, c2, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(BEACON_BRUTE_MAC, BEACON_C2_MAC, ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
+    }
+
+    /// Build one exfil data packet from the PIVOT victim B to the external drop server (one flow, so
+    /// the outbound bytes accumulate into a single large asymmetric transfer).
+    fn build_chain_exfil(&mut self) -> Vec<u8> {
+        let client = beacon_brute_victim(); // B — the pivot actor
+        let drop = beacon_exfil_server();
+        self.record_flow(client, drop, BEACON_EXFIL_SPORT, 443, IP_PROTO_TCP);
+        let payload = [0x5Au8; BEACON_EXFIL_PAYLOAD];
+        let tcp = frames::build_tcp(
+            client,
+            drop,
+            BEACON_EXFIL_SPORT,
+            443,
+            TCP_PSH | TCP_ACK,
+            &payload,
+        );
+        let ip = frames::build_ipv4(client, drop, IP_PROTO_TCP, 64, tcp.len());
+        let mut frame = frames::build_ethernet(BEACON_BRUTE_MAC, BEACON_EXFIL_MAC, ETHERTYPE_IPV4);
+        frame.extend_from_slice(&ip);
+        frame.extend_from_slice(&tcp);
+        frame
     }
 
     /// Deterministic per-cycle beacon jitter in `[0, period/30)`. Uses an independent PRNG
@@ -1243,8 +1370,13 @@ mod tests {
         assert_eq!(Scenario::from_str_opt("portscan"), Some(Scenario::PortScan));
         assert_eq!(Scenario::from_str_opt(" beacon "), Some(Scenario::Beacon));
         assert_eq!(Scenario::from_str_opt("bulk"), Some(Scenario::BulkTransfer));
+        assert_eq!(
+            Scenario::from_str_opt("attack-chain"),
+            Some(Scenario::AttackChain)
+        );
+        assert_eq!(Scenario::from_str_opt("chain"), Some(Scenario::AttackChain));
         assert_eq!(Scenario::from_str_opt("nonsense"), None);
-        assert_eq!(Scenario::all().len(), 6);
+        assert_eq!(Scenario::all().len(), 7);
     }
 
     #[test]
@@ -1391,6 +1523,37 @@ mod tests {
             assert_eq!(
                 a, b,
                 "beacon output byte-identical for same config (packets={packets})"
+            );
+        }
+    }
+
+    #[test]
+    fn attack_chain_scenario_conserves_packet_count_and_is_deterministic() {
+        // The AttackChain scenario uses a dedicated emission path (next_attack_chain) whose staged
+        // prefix (sweep -> brute -> exfil -> C2 cycles) does index arithmetic across boundaries.
+        let chain_cfg = |packets: u64| GenConfig {
+            scenario: Scenario::AttackChain,
+            packets,
+            seed: 0xC7A1_0017,
+            host_count: 64,
+            ..Default::default()
+        };
+        for &packets in &[2_001u64, 40_000] {
+            let m = SynthGen::new(chain_cfg(packets))
+                .write_to(std::io::sink())
+                .unwrap();
+            assert_eq!(
+                m.packets_written, packets,
+                "attack-chain packets_written == cfg.packets (packets={packets})"
+            );
+
+            let mut a = Vec::new();
+            let mut b = Vec::new();
+            SynthGen::new(chain_cfg(packets)).write_to(&mut a).unwrap();
+            SynthGen::new(chain_cfg(packets)).write_to(&mut b).unwrap();
+            assert_eq!(
+                a, b,
+                "attack-chain output byte-identical for same config (packets={packets})"
             );
         }
     }

@@ -21,11 +21,11 @@ use crate::detect::{
     detect_dns_tunnel, detect_exfil, detect_exposed_remote_access, detect_icmp_tunnel,
     detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_suspicious_ua,
     detect_sweeps, detect_syn_flood, detect_tls_cert_health, detect_weak_tls,
-    suppress_swept_by_lateral, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, CryptominingParams, DetectConfig, DgaParams, DisguisedDownloadParams,
-    DnsTunnelParams, ExfilParams, ExposedRemoteAccessParams, IcmpTunnelParams,
-    LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams,
-    SynFloodParams, TlsCertHealthParams, WeakTlsParams,
+    reconstruct_attack_chains, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams,
+    BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams, DetectConfig,
+    DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams, ExposedRemoteAccessParams,
+    IcmpTunnelParams, LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams,
+    SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -505,6 +505,9 @@ pub fn run_source_visiting<'a>(
     summary.carved_files = carved_files;
     // Correlate the findings into per-host incidents (the "is this a real incident" view).
     summary.incidents = correlate_incidents(&findings);
+    // Reconstruct the multi-host, temporally-ordered attack chains over the same finding set
+    // (finding_index values align 1:1 with summary.findings, set from this same vector below).
+    summary.attack_chains = reconstruct_attack_chains(&findings);
     summary.findings = findings;
     let flows_parquet_path = match writer {
         Some(w) => {
@@ -1224,6 +1227,81 @@ mod tests {
         assert_eq!(c2_card.severity, crate::model::severity::Severity::High);
         assert!(c2_card.score >= 70, "c2 card score: {}", c2_card.score);
         assert!(c2_card.attack.iter().any(|a| a == "T1071"));
+    }
+
+    #[test]
+    fn generated_attack_chain_scenario_reconstructs_cross_host_chain() {
+        use crate::gen::{GenConfig, Scenario, SynthGen};
+        use crate::model::attack_chain::EdgeKind;
+        use crate::model::finding::FindingKind;
+        use crate::model::severity::Severity;
+
+        // A staged multi-host pivot: A sweeps + brute-forces B; B then beacons to a C2 and
+        // exfiltrates. The engine must fuse A's and B's stages into one cross-host chain even though
+        // `correlate_incidents` keeps them as two per-host incidents.
+        let cfg = GenConfig {
+            scenario: Scenario::AttackChain,
+            packets: 6_000,
+            seed: 7,
+            host_count: 256, // sparse background so no spurious beacon forms
+            ..Default::default()
+        };
+        let tf = tempfile::NamedTempFile::new().unwrap();
+        SynthGen::new(cfg).write_pcap(tf.path()).unwrap();
+        let out = run(tf.path(), &PipelineConfig::default(), |_, _, _| {}).unwrap();
+
+        let a = "10.13.37.7"; // attacker
+        let b = "10.66.0.1"; // brute victim -> pivot actor
+
+        // Exactly one cross-host chain, fusing A's discovery/credential stages with B's C2/exfil.
+        let cross: Vec<_> = out
+            .summary
+            .attack_chains
+            .iter()
+            .filter(|c| c.host_count >= 2)
+            .collect();
+        assert_eq!(
+            cross.len(),
+            1,
+            "one cross-host chain: {:#?}",
+            out.summary.attack_chains
+        );
+        let c = cross[0];
+        assert_eq!(c.hosts, vec![a.to_string(), b.to_string()]);
+        assert_eq!(c.severity, Severity::Critical, "chain: {c:#?}");
+        assert_eq!(
+            c.tactics
+                .iter()
+                .map(|t| t.tactic.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "Discovery",
+                "Credential Access",
+                "Command & Control",
+                "Exfiltration"
+            ]
+        );
+        // Exactly one pivot edge, via the brute-force handoff, landing on a step attributed to B.
+        let pivots: Vec<_> = c
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Pivot)
+            .collect();
+        assert_eq!(pivots.len(), 1, "one pivot: {:?}", c.edges);
+        assert_eq!(pivots[0].via_kind, Some(FindingKind::BruteForce));
+        let to_step = c.steps.iter().find(|s| s.order == pivots[0].to).unwrap();
+        assert_eq!(to_step.actor, b, "pivot target step is on B");
+        assert_eq!(c.attack, vec!["T1046", "T1110", "T1071", "T1048"]);
+
+        // The legacy per-host incidents remain (additive): A and B are each still an incident.
+        assert!(
+            out.summary.incidents.iter().any(|i| i.host == a),
+            "attacker incident retained"
+        );
+        assert!(
+            out.summary.incidents.iter().any(|i| i.host == b),
+            "victim incident retained"
+        );
     }
 
     #[test]

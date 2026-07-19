@@ -337,6 +337,7 @@ mod apply_tests {
             carved_files: Vec::new(),
             findings,
             incidents: vec![],
+            attack_chains: vec![],
         }
     }
 

@@ -973,6 +973,7 @@ impl StatsAccumulator {
             // them in post-`finish`.
             findings: Vec::new(),
             incidents: Vec::new(),
+            attack_chains: Vec::new(),
         }
     }
 

@@ -291,6 +291,19 @@ pub struct SweepCandidate {
     pub src: IpAddr,
     pub dst_port: u16,
     pub hosts: usize,
+    /// First contact timestamp across the fan-out (ns), for attack-chain temporal ordering.
+    pub first_ts_ns: Option<i64>,
+    /// Last contact timestamp across the fan-out (ns).
+    pub last_ts_ns: Option<i64>,
+}
+
+/// Per-`(source, port)` horizontal-sweep accumulator: the distinct destination hosts plus the
+/// min-first / max-last contact time across the fan-out (O(1) timing fold; the host set is capped).
+#[derive(Debug, Clone, Default)]
+struct FanoutStat {
+    hosts: HashSet<IpAddr>,
+    first_ts: Option<i64>,
+    last_ts: Option<i64>,
 }
 
 /// A `(source, host)` pair where the source probed many distinct ports — a vertical port scan.
@@ -606,7 +619,7 @@ impl Default for DetectConfig {
 pub struct BehaviorTracker {
     cfg: DetectConfig,
     channels: HashMap<ContactKey, ContactSeries>,
-    fanout: HashMap<(IpAddr, u16), HashSet<IpAddr>>,
+    fanout: HashMap<(IpAddr, u16), FanoutStat>,
     /// Per-`(source, host)` set of distinct destination ports probed — the vertical port-scan
     /// signal (the orthogonal axis to `fanout`'s horizontal sweep). Bounded in both dimensions.
     port_scan: HashMap<(IpAddr, IpAddr), HashSet<u16>>,
@@ -979,14 +992,23 @@ impl BehaviorTracker {
         // Per-(source, port) distinct destination-host set (sweep signal), bounded in both the
         // number of (src, port) keys and the hosts retained per key.
         let fkey = (src, dst_port);
-        if let Some(set) = self.fanout.get_mut(&fkey) {
-            if set.len() < self.cfg.max_fanout_per_src {
-                set.insert(dst);
+        if let Some(stat) = self.fanout.get_mut(&fkey) {
+            if stat.hosts.len() < self.cfg.max_fanout_per_src {
+                stat.hosts.insert(dst);
             }
+            stat.first_ts = Some(stat.first_ts.map_or(ts_ns, |t| t.min(ts_ns)));
+            stat.last_ts = Some(stat.last_ts.map_or(ts_ns, |t| t.max(ts_ns)));
         } else if self.fanout.len() < self.cfg.max_tracked_keys.max(1) {
-            let mut set = HashSet::new();
-            set.insert(dst);
-            self.fanout.insert(fkey, set);
+            let mut hosts = HashSet::new();
+            hosts.insert(dst);
+            self.fanout.insert(
+                fkey,
+                FanoutStat {
+                    hosts,
+                    first_ts: Some(ts_ns),
+                    last_ts: Some(ts_ns),
+                },
+            );
         }
 
         // Per-(source, host) distinct destination-port set (vertical port-scan signal), bounded the
@@ -1047,7 +1069,9 @@ impl BehaviorTracker {
 
     /// Number of distinct destination hosts `src` contacted on `dst_port` (the sweep fan-out).
     pub fn fanout(&self, src: IpAddr, dst_port: u16) -> usize {
-        self.fanout.get(&(src, dst_port)).map_or(0, |set| set.len())
+        self.fanout
+            .get(&(src, dst_port))
+            .map_or(0, |s| s.hosts.len())
     }
 
     /// Whether `src` contacted at least `threshold` distinct hosts on `dst_port`.
@@ -1061,11 +1085,13 @@ impl BehaviorTracker {
         let mut out: Vec<SweepCandidate> = self
             .fanout
             .iter()
-            .filter(|(_, hosts)| hosts.len() >= min_hosts)
-            .map(|(&(src, dst_port), hosts)| SweepCandidate {
+            .filter(|(_, s)| s.hosts.len() >= min_hosts)
+            .map(|(&(src, dst_port), s)| SweepCandidate {
                 src,
                 dst_port,
-                hosts: hosts.len(),
+                hosts: s.hosts.len(),
+                first_ts_ns: s.first_ts,
+                last_ts_ns: s.last_ts,
             })
             .collect();
         out.sort_by(|a, b| {
@@ -1641,6 +1667,9 @@ fn worst_reason_rank(reasons: &[WeakTlsReason]) -> u8 {
 }
 
 use crate::enrich::{classify_ip, cloud_provider};
+use crate::model::attack_chain::{
+    AttackChain, ChainEdge, ChainStep, EdgeKind, TacticStep, TechniqueRef,
+};
 use crate::model::finding::{Finding, FindingKind};
 use crate::model::flow::FlowRecord;
 use crate::model::incident::Incident;
@@ -2061,8 +2090,8 @@ pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Fin
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
-            first_seen_ns: None,
-            last_seen_ns: None,
+            first_seen_ns: c.first_ts_ns,
+            last_seen_ns: c.last_ts_ns,
             victims: Vec::new(),
         });
     }
@@ -3666,14 +3695,642 @@ fn human_bytes(n: u64) -> String {
     }
 }
 
+// ===================================================================================================
+// Attack-chain reconstruction: multi-host, temporally-ordered, causally-linked chains over the
+// finding set. Where `correlate_incidents` groups findings under one actor host, this stitches
+// per-host progressions across hosts wherever one stage's victim becomes the next stage's actor.
+// Runs once at EOF over the already-bounded `&[Finding]`; deterministic (strict total-order key,
+// BTree containers, FNV ids) and bounded (every structure has an explicit cap).
+// ===================================================================================================
+
+/// Cap on distinct actor-host progressions tracked (mirrors `max_fanout_per_src`).
+const MAX_CHAIN_HOSTS: usize = 4096;
+/// Cap on steps retained per host (lowest-score dropped at capacity — a heavy-hitter sample).
+const MAX_STEPS_PER_HOST: usize = 64;
+/// Cap on candidate pivot edges (lowest-weight dropped at capacity).
+const MAX_CHAIN_EDGES: usize = 2048;
+/// Cap on emitted chains (worst-first; overflow dropped after sorting).
+const MAX_CHAINS: usize = 256;
+/// Clock-jitter / flow-start-approximation slack for the causal gate (1 s).
+const SKEW_TOLERANCE_NS: i64 = 1_000_000_000;
+/// Maximum pivot dwell before two stages are treated as separate episodes (1 h).
+const CORRELATION_WINDOW_NS: i64 = 3_600_000_000_000;
+
+/// The host a finding's step is attributed to (its actor). Never `None` — every finding yields a
+/// step. `ArpSpoof`/`SynFlood` keep the *victim* in `src_ip`; that host is still the correct owner
+/// of the step (the box DoS'd / poisoned), and `victims_of` returning empty for them keeps them
+/// from ever sourcing a pivot.
+fn actor_host(f: &Finding) -> &str {
+    f.src_ip.as_str()
+}
+
+/// The hosts a finding hands the compromise to — its victims become the next stage's actor. Empty
+/// for kinds that do not propagate compromise to a new actor (Beacon/DataExfil/DoS/...).
+fn victims_of(f: &Finding) -> Vec<&str> {
+    match f.kind {
+        FindingKind::BruteForce | FindingKind::ExposedRemoteAccess | FindingKind::PortScan => {
+            f.dst_ip.as_deref().into_iter().collect()
+        }
+        FindingKind::LateralMovement | FindingKind::HostSweep => {
+            f.victims.iter().map(String::as_str).collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Strength of a pivot handoff by the kind that produced it (higher = stronger compromise edge).
+fn handoff_weight(kind: FindingKind) -> u16 {
+    match kind {
+        FindingKind::BruteForce => 100,         // credential compromise
+        FindingKind::ExposedRemoteAccess => 90, // foothold established
+        FindingKind::LateralMovement => 80,     // authenticated pivot
+        FindingKind::HostSweep | FindingKind::PortScan => 30, // discovery-only fallback
+        _ => 0,
+    }
+}
+
+/// Resolve a MITRE ATT&CK technique id to its human name; unknown ids return the id itself (never
+/// panics), so a technique a detector newly emits degrades gracefully.
+pub fn technique_name(id: &str) -> &str {
+    match id {
+        "T1046" => "Network Service Discovery",
+        "T1595" => "Active Scanning",
+        "T1110" => "Brute Force",
+        "T1552" => "Unsecured Credentials",
+        "T1021" => "Remote Services",
+        "T1133" => "External Remote Services",
+        "T1071" => "Application Layer Protocol",
+        "T1071.004" => "Application Layer Protocol: DNS",
+        "T1048" => "Exfiltration Over Alternative Protocol",
+        "T1095" => "Non-Application Layer Protocol",
+        "T1568.002" => "Dynamic Resolution: DGA",
+        "T1557" => "Adversary-in-the-Middle",
+        "T1557.002" => "AiTM: ARP Cache Poisoning",
+        "T1499.001" => "Endpoint DoS: Flood",
+        "T1036" => "Masquerading",
+        "T1105" => "Ingress Tool Transfer",
+        "T1496" => "Resource Hijacking",
+        "T1040" => "Network Sniffing",
+        "T1573" => "Encrypted Channel",
+        "T1027" => "Obfuscated Files or Information",
+        other => other,
+    }
+}
+
+/// Build `TechniqueRef`s (id + resolved name) from a finding's ATT&CK ids.
+fn technique_refs(attack: &[String]) -> Vec<TechniqueRef> {
+    attack
+        .iter()
+        .map(|id| TechniqueRef {
+            id: id.clone(),
+            name: technique_name(id).to_string(),
+        })
+        .collect()
+}
+
+/// FNV-1a 64-bit hash — deterministic, dependency-free (for chain ids).
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// Sort timestamp for a finding: its first-seen time, or `i64::MAX` (sorts last) when absent.
+fn t_of(f: &Finding) -> i64 {
+    f.first_seen_ns.unwrap_or(i64::MAX)
+}
+
+/// Strict total-order key for a step: (time, taxonomy, stronger-first, kind, original index). The
+/// final index tie-break guarantees no two steps ever compare equal — ordering is deterministic.
+fn step_key(f: &Finding, idx: usize) -> (i64, u8, std::cmp::Reverse<u16>, u8, u32) {
+    (
+        t_of(f),
+        stage_ordinal(f.kind),
+        std::cmp::Reverse(f.score),
+        f.kind as u8,
+        idx as u32,
+    )
+}
+
+/// The peer host a step touched (dst / C2 / resolver, else the first structured victim).
+fn chain_peer(f: &Finding) -> Option<String> {
+    f.dst_ip.clone().or_else(|| f.victims.first().cloned())
+}
+
+/// Deterministic ordering key for edge kinds (Pivot before Progression).
+fn edge_kind_ord(k: EdgeKind) -> u8 {
+    match k {
+        EdgeKind::Pivot => 0,
+        EdgeKind::Progression => 1,
+    }
+}
+
+/// A candidate cross-host handoff: `from`'s victim `to` becomes a later actor.
+#[derive(Debug, Clone)]
+struct PivotEdge<'a> {
+    from: &'a str,
+    to: &'a str,
+    via_kind: FindingKind,
+    via_finding_idx: usize,
+    a_reach: Option<i64>,
+    weight: u16,
+}
+
+/// Push an edge into the bounded candidate set, dropping the lowest-weight edge at capacity.
+fn push_capped_edge<'a>(edges: &mut Vec<PivotEdge<'a>>, edge: PivotEdge<'a>) {
+    if edges.len() < MAX_CHAIN_EDGES {
+        edges.push(edge);
+    } else if let Some((pos, min_w)) = edges
+        .iter()
+        .enumerate()
+        .map(|(i, e)| (i, e.weight))
+        .min_by_key(|(_, w)| *w)
+    {
+        if edge.weight > min_w {
+            edges[pos] = edge;
+        }
+    }
+}
+
+/// Absolute dwell between the parent's reach time and the child's start; `i64::MAX` if unknown.
+fn dwell(e: &PivotEdge, host_first: &std::collections::BTreeMap<&str, Option<i64>>) -> i64 {
+    match (e.a_reach, host_first.get(e.to).copied().flatten()) {
+        (Some(ar), Some(bs)) => (bs - ar).abs(),
+        _ => i64::MAX,
+    }
+}
+
+/// Would assigning `from` as `b`'s parent create a cycle? True iff `b` is already an ancestor of
+/// `from` in the current parent forest. Bounded by `MAX_CHAIN_HOSTS`.
+fn would_cycle(
+    parent: &std::collections::BTreeMap<&str, usize>,
+    edges: &[PivotEdge],
+    from: &str,
+    b: &str,
+) -> bool {
+    let mut cur = from;
+    let mut guard = 0usize;
+    loop {
+        if cur == b {
+            return true;
+        }
+        match parent.get(cur) {
+            Some(&ei) => {
+                cur = edges[ei].from;
+                guard += 1;
+                if guard > MAX_CHAIN_HOSTS {
+                    return true; // safety: never loop unbounded on a malformed forest
+                }
+            }
+            None => return false,
+        }
+    }
+}
+
+/// Reconstruct behavioral findings into temporally-ordered, causally-linked, multi-host attack
+/// chains. Per-host progressions are stitched across hosts wherever one stage's victim becomes a
+/// later stage's actor (an identity join, not co-occurrence), forming an acyclic single-parent
+/// forest; each tree becomes one [`AttackChain`]. Returned worst-first. Deterministic and bounded.
+pub fn reconstruct_attack_chains(findings: &[Finding]) -> Vec<AttackChain> {
+    use std::collections::{BTreeMap, BTreeSet, VecDeque};
+    if findings.is_empty() {
+        return Vec::new();
+    }
+
+    // ---- Phase 1: per-host progressions (finding indices), time-ordered. ----
+    let mut progressions: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (idx, f) in findings.iter().enumerate() {
+        let host = actor_host(f);
+        if !progressions.contains_key(host) && progressions.len() >= MAX_CHAIN_HOSTS {
+            continue; // drop a brand-new host at capacity (bounded memory)
+        }
+        let steps = progressions.entry(host).or_default();
+        if steps.len() < MAX_STEPS_PER_HOST {
+            steps.push(idx);
+        } else if let Some((pos, &weakest)) = steps
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, &i)| findings[i].score)
+        {
+            // Keep the strongest MAX_STEPS_PER_HOST findings for this host.
+            if findings[idx].score > findings[weakest].score {
+                steps[pos] = idx;
+            }
+        }
+    }
+    for steps in progressions.values_mut() {
+        steps.sort_by_key(|&i| step_key(&findings[i], i));
+    }
+    let actor_set: BTreeSet<&str> = progressions.keys().copied().collect();
+    let host_first: BTreeMap<&str, Option<i64>> = progressions
+        .iter()
+        .map(|(&h, steps)| {
+            (
+                h,
+                steps
+                    .iter()
+                    .filter_map(|&i| findings[i].first_seen_ns)
+                    .min(),
+            )
+        })
+        .collect();
+
+    // ---- Phase 2: candidate pivot edges (A --victim--> B). Iterate surviving steps only, so
+    // every edge's via_finding_idx is a real step. ----
+    let mut edges: Vec<PivotEdge> = Vec::new();
+    for (&a, steps) in &progressions {
+        for &idx in steps {
+            let f = &findings[idx];
+            for b in victims_of(f) {
+                if b == a || !actor_set.contains(b) {
+                    continue; // B must itself be a later actor
+                }
+                let a_reach = f.first_seen_ns;
+                let b_start = host_first.get(b).copied().flatten();
+                if let (Some(ar), Some(bs)) = (a_reach, b_start) {
+                    if ar > bs + SKEW_TOLERANCE_NS {
+                        continue; // A cannot compromise B after B already started
+                    }
+                    if bs - ar > CORRELATION_WINDOW_NS {
+                        continue; // dwell too long — a separate episode
+                    }
+                }
+                push_capped_edge(
+                    &mut edges,
+                    PivotEdge {
+                        from: a,
+                        to: b,
+                        via_kind: f.kind,
+                        via_finding_idx: idx,
+                        a_reach,
+                        weight: handoff_weight(f.kind),
+                    },
+                );
+            }
+        }
+    }
+
+    // ---- Phase 3: stitch into an acyclic single-parent forest. ----
+    let mut incoming: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (ei, e) in edges.iter().enumerate() {
+        incoming.entry(e.to).or_default().push(ei);
+    }
+    let mut parent: BTreeMap<&str, usize> = BTreeMap::new(); // host B -> chosen edge index
+    for (&b, cand) in &incoming {
+        let mut cands = cand.clone();
+        cands.sort_by(|&x, &y| {
+            let (ex, ey) = (&edges[x], &edges[y]);
+            ey.weight
+                .cmp(&ex.weight)
+                .then_with(|| dwell(ex, &host_first).cmp(&dwell(ey, &host_first)))
+                .then_with(|| ex.from.cmp(ey.from))
+                .then_with(|| ex.via_finding_idx.cmp(&ey.via_finding_idx))
+        });
+        for &ei in &cands {
+            if !would_cycle(&parent, &edges, edges[ei].from, b) {
+                parent.insert(b, ei);
+                break;
+            }
+        }
+    }
+
+    // ---- Phase 4: assemble one chain per tree (root = host with no parent). ----
+    let mut children: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (&b, &ei) in &parent {
+        children.entry(edges[ei].from).or_default().push(b);
+    }
+    let roots: Vec<&str> = actor_set
+        .iter()
+        .copied()
+        .filter(|h| !parent.contains_key(h))
+        .collect();
+
+    let mut chains: Vec<AttackChain> = Vec::new();
+    for &root in &roots {
+        let mut members: Vec<&str> = Vec::new();
+        let mut queue: VecDeque<&str> = VecDeque::new();
+        queue.push_back(root);
+        while let Some(h) = queue.pop_front() {
+            members.push(h);
+            if let Some(kids) = children.get(h) {
+                let mut kids = kids.clone();
+                kids.sort_by(|&x, &y| {
+                    host_first
+                        .get(x)
+                        .copied()
+                        .flatten()
+                        .unwrap_or(i64::MAX)
+                        .cmp(&host_first.get(y).copied().flatten().unwrap_or(i64::MAX))
+                        .then_with(|| x.cmp(y))
+                });
+                for k in kids {
+                    queue.push_back(k);
+                }
+            }
+        }
+        chains.push(build_chain(
+            &members,
+            findings,
+            &progressions,
+            &parent,
+            &edges,
+            &host_first,
+        ));
+    }
+
+    // Worst-first, same discipline as incidents; then bound the emitted count.
+    chains.sort_by(|a, b| {
+        b.severity
+            .rank()
+            .cmp(&a.severity.rank())
+            .then(b.score.cmp(&a.score))
+            .then(
+                a.first_ts_ns
+                    .unwrap_or(i64::MAX)
+                    .cmp(&b.first_ts_ns.unwrap_or(i64::MAX)),
+            )
+            .then(a.id.cmp(&b.id))
+    });
+    chains.truncate(MAX_CHAINS);
+    chains
+}
+
+/// Assemble one [`AttackChain`] from a connected set of member hosts: order the members' steps
+/// globally by time, build structural edges (per-host progression + one pivot per stitched child),
+/// derive the tactic progression, and escalate severity / score / confidence by breadth.
+fn build_chain<'a>(
+    members: &[&'a str],
+    findings: &'a [Finding],
+    progressions: &std::collections::BTreeMap<&'a str, Vec<usize>>,
+    parent: &std::collections::BTreeMap<&'a str, usize>,
+    edges: &[PivotEdge<'a>],
+    host_first: &std::collections::BTreeMap<&'a str, Option<i64>>,
+) -> AttackChain {
+    use std::collections::BTreeMap;
+
+    // Global step order: all members' (already time-sorted) indices, re-sorted by step_key.
+    let mut member_indices: Vec<usize> = Vec::new();
+    for &h in members {
+        if let Some(steps) = progressions.get(h) {
+            member_indices.extend_from_slice(steps);
+        }
+    }
+    member_indices.sort_by_key(|&i| step_key(&findings[i], i));
+    let mut order_of: BTreeMap<usize, u32> = BTreeMap::new();
+    for (pos, &i) in member_indices.iter().enumerate() {
+        order_of.insert(i, pos as u32);
+    }
+
+    let steps: Vec<ChainStep> = member_indices
+        .iter()
+        .enumerate()
+        .map(|(pos, &i)| {
+            let f = &findings[i];
+            ChainStep {
+                order: pos as u32,
+                actor: f.src_ip.clone(),
+                tactic_ordinal: stage_ordinal(f.kind),
+                tactic: stage_label(f.kind).to_string(),
+                kind: f.kind,
+                techniques: technique_refs(&f.attack),
+                peer: chain_peer(f),
+                severity: f.severity,
+                score: f.score,
+                first_seen_ns: f.first_seen_ns,
+                last_seen_ns: f.last_seen_ns,
+                evidence: f.evidence.first().cloned(),
+                finding_index: i as u32,
+            }
+        })
+        .collect();
+
+    // Structural edges: per-host progression, then exactly one pivot per stitched child.
+    let mut chain_edges: Vec<ChainEdge> = Vec::new();
+    for &h in members {
+        if let Some(hsteps) = progressions.get(h) {
+            for w in hsteps.windows(2) {
+                let (i, j) = (w[0], w[1]);
+                let gap = match (
+                    findings[i].last_seen_ns.or(findings[i].first_seen_ns),
+                    findings[j].first_seen_ns,
+                ) {
+                    (Some(li), Some(fj)) => Some((fj - li).max(0)),
+                    _ => None,
+                };
+                chain_edges.push(ChainEdge {
+                    from: order_of[&i],
+                    to: order_of[&j],
+                    kind: EdgeKind::Progression,
+                    via_kind: None,
+                    gap_ns: gap,
+                });
+            }
+        }
+    }
+    for &h in members {
+        if let Some(&ei) = parent.get(h) {
+            let e = &edges[ei];
+            let from_order = order_of.get(&e.via_finding_idx).copied();
+            let to_order = progressions
+                .get(h)
+                .and_then(|s| s.first())
+                .and_then(|i| order_of.get(i).copied());
+            if let (Some(fo), Some(to)) = (from_order, to_order) {
+                let b_first = host_first.get(h).copied().flatten();
+                let gap = match (e.a_reach, b_first) {
+                    (Some(ar), Some(bf)) => Some((bf - ar).max(0)),
+                    _ => None,
+                };
+                chain_edges.push(ChainEdge {
+                    from: fo,
+                    to,
+                    kind: EdgeKind::Pivot,
+                    via_kind: Some(e.via_kind),
+                    gap_ns: gap,
+                });
+            }
+        }
+    }
+    chain_edges.sort_by(|a, b| {
+        a.from
+            .cmp(&b.from)
+            .then(a.to.cmp(&b.to))
+            .then(edge_kind_ord(a.kind).cmp(&edge_kind_ord(b.kind)))
+    });
+
+    // Distinct actor hosts in first-seen order.
+    let mut hosts: Vec<&str> = members.to_vec();
+    hosts.sort_by(|&x, &y| {
+        host_first
+            .get(x)
+            .copied()
+            .flatten()
+            .unwrap_or(i64::MAX)
+            .cmp(&host_first.get(y).copied().flatten().unwrap_or(i64::MAX))
+            .then(x.cmp(y))
+    });
+    hosts.dedup();
+    let hosts_owned: Vec<String> = hosts.iter().map(|s| s.to_string()).collect();
+
+    // Tactic progression: distinct tactics in global step order, merging techniques.
+    let mut tactics: Vec<TacticStep> = Vec::new();
+    for s in &steps {
+        if let Some(t) = tactics.iter_mut().find(|t| t.ordinal == s.tactic_ordinal) {
+            for tech in &s.techniques {
+                if !t.techniques.iter().any(|x| x.id == tech.id) {
+                    t.techniques.push(tech.clone());
+                }
+            }
+        } else {
+            tactics.push(TacticStep {
+                ordinal: s.tactic_ordinal,
+                tactic: s.tactic.clone(),
+                techniques: s.techniques.clone(),
+                host: s.actor.clone(),
+                first_seen_ns: s.first_seen_ns,
+            });
+        }
+    }
+
+    // ATT&CK ids in step order, deduped (NOT sorted).
+    let mut attack: Vec<String> = Vec::new();
+    for s in &steps {
+        for tech in &s.techniques {
+            if !attack.iter().any(|a| a == &tech.id) {
+                attack.push(tech.id.clone());
+            }
+        }
+    }
+
+    // Severity / score escalation by breadth (distinct tactics, distinct hosts).
+    let base_sev = steps
+        .iter()
+        .map(|s| s.severity)
+        .max()
+        .unwrap_or(Severity::Info);
+    let max_score = steps.iter().map(|s| s.score).max().unwrap_or(0);
+    let n_tactics = tactics.len();
+    let n_hosts = hosts_owned.len();
+    let esc = (n_tactics >= 2) as u32 + (n_hosts >= 2) as u32;
+    let mut severity = base_sev;
+    for _ in 0..esc {
+        severity = escalate(severity);
+    }
+    let score = (max_score
+        + 10 * (n_tactics.saturating_sub(1).min(2) as u16)
+        + 10 * (n_hosts.saturating_sub(1).min(1) as u16))
+        .min(100);
+
+    // Confidence — signed arithmetic, then clamp (never underflow, honoring never-panic).
+    let has_strong_pivot = members.iter().any(|&h| match parent.get(h) {
+        Some(&ei) => matches!(
+            edges[ei].via_kind,
+            FindingKind::BruteForce | FindingKind::ExposedRemoteAccess
+        ),
+        None => false,
+    });
+    let all_pivots_timed = members.iter().all(|&h| match parent.get(h) {
+        Some(&ei) => edges[ei].a_reach.is_some() && host_first.get(h).copied().flatten().is_some(),
+        None => true,
+    });
+    let pivot_kinds: Vec<FindingKind> = members
+        .iter()
+        .filter_map(|&h| parent.get(h).map(|&ei| edges[ei].via_kind))
+        .collect();
+    let only_discovery_pivots = !pivot_kinds.is_empty()
+        && pivot_kinds
+            .iter()
+            .all(|k| matches!(k, FindingKind::HostSweep | FindingKind::PortScan));
+    let any_untimed = steps.iter().any(|s| s.first_seen_ns.is_none());
+    let confidence = (40
+        + 10 * (n_tactics as i32).min(4)
+        + if has_strong_pivot { 15 } else { 0 }
+        + if all_pivots_timed { 10 } else { 0 }
+        + 5 * ((n_hosts as i32) - 1).clamp(0, 3)
+        - if any_untimed { 20 } else { 0 }
+        - if only_discovery_pivots { 10 } else { 0 })
+    .clamp(0, 100) as u8;
+
+    let first_ts_ns = steps.iter().filter_map(|s| s.first_seen_ns).min();
+    let last_ts_ns = steps
+        .iter()
+        .filter_map(|s| s.last_seen_ns.or(s.first_seen_ns))
+        .max();
+
+    // Stable id from the sorted distinct host set (hosts are disjoint across chains).
+    let mut sorted_hosts: Vec<&str> = members.to_vec();
+    sorted_hosts.sort_unstable();
+    sorted_hosts.dedup();
+    let id = format!("chain:{:016x}", fnv1a64(sorted_hosts.join(",").as_bytes()));
+
+    let title = if n_hosts >= 2 {
+        format!("Cross-host attack chain: {}", hosts_owned.join(" → "))
+    } else if steps.len() == 1 {
+        findings[member_indices[0]].title.clone()
+    } else {
+        format!(
+            "Multi-stage activity on {}",
+            hosts_owned.first().map(String::as_str).unwrap_or("host")
+        )
+    };
+
+    // Deterministic prose: group consecutive same-actor steps, mark a new actor with "; then".
+    let mut narrative = String::new();
+    let mut cur_actor: Option<&str> = None;
+    for step in &steps {
+        let phrase = kind_phrase(step.kind);
+        if cur_actor != Some(step.actor.as_str()) {
+            if cur_actor.is_some() {
+                narrative.push_str("; then ");
+                narrative.push_str(&step.actor);
+                narrative.push(' ');
+            } else {
+                narrative.push_str(&step.actor);
+                narrative.push(' ');
+            }
+            cur_actor = Some(step.actor.as_str());
+            narrative.push_str(phrase);
+        } else {
+            narrative.push_str(", then ");
+            narrative.push_str(phrase);
+        }
+    }
+    if !narrative.is_empty() {
+        narrative.push('.');
+    }
+
+    AttackChain {
+        id,
+        severity,
+        score,
+        confidence,
+        title,
+        narrative,
+        hosts: hosts_owned,
+        host_count: n_hosts as u32,
+        tactic_count: n_tactics as u32,
+        steps,
+        edges: chain_edges,
+        tactics,
+        attack,
+        campaign_id: None, // assigned by the M5 campaign pass
+        first_ts_ns,
+        last_ts_ns,
+    }
+}
+
 /// Fold post-hoc rule-match findings into a built [`Summary`]: uplift the implicated IP threat
-/// cards, append the findings, and re-correlate incidents so the matches join their host's
-/// incident. Re-running [`correlate_incidents`] over `summary.findings` reproduces the original
-/// incidents plus the rule matches (`analyze` sets `summary.findings` to the same input).
+/// cards, append the findings, and re-correlate incidents + attack chains so the matches join their
+/// host's story. Re-running over `summary.findings` reproduces the original output plus the rule
+/// matches (`analyze` sets `summary.findings` to the same input; the append keeps indices valid).
 pub fn fold_rule_findings(summary: &mut crate::model::summary::Summary, rule_findings: &[Finding]) {
     summary.apply_findings(rule_findings);
     summary.findings.extend_from_slice(rule_findings);
     summary.incidents = correlate_incidents(&summary.findings);
+    summary.attack_chains = reconstruct_attack_chains(&summary.findings);
 }
 
 #[cfg(test)]
@@ -5401,6 +6058,320 @@ mod tests {
             first_seen_ns: None,
             last_seen_ns: None,
             victims: Vec::new(),
+        }
+    }
+
+    // --- M2: attack-chain reconstruction ------------------------------------------------------
+
+    /// Build a finding with a chosen actor, peer, and first/last timestamp for chain tests.
+    fn cf(
+        kind: FindingKind,
+        src: &str,
+        dst: Option<&str>,
+        first_ns: Option<i64>,
+        attack: &[&str],
+    ) -> Finding {
+        Finding {
+            kind,
+            severity: Severity::High,
+            score: 70,
+            title: format!("{} on {src}", kind.as_str()),
+            src_ip: src.to_string(),
+            dst_ip: dst.map(|s| s.to_string()),
+            dst_port: Some(443),
+            attack: attack.iter().map(|s| s.to_string()).collect(),
+            evidence: vec![format!("evidence for {}", kind.as_str())],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: first_ns,
+            last_seen_ns: first_ns,
+            victims: Vec::new(),
+        }
+    }
+
+    /// The canonical A → B → C2 pivot scenario: A sweeps (victim B), A brute-forces B, B beacons to
+    /// a C2, B exfiltrates. `correlate_incidents` sees two hosts; reconstruction fuses one chain.
+    fn canonical_chain_findings() -> Vec<Finding> {
+        let sec = 1_000_000_000i64;
+        let (a, b) = ("10.13.37.7", "10.66.0.1");
+        let mut sweep = cf(FindingKind::HostSweep, a, None, Some(0), &["T1046"]);
+        sweep.victims = vec![b.to_string()];
+        vec![
+            sweep,
+            cf(
+                FindingKind::BruteForce,
+                a,
+                Some(b),
+                Some(2 * sec + sec / 2),
+                &["T1110"],
+            ),
+            cf(
+                FindingKind::Beacon,
+                b,
+                Some("45.77.13.37"),
+                Some(30 * sec),
+                &["T1071"],
+            ),
+            cf(
+                FindingKind::DataExfil,
+                b,
+                Some("185.220.101.5"),
+                Some(40 * sec),
+                &["T1048"],
+            ),
+        ]
+    }
+
+    #[test]
+    fn pivot_links_bruteforce_victim_to_later_beacon_actor() {
+        let chains = reconstruct_attack_chains(&canonical_chain_findings());
+        assert_eq!(chains.len(), 1, "one fused cross-host chain: {chains:#?}");
+        let c = &chains[0];
+        assert_eq!(
+            c.hosts,
+            vec!["10.13.37.7".to_string(), "10.66.0.1".to_string()]
+        );
+        assert_eq!(c.host_count, 2);
+        assert_eq!(
+            c.severity,
+            Severity::Critical,
+            ">=2 tactics + >=2 hosts escalates High -> Critical"
+        );
+        // Exactly one pivot edge, via the strongest handoff (BruteForce beats the sweep).
+        let pivots: Vec<&ChainEdge> = c
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Pivot)
+            .collect();
+        assert_eq!(pivots.len(), 1, "one pivot: {:?}", c.edges);
+        assert_eq!(pivots[0].via_kind, Some(FindingKind::BruteForce));
+        // The pivot's target step is on B.
+        let to_step = c.steps.iter().find(|s| s.order == pivots[0].to).unwrap();
+        assert_eq!(to_step.actor, "10.66.0.1");
+        // ATT&CK progression in time order.
+        assert_eq!(c.attack, vec!["T1046", "T1110", "T1071", "T1048"]);
+        assert_eq!(
+            c.tactics
+                .iter()
+                .map(|t| t.tactic.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "Discovery",
+                "Credential Access",
+                "Command & Control",
+                "Exfiltration"
+            ]
+        );
+    }
+
+    #[test]
+    fn contrast_correlate_incidents_sees_two_disconnected_hosts() {
+        // The same findings collapse to TWO per-host incidents under the old correlation.
+        let incidents = correlate_incidents(&canonical_chain_findings());
+        assert_eq!(
+            incidents.len(),
+            2,
+            "per-host grouping keeps A and B separate"
+        );
+    }
+
+    #[test]
+    fn two_unrelated_hosts_stay_separate() {
+        let sec = 1_000_000_000i64;
+        let f1 = cf(
+            FindingKind::Beacon,
+            "10.0.0.1",
+            Some("8.8.8.8"),
+            Some(sec),
+            &["T1071"],
+        );
+        let f2 = cf(
+            FindingKind::Beacon,
+            "10.0.0.2",
+            Some("9.9.9.9"),
+            Some(2 * sec),
+            &["T1071"],
+        );
+        assert_eq!(reconstruct_attack_chains(&[f1, f2]).len(), 2);
+    }
+
+    #[test]
+    fn shared_public_resolver_does_not_merge() {
+        // Two hosts querying the same benign resolver: DGA does not propagate compromise, and the
+        // resolver is not itself an actor — so no pivot, two chains.
+        let sec = 1_000_000_000i64;
+        let f1 = cf(
+            FindingKind::Dga,
+            "10.0.0.1",
+            Some("8.8.8.8"),
+            Some(sec),
+            &["T1568.002"],
+        );
+        let f2 = cf(
+            FindingKind::Dga,
+            "10.0.0.2",
+            Some("8.8.8.8"),
+            Some(2 * sec),
+            &["T1568.002"],
+        );
+        assert_eq!(reconstruct_attack_chains(&[f1, f2]).len(), 2);
+    }
+
+    #[test]
+    fn causal_gate_rejects_reverse_time() {
+        let sec = 1_000_000_000i64;
+        // B acts at t=1s; A "compromises" B only at t=30s — not causal, so no pivot.
+        let b_beacon = cf(
+            FindingKind::Beacon,
+            "10.0.0.2",
+            Some("8.8.8.8"),
+            Some(sec),
+            &["T1071"],
+        );
+        let a_brute = cf(
+            FindingKind::BruteForce,
+            "10.0.0.1",
+            Some("10.0.0.2"),
+            Some(30 * sec),
+            &["T1110"],
+        );
+        assert_eq!(
+            reconstruct_attack_chains(&[b_beacon, a_brute]).len(),
+            2,
+            "reverse-time pivot rejected"
+        );
+    }
+
+    #[test]
+    fn mutual_pivot_is_acyclic_single_chain() {
+        let sec = 1_000_000_000i64;
+        // A brute-forces B (t=1s); B brute-forces A (t=2s). Connected, must not loop.
+        let ab = cf(
+            FindingKind::BruteForce,
+            "10.0.0.1",
+            Some("10.0.0.2"),
+            Some(sec),
+            &["T1110"],
+        );
+        let ba = cf(
+            FindingKind::BruteForce,
+            "10.0.0.2",
+            Some("10.0.0.1"),
+            Some(2 * sec),
+            &["T1110"],
+        );
+        let chains = reconstruct_attack_chains(&[ab, ba]);
+        assert_eq!(
+            chains.len(),
+            1,
+            "mutual pivots form one acyclic chain: {chains:#?}"
+        );
+        assert_eq!(chains[0].host_count, 2);
+        let pivots = chains[0]
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Pivot)
+            .count();
+        assert_eq!(pivots, 1, "one pivot, not a loop: {:?}", chains[0].edges);
+    }
+
+    #[test]
+    fn degrades_to_taxonomy_order_when_timestamps_none() {
+        // No timestamps: steps fall back to kill-chain taxonomy order (Discovery before C2),
+        // regardless of input order, and confidence is penalized.
+        let beacon = cf(
+            FindingKind::Beacon,
+            "10.0.0.5",
+            Some("8.8.8.8"),
+            None,
+            &["T1071"],
+        );
+        let sweep = cf(FindingKind::HostSweep, "10.0.0.5", None, None, &["T1046"]);
+        let chains = reconstruct_attack_chains(&[beacon, sweep]); // beacon FIRST in input
+        assert_eq!(chains.len(), 1);
+        let c = &chains[0];
+        assert_eq!(
+            c.steps[0].kind,
+            FindingKind::HostSweep,
+            "Discovery sorts first by taxonomy"
+        );
+        assert_eq!(c.steps[1].kind, FindingKind::Beacon);
+        assert!(
+            c.confidence < 60,
+            "untimed chain has reduced confidence: {}",
+            c.confidence
+        );
+    }
+
+    #[test]
+    fn synflood_victim_appears_as_impact_step_not_dropped() {
+        // SynFlood keeps the victim in src_ip; it must still become a step (Impact) and never
+        // source a pivot (victims_of empty).
+        let f = cf(
+            FindingKind::SynFlood,
+            "10.0.0.9",
+            Some("10.0.0.1"),
+            Some(1),
+            &["T1499.001"],
+        );
+        let chains = reconstruct_attack_chains(&[f]);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].steps.len(), 1);
+        assert_eq!(chains[0].steps[0].kind, FindingKind::SynFlood);
+        assert_eq!(chains[0].steps[0].tactic, "Impact");
+        assert!(chains[0].edges.iter().all(|e| e.kind != EdgeKind::Pivot));
+    }
+
+    #[test]
+    fn empty_findings_yield_no_chains() {
+        assert!(reconstruct_attack_chains(&[]).is_empty());
+    }
+
+    #[test]
+    fn single_finding_degenerates_to_one_step_chain() {
+        let f = cf(
+            FindingKind::Beacon,
+            "10.0.0.5",
+            Some("8.8.8.8"),
+            Some(1),
+            &["T1071"],
+        );
+        let chains = reconstruct_attack_chains(&[f]);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].steps.len(), 1);
+        assert_eq!(chains[0].host_count, 1);
+        assert!(chains[0].edges.is_empty(), "a single step has no edges");
+    }
+
+    #[test]
+    fn reconstruct_is_deterministic() {
+        // Same input, run twice → byte-identical JSON (no HashMap-ordering nondeterminism).
+        let input = canonical_chain_findings();
+        let j1 = serde_json::to_string(&reconstruct_attack_chains(&input)).unwrap();
+        let j2 = serde_json::to_string(&reconstruct_attack_chains(&input)).unwrap();
+        assert_eq!(j1, j2);
+    }
+
+    #[test]
+    fn reconstruct_is_permutation_invariant_in_structure() {
+        // Reordering the input must not change the reconstructed structure (only finding_index,
+        // which tracks input position, may differ).
+        let input = canonical_chain_findings();
+        let mut perm = input.clone();
+        perm.reverse();
+        let a = reconstruct_attack_chains(&input);
+        let b = reconstruct_attack_chains(&perm);
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(&b) {
+            assert_eq!(x.id, y.id);
+            assert_eq!(x.hosts, y.hosts);
+            assert_eq!(x.severity, y.severity);
+            assert_eq!(x.attack, y.attack);
+            assert_eq!(
+                x.steps.iter().map(|s| s.kind).collect::<Vec<_>>(),
+                y.steps.iter().map(|s| s.kind).collect::<Vec<_>>()
+            );
         }
     }
 

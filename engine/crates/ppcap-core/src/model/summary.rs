@@ -6,6 +6,7 @@
 //! `non_ip_frames`). Field aliases required by the bench contract are documented inline.
 
 use crate::enrich::IpClass;
+use crate::model::attack_chain::AttackChain;
 use crate::model::category::Category;
 use crate::model::finding::Finding;
 use crate::model::incident::Incident;
@@ -368,6 +369,10 @@ pub struct Summary {
     /// keeps older summaries readable.
     #[serde(default)]
     pub incidents: Vec<Incident>,
+    /// Cross-flow findings reconstructed into temporally-ordered, causally-linked attack chains
+    /// (multi-host, campaign-clustered). `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub attack_chains: Vec<AttackChain>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -412,6 +417,7 @@ impl Summary {
             carved_files: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
+            attack_chains: Vec::new(),
         }
     }
 
@@ -572,5 +578,39 @@ mod tests {
             .remove("domain_threats");
         let back: crate::model::output::AnalysisOutput = serde_json::from_value(v).unwrap();
         assert!(back.summary.domain_threats.is_empty());
+    }
+
+    #[test]
+    fn attack_chains_serde_roundtrip_and_default() {
+        let ac = AttackChain {
+            id: "chain:0011223344556677".into(),
+            severity: Severity::Critical,
+            score: 100,
+            confidence: 92,
+            title: "Cross-host attack chain: A → B".into(),
+            narrative: "A brute-forced credentials; then B beaconed to a C2.".into(),
+            hosts: vec!["10.0.0.1".into(), "10.0.0.2".into()],
+            steps: vec![],
+            edges: vec![],
+            tactics: vec![],
+            attack: vec!["T1110".into(), "T1071".into()],
+            campaign_id: None,
+            first_ts_ns: Some(1),
+            last_ts_ns: Some(2),
+            host_count: 2,
+            tactic_count: 2,
+        };
+        let j = serde_json::to_string(&ac).unwrap();
+        assert_eq!(serde_json::from_str::<AttackChain>(&j).unwrap(), ac);
+
+        // Old summaries (no attack_chains key) still deserialize → empty.
+        let out = crate::model::output::AnalysisOutput::default();
+        let mut v = serde_json::to_value(&out).unwrap();
+        v["summary"]
+            .as_object_mut()
+            .unwrap()
+            .remove("attack_chains");
+        let back: crate::model::output::AnalysisOutput = serde_json::from_value(v).unwrap();
+        assert!(back.summary.attack_chains.is_empty());
     }
 }

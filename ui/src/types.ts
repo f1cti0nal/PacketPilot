@@ -131,6 +131,8 @@ export interface Summary {
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
   incidents?: Incident[];
+  /** Findings reconstructed into multi-host, temporally-ordered attack chains; absent in older summaries. */
+  attack_chains?: AttackChain[];
 }
 
 export interface SeverityCounts {
@@ -324,6 +326,82 @@ export interface Incident {
   attack: string[];
   /** Contributing findings, ordered by kill-chain stage. */
   findings: Finding[];
+}
+
+/** A MITRE ATT&CK technique reference: id + resolved human name (id itself if unknown). */
+export interface TechniqueRef {
+  id: string;
+  name: string;
+}
+
+export type EdgeKind = "pivot" | "progression";
+
+/** A typed transition between two chain steps (referenced by their `order`). */
+export interface ChainEdge {
+  from: number;
+  to: number;
+  kind: EdgeKind;
+  /** Handoff finding kind for a pivot; null/absent for a progression edge. */
+  via_kind?: FindingKind | null;
+  /** Dwell between the steps (ns), clamped >= 0; null when unknown. */
+  gap_ns: number | null;
+}
+
+/** One node in an attack chain: a finding placed in the chain timeline, attributed to its actor. */
+export interface ChainStep {
+  order: number;
+  actor: string;
+  tactic_ordinal: number;
+  tactic: string;
+  kind: FindingKind;
+  techniques: TechniqueRef[];
+  peer: string | null;
+  severity: Severity;
+  score: number;
+  first_seen_ns: number | null;
+  last_seen_ns: number | null;
+  evidence?: string | null;
+  /** Back-reference into `summary.findings`. */
+  finding_index: number;
+}
+
+/** One stage in the chain's MITRE ATT&CK tactic progression. */
+export interface TacticStep {
+  ordinal: number;
+  tactic: string;
+  techniques: TechniqueRef[];
+  host: string;
+  first_seen_ns: number | null;
+}
+
+/**
+ * A reconstructed attack chain: a multi-host, temporally-ordered, causally-linked story over the
+ * finding set. Where an Incident groups findings under one actor host, a chain follows the
+ * compromise across hosts (A sweeps → brute-forces B → B beacons to C2 → B exfiltrates).
+ */
+export interface AttackChain {
+  id: string;
+  severity: Severity;
+  score: number;
+  confidence: number;
+  title: string;
+  narrative: string;
+  /** Distinct actor hosts, in first-seen order. */
+  hosts: string[];
+  /** Steps, ordered by time then kill-chain taxonomy. */
+  steps: ChainStep[];
+  /** Typed transitions (per-host progression + cross-host pivots). */
+  edges: ChainEdge[];
+  /** ATT&CK tactic progression (distinct tactics in step order). */
+  tactics: TacticStep[];
+  /** Technique ids in chain order, deduped. */
+  attack: string[];
+  /** Set when this chain clusters with others over shared infrastructure (M5); null otherwise. */
+  campaign_id?: string | null;
+  first_ts_ns: number | null;
+  last_ts_ns: number | null;
+  host_count: number;
+  tactic_count: number;
 }
 
 export interface AnalysisOutput {
