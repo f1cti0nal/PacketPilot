@@ -21,6 +21,25 @@ export async function runViaProxy(messages: AiMessage[], onToken: (t: string) =>
     if (resp.status === 503) throw new Error("AI is not enabled.");
     // The shared free endpoint returns 429 when busy — a normal transient state, not a failure.
     if (resp.status === 429) throw new Error("The AI analyst is busy right now; try again in a minute.");
+    // The proxy reports provider failures as 502 with the provider's own status in the body.
+    // Surface it: "model unavailable" (400/404) needs an operator config fix, not a retry.
+    if (resp.status === 502) {
+      const upstream = await resp
+        .json()
+        .then((b) => (b as { status?: unknown })?.status)
+        .catch(() => undefined);
+      if (typeof upstream === "number") {
+        // 400/404 both cover "bad model" (OpenRouter 400s on unknown slugs; others 404), but a
+        // 400 can also be a limits problem — keep the hint neutral across those causes.
+        const hint =
+          upstream === 400 || upstream === 404
+            ? " — check the configured model and its limits"
+            : upstream === 401 || upstream === 403
+              ? " — the AI provider rejected the operator's key"
+              : "";
+        throw new Error(`The AI provider returned an error (HTTP ${upstream})${hint}.`);
+      }
+    }
     throw new Error(`AI request failed (${resp.status}).`);
   }
   const reader = resp.body.getReader();
