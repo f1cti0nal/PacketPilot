@@ -133,7 +133,7 @@ const security: LegalContent = {
     },
     {
       "q": "What about the AI Analyst feature — doesn't that send my data somewhere?",
-      "a": "The AI feature is opt-in and off by default — no account or login is involved, because none exist. When you enable it, only a derived summary (aggregate statistics plus finding metadata — not raw packets) and a small number of public IPs and public domains are sent, via our own Edge Function proxy, to the configured LLM provider. The raw capture, packet payloads, and private/internal IP addresses are never sent. The same rules apply to the reputation lookups (AbuseIPDB, GreyNoise, VirusTotal)."
+      "a": "The AI feature is opt-in and off by default — no account or login is involved, because none exist. When you enable it, only a derived summary (aggregate statistics plus finding metadata — not raw packets) and a small number of public IPs and public domains are sent, via our own Edge Function proxy, to the configured LLM provider. If you use the natural-language query feature, the question text you type (and generated SQL plus its error text) is sent the same way; the SQL itself always runs locally in your browser, so flow records never leave. The raw capture, packet payloads, and private/internal IP addresses are never sent. The same rules apply to the reputation lookups (AbuseIPDB, GreyNoise, VirusTotal)."
     },
     {
       "q": "Do you store my captures?",

@@ -781,7 +781,7 @@ export function App() {
           onClearFlowIdFilter={() => setQueryFlowIds(null)}
         />
       ) : tab === "query" ? (
-        <QueryView state={flows} onOpenInFlows={openQueryResultInFlows} />
+        <QueryView state={flows} onOpenInFlows={openQueryResultInFlows} aiOn={aiOn} aiModel={aiModel} />
       ) : tab === "findings" ? (
         <FindingsView
           findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}

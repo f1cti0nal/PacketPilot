@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, ExternalLink, Play, Save } from "lucide-react";
+import { Download, ExternalLink, Play, Save, Sparkles } from "lucide-react";
 import type { FlowsState, FlowRow } from "../types";
 import type { QueryEngine, QueryResult } from "../lib/query/engine";
+import { generateSql, repairSql } from "../lib/ai/nlq";
+import { aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
+import { AiConsent } from "../cockpit/AiConsent";
 import { SAMPLE_QUERIES } from "../lib/query/samples";
 import {
   listSavedQueries,
@@ -23,6 +26,10 @@ export interface QueryViewProps {
   state: FlowsState;
   /** Lift a flow_id result set into the Flows tab as a cross-filter. */
   onOpenInFlows: (flowIds: Set<number>) => void;
+  /** Operator kill-switch (ai_config.enabled) — hides the natural-language row when off. */
+  aiOn?: boolean;
+  /** Configured model name, shown in the consent dialog. */
+  aiModel?: string;
 }
 
 /**
@@ -49,7 +56,7 @@ type EngineStatus = "booting" | "ready" | "error";
  * leaves the device). Phase 2 of the NLQ plan; the natural-language input
  * lands on top of this in Phase 3.
  */
-export function QueryView({ state, onOpenInFlows }: QueryViewProps) {
+export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: QueryViewProps) {
   const rows = state.rows;
 
   const [engineStatus, setEngineStatus] = useState<EngineStatus>("booting");
@@ -66,6 +73,17 @@ export function QueryView({ state, onOpenInFlows }: QueryViewProps) {
   const [saved, setSaved] = useState<SavedQuery[]>(() => listSavedQueries());
   const [saveName, setSaveName] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Natural-language row (Phase 3): question → model → SQL streamed into the
+  // editor. Only the question (and, on repair, SQL + error text) ever leaves.
+  const [nlQuestion, setNlQuestion] = useState("");
+  const [nlBusy, setNlBusy] = useState(false);
+  const [nlError, setNlError] = useState<string | null>(null);
+  const [intent, setIntent] = useState<string | null>(null);
+  const [showConsent, setShowConsent] = useState(false);
+  // The last model-generated SQL: enables ONE automatic repair round on run
+  // failure, and only while the editor still holds exactly that SQL.
+  const nlGenRef = useRef<{ question: string; sql: string; repaired: boolean } | null>(null);
 
   // Boot the engine and (re)load the flow table whenever the dataset changes.
   useEffect(() => {
@@ -110,14 +128,82 @@ export function QueryView({ state, onOpenInFlows }: QueryViewProps) {
       const res = await engine.run(sql);
       if (gen === runGen.current) setResult(res);
     } catch (err: unknown) {
+      const message = String((err as Error)?.message ?? err);
+      // One automatic repair round — only when the editor still holds exactly
+      // the model-generated SQL (hand edits opt out) and it wasn't tried yet.
+      // Sends the failing SQL + DuckDB error text back to the model, nothing else.
+      const nlGen = nlGenRef.current;
+      if (nlGen && !nlGen.repaired && nlGen.sql === sql) {
+        nlGen.repaired = true;
+        try {
+          let acc = "";
+          const parsed = await repairSql(nlGen.question, sql, message, (t) => {
+            acc += t;
+            setSql(acc);
+          });
+          if (parsed.kind === "sql" && gen === runGen.current) {
+            nlGen.sql = parsed.sql;
+            setSql(parsed.sql);
+            setIntent(parsed.intent);
+            const res = await engine.run(parsed.sql);
+            if (gen === runGen.current) {
+              setResult(res);
+              setError(null);
+              return;
+            }
+          }
+        } catch {
+          // Repair itself failed — restore the original SQL + surface the original error.
+          if (gen === runGen.current) setSql(sql);
+        }
+      }
       if (gen === runGen.current) {
         setResult(null);
-        setError(String((err as Error)?.message ?? err));
+        setError(message);
       }
     } finally {
       if (gen === runGen.current) setRunning(false);
     }
   }, [engineStatus, sql]);
+
+  // Generate SQL from the natural-language question, streaming into the editor.
+  const doGenerate = useCallback(async () => {
+    const question = nlQuestion.trim();
+    if (!question || nlBusy) return;
+    setNlBusy(true);
+    setNlError(null);
+    setIntent(null);
+    const prevSql = sql;
+    try {
+      let acc = "";
+      const parsed = await generateSql(question, (t) => {
+        acc += t;
+        setSql(acc);
+      });
+      if (parsed.kind === "error") {
+        setSql(prevSql);
+        setNlError(parsed.message);
+      } else {
+        setSql(parsed.sql);
+        setIntent(parsed.intent);
+        nlGenRef.current = { question, sql: parsed.sql, repaired: false };
+      }
+    } catch (err: unknown) {
+      setSql(prevSql);
+      setNlError(String((err as Error)?.message ?? err));
+    } finally {
+      setNlBusy(false);
+    }
+  }, [nlQuestion, nlBusy, sql]);
+
+  const handleGenerate = useCallback(() => {
+    if (!nlQuestion.trim() || nlBusy) return;
+    if (!aiConsentGiven()) {
+      setShowConsent(true);
+      return;
+    }
+    void doGenerate();
+  }, [nlQuestion, nlBusy, doGenerate]);
 
   const onEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -298,9 +384,54 @@ export function QueryView({ state, onOpenInFlows }: QueryViewProps) {
       )}
 
       <Panel label="SQL" title="Query the flow table" bodyClassName="flex flex-col gap-2 p-3">
+        {aiOn && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[16rem] flex-1">
+              <Sparkles
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-faint)]"
+                aria-hidden
+              />
+              <input
+                type="text"
+                value={nlQuestion}
+                onChange={(e) => setNlQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleGenerate();
+                }}
+                placeholder="Ask in plain English — e.g. which host uploaded the most data?"
+                aria-label="Ask in plain English"
+                className={cn(INPUT_BASE, "w-full py-1.5 pl-8 pr-3")}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={nlBusy || nlQuestion.trim() === ""}
+              title="Sends only your question to the AI provider — never flow data"
+              className={BTN_OUTLINE}
+            >
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              {nlBusy ? "Generating…" : "Generate SQL"}
+            </button>
+          </div>
+        )}
+        {nlError && (
+          <p
+            role="alert"
+            className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-[length:var(--fs-label)] text-[var(--color-sev-high,#e5484d)]"
+          >
+            {nlError}
+          </p>
+        )}
         <textarea
           value={sql}
-          onChange={(e) => setSql(e.target.value)}
+          onChange={(e) => {
+            setSql(e.target.value);
+            // A hand edit takes ownership: no auto-repair of edited SQL, and the
+            // model's intent caption no longer describes what's in the editor.
+            nlGenRef.current = null;
+            setIntent(null);
+          }}
           onKeyDown={onEditorKeyDown}
           rows={8}
           spellCheck={false}
@@ -311,6 +442,14 @@ export function QueryView({ state, onOpenInFlows }: QueryViewProps) {
             "w-full resize-y px-3 py-2 font-mono-num text-[length:var(--fs-body)] leading-relaxed",
           )}
         />
+        {intent && (
+          <p
+            data-component="QueryIntent"
+            className="text-[length:var(--fs-label)] text-[var(--color-text-dim)]"
+          >
+            Intent: {intent}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -409,6 +548,18 @@ export function QueryView({ state, onOpenInFlows }: QueryViewProps) {
           />
         )}
       </Panel>
+
+      {showConsent && (
+        <AiConsent
+          model={aiModel}
+          onProceed={() => {
+            giveAiConsent();
+            setShowConsent(false);
+            void doGenerate();
+          }}
+          onCancel={() => setShowConsent(false)}
+        />
+      )}
     </div>
   );
 }
