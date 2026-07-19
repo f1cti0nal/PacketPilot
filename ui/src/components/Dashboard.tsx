@@ -10,6 +10,7 @@ import { sevColor } from "../cockpit/viz";
 import { Panel, ScoreBar, IocDot, MitreTag, ProvenanceChip, Tag } from "../cockpit/primitives";
 import { KpiCluster } from "../cockpit/KpiCluster";
 import { IncidentHero } from "../cockpit/IncidentHero";
+import { AttackChainCard } from "../cockpit/AttackChainCard";
 import { DetailFlyout } from "../cockpit/DetailFlyout";
 import { ActivityHeatmap } from "../cockpit/ActivityHeatmap";
 import { CategoryMatrix } from "../cockpit/CategoryMatrix";
@@ -176,6 +177,15 @@ export function Dashboard({
             </div>
           </Panel>
         )}
+
+        {/* Zone 2b — cross-host attack chain: the multi-host superstructure over the incidents */}
+        <AttackChainCard
+          chains={s.attack_chains ?? []}
+          onOpenFinding={(idx) => {
+            const f = s.findings?.[idx];
+            if (f) toFlowsIp(f.src_ip);
+          }}
+        />
 
         {/* Threat watchlist — the ranked scored hosts (the rail, as a card) */}
         <ThreatWatchlist

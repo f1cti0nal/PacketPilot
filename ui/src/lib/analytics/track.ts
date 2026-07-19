@@ -9,6 +9,7 @@ const ROUTES = new Set<string>([
   "/app#flows",
   "/app#findings",
   "/app#threats",
+  "/app#attackchain",
   "/app#recent",
   "/app#compare",
   "/admin#dashboard",

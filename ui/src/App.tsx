@@ -33,6 +33,7 @@ import { Dashboard } from "./components/Dashboard";
 import { FlowsView } from "./views/FlowsView";
 import { FindingsView } from "./views/FindingsView";
 import { ThreatsView } from "./views/ThreatsView";
+import { AttackChainView } from "./views/AttackChainView";
 import { RecentView } from "./components/recent/RecentView";
 import { CompareView } from "./views/CompareView";
 import {
@@ -766,6 +767,14 @@ export function App() {
           activeIp={activeIp}
           onSelect={openThreat}
           reputationConfigured={repEnabled}
+        />
+      ) : tab === "attackchain" ? (
+        <AttackChainView
+          chains={summary.status === "ready" ? summary.data?.summary.attack_chains ?? [] : []}
+          onOpenFinding={(idx) => {
+            const f = summary.status === "ready" ? summary.data?.summary.findings?.[idx] : undefined;
+            if (f) jumpToFlows({ ip: f.src_ip });
+          }}
         />
       ) : tab === "recent" ? (
         <RecentView

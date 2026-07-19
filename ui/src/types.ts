@@ -586,7 +586,7 @@ export interface FlowRow {
 }
 
 // ---------- load state ----------
-export const TAB_IDS = ["dashboard", "flows", "findings", "threats", "recent", "compare"] as const;
+export const TAB_IDS = ["dashboard", "flows", "findings", "threats", "attackchain", "recent", "compare"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
 /** How a capture entered the app — drives whether it can be re-analyzed in place. */

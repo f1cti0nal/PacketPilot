@@ -132,16 +132,20 @@ export function AppShell({
   const isMobile = useIsMobile();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+  const chainCount =
+    summary.status === "ready" ? summary.data?.summary.attack_chains?.length ?? 0 : 0;
+
   const tabs = useMemo(
     () => [
       { id: "dashboard" as const, label: "Dashboard" },
       { id: "flows" as const, label: "Flows" },
       { id: "findings" as const, label: "Findings" },
       { id: "threats" as const, label: "Threats", badge: threats.length || undefined },
+      { id: "attackchain" as const, label: "Chains", badge: chainCount || undefined },
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
       ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
     ],
-    [recentCount, compareActive, threats.length],
+    [recentCount, compareActive, threats.length, chainCount],
   );
 
   const canExport = summary.status === "ready" && !!summary.data;
