@@ -66,4 +66,35 @@ describe("runViaProxy", () => {
 
     await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI request failed/i);
   });
+
+  it("surfaces the upstream provider status on a 502 with a model/limits hint", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "ai upstream error", status: 404 }), { status: 502 })),
+    );
+
+    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(
+      /HTTP 404.*check the configured model/i,
+    );
+  });
+
+  it("surfaces a key-rejected hint on a 502 wrapping an upstream 401", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "ai upstream error", status: 401 }), { status: 502 })),
+    );
+
+    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(
+      /HTTP 401.*rejected the operator's key/i,
+    );
+  });
+
+  it("falls back to the generic message when the 502 body carries no upstream status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "ai upstream error" }), { status: 502 })),
+    );
+
+    await expect(runViaProxy([{ role: "user", content: "q" }], () => {})).rejects.toThrow(/AI request failed \(502\)/i);
+  });
 });

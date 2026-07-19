@@ -23,8 +23,11 @@ const PROVIDER_BASE: Record<string, string> = {
 /** Largest total message-content payload accepted (bytes). The AI works from a derived summary,
  *  which is small; anything larger is abuse of an anonymous, operator-funded endpoint. */
 const MAX_CONTENT_BYTES = 128 * 1024;
-/** Upstream completion cap so no single call can run up an unbounded bill. */
-const MAX_TOKENS = Number(Deno.env.get("AI_MAX_TOKENS") ?? "2048");
+/** Upstream completion cap so no single call can run up an unbounded bill. A malformed
+ *  AI_MAX_TOKENS must not reach the provider as NaN or a fraction — providers type
+ *  max_tokens as a positive integer and reject anything else (a silent 400 → 502). */
+const MAX_TOKENS_RAW = Math.floor(Number(Deno.env.get("AI_MAX_TOKENS") ?? "2048"));
+const MAX_TOKENS = Number.isFinite(MAX_TOKENS_RAW) && MAX_TOKENS_RAW > 0 ? MAX_TOKENS_RAW : 2048;
 
 /** CORS headers for a given request Origin — echoes the origin when allowed (or when the caller
  *  sends none), so preflight and the actual response agree. */
@@ -137,6 +140,13 @@ Deno.serve(async (req) => {
     redirect: "manual", // a 3xx must not carry the operator key to a redirect target
   });
   if (!upstream.ok || !upstream.body) {
+    // Log WHY before collapsing to 502 — a bare status hides root causes that need different
+    // fixes: a delisted model (404, e.g. a retired OpenRouter alpha), a revoked key (401),
+    // or provider rate limiting (429). The provider's error body names the culprit.
+    const detail = (await upstream.text().catch(() => "")).slice(0, 500);
+    console.error(
+      `ai-proxy upstream error ${upstream.status} (provider=${cfg.provider ?? "anthropic"} model=${model}): ${detail}`,
+    );
     return json({ error: "ai upstream error", status: upstream.status }, 502, req);
   }
   // Stream the SSE straight back.
