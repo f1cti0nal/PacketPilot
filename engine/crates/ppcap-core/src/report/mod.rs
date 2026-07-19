@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 use time::macros::format_description;
 use time::OffsetDateTime;
 
+use crate::model::attack_chain::{AttackChain, EdgeKind};
 use crate::model::category::Category;
 use crate::model::finding::{Finding, FindingKind};
 use crate::model::incident::Incident;
@@ -154,6 +155,9 @@ pub fn render_html(
 
     // ---- Section 3: active incidents (the headline triage unit) ----------------------
     s.push_str(&incidents_html(&sum.incidents));
+
+    // ---- Section 3a: reconstructed attack chains (cross-host superstructure) ----------
+    s.push_str(&attack_chains_html(&sum.attack_chains));
 
     // ---- Section 3b: signature matches (imported Suricata-style rule hits) -----------
     s.push_str(&signature_matches_html(&sum.findings));
@@ -780,6 +784,113 @@ fn incidents_html(incidents: &[Incident]) -> String {
     s
 }
 
+/// The "Attack chains" section: findings reconstructed into multi-host, temporally-ordered stories
+/// (worst-first, as `reconstruct_attack_chains` already sorted them) — the cross-host superstructure
+/// over the per-host incidents. Static, dependency-free HTML; every capture-derived string is escaped.
+fn attack_chains_html(chains: &[AttackChain]) -> String {
+    use std::collections::HashSet;
+    let mut s = String::with_capacity(2048);
+    s.push_str("<section class=\"card\"><h2>Attack chains</h2>");
+    if chains.is_empty() {
+        s.push_str(
+            "<p class=\"muted\">No attack chains — no cross-host or multi-stage behavior \
+             reconstructed.</p></section>\n",
+        );
+        return s;
+    }
+    s.push_str(
+        "<p class=\"muted\">Findings reconstructed into temporally-ordered, causally-linked chains \
+         — the compromise followed across hosts (worst first).</p>",
+    );
+    for c in chains {
+        let color = sev_color(c.severity);
+        let score = c.score.min(100);
+        let _ = write!(
+            s,
+            "<div class=\"incident chain\" style=\"border-left-color:{color}\">\
+             <div class=\"inc-head\">\
+             <span class=\"chip\" style=\"background:{color}\">{sev}</span>\
+             <span class=\"inc-host chain-host\">{title}</span>\
+             <span class=\"inc-score\">{score}/100 &middot; conf {conf}</span>",
+            color = color,
+            sev = esc(c.severity.as_str()),
+            title = esc(&c.title),
+            score = score,
+            conf = c.confidence.min(100),
+        );
+        if let Some(cid) = &c.campaign_id {
+            let _ = write!(s, "<span class=\"campaign\">{}</span>", esc(cid));
+        }
+        s.push_str("</div>");
+        // Tactic-progression spine — each stage annotated with the host that reached it.
+        s.push_str("<div class=\"stages\">");
+        for (i, t) in c.tactics.iter().enumerate() {
+            if i > 0 {
+                s.push_str("<span class=\"arrow\">&rarr;</span>");
+            }
+            let _ = write!(
+                s,
+                "<span class=\"stage\">{tactic} <span class=\"chain-actor\">{host}</span></span>",
+                tactic = esc(&t.tactic),
+                host = esc(&t.host),
+            );
+        }
+        s.push_str("</div>");
+        // ATT&CK technique chips (id + resolved name), in chain order.
+        if !c.attack.is_empty() {
+            s.push_str("<div class=\"techs\">");
+            for id in &c.attack {
+                let _ = write!(
+                    s,
+                    "<span class=\"tech\">{id} {name}</span>",
+                    id = esc(id),
+                    name = esc(crate::detect::technique_name(id)),
+                );
+            }
+            s.push_str("</div>");
+        }
+        // Narrative.
+        let _ = write!(s, "<p class=\"narr\">{}</p>", esc(&c.narrative));
+        // Steps, in order, with a pivot glyph on any step that is the target of a cross-host pivot.
+        let pivot_targets: HashSet<u32> = c
+            .edges
+            .iter()
+            .filter(|e| e.kind == EdgeKind::Pivot)
+            .map(|e| e.to)
+            .collect();
+        s.push_str("<ul class=\"findings chain-steps\">");
+        for step in &c.steps {
+            let fcolor = sev_color(step.severity);
+            let pivot = if pivot_targets.contains(&step.order) {
+                "<span class=\"pivot-arrow\">&#8618;</span> "
+            } else {
+                ""
+            };
+            let evidence_html = match &step.evidence {
+                Some(ev) if !ev.is_empty() => {
+                    format!(" <span class=\"fmetrics\">{}</span>", esc(ev))
+                }
+                _ => String::new(),
+            };
+            let _ = write!(
+                s,
+                "<li>{pivot}<span class=\"fkind\" style=\"color:{fcolor}\">{tactic}</span> \
+                 <span class=\"chain-actor\">{actor}</span> \
+                 <span class=\"ftitle\">{kind}</span>{evidence}</li>",
+                pivot = pivot,
+                fcolor = fcolor,
+                tactic = esc(&step.tactic),
+                actor = esc(&step.actor),
+                kind = esc(kind_label(step.kind)),
+                evidence = evidence_html,
+            );
+        }
+        s.push_str("</ul></div>");
+    }
+    s.push_str("</section>\n");
+    s
+}
+
 /// Category -> a severity-flavored hue ("colored by category severity").
 fn cat_color(c: Category) -> &'static str {
     match c {
@@ -1065,6 +1176,10 @@ th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;le
 .findings{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .findings li{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px}
 .fkind{font-weight:700} .ftitle{color:var(--muted)} .fmetrics{color:var(--muted);font-family:ui-monospace,monospace;font-size:11px}
+.chain-host{font-weight:600}
+.chain-actor{color:var(--muted);font-family:ui-monospace,monospace;font-size:11px}
+.campaign{border:1px solid var(--border);border-radius:6px;padding:1px 7px;font-size:11px;color:var(--muted)}
+.pivot-arrow{color:var(--info);font-weight:700}
 .kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 18px;margin:0}
 .kv dt{color:var(--muted)} .kv dd{margin:0}
 .muted{color:var(--muted)} footer{color:var(--muted);font-size:12px;margin-top:24px}
