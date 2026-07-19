@@ -3,8 +3,16 @@ import { Download, ExternalLink, Play, Save, Sparkles } from "lucide-react";
 import type { FlowsState, FlowRow } from "../types";
 import type { QueryEngine, QueryResult } from "../lib/query/engine";
 import { generateSql, repairSql } from "../lib/ai/nlq";
-import { aiConsentGiven, giveAiConsent } from "../lib/ai/settings";
+import { PREVIEW_MAX_ROWS, interpretResult } from "../lib/ai/interpret";
+import {
+  aiConsentGiven,
+  aiResultsConsentGiven,
+  giveAiConsent,
+  giveAiResultsConsent,
+} from "../lib/ai/settings";
 import { AiConsent } from "../cockpit/AiConsent";
+import { AiResultsConsent } from "../cockpit/AiResultsConsent";
+import { Markdown } from "../lib/markdown";
 import { SAMPLE_QUERIES } from "../lib/query/samples";
 import {
   listSavedQueries,
@@ -98,6 +106,18 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
   // failure, and only while the editor still holds exactly that SQL.
   const nlGenRef = useRef<{ question: string; sql: string; repaired: boolean } | null>(null);
 
+  // "Interpret" (Phase 5): a one-shot analyst note over a capped result
+  // preview — the only query action that sends capture-derived rows, behind
+  // its own consent class.
+  const [note, setNote] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    text: string;
+    error?: string;
+  }>({ status: "idle", text: "" });
+  const [showResultsConsent, setShowResultsConsent] = useState(false);
+  /** SQL + originating question of the run that produced `result`. */
+  const lastRunRef = useRef<{ sql: string; question: string | null } | null>(null);
+
   // Boot the engine and (re)load the flow table whenever the dataset changes.
   useEffect(() => {
     if (state.status !== "ready" || rows.length === 0) return;
@@ -109,7 +129,9 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
       setResult(null);
       setError(null);
       setIntent(null);
+      setNote({ status: "idle", text: "" });
       nlGenRef.current = null;
+      lastRunRef.current = null;
     }
     lastKeyRef.current = key;
     let alive = true;
@@ -182,9 +204,13 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
     const gen = ++runGen.current;
     setRunning(true);
     setError(null);
+    setNote({ status: "idle", text: "" });
     try {
       const res = await engine.run(sql);
-      if (gen === runGen.current) setResult(res);
+      if (gen === runGen.current) {
+        setResult(res);
+        lastRunRef.current = { sql, question: nlGenRef.current?.question ?? null };
+      }
     } catch (err: unknown) {
       const message = String((err as Error)?.message ?? err);
       // One automatic repair round — only when the editor still holds exactly
@@ -206,6 +232,7 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
             const res = await engine.run(parsed.sql);
             if (gen === runGen.current) {
               setResult(res);
+              lastRunRef.current = { sql: parsed.sql, question: nlGen.question };
               setError(null);
               return;
             }
@@ -262,6 +289,33 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
     }
     void doGenerate();
   }, [nlQuestion, nlBusy, doGenerate]);
+
+  // One-shot analyst note over the capped result preview (Phase 5).
+  const doInterpret = useCallback(async () => {
+    const run = lastRunRef.current;
+    if (!result || !run) return;
+    setNote({ status: "loading", text: "" });
+    try {
+      let acc = "";
+      const full = await interpretResult(run.question, run.sql, result, (t) => {
+        acc += t;
+        setNote({ status: "loading", text: acc });
+      });
+      setNote({ status: "ready", text: full });
+    } catch (err: unknown) {
+      setNote({ status: "error", text: "", error: String((err as Error)?.message ?? err) });
+    }
+  }, [result]);
+
+  const handleInterpret = useCallback(() => {
+    if (!result || result.rows.length === 0 || note.status === "loading") return;
+    // Its own consent class: the general AI consent never covers result rows.
+    if (!aiResultsConsentGiven()) {
+      setShowResultsConsent(true);
+      return;
+    }
+    void doInterpret();
+  }, [result, note.status, doInterpret]);
 
   const onEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -579,6 +633,18 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
                 </span>
               )}
               <span className="font-mono-num">{result.elapsedMs} ms</span>
+              {aiOn && result.rows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleInterpret}
+                  disabled={note.status === "loading"}
+                  title={`Send up to ${PREVIEW_MAX_ROWS} preview rows to the AI provider for a short analyst note (opt-in, separate consent)`}
+                  className={BTN_OUTLINE}
+                >
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                  {note.status === "loading" ? "Interpreting…" : "Interpret"}
+                </button>
+              )}
               {flowIds && (
                 <button
                   type="button"
@@ -604,6 +670,32 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
           ) : undefined
         }
       >
+        {note.status !== "idle" && (
+          <div
+            data-component="ResultNote"
+            aria-live="polite"
+            aria-busy={note.status === "loading"}
+            className="flex items-start gap-2 border-b border-[var(--color-border)] px-4 py-3"
+          >
+            <div className="min-w-0 flex-1 text-xs text-[var(--color-text)]">
+              {note.error ? (
+                <p role="alert" className="text-[var(--color-sev-high,#e5484d)]">
+                  {note.error}
+                </p>
+              ) : (
+                <Markdown text={note.text} />
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setNote({ status: "idle", text: "" })}
+              aria-label="Dismiss analyst note"
+              className="text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {result ? (
           result.rows.length === 0 ? (
             <EmptyState title="No rows" hint="The query matched nothing in this capture." />
@@ -627,6 +719,18 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
             void doGenerate();
           }}
           onCancel={() => setShowConsent(false)}
+        />
+      )}
+      {showResultsConsent && (
+        <AiResultsConsent
+          model={aiModel}
+          rows={PREVIEW_MAX_ROWS}
+          onProceed={() => {
+            giveAiResultsConsent();
+            setShowResultsConsent(false);
+            void doInterpret();
+          }}
+          onCancel={() => setShowResultsConsent(false)}
         />
       )}
     </div>

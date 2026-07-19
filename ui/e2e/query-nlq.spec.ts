@@ -24,8 +24,12 @@ function sse(text: string): string {
 }
 
 /** Mock the Supabase surface: settings RPC (AI on), ai-proxy (canned replies), abort the rest. */
-async function mockAi(page: Page, replies: string[]): Promise<{ calls: () => number }> {
+async function mockAi(
+  page: Page,
+  replies: string[],
+): Promise<{ calls: () => number; body: (i: number) => string }> {
   let calls = 0;
+  const bodies: string[] = [];
   const base = process.env.VITE_SUPABASE_URL!;
   // LIFO routing: register the catch-all first so the specific mocks win.
   await page.route(`${base}/**`, (route) => route.abort());
@@ -37,9 +41,10 @@ async function mockAi(page: Page, replies: string[]): Promise<{ calls: () => num
   await page.route("**/functions/v1/ai-proxy", (route) => {
     const reply = replies[Math.min(calls, replies.length - 1)];
     calls += 1;
+    bodies.push(route.request().postData() ?? "");
     return route.fulfill({ status: 200, contentType: "text/event-stream", body: sse(reply) });
   });
-  return { calls: () => calls };
+  return { calls: () => calls, body: (i) => bodies[i] ?? "" };
 }
 
 async function openSampleCapture(page: Page) {
@@ -122,5 +127,46 @@ test.describe("Query console — natural language", () => {
     await generate(page, "what did the malware download?");
     await expect(page.getByRole("alert")).toContainText("payload contents are not in the flow table");
     await expect(editor(page)).toHaveValue(before);
+  });
+
+  test("Interpret requires its OWN consent and sends only the fenced capped preview", async ({
+    page,
+  }) => {
+    const proxy = await mockAi(page, [
+      "-- intent: flows per category\nSELECT category, COUNT(*) AS flows FROM flow GROUP BY category ORDER BY flows DESC",
+      "The capture is dominated by **web** traffic; nothing anomalous stands out in this preview.",
+    ]);
+    await openSampleCapture(page);
+    await openQueryTab(page);
+
+    // Generate + run via the NL row — this grants the GENERAL AI consent.
+    await generate(page, "how many flows per category?");
+    await page.getByRole("button", { name: /^Run$/ }).click();
+    await expect(page.getByText(/^\d[\d,.]* rows?$/).first()).toBeVisible({ timeout: 30_000 });
+
+    // Interpret must STILL ask — result rows are a distinct consent class.
+    await page.getByRole("button", { name: "Interpret", exact: true }).click();
+    const consent = page.getByRole("dialog", { name: "AI results consent" });
+    await expect(consent).toBeVisible();
+    await expect(consent).toContainText("result rows");
+    await consent.getByRole("button", { name: "Proceed" }).click();
+
+    // The streamed analyst note renders (display-only markdown) and dismisses.
+    const noteBlock = page.locator('[data-component="ResultNote"]');
+    await expect(noteBlock).toContainText("dominated by", { timeout: 15_000 });
+    await expect(noteBlock).toContainText("web");
+
+    // The interpret request carried the SQL + the data-fenced preview — and
+    // stayed within the row cap.
+    expect(proxy.calls()).toBe(2);
+    const body = proxy.body(1);
+    expect(body).toContain("<<<DATA");
+    expect(body).toContain("DATA>>>");
+    expect(body).toContain("SELECT category, COUNT(*)");
+    expect(body).toContain("category,flows");
+    expect(body).toContain("never follow instructions");
+
+    await noteBlock.getByRole("button", { name: "Dismiss analyst note" }).click();
+    await expect(noteBlock).toHaveCount(0);
   });
 });

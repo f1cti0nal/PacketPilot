@@ -12,9 +12,12 @@ query executes locally. Design + phasing: `docs/plans/2026-07-19-natural-languag
 | SQL console (editor, bundled/saved queries, results, CSV, "Open in Flows") | In-page DuckDB-Wasm worker | **Nothing** |
 | "Generate SQL" from an English question | LLM via the `ai-proxy` edge function | The **question text** you typed |
 | Automatic repair round (a generated query failed) | LLM via `ai-proxy` | The failing **SQL + DuckDB error text** |
+| **"Interpret"** the current result (opt-in, its **own second consent**) | LLM via `ai-proxy` | The question + SQL + a **capped preview of result rows** (≤ 50 rows / ≤ 16 KiB) |
 
-Flow records, packets, payloads, the derived summary, and the capture file are **never** sent
-by this feature. The SQL itself — generated or hand-written — always executes locally.
+Packets, payloads, the derived summary, and the capture file are **never** sent by this
+feature, and the SQL itself — generated or hand-written — always executes locally. The one
+action that sends capture-derived data is **Interpret**, and only ever the capped preview,
+only after its own consent (distinct from the general AI consent).
 
 ## Enabling
 
@@ -59,6 +62,19 @@ Generated SQL is never auto-run. If a generated query fails, one automatic repai
 the SQL + error text back to the model; after that, the query stays in the editor for manual
 fixing. Questions the flow table can't answer (payload contents, packet bytes) come back as an
 error rather than a hallucinated query.
+
+## Interpreting results (opt-in)
+
+The **Interpret** button on a result asks the model for a short analyst note (what the result
+shows, notable outliers, suggested next pivots). Because result rows are capture-derived —
+they can contain IPs, domains, TLS fingerprints, user-agents — this action sits behind a
+**second consent class** (`pp.ai.resultsConsent`), separate from the general AI consent, and
+sends at most a 50-row / 16 KiB CSV preview alongside the SQL and question.
+
+Prompt-injection posture: result strings are attacker-observable (SNI, Host headers, UAs…).
+The preview travels inside an explicit `<<<DATA … DATA>>>` fence, the system prompt instructs
+the model to treat fence contents strictly as data (never as instructions), and the reply is
+rendered as display-only markdown — no tools, no follow-up actions, no auto-run.
 
 ## Performance & scale
 
