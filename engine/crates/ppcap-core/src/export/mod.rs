@@ -169,6 +169,47 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         }));
     }
 
+    // grouping SDOs, one per reconstructed attack chain — a cross-host, ATT&CK-ordered sequence
+    // that a SOC ingests as a single suspicious-activity story. Additive; deterministic id from the
+    // chain id. STIX requires >=1 object_ref, so a chain with no resolvable refs is skipped.
+    for c in &out.summary.attack_chains {
+        let mut refs: Vec<String> = Vec::new();
+        for t in &c.attack {
+            if let Some(ap) = ap_ids.get(t) {
+                refs.push(ap.clone());
+            }
+        }
+        let mut peers: BTreeSet<String> = BTreeSet::new();
+        for step in &c.steps {
+            if let Some(p) = &step.peer {
+                peers.insert(p.clone());
+            }
+        }
+        for p in &peers {
+            if indicators.contains_key(p) {
+                refs.push(format!(
+                    "indicator--{}",
+                    det_uuid(&format!("indicator:{p}"))
+                ));
+            }
+        }
+        if refs.is_empty() {
+            continue;
+        }
+        let gid = format!("grouping--{}", det_uuid(&format!("grouping:{}", c.id)));
+        objects.push(serde_json::json!({
+            "type": "grouping",
+            "spec_version": "2.1",
+            "id": gid,
+            "created": ts,
+            "modified": ts,
+            "name": c.title,
+            "description": c.narrative,
+            "context": "suspicious-activity",
+            "object_refs": refs
+        }));
+    }
+
     let bundle = serde_json::json!({
         "type": "bundle",
         "id": format!(
@@ -582,6 +623,75 @@ mod tests {
         assert_eq!(ap["external_references"][0]["external_id"], "T1071");
 
         assert!(objs.iter().any(|o| o["type"] == "relationship"));
+    }
+
+    #[test]
+    fn stix_bundle_groups_attack_chains() {
+        use crate::model::attack_chain::{AttackChain, ChainStep};
+        let mut out = out_with(vec![finding(
+            FindingKind::Beacon,
+            Severity::High,
+            Some("8.8.8.8"),
+            &["T1071"],
+        )]);
+        out.summary.attack_chains = vec![AttackChain {
+            id: "chain:00ff".into(),
+            severity: Severity::Critical,
+            score: 100,
+            confidence: 90,
+            title: "Cross-host attack chain: A -> B".into(),
+            narrative: "A brute-forced B; then B beaconed to a C2.".into(),
+            hosts: vec!["10.0.0.1".into(), "10.0.0.2".into()],
+            steps: vec![ChainStep {
+                order: 0,
+                actor: "10.0.0.2".into(),
+                tactic_ordinal: 4,
+                tactic: "Command & Control".into(),
+                kind: FindingKind::Beacon,
+                techniques: vec![],
+                peer: Some("8.8.8.8".into()),
+                severity: Severity::High,
+                score: 70,
+                first_seen_ns: Some(1),
+                last_seen_ns: Some(2),
+                evidence: None,
+                finding_index: 0,
+            }],
+            edges: vec![],
+            tactics: vec![],
+            attack: vec!["T1071".into()],
+            campaign_id: None,
+            first_ts_ns: Some(1),
+            last_ts_ns: Some(2),
+            host_count: 2,
+            tactic_count: 1,
+        }];
+        let json = stix_bundle(&out, 1_700_000_000);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let objs = v["objects"].as_array().unwrap();
+
+        let grouping = objs
+            .iter()
+            .find(|o| o["type"] == "grouping")
+            .expect("a grouping SDO for the chain");
+        assert_eq!(grouping["context"], "suspicious-activity");
+        assert_eq!(grouping["name"], "Cross-host attack chain: A -> B");
+
+        // The grouping references the T1071 attack-pattern and the 8.8.8.8 indicator.
+        let ap_id = objs.iter().find(|o| o["type"] == "attack-pattern").unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let refs = grouping["object_refs"].as_array().unwrap();
+        assert!(
+            refs.iter().any(|r| r.as_str() == Some(ap_id.as_str())),
+            "grouping must reference the technique attack-pattern: {refs:?}"
+        );
+        assert!(
+            refs.iter()
+                .any(|r| r.as_str().is_some_and(|s| s.starts_with("indicator--"))),
+            "grouping must reference the peer indicator: {refs:?}"
+        );
     }
 
     #[test]

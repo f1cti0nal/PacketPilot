@@ -3715,6 +3715,11 @@ const MAX_CHAINS: usize = 256;
 const SKEW_TOLERANCE_NS: i64 = 1_000_000_000;
 /// Maximum pivot dwell before two stages are treated as separate episodes (1 h).
 const CORRELATION_WINDOW_NS: i64 = 3_600_000_000_000;
+/// Minimum distinct actors sharing an infra endpoint before it clusters chains into a campaign.
+const INFRA_MIN_DEGREE: usize = 2;
+/// Above this many distinct actors an infra endpoint is an over-connected hub — clustering on it is
+/// suppressed (a benign-ish shared endpoint would otherwise bind many unrelated hosts).
+const MAX_HUB_DEGREE: usize = 12;
 
 /// The host a finding's step is attributed to (its actor). Never `None` — every finding yields a
 /// step. `ArpSpoof`/`SynFlood` keep the *victim* in `src_ip`; that host is still the correct owner
@@ -4055,7 +4060,108 @@ pub fn reconstruct_attack_chains(findings: &[Finding]) -> Vec<AttackChain> {
             .then(a.id.cmp(&b.id))
     });
     chains.truncate(MAX_CHAINS);
+
+    // Phase 5: cluster chains that share strong adversary infrastructure into campaigns.
+    assign_campaign_ids(&mut chains, findings);
     chains
+}
+
+/// Strong adversary-infrastructure key for campaign clustering, or `None`. Only genuine external C2
+/// endpoints glue campaigns — weak / benign-ish sinks (exfil drops, mining pools, malware hosts) are
+/// deliberately excluded so a shared sink never binds unrelated hosts into one campaign.
+fn campaign_infra_key(f: &Finding) -> Option<String> {
+    match f.kind {
+        FindingKind::Beacon | FindingKind::TlsCertHealth => {
+            let dst = f.dst_ip.as_deref()?;
+            let ip: IpAddr = dst.parse().ok()?;
+            if classify_ip(ip).is_external() {
+                Some(format!("c2:{dst}:{}", f.dst_port.unwrap_or(0)))
+            } else {
+                None // an internal C2 is not campaign-defining infrastructure
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Cluster chains that share strong adversary infrastructure (a common external C2) into campaigns,
+/// tagging each member's `campaign_id`. Gated union-find at the chain-label layer only: a spurious
+/// infra edge merges a label, never an indivisible chain. An infra endpoint must be seen from at
+/// least [`INFRA_MIN_DEGREE`] distinct actors and no more than [`MAX_HUB_DEGREE`] (an over-connected
+/// hub is suppressed), keeping clustering conservative — an honest under-merge. Deterministic.
+fn assign_campaign_ids(chains: &mut [AttackChain], findings: &[Finding]) {
+    use std::collections::{BTreeMap, BTreeSet};
+    if chains.len() < 2 {
+        return; // a lone chain is never a campaign
+    }
+    // infra key -> distinct actor hosts, and infra key -> chain indices touching it.
+    let mut degree: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut infra_to_chains: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    for (ci, chain) in chains.iter().enumerate() {
+        for step in &chain.steps {
+            let f = &findings[step.finding_index as usize];
+            if let Some(key) = campaign_infra_key(f) {
+                degree
+                    .entry(key.clone())
+                    .or_default()
+                    .insert(step.actor.clone());
+                infra_to_chains.entry(key).or_default().insert(ci);
+            }
+        }
+    }
+
+    // Union-find over chain indices (path-halving `find`, standalone so it captures nothing).
+    fn find(uf: &mut [usize], x: usize) -> usize {
+        let mut r = x;
+        while uf[r] != r {
+            r = uf[r];
+        }
+        let mut c = x;
+        while uf[c] != r {
+            let next = uf[c];
+            uf[c] = r;
+            c = next;
+        }
+        r
+    }
+    let mut uf: Vec<usize> = (0..chains.len()).collect();
+    for (key, chain_set) in &infra_to_chains {
+        let d = degree.get(key).map_or(0, |s| s.len());
+        if !(INFRA_MIN_DEGREE..=MAX_HUB_DEGREE).contains(&d) || chain_set.len() < 2 {
+            continue;
+        }
+        let mut it = chain_set.iter();
+        if let Some(&first) = it.next() {
+            let ra = find(&mut uf, first);
+            for &ci in it {
+                let rb = find(&mut uf, ci);
+                if ra != rb {
+                    uf[rb] = ra;
+                }
+            }
+        }
+    }
+
+    // Assign one id per cluster of >= 2 chains; canonical id = the min member chain id (stable).
+    let mut clusters: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for ci in 0..chains.len() {
+        let r = find(&mut uf, ci);
+        clusters.entry(r).or_default().push(ci);
+    }
+    for members in clusters.values() {
+        if members.len() < 2 {
+            continue;
+        }
+        let canon = members
+            .iter()
+            .map(|&ci| chains[ci].id.clone())
+            .min()
+            .unwrap();
+        let cid = format!("campaign:{:016x}", fnv1a64(canon.as_bytes()));
+        for &ci in members {
+            chains[ci].campaign_id = Some(cid.clone());
+        }
+    }
 }
 
 /// Assemble one [`AttackChain`] from a connected set of member hosts: order the members' steps
@@ -6342,6 +6448,79 @@ mod tests {
         assert_eq!(chains[0].steps.len(), 1);
         assert_eq!(chains[0].host_count, 1);
         assert!(chains[0].edges.is_empty(), "a single step has no edges");
+    }
+
+    #[test]
+    fn campaign_clusters_two_victims_of_same_c2() {
+        let sec = 1_000_000_000i64;
+        let c2 = "45.77.13.37"; // external
+        let x = cf(
+            FindingKind::Beacon,
+            "10.0.0.1",
+            Some(c2),
+            Some(sec),
+            &["T1071"],
+        );
+        let y = cf(
+            FindingKind::Beacon,
+            "10.0.0.2",
+            Some(c2),
+            Some(2 * sec),
+            &["T1071"],
+        );
+        let chains = reconstruct_attack_chains(&[x, y]);
+        assert_eq!(chains.len(), 2, "two separate beacon chains");
+        assert!(
+            chains[0].campaign_id.is_some(),
+            "shared C2 should cluster: {chains:#?}"
+        );
+        assert_eq!(
+            chains[0].campaign_id, chains[1].campaign_id,
+            "both chains share one campaign id"
+        );
+    }
+
+    #[test]
+    fn single_c2_actor_is_not_a_campaign() {
+        let f = cf(
+            FindingKind::Beacon,
+            "10.0.0.1",
+            Some("45.77.13.37"),
+            Some(1),
+            &["T1071"],
+        );
+        let chains = reconstruct_attack_chains(&[f]);
+        assert_eq!(chains.len(), 1);
+        assert!(
+            chains[0].campaign_id.is_none(),
+            "a lone C2 actor is not a campaign"
+        );
+    }
+
+    #[test]
+    fn data_exfil_dst_does_not_mint_campaign() {
+        let sec = 1_000_000_000i64;
+        let sink = "185.220.101.5"; // external drop
+        let x = cf(
+            FindingKind::DataExfil,
+            "10.0.0.1",
+            Some(sink),
+            Some(sec),
+            &["T1048"],
+        );
+        let y = cf(
+            FindingKind::DataExfil,
+            "10.0.0.2",
+            Some(sink),
+            Some(2 * sec),
+            &["T1048"],
+        );
+        let chains = reconstruct_attack_chains(&[x, y]);
+        assert_eq!(chains.len(), 2);
+        assert!(
+            chains.iter().all(|c| c.campaign_id.is_none()),
+            "a shared exfil sink is the weakest signal — it must not cluster"
+        );
     }
 
     #[test]
