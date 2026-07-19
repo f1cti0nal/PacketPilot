@@ -1231,6 +1231,9 @@ mod tests {
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
         let html = render_html(&out, 0, None);
         assert!(

@@ -154,6 +154,10 @@ impl ContactKey {
 pub struct ContactSeries {
     contacts: u64,
     prev_ts_ns: Option<i64>,
+    /// First contact timestamp observed on this channel (ns); `None` until the first observe.
+    first_ts_ns: Option<i64>,
+    /// Last contact timestamp observed on this channel (ns); `None` until the first observe.
+    last_ts_ns: Option<i64>,
     gaps: StreamStats,
     /// Bytes sent client -> server across this channel (the exfil-relevant direction).
     bytes_out: u64,
@@ -182,11 +186,25 @@ impl ContactSeries {
             self.gaps.push((ts_ns - prev).max(0));
         }
         self.prev_ts_ns = Some(ts_ns);
+        // First/last-seen fold (min/max) — order-independent and O(1), so the emitted timeline is
+        // correct even on a non-monotonic capture.
+        self.first_ts_ns = Some(self.first_ts_ns.map_or(ts_ns, |t| t.min(ts_ns)));
+        self.last_ts_ns = Some(self.last_ts_ns.map_or(ts_ns, |t| t.max(ts_ns)));
     }
 
     /// Number of contacts recorded.
     pub fn contacts(&self) -> u64 {
         self.contacts
+    }
+
+    /// First contact timestamp observed on this channel (ns); `None` if never observed.
+    pub fn first_seen(&self) -> Option<i64> {
+        self.first_ts_ns
+    }
+
+    /// Last contact timestamp observed on this channel (ns); `None` if never observed.
+    pub fn last_seen(&self) -> Option<i64> {
+        self.last_ts_ns
     }
 
     /// Mean inter-contact gap in nanoseconds (the candidate beacon period); `0.0` with fewer
@@ -249,6 +267,10 @@ pub struct BeaconCandidate {
     pub c2_shape: bool,
     /// A port/payload-NAMED service flow was seen on this channel (escalation veto).
     pub named_service: bool,
+    /// First contact timestamp on this channel (ns), for attack-chain temporal ordering.
+    pub first_ts_ns: Option<i64>,
+    /// Last contact timestamp on this channel (ns).
+    pub last_ts_ns: Option<i64>,
 }
 
 /// A destination channel with a large asymmetric outbound transfer (exfil shape).
@@ -257,6 +279,10 @@ pub struct ExfilCandidate {
     pub key: ContactKey,
     pub bytes_out: u64,
     pub bytes_in: u64,
+    /// First contact timestamp on this channel (ns), for attack-chain temporal ordering.
+    pub first_ts_ns: Option<i64>,
+    /// Last contact timestamp on this channel (ns).
+    pub last_ts_ns: Option<i64>,
 }
 
 /// A `(source, port)` pair that reached many distinct hosts (horizontal sweep shape).
@@ -291,6 +317,10 @@ pub struct ExposedRemoteAccessCandidate {
     pub inbound: bool,
     /// Contacts (connections) observed on this channel.
     pub sessions: u64,
+    /// First session timestamp on this channel (ns), for attack-chain temporal ordering.
+    pub first_ts_ns: Option<i64>,
+    /// Last session timestamp on this channel (ns).
+    pub last_ts_ns: Option<i64>,
 }
 
 /// A flow that transferred at least this many *wire* bytes in BOTH directions is treated as a real
@@ -370,6 +400,10 @@ const MAX_ARP_MACS: usize = 64;
 pub struct BruteForceCandidate {
     pub key: ContactKey,
     pub attempts: u64,
+    /// First attempt timestamp on this channel (ns), for attack-chain temporal ordering.
+    pub first_ts_ns: Option<i64>,
+    /// Last attempt timestamp on this channel (ns).
+    pub last_ts_ns: Option<i64>,
 }
 
 /// A `(source, admin-port)` pair that opened established sessions to several distinct hosts
@@ -380,6 +414,10 @@ pub struct LateralCandidate {
     pub src: IpAddr,
     pub dst_port: u16,
     pub targets: Vec<IpAddr>,
+    /// Earliest session timestamp across the fan-out's channels (ns), for temporal ordering.
+    pub first_ts_ns: Option<i64>,
+    /// Latest session timestamp across the fan-out's channels (ns).
+    pub last_ts_ns: Option<i64>,
 }
 
 /// A `(source, dst, dst_port)` channel that transmitted credentials in cleartext.
@@ -430,6 +468,30 @@ struct DgaStats {
 /// Cap on distinct suspect domains tracked per source — far above any detection threshold, so the
 /// count is exact in practice while peak memory stays bounded on a pathological capture.
 const MAX_DGA_SUSPECT: usize = 256;
+
+/// Cap on structured victim hosts recorded per fan-out finding (`Finding.victims`) — bounds the
+/// per-finding memory; the attack-chain reconstruction pass treats the list as a heavy-hitter
+/// sample above the cap. Sorted before truncation so the retained sample is deterministic.
+const MAX_CHAIN_VICTIMS: usize = 16;
+
+/// Fold a candidate timestamp into a running minimum; `None` is the identity (an unknown time
+/// never shrinks the running min).
+fn fold_min(acc: Option<i64>, v: Option<i64>) -> Option<i64> {
+    match (acc, v) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, None) => a,
+        (None, b) => b,
+    }
+}
+
+/// Fold a candidate timestamp into a running maximum; `None` is the identity.
+fn fold_max(acc: Option<i64>, v: Option<i64>) -> Option<i64> {
+    match (acc, v) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, None) => a,
+        (None, b) => b,
+    }
+}
 
 /// Per-`(source, dst)` ICMP echo statistics for covert-channel (tunneling) detection.
 #[derive(Debug, Clone, Default)]
@@ -1267,6 +1329,8 @@ impl BehaviorTracker {
                 bytes_in: s.bytes_in(),
                 c2_shape: s.c2_shape(),
                 named_service: s.named_service(),
+                first_ts_ns: s.first_seen(),
+                last_ts_ns: s.last_seen(),
             })
             .collect();
         out.sort_by_key(|c| c.key);
@@ -1288,6 +1352,8 @@ impl BehaviorTracker {
                 key: *k,
                 bytes_out: s.bytes_out(),
                 bytes_in: s.bytes_in(),
+                first_ts_ns: s.first_seen(),
+                last_ts_ns: s.last_seen(),
             })
             .collect();
         out.sort_by_key(|c| c.key);
@@ -1311,6 +1377,8 @@ impl BehaviorTracker {
             .map(|(k, s)| BruteForceCandidate {
                 key: *k,
                 attempts: s.contacts(),
+                first_ts_ns: s.first_seen(),
+                last_ts_ns: s.last_seen(),
             })
             .collect();
         out.sort_by(|a, b| b.attempts.cmp(&a.attempts).then(a.key.cmp(&b.key)));
@@ -1329,21 +1397,34 @@ impl BehaviorTracker {
         lateral_ports: &[u16],
     ) -> Vec<LateralCandidate> {
         use std::collections::{BTreeMap, BTreeSet};
-        let mut groups: BTreeMap<(IpAddr, u16), BTreeSet<IpAddr>> = BTreeMap::new();
+        // Per (src, port): the distinct targets, plus the min-first / max-last contact time folded
+        // across the group's channels so the finding's timeline spans the whole fan-out.
+        #[derive(Default)]
+        struct Group {
+            targets: BTreeSet<IpAddr>,
+            first: Option<i64>,
+            last: Option<i64>,
+        }
+        let mut groups: BTreeMap<(IpAddr, u16), Group> = BTreeMap::new();
         for (k, s) in &self.channels {
             if lateral_ports.contains(&k.dst_port)
                 && s.bytes_out() >= min_session_bytes
                 && s.bytes_in() >= min_session_bytes
             {
-                groups.entry((k.src, k.dst_port)).or_default().insert(k.dst);
+                let e = groups.entry((k.src, k.dst_port)).or_default();
+                e.targets.insert(k.dst);
+                e.first = fold_min(e.first, s.first_seen());
+                e.last = fold_max(e.last, s.last_seen());
             }
         }
         groups
             .into_iter()
-            .map(|((src, dst_port), set)| LateralCandidate {
+            .map(|((src, dst_port), g)| LateralCandidate {
                 src,
                 dst_port,
-                targets: set.into_iter().collect(),
+                targets: g.targets.into_iter().collect(),
+                first_ts_ns: g.first,
+                last_ts_ns: g.last,
             })
             .collect()
     }
@@ -1381,6 +1462,8 @@ impl BehaviorTracker {
                         port: k.dst_port,
                         inbound: true,
                         sessions: s.contacts(),
+                        first_ts_ns: s.first_seen(),
+                        last_ts_ns: s.last_seen(),
                     }),
                     // Internal client reached OUT to an external admin service (outbound pivot).
                     (false, true) => Some(ExposedRemoteAccessCandidate {
@@ -1389,6 +1472,8 @@ impl BehaviorTracker {
                         port: k.dst_port,
                         inbound: false,
                         sessions: s.contacts(),
+                        first_ts_ns: s.first_seen(),
+                        last_ts_ns: s.last_seen(),
                     }),
                     _ => None,
                 }
@@ -1752,6 +1837,9 @@ fn beacon_finding(c: &BeaconCandidate, severity: Severity, score: u16, evasive: 
         interval_ns: Some(c.interval_ns.round() as i64),
         jitter_cv: Some(c.jitter_cv),
         contacts: Some(c.contacts),
+        first_seen_ns: c.first_ts_ns,
+        last_seen_ns: c.last_ts_ns,
+        victims: Vec::new(),
     }
 }
 
@@ -1907,6 +1995,9 @@ pub fn detect_exfil(tracker: &BehaviorTracker, params: &ExfilParams) -> Vec<Find
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: c.first_ts_ns,
+            last_seen_ns: c.last_ts_ns,
+            victims: Vec::new(),
         });
     }
     findings
@@ -1970,6 +2061,9 @@ pub fn detect_sweeps(tracker: &BehaviorTracker, params: &SweepParams) -> Vec<Fin
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2029,6 +2123,9 @@ pub fn detect_port_scan(tracker: &BehaviorTracker, params: &PortScanParams) -> V
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.ports as u64),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2086,6 +2183,9 @@ pub fn detect_arp_spoof(tracker: &BehaviorTracker, params: &ArpSpoofParams) -> V
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.macs as u64),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2158,6 +2258,9 @@ pub fn detect_syn_flood(tracker: &BehaviorTracker, params: &SynFloodParams) -> V
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.incomplete),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2208,6 +2311,9 @@ pub fn detect_suspicious_ua(
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.hits),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2260,7 +2366,10 @@ pub fn detect_disguised_download(
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.hits),
-        });
+                    first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+});
     }
     findings
 }
@@ -2306,7 +2415,10 @@ pub fn detect_cryptomining(tracker: &BehaviorTracker, params: &CryptominingParam
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.messages),
-        });
+                    first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+});
     }
     findings
 }
@@ -2394,6 +2506,9 @@ pub fn detect_brute_force(tracker: &BehaviorTracker, params: &BruteForceParams) 
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.attempts),
+            first_seen_ns: c.first_ts_ns,
+            last_seen_ns: c.last_ts_ns,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2540,6 +2655,15 @@ pub fn detect_lateral_movement(
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(internal.len() as u64),
+            first_seen_ns: c.first_ts_ns,
+            last_seen_ns: c.last_ts_ns,
+            // `internal` is already sorted (built from a BTreeSet), so a bounded prefix is a
+            // deterministic victim sample for cross-host pivot linking.
+            victims: internal
+                .iter()
+                .take(MAX_CHAIN_VICTIMS)
+                .map(|ip| ip.to_string())
+                .collect(),
         });
     }
     findings
@@ -2667,6 +2791,9 @@ pub fn detect_exposed_remote_access(
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.sessions),
+            first_seen_ns: c.first_ts_ns,
+            last_seen_ns: c.last_ts_ns,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2729,6 +2856,9 @@ pub fn detect_cleartext_creds(
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.exposures),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2794,6 +2924,9 @@ pub fn detect_pii_exposure(tracker: &BehaviorTracker, params: &PiiExposureParams
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.exposures),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2865,6 +2998,9 @@ pub fn detect_dns_tunnel(tracker: &BehaviorTracker, params: &DnsTunnelParams) ->
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.queries),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -2948,6 +3084,9 @@ pub fn detect_dga(tracker: &BehaviorTracker, params: &DgaParams) -> Vec<Finding>
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.distinct_domains as u64),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -3157,6 +3296,9 @@ pub fn detect_tls_cert_health(
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -3222,6 +3364,9 @@ pub fn detect_weak_tls(tracker: &BehaviorTracker, params: &WeakTlsParams) -> Vec
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         });
     }
     findings
@@ -3289,7 +3434,10 @@ pub fn detect_icmp_tunnel(tracker: &BehaviorTracker, params: &IcmpTunnelParams) 
             interval_ns: None,
             jitter_cv: None,
             contacts: Some(c.echoes),
-        });
+                    first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+});
     }
     findings
 }
@@ -4216,6 +4364,95 @@ mod tests {
             f.title.contains("RDP"),
             "title names the service: {}",
             f.title
+        );
+    }
+
+    // --- M1: attack-chain timestamp / victim plumbing -------------------------------------------
+
+    #[test]
+    fn contact_series_folds_first_and_last_min_max() {
+        // Out-of-order observations must still yield min(first) / max(last) — the fold is
+        // order-independent, so a non-monotonic capture produces the correct timeline.
+        let mut s = ContactSeries::new();
+        assert_eq!(s.first_seen(), None);
+        assert_eq!(s.last_seen(), None);
+        s.observe(500);
+        s.observe(100); // earlier than the first — lowers first_seen
+        s.observe(900); // later — raises last_seen
+        s.observe(300);
+        assert_eq!(s.first_seen(), Some(100));
+        assert_eq!(s.last_seen(), Some(900));
+    }
+
+    #[test]
+    fn brute_force_finding_carries_first_and_last_seen() {
+        // 25 SSH attempts, 5 s apart, starting at t=500 s. The finding's timeline must span the
+        // first and last attempt.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        let victim = ip(10, 0, 0, 5);
+        let base = 500 * SEC;
+        for i in 0..25i64 {
+            t.observe_contact(attacker, victim, 22, base + i * 5 * SEC);
+        }
+        let brutes = detect_brute_force(&t, &BruteForceParams::default());
+        assert_eq!(brutes.len(), 1, "{brutes:?}");
+        assert_eq!(brutes[0].first_seen_ns, Some(base));
+        assert_eq!(brutes[0].last_seen_ns, Some(base + 24 * 5 * SEC));
+    }
+
+    #[test]
+    fn beacon_finding_carries_first_and_last_seen() {
+        // 15 regular external callbacks, 60 s apart, starting at t=1000 s.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let src = ip(10, 0, 0, 7);
+        let c2 = ip(8, 8, 8, 8); // external
+        let base = 1000 * SEC;
+        let period = 60 * SEC;
+        for i in 0..15i64 {
+            t.observe_contact(src, c2, 4444, base + i * period);
+        }
+        let beacons = detect_beacons(&t, &BeaconParams::default());
+        let b = beacons
+            .iter()
+            .find(|f| f.dst_ip.as_deref() == Some("8.8.8.8"))
+            .expect("external beacon detected");
+        assert_eq!(b.first_seen_ns, Some(base));
+        assert_eq!(b.last_seen_ns, Some(base + 14 * period));
+    }
+
+    #[test]
+    fn lateral_movement_finding_carries_first_and_last_seen() {
+        // Five established internal sessions, one per host at h*SEC — the fan-out finding's
+        // timeline folds min/max across the group's channels.
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        for h in 1..=5u8 {
+            t.observe_flow_contact(attacker, ip(10, 0, 1, h), 3389, h as i64 * SEC, 4000, 4000);
+        }
+        let findings = detect_lateral_movement(&t, &LateralMovementParams::default());
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].first_seen_ns, Some(SEC));
+        assert_eq!(findings[0].last_seen_ns, Some(5 * SEC));
+    }
+
+    #[test]
+    fn lateral_movement_finding_carries_capped_sorted_victims() {
+        // 20 established internal RDP sessions — above MAX_CHAIN_VICTIMS (16). The victim sample is
+        // the numerically-smallest 16 targets, in deterministic IP order (built from a BTreeSet).
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let attacker = ip(10, 0, 0, 9);
+        for h in 1..=20u8 {
+            t.observe_flow_contact(attacker, ip(10, 0, 1, h), 3389, h as i64 * SEC, 4000, 4000);
+        }
+        let findings = detect_lateral_movement(&t, &LateralMovementParams::default());
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        let v = &findings[0].victims;
+        assert_eq!(v.len(), MAX_CHAIN_VICTIMS, "victims capped: {v:?}");
+        let expected: Vec<String> = (1..=16u8).map(|h| format!("10.0.1.{h}")).collect();
+        assert_eq!(
+            v, &expected,
+            "victims are the 16 smallest targets, in IP order"
         );
     }
 
@@ -5161,6 +5398,9 @@ mod tests {
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         }
     }
 
@@ -5542,6 +5782,9 @@ mod tests {
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         }
     }
 

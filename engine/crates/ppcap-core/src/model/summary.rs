@@ -519,6 +519,9 @@ mod tests {
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         };
         s.apply_findings(std::slice::from_ref(&f));
 

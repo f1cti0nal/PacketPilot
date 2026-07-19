@@ -747,6 +747,9 @@ fn malware_download_finding(c: &crate::carve::CarveObservation) -> crate::model:
         interval_ns: None,
         jitter_cv: None,
         contacts: None,
+        first_seen_ns: None,
+        last_seen_ns: None,
+        victims: Vec::new(),
     }
 }
 
@@ -814,6 +817,9 @@ fn malware_signature_finding(
         interval_ns: None,
         jitter_cv: None,
         contacts: None,
+        first_seen_ns: None,
+        last_seen_ns: None,
+        victims: Vec::new(),
     })
 }
 

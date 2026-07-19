@@ -141,6 +141,9 @@ fn incident_sample() -> AnalysisOutput {
         interval_ns: Some(60_000_000_000),
         jitter_cv: Some(0.013),
         contacts: Some(16),
+        first_seen_ns: None,
+        last_seen_ns: None,
+        victims: Vec::new(),
     };
     out.summary.incidents = vec![Incident {
         host: "10.0.0.5".into(),

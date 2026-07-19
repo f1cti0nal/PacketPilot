@@ -434,6 +434,9 @@ mod apply_tests {
             interval_ns: None,
             jitter_cv: None,
             contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         }
     }
 

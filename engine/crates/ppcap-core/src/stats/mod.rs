@@ -2197,6 +2197,9 @@ mod tests {
             interval_ns: Some(60_000_000_000),
             jitter_cv: Some(0.01),
             contacts: Some(8),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         };
         acc.apply_findings(&[finding]);
 
@@ -2256,6 +2259,9 @@ mod tests {
             interval_ns: Some(1),
             jitter_cv: Some(0.0),
             contacts: Some(8),
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
         };
         acc.apply_findings(&[finding]);
 

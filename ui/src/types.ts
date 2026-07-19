@@ -300,6 +300,12 @@ export interface Finding {
   jitter_cv: number | null;
   /** Contributing contact / connection count. */
   contacts: number | null;
+  /** First observed activity (ns since the capture epoch); absent/null when the detector supplies none. */
+  first_seen_ns?: number | null;
+  /** Last observed activity (ns since the capture epoch); absent/null if unavailable. */
+  last_seen_ns?: number | null;
+  /** Structured victim hosts for fan-out findings (lateral-movement targets, swept hosts). */
+  victims?: string[];
 }
 
 /**
