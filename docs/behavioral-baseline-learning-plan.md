@@ -4,10 +4,36 @@
 
 | | |
 |---|---|
-| **Status** | Proposed — ready to implement |
+| **Status** | **Implemented** on this branch — engine + CLI + WASM + browser UI + desktop parity, adversarially reviewed |
 | **Feature branch** | `claude/behavioral-baseline-learning-7w6l0u` |
 | **Date** | 2026-07-20 |
-| **Scope** | Engine (Rust: new `baseline` module + `detect`/`analyze`/`model`/`score` seams) · CLI (`analyze` flags + `baseline` subcommand) · UI (React/TS Baseline tab + deviation panel) · WASM (two fold fns) · Desktop (two Tauri commands) · HTML report (findings ride through; one `kind_label` arm) |
+| **Scope** | Engine (Rust: new `baseline` module + `detect`/`analyze`/`model`/`score` seams) · CLI (`analyze` flags + `baseline` subcommand) · UI (React/TS Baseline tab + deviation panel) · WASM (two fold fns) · Desktop (Tauri analyze snapshot) · HTML report (findings ride through; one `kind_label` arm) |
+
+> **Implementation status (what actually shipped).** This plan was executed on the branch above.
+> Deviation dimensions: **new external peer, new destination port, outbound-volume spike (mean + k·σ),
+> new TLS JA3, first-use traffic category, off-hours activity, and new periodic-beacon** — all per
+> internal host, capped at Medium unless corroborated.
+>
+> - **Engine core** — `baseline` module (serialisable/mergeable `RunningStat`, schema, build/update/
+>   merge/compare), `BehaviorTracker::baseline_snapshot`, `FindingKind::BaselineDeviation` + every
+>   exhaustive match arm, `score_baseline_deviation`, analyze pipeline seams. Three net-new bounded
+>   per-host accumulators (JA3 / hour-of-day / category) + beacon-shape capture.
+> - **CLI** — `analyze --baseline` / `--update-baseline`; `baseline show` / `merge` / `build` / `diff`.
+> - **WASM** — `build_baseline` / `compare_to_baseline`; browser `analyze` attaches the snapshot.
+> - **Browser UI** — Baseline tab (learned per-host profile + this-capture deviations), deviations
+>   folded into the dashboard/findings, on-device localStorage persistence, and portable export/import.
+> - **Desktop** — the native Tauri `analyze` attaches the snapshot (the shared UI's wasm compare +
+>   localStorage then work in the webview); native file-dialog save/load was superseded by the
+>   browser-File-API export/import (works in the Tauri webview too).
+> - **Adversarial review** — a 4-lens / per-finding-verified review confirmed 13 findings; the two
+>   correctness items + all test-coverage gaps were fixed.
+> - **Verified here:** engine `fmt`/`clippy -D warnings`/`test --workspace` (759 tests), C-free gate,
+>   `wasm32` build; UI `typecheck` / Vitest (982) / `vite build`. **Not verifiable in this sandbox:**
+>   Playwright e2e + browser visual QA, and the Tauri crate build (no GTK/webkit libs) — left to CI.
+>
+> The sections below are the original plan; a few choices evolved during implementation (e.g. the
+> per-capture snapshot is gated on `--update-baseline`/`--baseline` rather than always-on, and the
+> `Finding.terms` card-explainability hook was deferred), but the shipped shape matches this design.
 
 > **How this plan was produced.** Eight parallel readers each mapped one subsystem the
 > feature touches — the detection engine (`detect`), the data model (`model`), the persistence /
