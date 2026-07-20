@@ -141,6 +141,9 @@ fn incident_sample() -> AnalysisOutput {
         interval_ns: Some(60_000_000_000),
         jitter_cv: Some(0.013),
         contacts: Some(16),
+        first_seen_ns: None,
+        last_seen_ns: None,
+        victims: Vec::new(),
     };
     out.summary.incidents = vec![Incident {
         host: "10.0.0.5".into(),
@@ -154,6 +157,124 @@ fn incident_sample() -> AnalysisOutput {
         findings: vec![finding],
     }];
     out
+}
+
+/// An output carrying one reconstructed cross-host attack chain (A sweeps -> B beacons).
+fn chain_sample() -> AnalysisOutput {
+    use ppcap_core::{AttackChain, ChainEdge, ChainStep, EdgeKind, TacticStep, TechniqueRef};
+    let mut out = sample();
+    let tech = |id: &str, name: &str| TechniqueRef {
+        id: id.into(),
+        name: name.into(),
+    };
+    let steps = vec![
+        ChainStep {
+            order: 0,
+            actor: "10.13.37.7".into(),
+            tactic_ordinal: 0,
+            tactic: "Discovery".into(),
+            kind: FindingKind::HostSweep,
+            techniques: vec![tech("T1046", "Network Service Discovery")],
+            peer: None,
+            severity: Severity::High,
+            score: 65,
+            first_seen_ns: Some(0),
+            last_seen_ns: Some(1_000_000_000),
+            evidence: Some("24 distinct destination hosts on 445".into()),
+            finding_index: 0,
+        },
+        ChainStep {
+            order: 1,
+            actor: "10.66.0.1".into(),
+            tactic_ordinal: 4,
+            tactic: "Command & Control".into(),
+            kind: FindingKind::Beacon,
+            techniques: vec![tech("T1071", "Application Layer Protocol")],
+            peer: Some("45.77.13.37".into()),
+            severity: Severity::High,
+            score: 70,
+            first_seen_ns: Some(30_000_000_000),
+            last_seen_ns: Some(90_000_000_000),
+            // Raw '<b>' to exercise the escaping discipline.
+            evidence: Some("periodic beaconing <b>".into()),
+            finding_index: 1,
+        },
+    ];
+    out.summary.attack_chains = vec![AttackChain {
+        id: "chain:00ff".into(),
+        severity: Severity::Critical,
+        score: 100,
+        confidence: 92,
+        title: "Cross-host attack chain: 10.13.37.7 → 10.66.0.1".into(),
+        narrative: "10.13.37.7 swept the network; then 10.66.0.1 beaconed to a C2 <b>".into(),
+        hosts: vec!["10.13.37.7".into(), "10.66.0.1".into()],
+        steps,
+        edges: vec![ChainEdge {
+            from: 0,
+            to: 1,
+            kind: EdgeKind::Pivot,
+            via_kind: Some(FindingKind::BruteForce),
+            gap_ns: Some(7_500_000_000),
+        }],
+        tactics: vec![
+            TacticStep {
+                ordinal: 0,
+                tactic: "Discovery".into(),
+                techniques: vec![tech("T1046", "Network Service Discovery")],
+                host: "10.13.37.7".into(),
+                first_seen_ns: Some(0),
+            },
+            TacticStep {
+                ordinal: 4,
+                tactic: "Command & Control".into(),
+                techniques: vec![tech("T1071", "Application Layer Protocol")],
+                host: "10.66.0.1".into(),
+                first_seen_ns: Some(30_000_000_000),
+            },
+        ],
+        attack: vec!["T1046".into(), "T1071".into()],
+        campaign_id: None,
+        first_ts_ns: Some(0),
+        last_ts_ns: Some(90_000_000_000),
+        host_count: 2,
+        tactic_count: 2,
+    }];
+    out
+}
+
+#[test]
+fn renders_attack_chain_section() {
+    let html = render_html(&chain_sample(), 1_700_000_000, None);
+    assert!(html.contains("Attack chains"), "section heading missing");
+    assert!(
+        html.contains("Cross-host attack chain"),
+        "chain title missing"
+    );
+    assert!(html.contains("10.13.37.7"), "chain host missing");
+    assert!(html.contains("conf 92"), "confidence missing");
+    // Tactic spine label, escaped '&'.
+    assert!(
+        html.contains("Command &amp; Control"),
+        "tactic label missing/escaped wrong"
+    );
+    // ATT&CK chip is id + resolved technique name.
+    assert!(
+        html.contains("T1071 Application Layer Protocol"),
+        "technique id+name missing"
+    );
+    // The pivot-target step carries the pivot glyph (↪ = &#8618;).
+    assert!(html.contains("&#8618;"), "pivot glyph missing");
+    // Every capture-derived string is escaped: the raw '<b>' must be neutralized.
+    assert!(
+        html.contains("&lt;b&gt;"),
+        "chain narrative/evidence not escaped"
+    );
+}
+
+#[test]
+fn omits_attack_chains_when_none() {
+    let html = render_html(&sample(), 1_700_000_000, None);
+    assert!(html.contains("No attack chains"), "empty-case line missing");
 }
 
 #[test]

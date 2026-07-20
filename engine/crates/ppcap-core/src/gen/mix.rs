@@ -60,6 +60,8 @@ fn weights_for(scenario: Scenario) -> (u64, u64, u64, u64, u64) {
         Scenario::Beacon => (0, 90, 10, 0, 0),
         // Bulk transfer: large HTTP responses dominate, a little TLS.
         Scenario::BulkTransfer => (70, 20, 0, 10, 0),
+        // Multi-host attack chain: benign TLS/DNS background around the staged pivot (like Beacon).
+        Scenario::AttackChain => (0, 90, 10, 0, 0),
     }
 }
 

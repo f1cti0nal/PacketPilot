@@ -7,6 +7,7 @@
 //! - [`summary`] — `Summary` + sub-structs + `ProtoCounts`
 //! - [`output`] — `AnalysisOutput` (the headline JSON object)
 
+pub mod attack_chain;
 pub mod category;
 pub mod finding;
 pub mod flow;
@@ -16,6 +17,7 @@ pub mod packet;
 pub mod severity;
 pub mod summary;
 
+pub use attack_chain::{AttackChain, ChainEdge, ChainStep, EdgeKind, TacticStep, TechniqueRef};
 pub use category::Category;
 pub use finding::{Finding, FindingKind};
 pub use flow::{Direction, FlowKey, FlowRecord};

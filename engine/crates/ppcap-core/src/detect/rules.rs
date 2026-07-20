@@ -662,6 +662,9 @@ fn rule_finding(r: &Rule, src_ip: &str, dst_ip: &str, dport: u16) -> Finding {
         interval_ns: None,
         jitter_cv: None,
         contacts: None,
+        first_seen_ns: None,
+        last_seen_ns: None,
+        victims: Vec::new(),
     }
 }
 

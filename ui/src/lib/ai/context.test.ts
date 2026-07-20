@@ -21,6 +21,31 @@ describe("buildContext", () => {
     expect(ctx.length).toBeLessThan(20000);
   });
 
+  it("renders a reconstructed attack chains section and demotes covered incidents", () => {
+    const out = makeOutput();
+    const ctx = buildContext(out);
+    expect(ctx).toContain("## Reconstructed attack chains");
+    expect(ctx).toContain("Cross-host attack chain");
+    expect(ctx).toContain("spine: Discovery → Credential Access → Command & Control → Exfiltration");
+    // technique id + resolved name
+    expect(ctx).toContain("T1110 Brute Force");
+    // pivot-arrival marker + a pivots summary line
+    expect(ctx).toContain("↦");
+    expect(ctx).toMatch(/pivots: .*via brute_force/);
+    // the chain-covered host's incident is demoted to a one-line reference
+    expect(ctx).toContain("(see attack chains above)");
+    // privacy + bounds preserved
+    expect(ctx).not.toContain("payload");
+    expect(ctx.length).toBeLessThan(20000);
+  });
+
+  it("omits the attack chains section when there are none", () => {
+    const out = makeOutput();
+    out.summary.attack_chains = [];
+    const ctx = buildContext(out);
+    expect(ctx).not.toContain("## Reconstructed attack chains");
+  });
+
   it("is resilient to missing optional sections", () => {
     const out = makeOutput();
     out.summary.incidents = undefined;

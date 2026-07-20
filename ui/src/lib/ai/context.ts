@@ -1,6 +1,6 @@
-import type { AnalysisOutput, DomainThreat, Incident, IpThreat } from "../../types";
+import type { AnalysisOutput, AttackChain, DomainThreat, Incident, IpThreat } from "../../types";
 
-const TOP_INCIDENTS = 10, TOP_THREATS = 20, TOP_N = 10;
+const TOP_INCIDENTS = 10, TOP_THREATS = 20, TOP_N = 10, TOP_CHAINS = 3;
 
 function fmtBytes(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
@@ -13,6 +13,41 @@ function incidentLine(i: Incident): string {
   const atk = i.attack.length ? ` [${i.attack.join(",")}]` : "";
   const stages = i.stages.length ? ` (stages: ${i.stages.join(" → ")})` : "";
   return `- **${i.host}** — ${i.severity} ${i.score}/100 — ${i.title}${stages}${atk}\n  ${i.narrative}`;
+}
+
+/** One-line incident reference for a host already detailed in an attack chain above. */
+function incidentLineBrief(i: Incident): string {
+  return `- **${i.host}** — ${i.severity} ${i.score}/100 — ${i.title} (see attack chains above)`;
+}
+
+/** Render one reconstructed attack chain as a compact, labeled block (engine rollups only). */
+function chainSection(c: AttackChain): string[] {
+  const out: string[] = [];
+  const camp = c.campaign_id ? ` [campaign ${c.campaign_id}]` : "";
+  out.push(`- **${c.title}** — ${c.severity} ${c.score}/100 (conf ${c.confidence})${camp}`);
+  out.push(`  spine: ${c.tactics.map((t) => t.tactic).join(" → ")}`);
+  const pivotTargets = new Set(c.edges.filter((e) => e.kind === "pivot").map((e) => e.to));
+  for (const step of c.steps) {
+    // '↦' marks the arrival of a cross-host pivot so the model narrates the movement.
+    const arrow = pivotTargets.has(step.order) ? "↦" : "→";
+    const peer = step.peer ? ` ${arrow} ${step.peer}` : "";
+    const tech = step.techniques[0] ? ` — ${step.techniques[0].id} ${step.techniques[0].name}` : "";
+    const ev = step.evidence ? ` — ${step.evidence}` : "";
+    out.push(`  - [${step.tactic}] ${step.actor}${peer}${tech}${ev}`);
+  }
+  const pivots = c.edges.filter((e) => e.kind === "pivot");
+  if (pivots.length) {
+    const pivotStr = pivots
+      .map((e) => {
+        const from = c.steps.find((s) => s.order === e.from);
+        const to = c.steps.find((s) => s.order === e.to);
+        return `${from?.actor ?? "?"} → ${to?.actor ?? "?"}${e.via_kind ? ` (via ${e.via_kind})` : ""}`;
+      })
+      .join("; ");
+    out.push(`  pivots: ${pivotStr}`);
+  }
+  out.push(`  ${c.narrative}`);
+  return out;
 }
 
 function domainLine(d: DomainThreat): string {
@@ -60,10 +95,26 @@ export function buildContext(output: AnalysisOutput): string {
     );
   }
 
+  const chains = s.attack_chains ?? [];
+  const coveredHosts = new Set<string>();
+  if (chains.length) {
+    lines.push("## Reconstructed attack chains (multi-host, temporally ordered)");
+    for (const c of chains.slice(0, TOP_CHAINS)) {
+      lines.push(...chainSection(c));
+      c.hosts.forEach((h) => coveredHosts.add(h));
+    }
+    if (chains.length > TOP_CHAINS) lines.push(`…and ${chains.length - TOP_CHAINS} more.`);
+    lines.push("");
+  }
+
   const incidents = s.incidents ?? [];
   if (incidents.length) {
     lines.push("## Incidents (correlated, kill-chain ordered)");
-    for (const i of incidents.slice(0, TOP_INCIDENTS)) lines.push(incidentLine(i));
+    for (const i of incidents.slice(0, TOP_INCIDENTS)) {
+      // A host already detailed in a chain above is demoted to a one-liner so the narrative
+      // budget is not double-spent.
+      lines.push(coveredHosts.has(i.host) ? incidentLineBrief(i) : incidentLine(i));
+    }
     if (incidents.length > TOP_INCIDENTS) lines.push(`…and ${incidents.length - TOP_INCIDENTS} more.`);
     lines.push("");
   }

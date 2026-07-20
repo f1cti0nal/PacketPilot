@@ -123,4 +123,19 @@ pub struct Finding {
     pub jitter_cv: Option<f64>,
     /// Contributing contact / connection count.
     pub contacts: Option<u64>,
+    /// First observed activity for this finding (ns since the capture epoch). `None` when the
+    /// producing detector supplies no timestamp yet — temporal ordering then degrades gracefully
+    /// to the kill-chain taxonomy rather than being wrong. `#[serde(default)]` keeps older
+    /// summaries (written before this field existed) readable.
+    #[serde(default)]
+    pub first_seen_ns: Option<i64>,
+    /// Last observed activity for this finding (ns since the capture epoch); `None` if unavailable.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub last_seen_ns: Option<i64>,
+    /// Structured victim hosts for fan-out findings (lateral-movement targets, swept hosts),
+    /// bounded and sorted before truncation. Empty for single-peer kinds (read `dst_ip` instead).
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub victims: Vec<String>,
 }

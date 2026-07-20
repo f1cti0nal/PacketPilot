@@ -14,6 +14,7 @@ import {
   History,
   GitCompare,
   ShieldAlert,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
@@ -53,6 +54,7 @@ export const TAB_ICON: Record<TabId, LucideIcon> = {
   query: Terminal,
   findings: ListChecks,
   threats: ShieldAlert,
+  attackchain: Waypoints,
   recent: History,
   compare: GitCompare,
 };
