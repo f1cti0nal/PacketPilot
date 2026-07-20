@@ -46,6 +46,7 @@ import {
   hasBaseline,
   learnFromOutput,
   loadBaseline,
+  saveBaseline,
 } from "./lib/baseline";
 import {
   isTauri,
@@ -859,6 +860,10 @@ export function App() {
           onClear={() => {
             clearBaseline();
             setBaseline(null);
+          }}
+          onImport={(p) => {
+            saveBaseline(p);
+            setBaseline(p);
           }}
           onJumpToFlows={jumpToFlows}
         />

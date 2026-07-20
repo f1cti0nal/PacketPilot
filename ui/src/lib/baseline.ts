@@ -72,6 +72,27 @@ export async function compareWithBaseline(output: AnalysisOutput): Promise<Analy
   return compareToBaselineViaWasm(output, base);
 }
 
+/** Pretty-print a baseline profile for export to a portable `.baseline.json` file. */
+export function serializeBaseline(profile: BaselineProfile): string {
+  return JSON.stringify(profile, null, 2);
+}
+
+/**
+ * Parse + shallow-validate an imported baseline JSON (an exported sidecar or a native
+ * `analyze --update-baseline` file). Returns `null` if the text isn't a baseline profile.
+ */
+export function parseBaseline(text: string): BaselineProfile | null {
+  try {
+    const p = JSON.parse(text) as BaselineProfile;
+    if (p == null || typeof p !== "object" || typeof p.schema_version !== "number" || !Array.isArray(p.hosts)) {
+      return null;
+    }
+    return p;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Remove one host from the baseline (e.g. a host you now believe was compromised and don't want
  * treated as "normal"). Returns the updated profile, or `null` if there was no baseline.

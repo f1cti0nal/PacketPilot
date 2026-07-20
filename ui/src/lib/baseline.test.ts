@@ -7,7 +7,15 @@ vi.mock("./wasmEngine", () => ({
 }));
 
 import type { BaselineProfile } from "../types";
-import { clearBaseline, forgetHost, hasBaseline, loadBaseline, saveBaseline } from "./baseline";
+import {
+  clearBaseline,
+  forgetHost,
+  hasBaseline,
+  loadBaseline,
+  parseBaseline,
+  saveBaseline,
+  serializeBaseline,
+} from "./baseline";
 
 const profile = (hosts: string[]): BaselineProfile => ({
   schema_version: 1,
@@ -56,5 +64,14 @@ describe("baseline local persistence", () => {
   it("returns null on corrupt storage rather than throwing", () => {
     localStorage.setItem("packetpilot.baseline.v1::anon", "{not valid json");
     expect(loadBaseline()).toBeNull();
+  });
+
+  it("serialize/parse round-trips and rejects non-baselines", () => {
+    const p = profile(["10.0.0.5"]);
+    expect(parseBaseline(serializeBaseline(p))).toEqual(p);
+    expect(parseBaseline("not json")).toBeNull();
+    expect(parseBaseline("[]")).toBeNull();
+    expect(parseBaseline(JSON.stringify({ schema_version: 1 }))).toBeNull(); // missing hosts[]
+    expect(parseBaseline(JSON.stringify({ hosts: [] }))).toBeNull(); // missing schema_version
   });
 });

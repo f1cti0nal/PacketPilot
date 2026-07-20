@@ -1,7 +1,9 @@
-import { useMemo } from "react";
-import { ArrowRight, Gauge, Trash2, GraduationCap, Radio } from "lucide-react";
+import { useMemo, useRef } from "react";
+import { ArrowRight, Download, Gauge, GraduationCap, Radio, Trash2, Upload } from "lucide-react";
 import type { AnalysisOutput, BaselineProfile, Finding, HostBaseline } from "../types";
 import { humanNumber } from "../lib/format";
+import { parseBaseline, serializeBaseline } from "../lib/baseline";
+import { downloadText } from "../lib/platform";
 import { BTN_OUTLINE, Panel, SeverityChip } from "../cockpit/primitives";
 import { cn } from "../lib/cn";
 
@@ -16,8 +18,39 @@ export interface BaselineViewProps {
   onForgetHost: (host: string) => void;
   /** Delete the whole baseline (a clean reset). */
   onClear: () => void;
+  /** Replace the baseline with an imported profile (a portable `.baseline.json`). */
+  onImport: (profile: BaselineProfile) => void;
   /** Drill into Flows filtered by a host. */
   onJumpToFlows?: (filter: { ip?: string }) => void;
+}
+
+/** An "Import" button that owns its own hidden file input (so it works in both the empty and
+ *  populated states without threading a ref through the parent). */
+function ImportControl({ onImport }: { onImport: (p: BaselineProfile) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <button type="button" className={BTN_OUTLINE} onClick={() => ref.current?.click()}>
+        <Upload className="mr-1.5 h-4 w-4" />
+        Import
+      </button>
+      <input
+        ref={ref}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f)
+            void f.text().then((t) => {
+              const p = parseBaseline(t);
+              if (p) onImport(p);
+            });
+          e.target.value = "";
+        }}
+      />
+    </>
+  );
 }
 
 const activeHours = (h: HostBaseline): number =>
@@ -141,6 +174,7 @@ export function BaselineView({
   onLearn,
   onForgetHost,
   onClear,
+  onImport,
   onJumpToFlows,
 }: BaselineViewProps) {
   const deviations = useMemo<Finding[]>(
@@ -167,12 +201,15 @@ export function BaselineView({
             ? "Learn this capture as the first observation of your network's normal behavior. After a few captures, PacketPilot flags hosts that deviate — a new external peer, port, JA3, off-hours activity, or a new beacon. The baseline stays on this device — nothing is uploaded."
             : "Analyze a capture in the browser first, then learn it as the baseline. The baseline is stored on this device (local storage) — nothing is uploaded."}
         </p>
-        {canLearn && (
-          <button type="button" className={cn(BTN_OUTLINE, "mt-6")} onClick={onLearn}>
-            <GraduationCap className="mr-1.5 h-4 w-4" />
-            Learn from this capture
-          </button>
-        )}
+        <div className="mt-6 flex items-center gap-2">
+          {canLearn && (
+            <button type="button" className={BTN_OUTLINE} onClick={onLearn}>
+              <GraduationCap className="mr-1.5 h-4 w-4" />
+              Learn from this capture
+            </button>
+          )}
+          <ImportControl onImport={onImport} />
+        </div>
       </div>
     );
   }
@@ -199,6 +236,22 @@ export function BaselineView({
               <GraduationCap className="mr-1.5 h-4 w-4" />
               Learn this capture
             </button>
+            <button
+              type="button"
+              className={BTN_OUTLINE}
+              onClick={() =>
+                downloadText(
+                  serializeBaseline(baseline),
+                  "packetpilot-baseline.json",
+                  "application/json",
+                )
+              }
+              title="Export the baseline to a portable JSON file"
+            >
+              <Download className="mr-1.5 h-4 w-4" />
+              Export
+            </button>
+            <ImportControl onImport={onImport} />
             <button
               type="button"
               className={BTN_OUTLINE}
