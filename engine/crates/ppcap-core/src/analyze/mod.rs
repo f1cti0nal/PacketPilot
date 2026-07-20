@@ -1386,6 +1386,30 @@ mod tests {
             !snap.hosts.is_empty(),
             "beacon scenario must yield internal->external egress hosts"
         );
+        // The M2 folds (observe_ja3 / observe_category / the hour fold, and beacon-shape capture)
+        // must actually surface through the REAL tracker via run() — not just hand-built fixtures.
+        // The Beacon scenario dials an external C2 over TLS on a periodic grid, so its egress host
+        // has a JA3, a populated active window, a non-empty category histogram, and a beacon.
+        assert!(
+            snap.hosts.iter().any(|h| !h.ja3.is_empty()),
+            "a JA3 fingerprint must reach the snapshot (observe_ja3)"
+        );
+        assert!(
+            snap.hosts
+                .iter()
+                .any(|h| h.hour_of_day.iter().any(|&v| v > 0)),
+            "the active-hour histogram must be populated (hour fold)"
+        );
+        assert!(
+            snap.hosts
+                .iter()
+                .any(|h| h.categories.iter().any(|&v| v > 0)),
+            "the category histogram must be populated (observe_category)"
+        );
+        assert!(
+            snap.hosts.iter().any(|h| !h.beacons.is_empty()),
+            "a beacon-shaped channel must reach the snapshot"
+        );
 
         // 2. Build a MATURE-but-STALE baseline for those hosts: warm-up satisfied, but with empty
         //    peer/service sets, so this capture's egress reads as all-new (a deterministic deviation).

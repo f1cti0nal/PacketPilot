@@ -1063,4 +1063,46 @@ mod reputation_cli_tests {
         // Missing the required --threat-feed → clap parse error.
         assert!(Cli::try_parse_from(["ppcap", "rescan", "a.index.json"]).is_err());
     }
+
+    #[test]
+    fn baseline_merge_and_show_dispatch() {
+        // A minimal valid single-host baseline profile (schema v1).
+        let mk = |sha: &str| {
+            format!(
+                r#"{{"schema_version":1,"engine_version":"t","captures_merged":1,"source_sha256s":["{sha}"],"first_analyzed_unix_secs":0,"last_analyzed_unix_secs":0,"first_ts_ns":0,"last_ts_ns":0,"hosts":[{{"host":"10.0.0.5","captures_seen":1,"bytes_out":{{"count":1,"mean":1000.0,"m2":0.0,"min":1000.0,"max":1000.0,"ewma":1000.0}},"bytes_in":{{"count":1,"mean":0.0,"m2":0.0,"min":0.0,"max":0.0,"ewma":0.0}},"flows":{{"count":1,"mean":1.0,"m2":0.0,"min":1.0,"max":1.0,"ewma":1.0}},"peers":[],"services":[],"first_seen_unix":0,"last_seen_unix":0}}]}}"#
+            )
+        };
+        let a = tempfile::NamedTempFile::new().unwrap();
+        let b = tempfile::NamedTempFile::new().unwrap();
+        let out = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(a.path(), mk("aa")).unwrap();
+        std::fs::write(b.path(), mk("bb")).unwrap();
+
+        // `baseline merge a b --out <out>` runs the dispatch body (not just clap parsing).
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "baseline",
+            "merge",
+            a.path().to_str().unwrap(),
+            b.path().to_str().unwrap(),
+            "--out",
+            out.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let merged: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(out.path()).unwrap()).unwrap();
+        assert_eq!(merged["captures_merged"], 2);
+        assert_eq!(merged["hosts"][0]["captures_seen"], 2);
+
+        // `baseline show <merged>` runs its dispatch body without error.
+        let cli2 = Cli::try_parse_from(["ppcap", "baseline", "show", out.path().to_str().unwrap()])
+            .unwrap();
+        dispatch(cli2).unwrap();
+
+        // `baseline merge <one>` is a usage error (needs >= 2).
+        let one = Cli::try_parse_from(["ppcap", "baseline", "merge", a.path().to_str().unwrap()])
+            .unwrap();
+        assert!(dispatch(one).is_err());
+    }
 }

@@ -1123,7 +1123,7 @@ fn transport_path_token(t: Transport) -> &'static str {
 }
 
 /// Fixed-order index of a category within `Category::all()`.
-fn category_index(c: Category) -> usize {
+pub(crate) fn category_index(c: Category) -> usize {
     match c {
         Category::Web => 0,
         Category::Dns => 1,

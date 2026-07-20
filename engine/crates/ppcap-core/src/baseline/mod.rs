@@ -1332,6 +1332,217 @@ mod tests {
         assert!(report.deviations.is_empty(), "{:?}", report.deviations);
     }
 
+    fn out1(o: &HostObservation) -> AnalysisOutput {
+        AnalysisOutput {
+            engine_version: "t".to_string(),
+            baseline: Some(CaptureProfile {
+                hosts: vec![o.clone()],
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn merge_is_order_independent_with_m2_fields() {
+        let params = BaselineParams::default();
+        // Two captures with overlapping ("common") and disjoint ja3/hours/categories/beacons.
+        let a_obs = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &["aaaa", "common"],
+            &[8, 9],
+            &[0, 1],
+            &[("203.0.113.7", 443)],
+        );
+        let b_obs = obs_full(
+            "10.0.0.5",
+            2000,
+            &["203.0.113.8"],
+            &[80],
+            &["bbbb", "common"],
+            &[9, 10],
+            &[1, 7],
+            &[("203.0.113.8", 80)],
+        );
+        let a = update_baseline(BaselineProfile::new(), &out1(&a_obs), 1, &params);
+        let b = update_baseline(BaselineProfile::new(), &out1(&b_obs), 2, &params);
+        let ab = merge(a.clone(), b.clone(), &params);
+        let ba = merge(b, a, &params);
+        let ha = &ab.hosts[0];
+        let hb = &ba.hosts[0];
+        assert_eq!(ha.captures_seen, hb.captures_seen);
+        assert_eq!(ha.hour_of_day, hb.hour_of_day);
+        assert_eq!(ha.categories, hb.categories);
+        let ja3_map = |h: &HostBaseline| -> BTreeMap<String, u64> {
+            h.ja3
+                .iter()
+                .map(|j| (j.ja3.clone(), j.seen.captures))
+                .collect()
+        };
+        assert_eq!(ja3_map(ha), ja3_map(hb));
+        let bc_map = |h: &HostBaseline| -> BTreeMap<(String, u16), u64> {
+            h.beacons
+                .iter()
+                .map(|x| ((x.dst.clone(), x.port), x.seen.captures))
+                .collect()
+        };
+        assert_eq!(bc_map(ha), bc_map(hb));
+        // The "common" JA3 appeared in both captures.
+        assert_eq!(
+            ha.ja3
+                .iter()
+                .find(|j| j.ja3 == "common")
+                .unwrap()
+                .seen
+                .captures,
+            2
+        );
+        // Hour 9 was active in both captures.
+        assert_eq!(
+            ha.hour_of_day[9],
+            a_obs.hour_of_day[9] as u64 + b_obs.hour_of_day[9] as u64
+        );
+    }
+
+    #[test]
+    fn m1_sidecar_deserializes_into_m2_engine() {
+        // A schema_version:1 sidecar written by M1 (no ja3/hour_of_day/categories/beacons keys).
+        let json = r#"{
+          "schema_version":1,"engine_version":"0.1.0","captures_merged":3,"source_sha256s":[],
+          "first_analyzed_unix_secs":0,"last_analyzed_unix_secs":0,"first_ts_ns":0,"last_ts_ns":0,
+          "hosts":[{"host":"10.0.0.5","captures_seen":3,
+            "bytes_out":{"count":3,"mean":1000.0,"m2":0.0,"min":1000.0,"max":1000.0,"ewma":1000.0},
+            "bytes_in":{"count":3,"mean":250.0,"m2":0.0,"min":250.0,"max":250.0,"ewma":250.0},
+            "flows":{"count":3,"mean":1.0,"m2":0.0,"min":1.0,"max":1.0,"ewma":1.0},
+            "peers":[{"ip":"203.0.113.7","seen":{"captures":3,"total":3,"first_seen_unix":0,"last_seen_unix":0}}],
+            "services":[{"port":443,"seen":{"captures":3,"total":3,"first_seen_unix":0,"last_seen_unix":0}}],
+            "first_seen_unix":0,"last_seen_unix":0}]}"#;
+        let p = BaselineProfile::from_json_str(json).unwrap();
+        assert_eq!(p.hosts.len(), 1);
+        let h = &p.hosts[0];
+        assert!(h.ja3.is_empty() && h.beacons.is_empty());
+        assert_eq!(h.hour_of_day, [0u64; 24]);
+        assert_eq!(h.categories, [0u64; 13]);
+        assert_eq!(h.peers.len(), 1);
+    }
+
+    #[test]
+    fn off_hours_guard_boundaries() {
+        let params = BaselineParams::default(); // min_active_hours = 3
+        let has_offhours = |r: &DeviationReport| {
+            r.deviations
+                .iter()
+                .any(|d| d.evidence.iter().any(|e| e.contains("active window")))
+        };
+
+        // (1) Sparse window (2 populated hours < min_active_hours) suppresses off-hours.
+        let sparse = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &[],
+            &[8, 9],
+            &[0],
+            &[],
+        );
+        let base = warm_full(&sparse, params.min_captures, &params);
+        let dev = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &[],
+            &[3],
+            &[0],
+            &[],
+        );
+        assert!(!has_offhours(&compare_to_baseline(
+            &base,
+            &CaptureProfile { hosts: vec![dev] },
+            &params
+        )));
+
+        // (2) 24/7 baseline (all 24 populated) has no off-hours.
+        let all24: Vec<usize> = (0..24).collect();
+        let full = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &[],
+            &all24,
+            &[0],
+            &[],
+        );
+        let base = warm_full(&full, params.min_captures, &params);
+        let dev = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &[],
+            &[3],
+            &[0],
+            &[],
+        );
+        assert!(!has_offhours(&compare_to_baseline(
+            &base,
+            &CaptureProfile { hosts: vec![dev] },
+            &params
+        )));
+
+        // (3) Defined window (3 <= populated < 24) + a cold hour DOES flag off-hours.
+        let win = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &[],
+            &[8, 9, 10],
+            &[0],
+            &[],
+        );
+        let base = warm_full(&win, params.min_captures, &params);
+        let dev = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &[],
+            &[8, 3],
+            &[0],
+            &[],
+        );
+        assert!(has_offhours(&compare_to_baseline(
+            &base,
+            &CaptureProfile { hosts: vec![dev] },
+            &params
+        )));
+    }
+
+    #[test]
+    fn volume_spike_constant_baseline_is_quiet() {
+        let params = BaselineParams::default();
+        // Constant bytes_out across captures -> sd == 0 -> a spike must NOT fire (avoids div noise).
+        let base = warm_baseline(
+            "10.0.0.5",
+            params.min_captures,
+            1000,
+            &["203.0.113.7"],
+            &[443],
+        );
+        let dev = obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443]);
+        let report = compare_to_baseline(&base, &CaptureProfile { hosts: vec![dev] }, &params);
+        assert!(
+            report.deviations.is_empty(),
+            "sd==0 baseline must not raise a volume spike: {:?}",
+            report.deviations
+        );
+    }
+
     /// Build a warmed-up baseline (N identical captures) for a host, then compare.
     fn warm_baseline(
         host: &str,

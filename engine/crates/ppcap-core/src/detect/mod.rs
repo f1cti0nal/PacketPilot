@@ -827,9 +827,11 @@ impl BehaviorTracker {
             acc.peers.insert(key.dst);
             acc.services.insert(key.dst_port);
             // A beacon-shaped egress channel: enough regular contacts (so the inter-arrival CV is
-            // meaningful) with low jitter. Recorded so "a channel that is newly periodic" can be a
-            // deviation later.
+            // meaningful) AND a positive mean interval (so a same-second burst isn't a "~0s" beacon)
+            // with low jitter — matching the periodicity gate the beacon detector enforces. Recorded
+            // so "a channel that is newly periodic" can be a deviation later.
             if series.contacts() >= params.min_beacon_contacts
+                && series.interval_ns() > 0.0
                 && series.jitter_cv() <= params.max_beacon_cv
             {
                 acc.beacons.push(crate::baseline::BeaconObs {
@@ -840,16 +842,20 @@ impl BehaviorTracker {
                 });
             }
         }
+        // NOTE: the per-host sets are NOT magnitude-truncated here. Truncating a set sorted by
+        // IP/port would silently drop the highest-sorting peers/ports, blinding the new-peer /
+        // new-port novelty axes for that capture. The snapshot is already bounded by the tracker's
+        // own caps (channels/JA3 set), and the *persisted* profile applies the real heavy-hitter
+        // top_k cap (cap_peers/cap_services/cap_ja3/cap_beacons) across captures — so the snapshot
+        // must stay faithful. Only the host COUNT is capped (below).
         let mut out: Vec<crate::baseline::HostObservation> = hosts
             .into_iter()
             .map(|(host, mut acc)| {
-                let mut peers: Vec<String> = acc.peers.iter().map(|p| p.to_string()).collect();
-                peers.truncate(params.top_k_peers);
-                let mut services: Vec<u16> = acc.services.iter().copied().collect();
-                services.truncate(params.top_k_services);
+                let peers: Vec<String> = acc.peers.iter().map(|p| p.to_string()).collect();
+                let services: Vec<u16> = acc.services.iter().copied().collect();
                 // JA3 fingerprints / active-hours / category mix are per-source host signals (not
                 // egress-keyed): the whole host's client stacks, active window, and traffic kinds.
-                let mut ja3: Vec<String> = self
+                let ja3: Vec<String> = self
                     .ja3
                     .get(&host)
                     .map(|s| {
@@ -858,12 +864,10 @@ impl BehaviorTracker {
                         v
                     })
                     .unwrap_or_default();
-                ja3.truncate(params.top_k_ja3);
                 let hour_of_day = self.activity.get(&host).copied().unwrap_or([0u32; 24]);
                 let categories = self.category.get(&host).copied().unwrap_or([0u32; 13]);
                 acc.beacons
                     .sort_by(|a, b| a.dst.cmp(&b.dst).then(a.port.cmp(&b.port)));
-                acc.beacons.truncate(params.top_k_beacons);
                 crate::baseline::HostObservation {
                     host: host.to_string(),
                     bytes_out: acc.bytes_out,
@@ -903,10 +907,8 @@ impl BehaviorTracker {
     /// Behavioral-baseline: fold one flow's traffic `category` for `src` into its per-source
     /// category histogram (13 slots, `Category` iteration order). Bounded: key-count capped.
     pub fn observe_category(&mut self, src: IpAddr, category: crate::model::category::Category) {
-        let idx = crate::model::category::Category::all()
-            .iter()
-            .position(|c| *c == category)
-            .unwrap_or(11); // `Unknown` slot as a safe fallback
+        // Single source of truth for the fixed 13-slot category order.
+        let idx = crate::stats::category_index(category);
         if let Some(h) = self.category.get_mut(&src) {
             h[idx] = h[idx].saturating_add(1);
         } else if self.category.len() < self.cfg.max_tracked_keys.max(1) {
