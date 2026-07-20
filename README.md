@@ -37,10 +37,12 @@ capture.pcap ──▶ streaming Rust engine ──▶ triage dashboard ──�
   **threat report cards**.
 - **Present** a summary-first dashboard + a virtualized flows table (millions of rows at 60 fps)
   + drill-down, and **export** a self-contained HTML report (print-to-PDF) or JSON.
+- **Triage a whole folder** with `analyze --batch <dir>`: one ranked case index (`case.json` /
+  `case.html`) + cross-capture indicator correlation (IP / SNI / JA3 seen across captures),
+  bounded-memory and local-first.
 - **Share safely** — one-click **Safe Share** exports a sanitized/anonymized copy of a capture
   (prefix-preserving IP/MAC pseudonyms, payload scrub or L7-field redaction, recomputed checksums,
   chain-of-custody manifest) so a capture can go to a vendor/CERT without leaking sensitive data.
-  See [docs/sharing-captures-safely.md](docs/sharing-captures-safely.md).
 
 ## The gap it fills
 
