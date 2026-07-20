@@ -123,7 +123,12 @@ impl Classifier {
             AppProto::Http | AppProto::Tls | AppProto::Quic | AppProto::Http3 => {
                 Some((Category::Web, record.observed_app_proto.as_str()))
             }
+            // Structurally-identified OT/ICS protocols → the IoT/OT category, keeping the
+            // specific protocol token (modbus/dnp3/s7comm/bacnet/ethernet-ip).
+            p if p.is_ot() => Some((Category::IotOt, record.observed_app_proto.as_str())),
             AppProto::Dns | AppProto::Unknown => None,
+            // Non-OT payload protocols are handled above; nothing else reaches here.
+            _ => None,
         };
 
         let (category, app, src): (Category, &str, Option<&'static str>) = match payload {
@@ -791,6 +796,33 @@ mod tests {
         assert_eq!(f.app_proto, "tls"); // payload token, NOT port "https"
         assert_eq!(f.app_proto_src, Some("payload"));
         assert_eq!(f.sni.as_deref(), Some("api.example"));
+    }
+
+    #[test]
+    fn payload_ot_labels_iot_ot_offport() {
+        // A Modbus flow identified by payload on a NON-standard port classifies as IoT/OT
+        // with the specific protocol token and "payload" provenance.
+        let cls = Classifier::new(ClassifyConfig::default());
+        let mut f = tcp_flow(50_000, 9999);
+        f.observed_app_proto = AppProto::Modbus;
+        cls.classify(&mut f);
+        assert_eq!(f.category, Category::IotOt);
+        assert_eq!(f.app_proto, "modbus");
+        assert_eq!(f.app_proto_src, Some("payload"));
+
+        // Each OT protocol keeps its own token.
+        for (ap, tok) in [
+            (AppProto::Dnp3, "dnp3"),
+            (AppProto::S7comm, "s7comm"),
+            (AppProto::Bacnet, "bacnet"),
+            (AppProto::EnipCip, "ethernet-ip"),
+        ] {
+            let mut g = tcp_flow(50_000, 40_000);
+            g.observed_app_proto = ap;
+            cls.classify(&mut g);
+            assert_eq!(g.category, Category::IotOt, "{tok} → IotOt");
+            assert_eq!(g.app_proto, tok);
+        }
     }
 
     #[test]

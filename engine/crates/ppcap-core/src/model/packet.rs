@@ -108,6 +108,16 @@ pub enum AppProto {
     Quic,
     /// HTTP/3 — QUIC whose Initial ClientHello advertised the `h3` ALPN.
     Http3,
+    /// Modbus/TCP (MBAP framing) — industrial control.
+    Modbus,
+    /// DNP3 (0x0564 link layer) — SCADA.
+    Dnp3,
+    /// Siemens S7comm (TPKT/COTP + S7 0x32).
+    S7comm,
+    /// BACnet/IP (BVLC 0x81) — building automation.
+    Bacnet,
+    /// EtherNet/IP + CIP (encapsulation header).
+    EnipCip,
 }
 
 impl AppProto {
@@ -121,7 +131,24 @@ impl AppProto {
             AppProto::Tls => "tls",
             AppProto::Quic => "quic",
             AppProto::Http3 => "http3",
+            AppProto::Modbus => "modbus",
+            AppProto::Dnp3 => "dnp3",
+            AppProto::S7comm => "s7comm",
+            AppProto::Bacnet => "bacnet",
+            AppProto::EnipCip => "ethernet-ip",
         }
+    }
+
+    /// True for the industrial (OT/ICS) protocols identified structurally.
+    pub fn is_ot(self) -> bool {
+        matches!(
+            self,
+            AppProto::Modbus
+                | AppProto::Dnp3
+                | AppProto::S7comm
+                | AppProto::Bacnet
+                | AppProto::EnipCip
+        )
     }
 
     /// True for any concrete payload-observed protocol; `Unknown` is the empty hint.
@@ -141,6 +168,13 @@ impl AppProto {
             AppProto::Tls => 2,
             AppProto::Quic => 3,
             AppProto::Http3 => 4,
+            // OT protocols are structurally framed (length-validated) — highly specific,
+            // so they outrank a coincidental TLS/HTTP sniff on the same flow.
+            AppProto::Modbus
+            | AppProto::Dnp3
+            | AppProto::S7comm
+            | AppProto::Bacnet
+            | AppProto::EnipCip => 3,
         }
     }
 }
