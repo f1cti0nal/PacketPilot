@@ -8,7 +8,18 @@ name: ci
 on:
   push:
     branches: [main, master, dev]
+    # Doc-only changes don't affect build/test — skip CI to conserve Actions minutes.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE*'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE*'
+  # Allow manually triggering a full run (incl. the Windows desktop build) on demand.
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -107,6 +118,13 @@ jobs:
   desktop:
     name: desktop — tauri build (windows)
     runs-on: windows-latest
+    # Windows runners bill at 2x the Linux rate; the desktop build is the biggest Actions-
+    # minutes cost. Run it on main pushes and on-demand (workflow_dispatch), but NOT on every
+    # PR — the engine/ui/e2e jobs (Linux, cheapest tier) still gate every PR and PRs can be
+    # promoted with a manual run before merge.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     defaults:
       run:
         working-directory: ui
