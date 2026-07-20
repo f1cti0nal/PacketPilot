@@ -2,6 +2,7 @@ import { useCallback, useId, useMemo, useRef, useState } from "react";
 import { Fingerprint, Upload, X } from "lucide-react";
 import { parseIocs } from "../lib/ioc/ioc";
 import { useDialogA11y } from "../lib/useDialogA11y";
+import { BTN_OUTLINE, BTN_PRIMARY, DIALOG_PANEL, INPUT_BASE, OVERLAY_BACKDROP } from "./primitives";
 
 /**
  * Paste/upload an IOC list and match it against the loaded capture — entirely in the browser.
@@ -37,14 +38,14 @@ export function IocDialog({
     <div
       ref={dialogRef}
       onKeyDown={onKeyDown}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className={`${OVERLAY_BACKDROP} z-50 flex items-center justify-center p-4`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-border bg-surface"
+        className={`${DIALOG_PANEL} w-full max-w-md`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -56,7 +57,7 @@ export function IocDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
+            className="rounded-[var(--r-tile)] p-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
           >
             <X className="h-4 w-4" aria-hidden />
           </button>
@@ -64,7 +65,7 @@ export function IocDialog({
 
         <div className="p-4">
           <p className="mb-3 text-xs leading-relaxed text-[var(--color-text-dim)]">
-            Paste IPs, domains, or file hashes (MD5/SHA-1/SHA-256) — one per line. They're matched
+            Paste IPs, domains, or file hashes (MD5/SHA-1/SHA-256), one per line. They're matched
             against this capture's hosts, contacted domains, and carved-file hashes{" "}
             <span className="text-[var(--color-text)]">entirely in your browser</span>. Nothing is uploaded.
           </p>
@@ -85,7 +86,7 @@ export function IocDialog({
             rows={8}
             spellCheck={false}
             placeholder={"45.77.13.37\nevil.example.com\nhxxps://bad[.]domain[.]net/payload\n44d88612fea8a8f36de82e1278abb02f"}
-            className="font-mono-num w-full resize-y rounded-lg border border-border bg-[var(--color-bg)] px-3 py-2 text-xs leading-relaxed text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)]"
+            className={`${INPUT_BASE} font-mono-num w-full resize-y px-3 py-2 leading-relaxed`}
           />
 
           <div className="mt-2 flex items-center justify-between gap-2 text-xs">
@@ -97,7 +98,7 @@ export function IocDialog({
                   <span className="font-mono-num text-[var(--color-text)]">{parsed.count}</span> indicator
                   {parsed.count === 1 ? "" : "s"}
                   <span className="text-[var(--color-text-faint)]">
-                    {" "}· {parsed.ips.size} IP · {parsed.domains.size} domain · {parsed.hashes.size} hash
+                    : {parsed.ips.size} IP · {parsed.domains.size} domain · {parsed.hashes.size} hash
                   </span>
                 </>
               )}
@@ -105,7 +106,7 @@ export function IocDialog({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
+              className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] px-2 py-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
             >
               <Upload className="h-3.5 w-3.5" aria-hidden />
               Load file
@@ -123,7 +124,7 @@ export function IocDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-3 py-1.5 text-sm text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
+              className={BTN_OUTLINE}
             >
               Cancel
             </button>
@@ -131,7 +132,7 @@ export function IocDialog({
               type="button"
               onClick={submit}
               disabled={parsed.count === 0}
-              className="rounded-lg bg-[var(--color-accent-deep)] px-3 py-1.5 text-sm font-medium text-[var(--color-on-accent)] transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              className={BTN_PRIMARY}
             >
               Match {parsed.count > 0 ? parsed.count : ""}
             </button>

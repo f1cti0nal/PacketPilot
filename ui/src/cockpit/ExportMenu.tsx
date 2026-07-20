@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileDown, Loader2 } from "lucide-react";
 import { useMenuKeyboard } from "../lib/useMenuKeyboard";
+import { BTN_PRIMARY, MENU_PANEL } from "./primitives";
 
 export interface ExportAction {
   id: string;
@@ -42,13 +43,13 @@ export function ExportMenu({
         disabled={disabled || busy}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-[var(--color-accent-deep)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-on-accent)] transition-colors hover:opacity-90 disabled:opacity-50"
+        className={BTN_PRIMARY}
       >
         {busy ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
         Export
       </button>
       {open && (
-        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Export formats" className="absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1">
+        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Export formats" className={`${MENU_PANEL} absolute right-0 top-full z-30 mt-1 min-w-[12rem] overflow-hidden`}>
           {actions.map((a) => (
             <button
               key={a.id}

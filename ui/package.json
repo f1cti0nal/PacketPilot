@@ -15,12 +15,14 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@duckdb/duckdb-wasm": "1.32.0",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-table": "8.21.3",
     "@tanstack/react-virtual": "3.14.3",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@vercel/speed-insights": "^2.0.0",
+    "apache-arrow": "17.0.0",
     "clsx": "2.1.1",
     "hyparquet": "1.26.1",
     "lucide-react": "0.469.0",

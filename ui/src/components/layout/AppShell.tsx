@@ -73,8 +73,6 @@ export interface AppShellProps {
   onMatchIocs?: () => void;
   /** Slot rendered in the CommandBar in place of the old ShieldAlert button (e.g. RuleSetsMenu). */
   rulesMenu?: ReactNode;
-  /** End-user account control rendered in the command bar. */
-  accountMenu?: ReactNode;
   /** Whether a capture comparison is active (shows the Compare tab). */
   compareActive?: boolean;
   /** Return to the Home overview (unloads the active capture). Wires the clickable wordmark + palette action. */
@@ -123,7 +121,6 @@ export function AppShell({
   onLoadRules,
   onMatchIocs,
   rulesMenu,
-  accountMenu,
   compareActive = false,
   onGoHome,
   children,
@@ -139,6 +136,7 @@ export function AppShell({
     () => [
       { id: "dashboard" as const, label: "Dashboard" },
       { id: "flows" as const, label: "Flows" },
+      { id: "query" as const, label: "Query" },
       { id: "findings" as const, label: "Findings" },
       { id: "threats" as const, label: "Threats", badge: threats.length || undefined },
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
@@ -220,16 +218,16 @@ export function AppShell({
   const exportActions = useMemo(
     () => [
       { id: "report", label: "HTML report", run: () => void runExport(onExport) },
-      { id: "csv", label: "CSV — download", run: () => void runExport(onExportCsv) },
-      { id: "csv-copy", label: "CSV — copy", run: () => void runExport(onCopyCsv) },
-      { id: "stix", label: "STIX bundle — download", run: () => void runExport(onExportStix) },
-      { id: "stix-copy", label: "STIX bundle — copy", run: () => void runExport(onCopyStix) },
-      { id: "misp", label: "MISP event — download", run: () => void runExport(onExportMisp) },
-      { id: "misp-copy", label: "MISP event — copy", run: () => void runExport(onCopyMisp) },
-      { id: "cef", label: "CEF — download", run: () => void runExport(onExportCef) },
-      { id: "cef-copy", label: "CEF — copy", run: () => void runExport(onCopyCef) },
-      { id: "sigma", label: "Sigma rules — download", run: () => void runExport(onExportSigma) },
-      { id: "sigma-copy", label: "Sigma rules — copy", run: () => void runExport(onCopySigma) },
+      { id: "csv", label: "Download CSV", run: () => void runExport(onExportCsv) },
+      { id: "csv-copy", label: "Copy CSV", run: () => void runExport(onCopyCsv) },
+      { id: "stix", label: "Download STIX bundle", run: () => void runExport(onExportStix) },
+      { id: "stix-copy", label: "Copy STIX bundle", run: () => void runExport(onCopyStix) },
+      { id: "misp", label: "Download MISP event", run: () => void runExport(onExportMisp) },
+      { id: "misp-copy", label: "Copy MISP event", run: () => void runExport(onCopyMisp) },
+      { id: "cef", label: "Download CEF", run: () => void runExport(onExportCef) },
+      { id: "cef-copy", label: "Copy CEF", run: () => void runExport(onCopyCef) },
+      { id: "sigma", label: "Download Sigma rules", run: () => void runExport(onExportSigma) },
+      { id: "sigma-copy", label: "Copy Sigma rules", run: () => void runExport(onCopySigma) },
     ],
     [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma],
   );
@@ -250,6 +248,7 @@ export function AppShell({
     ...(onGoHome ? [{ id: "go-home", label: "Go to overview", hint: "view", run: onGoHome }] : []),
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
+    { id: "go-query", label: "Go to Query", hint: "view", run: () => onTabChange("query") },
     { id: "go-findings", label: "Go to Findings", hint: "view", run: () => onTabChange("findings") },
     { id: "go-threats", label: "Go to Threats", hint: "view", run: () => onTabChange("threats") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
@@ -306,13 +305,12 @@ export function AppShell({
           onOpenPalette={onOpenPalette}
           onOpenAiChat={onOpenAiChat}
           rulesMenu={rulesMenu}
-          accountMenu={accountMenu}
         />
         {/* overflow-x-hidden clips sub-pixel rounding overflow (e.g. the heatmap's
             many flex-1 gap-px cells at the ~768px boundary) so the shell never grows
             a horizontal scrollbar; views that need real horizontal scroll (FlowsTable)
             carry their own overflow-auto container. */}
-        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">{children}</main>
+        <main data-app-main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">{children}</main>
         {isMobile && <BottomTabBar tabs={tabs} activeTab={activeTab} onTab={onTabChange} />}
       </div>
       {loadDialogOpen && (

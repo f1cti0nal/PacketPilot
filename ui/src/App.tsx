@@ -31,6 +31,7 @@ import { ErrorState } from "./components/state/ErrorState";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
 import { FlowsView } from "./views/FlowsView";
+import { QueryView } from "./views/QueryView";
 import { FindingsView } from "./views/FindingsView";
 import { ThreatsView } from "./views/ThreatsView";
 import { RecentView } from "./components/recent/RecentView";
@@ -75,13 +76,8 @@ import { saveRuleSet, type RuleSet } from "./lib/ruleSets";
 import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
 import { IocDialog } from "./cockpit/IocDialog";
 import { matchIocs, parseIocs } from "./lib/ioc/ioc";
-import { useSession } from "./auth/useSession";
-import { AccountMenu } from "./auth/AccountMenu";
-import { DemoBanner } from "./auth/DemoBanner";
-import { reconcileAfterCheckout } from "./auth/billing";
 import { trackPageView } from "./lib/analytics/track";
 import { gaPageView } from "./lib/analytics/ga";
-import { useFeatureFlags } from "./lib/features/useFeatureFlags";
 import { useAppSettings } from "./lib/settings/useAppSettings";
 import { AnnouncementBanner } from "./cockpit/AnnouncementBanner";
 
@@ -119,34 +115,20 @@ interface ApplyCaptureInput {
   source?: ActiveSource;
 }
 
-export function App({ demo = false }: { demo?: boolean } = {}) {
+export function App() {
   // Re-render the whole tree on theme toggle so sevColor()'s baked literals refresh: it
   // resolves a CSS var to a literal hex at render time (for SVG/recharts), so without a
   // re-render severity colours would stay the previous theme's palette after a toggle.
   useTheme();
-  const session = useSession();
   const appSettings = useAppSettings();
   const { announcement_banner } = appSettings;
   const rep = appSettings.rep;
-  const plan = session.status === "authed" ? session.profile.plan : "free";
-  const { gate } = useFeatureFlags(session.status === "authed", plan);
-  const aiGate = gate("ai_assist");
-  const pcapGate = gate("pcap_export");
-  const compareGate = gate("multi_capture_diff");
-  // Reputation enrichment (IP/domain/file) is a Pro feature: fold the plan gate into the master
-  // switch so EVERY reputation path (incl. the consent prompt) stays off for free/hosted users.
-  // Offline/self-host (DEFAULTS, plan_gate null) keep it on; the reputation-proxy enforces it too.
-  const repEnabled = rep.enabled && gate("reputation") === "on";
-  // Saved rule-set LIBRARY (persist + reuse across captures) is Pro. One-off "load & apply a
-  // .rules file" (rule import) stays free — only the save side-effect + saved list are gated.
-  const savedRulesAllowed = gate("saved_rules") === "on";
-  const aiOn = session.status === "authed" && appSettings.ai.enabled && aiGate === "on";
+  // PacketPilot is free for everyone with no accounts or plans — every feature is on. The
+  // only remaining switches are the operator kill-switches for the hosted enrichment proxies
+  // (rep_config.enabled / ai_config.enabled in app_settings) and the user's own consent flags.
+  const repEnabled = rep.enabled;
+  const aiOn = appSettings.ai.enabled;
   const aiModel = appSettings.ai.model;
-
-  // After returning from Stripe Checkout, refresh the session so the upgraded plan shows.
-  useEffect(() => {
-    void reconcileAfterCheckout();
-  }, []);
 
   // Cold traffic from the SEO/marketing pages can deep-link to /app?sample=1 to drop straight
   // into a live demo (no file needed). Load the bundled sample once, then strip the param.
@@ -168,6 +150,10 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const [flowsFilter, setFlowsFilter] = useState<FlowsInitialFilter | undefined>(
     undefined,
   );
+  // Query-console cross-filter: a flow_id set lifted from a query result into the
+  // Flows tab. Cleared on capture change (stale ids would filter everything out)
+  // and whenever a dashboard deep-link sets its own facet filter.
+  const [queryFlowIds, setQueryFlowIds] = useState<Set<number> | null>(null);
   const [compareIds, setCompareIds] = useState<[string, string] | null>(null);
   const [compareSwapped, setCompareSwapped] = useState(false);
   const startCompare = useCallback((beforeId: string, afterId: string) => {
@@ -189,10 +175,8 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   const [recent, setRecent] = useState<RecentEntry[]>(() => listRecent());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  // If the signed-in account changes while App is mounted (sign in/out/switch in place), reload
-  // Recent under the new account's namespace and drop any in-view capture from the previous one.
-  // The primary fix is that useSession sets the scope before App mounts (so the initial read above
-  // is already correct); this keeps a live switch consistent too.
+  // With no accounts the storage scope never changes at runtime (everything lives in the "anon"
+  // namespace), but keep the subscription so any future scope change reloads Recent correctly.
   useEffect(
     () =>
       onStorageScopeChange(() => {
@@ -239,6 +223,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
     setActiveSource(null); // the bundled sample has no re-extractable source
     setSelectedIncident(null);
     setActiveIp(null);
+    setQueryFlowIds(null);
     setTab("dashboard");
 
     setSummary({ status: "loading" });
@@ -284,6 +269,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       if (input.flows) setFlows({ status: "ready", rows: input.flows });
       setSelectedIncident(null);
       setActiveIp(null);
+      setQueryFlowIds(null);
       setActiveSource(input.source ?? null);
 
       const name = input.fileName ?? basename(data.source_path);
@@ -352,7 +338,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   // Perform the reputation lookup and apply enriched results to the current summary IN PLACE.
   // Does NOT call applyCapture again — that would re-record to Recent and reset activeSource.
   const runReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (session.status !== "authed" || !repEnabled) return;
+    if (!repEnabled) return;
     const ips = (output.summary.ip_threats ?? [])
       .filter((t) => t.ip_class === "public")
       .map((t) => t.ip);
@@ -363,7 +349,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
 
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyReputationWasm);
-  }, [session.status, repEnabled, rep.providers, enrichAndCommit]);
+  }, [repEnabled, rep.providers, enrichAndCommit]);
 
   // Open the consent gate or fire the reputation pass immediately, depending on whether
   // consent has already been given. Should be called once per new capture (after applyCapture).
@@ -379,28 +365,28 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   }, [repEnabled, rep.providers, runReputation]);
 
   // Perform domain reputation lookup and apply enriched results to the current summary IN PLACE.
-  // Login + master-switch gates are stated here (not just relied on downstream), matching runReputation.
+  // Master-switch gates are stated here (not just relied on downstream), matching runReputation.
   const runDomainReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (session.status !== "authed" || !repEnabled || !rep.domain_enabled || !rep.providers.includes("virustotal")) return;
+    if (!repEnabled || !rep.domain_enabled || !rep.providers.includes("virustotal")) return;
     const hosts = (output.summary.domain_threats ?? []).slice(0, 15).map((d) => d.host);
     if (hosts.length === 0) return;
     const now = Math.floor(Date.now() / 1000);
     const verdicts = await lookupDomainReputation(edgeRepHttp(), hosts, now);
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyDomainReputationWasm);
-  }, [session.status, repEnabled, rep.domain_enabled, rep.providers, enrichAndCommit]);
+  }, [repEnabled, rep.domain_enabled, rep.providers, enrichAndCommit]);
 
   // Perform file-hash reputation lookup (VirusTotal only) and apply IN PLACE. Composed entirely in
   // TS (applyFileReputation) since carved-file verdicts are display-only — no engine/WASM rebuild.
   const runFileReputation = useCallback(async (output: AnalysisOutput): Promise<void> => {
-    if (session.status !== "authed" || !repEnabled || !rep.file_enabled || !rep.providers.includes("virustotal")) return;
+    if (!repEnabled || !rep.file_enabled || !rep.providers.includes("virustotal")) return;
     const hashes = (output.summary.carved_files ?? []).slice(0, 15).map((f) => f.sha256);
     if (hashes.length === 0) return;
     const now = Math.floor(Date.now() / 1000);
     const verdicts = await lookupFileReputation(edgeRepHttp(), hashes, now);
     if (Object.keys(verdicts).length === 0) return;
     await enrichAndCommit(output, verdicts, applyFileReputation);
-  }, [session.status, repEnabled, rep.file_enabled, rep.providers, enrichAndCommit]);
+  }, [repEnabled, rep.file_enabled, rep.providers, enrichAndCommit]);
 
   // Gate the two VirusTotal enrichment passes that send capture-derived indicators offsite — SNI
   // domains and carved-file SHA-256 hashes. These are DISTINCT indicator classes with SEPARATE
@@ -448,6 +434,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       } else if (next.flows) {
         setFlows({ status: "ready", rows: next.flows });
         setActiveSource(null); // swapped flows out of band — old source no longer matches
+        setQueryFlowIds(null);
       }
     },
     [applyCapture, triggerReputationGate, triggerDomainReputationGate],
@@ -524,6 +511,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
     setTab("dashboard");
     setSelectedIncident(null);
     setActiveIp(null);
+    setQueryFlowIds(null);
     // Recent entries restore cached stats only — we no longer hold the original pcap bytes,
     // so packet drill-down stays disabled until the capture is re-analyzed.
     setActiveSource(null);
@@ -594,15 +582,16 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
     setActiveSource(null);
     setSelectedIncident(null);
     setActiveIp(null);
+    setQueryFlowIds(null);
     setTab("dashboard");
   }, []);
 
   const handleExport = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
     const ai = aiOn ? await getAiSummary(captureKey(summary.data)) : null;
-    // Free-tier exports carry a PacketPilot attribution (a growth loop); Pro removes it.
-    return exportReport(summary.data, ai?.text, { brand: plan !== "pro" });
-  }, [summary, aiOn, plan]);
+    // Exports carry a PacketPilot attribution — the growth loop for a free product.
+    return exportReport(summary.data, ai?.text, { brand: true });
+  }, [summary, aiOn]);
 
   const handleExportCsv = useCallback(async () => {
     if (summary.status !== "ready" || !summary.data) return undefined;
@@ -653,10 +642,19 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
         ip: filter.ip,
         query: filter.query,
       });
+      // A facet deep-link intersecting a leftover query-result filter would be
+      // confusing — the explicit facet wins.
+      setQueryFlowIds(null);
       setTab("flows");
     },
     [],
   );
+
+  // Query console → Flows: filter the flows table down to a result's flow_ids.
+  const openQueryResultInFlows = useCallback((ids: Set<number>) => {
+    setQueryFlowIds(ids);
+    setTab("flows");
+  }, []);
 
   const openThreat = useCallback((ip: string) => {
     setActiveIp(ip);
@@ -689,9 +687,9 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
 
   const loadRules = useCallback(async (file: File) => {
     const text = await file.text();
-    if (savedRulesAllowed) saveRuleSet(file.name, text); // persist is Pro; free users still apply one-off
+    saveRuleSet(file.name, text); // persist to the saved-rules library for reuse across captures
     await applyRuleText(text);
-  }, [applyRuleText, savedRulesAllowed]);
+  }, [applyRuleText]);
 
   const applyRuleSet = useCallback((rs: RuleSet) => { void applyRuleText(rs.text); }, [applyRuleText]);
 
@@ -717,9 +715,6 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
   return (
     <>
     <AnnouncementBanner banner={announcement_banner} />
-    {/* Public-demo nudge: only when running the anonymous sample (AppGate passes `demo`) and the
-        visitor isn't already signed in. */}
-    {demo && session.status !== "authed" && <DemoBanner />}
     {/* Hidden file input for "Load detection rules" — triggered via rulesInputRef.current.click() */}
     <input
       ref={rulesInputRef}
@@ -736,7 +731,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       activeTab={tab}
       onTabChange={setTab}
       onGoHome={goHome}
-      compareActive={compareIds !== null && compareGate === "on"}
+      compareActive={compareIds !== null}
       summary={summary}
       recentCount={recent.length}
       onReplaceData={handleReplaceData}
@@ -765,8 +760,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
       onOpenAiChat={aiOn && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       onMatchIocs={summary.status === "ready" && summary.data ? () => setIocDialogOpen(true) : undefined}
-      rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} canSave={savedRulesAllowed} />}
-      accountMenu={<AccountMenu session={session} />}
+      rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
     >
       <ErrorBoundary resetKey={`${activeId ?? ""}:${tab}`}>
       {tab === "compare" ? (
@@ -779,7 +773,15 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
           return <CompareView before={before} after={after} onSwap={() => setCompareSwapped((s) => !s)} />;
         })()
       ) : tab === "flows" ? (
-        <FlowsView state={flows} initialFilter={flowsFilter} activeSource={activeSource} />
+        <FlowsView
+          state={flows}
+          initialFilter={flowsFilter}
+          activeSource={activeSource}
+          flowIdFilter={queryFlowIds}
+          onClearFlowIdFilter={() => setQueryFlowIds(null)}
+        />
+      ) : tab === "query" ? (
+        <QueryView state={flows} onOpenInFlows={openQueryResultInFlows} aiOn={aiOn} aiModel={aiModel} />
       ) : tab === "findings" ? (
         <FindingsView
           findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}
@@ -802,7 +804,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
           onRemove={handleRemoveRecent}
           onClear={handleClearRecent}
           onLoadNew={handleRequestLoad}
-          onCompare={compareGate === "on" ? startCompare : undefined}
+          onCompare={startCompare}
         />
       ) : summary.status === "idle" ? (
         <HomeView
@@ -811,7 +813,7 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
           onOpen={(e) => void handleSelectRecent(e)}
           onLoadNew={handleRequestLoad}
           onLoadSample={loadSample}
-          onCompare={compareGate === "on" ? startCompare : undefined}
+          onCompare={startCompare}
           onViewAll={() => setTab("recent")}
           sampleAvailable={!IS_TAURI}
         />
@@ -826,9 +828,8 @@ export function App({ demo = false }: { demo?: boolean } = {}) {
           selectedIncident={selectedIncident}
           onSelectIncident={setSelectedIncident}
           activeSource={activeSource}
-          aiGate={aiOn ? "on" : aiGate === "upsell" ? "upsell" : "off"}
+          aiGate={aiOn ? "on" : "off"}
           aiModel={aiModel}
-          pcapExport={pcapGate === "on"}
         />
       )}
       </ErrorBoundary>

@@ -6,6 +6,7 @@
 // mounted, driven by `useIsMobile` in AppShell.
 import { ChevronsLeft, ChevronsRight, Radar } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { COUNT_BADGE } from "../../cockpit/primitives";
 import type { TabId } from "../../types";
 import { TAB_ICON } from "./MobileNav";
 
@@ -79,10 +80,7 @@ export function SideNav({
               <Icon size={18} aria-hidden className="shrink-0" />
               {!collapsed && <span className="min-w-0 flex-1 truncate text-left">{tab.label}</span>}
               {!collapsed && tab.badge ? (
-                <span
-                  aria-hidden
-                  className="inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-medium text-[var(--color-accent-badge)]"
-                >
+                <span aria-hidden className={COUNT_BADGE}>
                   {tab.badge}
                 </span>
               ) : null}
@@ -123,7 +121,7 @@ function BrandMark({ collapsed }: { collapsed: boolean }) {
           <span className="block truncate font-display text-[15px] font-medium leading-tight tracking-tight text-[var(--color-text)]">
             PacketPilot
           </span>
-          <span className="block truncate text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)]">
+          <span className="t-tag block truncate uppercase tracking-wider text-[var(--color-text-faint)]">
             Network forensics
           </span>
         </span>

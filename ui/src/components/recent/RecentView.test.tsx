@@ -139,6 +139,37 @@ describe("RecentView", () => {
     expect(screen.getByText("No recent captures yet")).toBeInTheDocument();
   });
 
+  it("keeps exactly one in-view Load CTA: on the empty state, never in the header", async () => {
+    const u = userEvent.setup();
+    const onLoadNew = vi.fn();
+    const { rerender } = render(
+      <RecentView
+        entries={[]}
+        onOpen={vi.fn()}
+        onReanalyze={vi.fn()}
+        onRemove={vi.fn()}
+        onClear={vi.fn()}
+        onLoadNew={onLoadNew}
+      />,
+    );
+    const ctas = screen.getAllByRole("button", { name: /load capture/i });
+    expect(ctas).toHaveLength(1);
+    await u.click(ctas[0]);
+    expect(onLoadNew).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <RecentView
+        entries={[makeEntry()]}
+        onOpen={vi.fn()}
+        onReanalyze={vi.fn()}
+        onRemove={vi.fn()}
+        onClear={vi.fn()}
+        onLoadNew={onLoadNew}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /load capture/i })).toBeNull();
+  });
+
   it("active entry shows Active badge", () => {
     const entry = makeEntry();
     render(

@@ -141,107 +141,7 @@ export function Landing() {
       }
     }
 
-    // ── (3) Monthly / annual pricing toggle ───────────────────────────────────
-    const periodBtns = Array.from(
-      root.querySelectorAll<HTMLElement>("[data-pp-period]"),
-    );
-    const priceEls = Array.from(
-      root.querySelectorAll<HTMLElement>("[data-pp-price]"),
-    );
-    if (periodBtns.length) {
-      const applyPeriod = (period: string) => {
-        periodBtns.forEach((btn) => {
-          const active = btn.getAttribute("data-pp-period") === period;
-          btn.setAttribute("aria-pressed", active ? "true" : "false");
-        });
-        priceEls.forEach((el) => {
-          const match = el.getAttribute("data-pp-price") === period;
-          // Set an explicit display when shown — clearing to "" would let the
-          // stylesheet's `.pp-price-annual { display: none }` re-hide annual rows.
-          // Price amounts are flex rows; the billing note is a block.
-          const shown = el.classList.contains("pp-price-amt") ? "flex" : "block";
-          el.style.display = match ? shown : "none";
-        });
-      };
-      const handlers: Array<[HTMLElement, (e: Event) => void]> = [];
-      periodBtns.forEach((btn) => {
-        const onClick = () => {
-          const period = btn.getAttribute("data-pp-period") || "monthly";
-          applyPeriod(period);
-        };
-        btn.addEventListener("click", onClick);
-        handlers.push([btn, onClick]);
-      });
-      // Initialise from whichever button is already pressed, defaulting to monthly.
-      const pressed = periodBtns.find(
-        (b) => b.getAttribute("aria-pressed") === "true",
-      );
-      applyPeriod(pressed?.getAttribute("data-pp-period") || "monthly");
-      cleanups.push(() => {
-        handlers.forEach(([btn, fn]) => btn.removeEventListener("click", fn));
-      });
-    }
-
-    // ── (4) Carousel: [data-pp-slide] / prev / next / dots ─────────────────────
-    const carousel = root.querySelector<HTMLElement>("[data-pp-carousel]");
-    if (carousel) {
-      const slides = Array.from(
-        carousel.querySelectorAll<HTMLElement>("[data-pp-slide]"),
-      );
-      const dots = Array.from(
-        carousel.querySelectorAll<HTMLElement>("[data-pp-dot]"),
-      );
-      const prev = carousel.querySelector<HTMLElement>("[data-pp-prev]");
-      const next = carousel.querySelector<HTMLElement>("[data-pp-next]");
-
-      if (slides.length) {
-        let index = Math.max(
-          0,
-          slides.findIndex((s) => s.classList.contains("is-active")),
-        );
-        if (index < 0) index = 0;
-
-        const show = (i: number) => {
-          index = (i + slides.length) % slides.length;
-          slides.forEach((s, si) =>
-            s.classList.toggle("is-active", si === index),
-          );
-          dots.forEach((d, di) => {
-            const active = di === index;
-            d.classList.toggle("is-active", active);
-            // Pagination dots are buttons in a labelled group (not ARIA tabs, which
-            // would require tabpanels) — use aria-current for the active page.
-            if (active) d.setAttribute("aria-current", "true");
-            else d.removeAttribute("aria-current");
-          });
-        };
-
-        const handlers: Array<[HTMLElement, string, (e: Event) => void]> = [];
-        const bind = (el: HTMLElement | null, fn: () => void) => {
-          if (!el) return;
-          const onClick = (e: Event) => {
-            e.preventDefault();
-            fn();
-          };
-          el.addEventListener("click", onClick);
-          handlers.push([el, "click", onClick]);
-        };
-
-        bind(prev, () => show(index - 1));
-        bind(next, () => show(index + 1));
-        dots.forEach((dot, di) => {
-          const target = parseInt(dot.getAttribute("data-index") ?? "", 10);
-          bind(dot, () => show(Number.isFinite(target) ? target : di));
-        });
-
-        show(index);
-        cleanups.push(() => {
-          handlers.forEach(([el, ev, fn]) => el.removeEventListener(ev, fn));
-        });
-      }
-    }
-
-    // ── (5) Scroll-reveal: add .pp-in to [data-pp-reveal] ──────────────────────
+    // ── (3) Scroll-reveal: add .pp-in to [data-pp-reveal] ──────────────────────
     const reveals = Array.from(
       root.querySelectorAll<HTMLElement>("[data-pp-reveal]"),
     );
@@ -265,7 +165,7 @@ export function Landing() {
       }
     }
 
-    // ── (6) Mobile nav toggle ──────────────────────────────────────────────────
+    // ── (4) Mobile nav toggle ──────────────────────────────────────────────────
     const navToggle = root.querySelector<HTMLElement>("[data-pp-nav-toggle]");
     const navMenu = root.querySelector<HTMLElement>("[data-pp-nav-menu]");
     if (navToggle && navMenu) {
@@ -294,7 +194,7 @@ export function Landing() {
       });
     }
 
-    // ── (7) Workflow tabs: [data-pp-tab] buttons switching [data-pp-panel] ─────
+    // ── (5) Workflow tabs: [data-pp-tab] buttons switching [data-pp-panel] ─────
     const tabs = Array.from(root.querySelectorAll<HTMLElement>("[data-pp-tab]"));
     const panels = Array.from(
       root.querySelectorAll<HTMLElement>("[data-pp-panel]"),

@@ -24,13 +24,16 @@ import { EmptyState } from "../components/state/EmptyState";
 import { FlowsTable } from "../components/flows/FlowsTable";
 import { FlowDetail } from "../components/FlowDetail";
 import { PacketInspector } from "../cockpit/PacketInspector";
-import { Panel, Toolbar } from "../cockpit/primitives";
+import { BTN_OUTLINE, INPUT_BASE, Panel, Toolbar } from "../cockpit/primitives";
 
 export interface FlowsViewProps {
   state: FlowsState;
   initialFilter?: { severity?: Severity; category?: string; proto?: number; ip?: string; query?: string };
   /** The active capture source — enables per-flow packet drill-down when non-null. */
   activeSource: ActiveSource;
+  /** Query-console cross-filter: restrict the table to these flow ids (applied before all other filters). */
+  flowIdFilter?: Set<number> | null;
+  onClearFlowIdFilter?: () => void;
 }
 
 const ALL_CATEGORIES = "__all__";
@@ -59,7 +62,7 @@ function looksLikeTls(flow: FlowRow): boolean {
   );
 }
 
-export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps) {
+export function FlowsView({ state, initialFilter, activeSource, flowIdFilter, onClearFlowIdFilter }: FlowsViewProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [severity, setSeverity] = useState<Severity | undefined>(undefined);
@@ -157,6 +160,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
+      if (flowIdFilter && !flowIdFilter.has(r.flowId)) return false;
       if (category !== ALL_CATEGORIES && r.category !== category) return false;
       if (severity !== undefined && r.severity !== severity) return false;
       if (proto !== undefined && r.proto !== proto) return false;
@@ -200,7 +204,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
       }
       return true;
     });
-  }, [rows, query, category, severity, proto]);
+  }, [rows, query, category, severity, proto, flowIdFilter]);
 
   // If the selected row falls out of the filtered set, drop the detail panel.
   useEffect(() => {
@@ -217,7 +221,8 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
     query.trim() !== "" ||
     category !== ALL_CATEGORIES ||
     severity !== undefined ||
-    proto !== undefined;
+    proto !== undefined ||
+    !!flowIdFilter;
 
   // Export exactly what's on screen (the filtered set) as CSV.
   const exportCsv = useCallback(() => {
@@ -231,6 +236,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
     setCategory(ALL_CATEGORIES);
     setSeverity(undefined);
     setProto(undefined);
+    onClearFlowIdFilter?.();
   };
 
   const applyProfile = useCallback((f: FlowFilter) => {
@@ -255,12 +261,6 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
     );
   }
 
-  const inputBase =
-    "rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] " +
-    "text-[length:var(--fs-body)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] " +
-    "focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] " +
-    "focus:border-[var(--color-accent)]";
-
   return (
     <div
       data-component="FlowsView"
@@ -279,7 +279,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by IP, port, category, or SNI…"
             aria-label="Filter flows"
-            className={cn(inputBase, "w-full py-1.5 pl-8 pr-8 font-mono-num")}
+            className={cn(INPUT_BASE, "w-full py-1.5 pl-8 pr-8 font-mono-num")}
           />
           {query && (
             <button
@@ -299,7 +299,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             aria-label="Filter by category"
-            className={cn(inputBase, "py-1.5 pl-2.5 pr-7")}
+            className={cn(INPUT_BASE, "py-1.5 pl-2.5 pr-7")}
           >
             <option value={ALL_CATEGORIES}>All categories</option>
             {categories.map((c) => (
@@ -323,7 +323,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             <button
               type="button"
               onClick={clearFilters}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:border-[var(--color-accent)]"
+              className={BTN_OUTLINE}
             >
               Clear filters
             </button>
@@ -333,7 +333,7 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
             onClick={exportCsv}
             disabled={filtered.length === 0}
             title="Export the filtered flows to CSV"
-            className="inline-flex items-center gap-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)] hover:text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-50"
+            className={BTN_OUTLINE}
           >
             <Download className="h-3.5 w-3.5" aria-hidden />
             Export CSV
@@ -346,6 +346,32 @@ export function FlowsView({ state, initialFilter, activeSource }: FlowsViewProps
           />
         </div>
       </Toolbar>
+
+      {/* Query-console cross-filter chip — dismissible, applied before all other filters. */}
+      {flowIdFilter && (
+        <div
+          data-component="FlowIdFilterChip"
+          className="flex items-center gap-2 text-[length:var(--fs-label)] text-[var(--color-text-dim)]"
+        >
+          <span className="inline-flex items-center gap-1.5 rounded-[var(--r-chip)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5">
+            Query result filter ·{" "}
+            <span className="font-mono-num text-[var(--color-text)]">
+              {humanNumber(flowIdFilter.size)}
+            </span>{" "}
+            flow{flowIdFilter.size === 1 ? "" : "s"}
+            {onClearFlowIdFilter && (
+              <button
+                type="button"
+                onClick={onClearFlowIdFilter}
+                aria-label="Clear query result filter"
+                className="text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </span>
+        </div>
+      )}
 
       {/* Live stats for the current filter — bytes / packets / IOCs / top categories. */}
       <div

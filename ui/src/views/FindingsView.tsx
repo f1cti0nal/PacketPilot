@@ -5,7 +5,7 @@ import { kindLabel, kindMeta } from "../lib/findingKinds";
 import { SEVERITY_META, SEVERITY_ORDER } from "../lib/severity";
 import { humanNumber } from "../lib/format";
 import { sevColor } from "../cockpit/viz";
-import { MitreTag, Panel, Toolbar } from "../cockpit/primitives";
+import { BTN_OUTLINE, INPUT_BASE, MitreTag, Panel, SeverityChip, Toolbar } from "../cockpit/primitives";
 import { EmptyState } from "../components/state/EmptyState";
 import { cn } from "../lib/cn";
 
@@ -28,6 +28,40 @@ const SEV_RANK: Record<Severity, number> = {
 };
 
 const ALL = "__all__";
+
+/** Sortable column header: a real button inside the th so sorting is keyboard-operable.
+ *  Top-level (stable component type) so the button keeps focus across sort re-renders. */
+function SortHead({
+  label,
+  k,
+  sort,
+  onToggle,
+  className,
+}: {
+  label: string;
+  k: SortKey;
+  sort: { key: SortKey; dir: SortDir };
+  onToggle: (k: SortKey) => void;
+  className?: string;
+}) {
+  return (
+    <th
+      className={className}
+      aria-sort={sort.key === k ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onToggle(k)}
+        className="cursor-pointer select-none uppercase transition-colors hover:text-[var(--color-text-dim)]"
+      >
+        {label}
+        <span className="ml-1 font-mono-num" aria-hidden>
+          {sort.key === k ? (sort.dir === "asc" ? "↑" : "↓") : ""}
+        </span>
+      </button>
+    </th>
+  );
+}
 
 /** Ascending base comparator; the active direction is applied by the caller. */
 function baseCompare(a: Finding, b: Finding, key: SortKey): number {
@@ -101,25 +135,6 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
     );
   }
 
-  const inputBase =
-    "rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] " +
-    "text-[length:var(--fs-body)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] " +
-    "focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]";
-
-  const SortHead = ({ label, k, className }: { label: string; k: SortKey; className?: string }) => (
-    <th
-      className={cn(
-        "cursor-pointer select-none px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] hover:text-[var(--color-text-dim)]",
-        className,
-      )}
-      aria-sort={sort.key === k ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-      onClick={() => toggleSort(k)}
-    >
-      {label}
-      <span className="ml-1 font-mono-num">{sort.key === k ? (sort.dir === "asc" ? "↑" : "↓") : ""}</span>
-    </th>
-  );
-
   return (
     <div data-component="FindingsView" className="flex h-full min-h-0 flex-col gap-3">
       <Toolbar className="gap-2">
@@ -131,7 +146,7 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by host, kind, title, or technique…"
             aria-label="Filter findings"
-            className={cn(inputBase, "w-full py-1.5 pl-8 pr-8")}
+            className={cn(INPUT_BASE, "w-full py-1.5 pl-8 pr-8")}
           />
           {query && (
             <button
@@ -151,7 +166,7 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
             value={severity}
             onChange={(e) => setSeverity(e.target.value)}
             aria-label="Filter by severity"
-            className={cn(inputBase, "py-1.5 pl-2.5 pr-7")}
+            className={cn(INPUT_BASE, "py-1.5 pl-2.5 pr-7")}
           >
             <option value={ALL}>All</option>
             {SEVERITY_ORDER.map((s) => (
@@ -168,7 +183,7 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
             value={kind}
             onChange={(e) => setKind(e.target.value)}
             aria-label="Filter by kind"
-            className={cn(inputBase, "py-1.5 pl-2.5 pr-7")}
+            className={cn(INPUT_BASE, "py-1.5 pl-2.5 pr-7")}
           >
             <option value={ALL}>All</option>
             {kinds.map((k) => (
@@ -184,14 +199,10 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
             <span className="font-mono-num text-[var(--color-text)]">{humanNumber(filtered.length)}</span>
             {" / "}
             <span className="font-mono-num">{humanNumber(findings.length)}</span>
-            {" findings"}
+            {findings.length === 1 ? " finding" : " findings"}
           </span>
           {hasFilters && (
-            <button
-              type="button"
-              onClick={clear}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[length:var(--fs-label)] text-[var(--color-text-dim)] hover:border-[var(--color-accent)] hover:text-[var(--color-text)]"
-            >
+            <button type="button" onClick={clear} className={BTN_OUTLINE}>
               Clear filters
             </button>
           )}
@@ -205,13 +216,13 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
           <table className="pp-table">
             <thead>
               <tr>
-                <SortHead label="Severity" k="severity" className="w-28" />
-                <SortHead label="Finding" k="kind" />
-                <SortHead label="Source" k="source" className="hidden md:table-cell" />
-                <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] lg:table-cell">Target</th>
-                <SortHead label="Score" k="score" className="w-16" />
-                <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-faint)] xl:table-cell">ATT&CK</th>
-                <th className="w-8 px-3 py-2" />
+                <SortHead label="Severity" k="severity" sort={sort} onToggle={toggleSort} className="w-28" />
+                <SortHead label="Finding" k="kind" sort={sort} onToggle={toggleSort} />
+                <SortHead label="Source" k="source" sort={sort} onToggle={toggleSort} className="hidden md:table-cell" />
+                <th className="hidden lg:table-cell">Target</th>
+                <SortHead label="Score" k="score" sort={sort} onToggle={toggleSort} className="w-16" />
+                <th className="hidden xl:table-cell">ATT&CK</th>
+                <th className="w-8" />
               </tr>
             </thead>
             <tbody>
@@ -220,31 +231,39 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
                 const { Icon } = kindMeta(f.kind);
                 const target = f.dst_ip ? `${f.dst_ip}${f.dst_port ? `:${f.dst_port}` : ""}` : "—";
                 const clickable = !!onJumpToFlows && !!f.src_ip; // no pivot when there's no source IP (e.g. a domain IOC)
+                const pivot = clickable ? () => onJumpToFlows!({ ip: f.src_ip }) : undefined;
                 return (
                   <tr
                     key={`${f.kind}-${f.src_ip}-${i}`}
-                    onClick={clickable ? () => onJumpToFlows!({ ip: f.src_ip }) : undefined}
+                    onClick={pivot}
+                    onKeyDown={
+                      pivot
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              pivot();
+                            }
+                          }
+                        : undefined
+                    }
+                    tabIndex={clickable ? 0 : undefined}
+                    aria-label={clickable ? `View flows for ${f.src_ip}` : undefined}
                     className={cn(
                       "border-t border-[var(--color-border)] transition-colors",
-                      clickable && "cursor-pointer hover:bg-[var(--color-surface-2)]",
+                      clickable &&
+                        "cursor-pointer hover:bg-[var(--color-surface-2)] focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[var(--color-accent)]",
                     )}
                     style={{ borderLeft: `2px solid ${color}` }}
                   >
                     <td className="px-3 py-2.5">
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-[var(--r-chip)] border px-2 py-0.5 t-tag font-medium"
-                        style={{ color, borderColor: color, backgroundColor: "var(--color-surface-2)" }}
-                      >
-                        <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-                        {SEVERITY_META[f.severity]?.label ?? f.severity}
-                      </span>
+                      <SeverityChip severity={f.severity} />
                     </td>
                     <td className="min-w-0 px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-faint)]" aria-hidden />
                         <span className="text-sm font-medium text-[var(--color-text)]">{kindLabel(f.kind)}</span>
                       </div>
-                      <div className="font-mono-num mt-0.5 truncate text-xs text-[var(--color-text-dim)]" title={f.title}>
+                      <div className="mt-0.5 truncate text-xs text-[var(--color-text)]" title={f.title}>
                         {f.title}
                       </div>
                     </td>

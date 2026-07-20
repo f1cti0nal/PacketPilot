@@ -1,4 +1,5 @@
 import { useDialogA11y } from "../lib/useDialogA11y";
+import { BTN_OUTLINE, BTN_PRIMARY, DIALOG_PANEL, OVERLAY_BACKDROP } from "./primitives";
 
 /**
  * Consent gate for the two VirusTotal enrichment passes that send capture-derived indicators
@@ -24,8 +25,8 @@ export function DomainConsent({ domainCount, fileCount = 0, onProceed, onCancel 
   const sentenceCap = sentence.charAt(0).toUpperCase() + sentence.slice(1);
 
   return (
-    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="VirusTotal reputation consent" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-[var(--sh-float)]">
+    <div ref={ref} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label="VirusTotal reputation consent" className={`${OVERLAY_BACKDROP} z-50 flex items-center justify-center p-4`}>
+      <div className={`${DIALOG_PANEL} w-full max-w-md text-[var(--color-text)]`}>
         <div className="border-b border-[var(--color-border)] px-5 py-4">
           <h2 className="text-sm font-medium">Send {subject} to VirusTotal?</h2>
         </div>
@@ -36,8 +37,8 @@ export function DomainConsent({ domainCount, fileCount = 0, onProceed, onCancel 
           </p>
         </div>
         <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
-          <button type="button" className="rounded-[var(--r-micro)] border border-[var(--color-border)] bg-transparent px-3 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]" onClick={onCancel}>Cancel</button>
-          <button type="button" className="rounded-[var(--r-micro)] bg-[var(--color-accent-deep)] px-3 py-1.5 text-xs font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90" onClick={onProceed}>Proceed</button>
+          <button type="button" className={BTN_OUTLINE} onClick={onCancel}>Cancel</button>
+          <button type="button" className={BTN_PRIMARY} onClick={onProceed}>Proceed</button>
         </div>
       </div>
     </div>

@@ -6,6 +6,30 @@ import { SEVERITY_META } from "../lib/severity";
 import type { Severity } from "../types";
 import { sparkline, sevColor } from "./viz";
 
+/* ── Canonical control recipes ─────────────────────────────────────────────
+   One radius rule across the console: containers/dialogs = --r-card,
+   controls/menus/inputs/buttons = --r-tile, chips = --r-chip, micro tags =
+   --r-micro. Pills (rounded-full) are reserved for the Home/EmptyState hero
+   CTAs, count badges, and dots. Compose these instead of re-deriving button
+   or overlay classes per component. */
+export const BTN_PRIMARY =
+  "inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-transparent bg-[var(--color-accent-deep)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-on-accent)] transition-colors hover:opacity-90 disabled:cursor-default disabled:opacity-60";
+export const BTN_OUTLINE =
+  "inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-default disabled:opacity-50";
+export const BTN_GHOST_ICON =
+  "inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]";
+export const INPUT_BASE =
+  "rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] " +
+  "text-[length:var(--fs-body)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] " +
+  "focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]";
+export const OVERLAY_BACKDROP = "fixed inset-0 bg-black/50";
+export const DIALOG_PANEL =
+  "pp-pop-in rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--sh-float)]";
+export const MENU_PANEL =
+  "pp-pop-in rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1";
+export const COUNT_BADGE =
+  "inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--color-accent)_18%,transparent)] px-1 text-[10px] font-medium text-[var(--color-accent-badge)]";
+
 /** Opaque grid panel with a hairline border + optional titled header. */
 export function Card({
   title,
@@ -25,7 +49,7 @@ export function Card({
   return (
     <section className={cn("card flex min-w-0 flex-col shadow-[var(--sh-rest)]", className)}>
       {(title || label || right) && (
-        <header className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-2">
+        <header className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-2.5">
           <div className="min-w-0">
             {label && <div className="t-label">{label}</div>}
             {title && <h3 className="t-title text-[var(--color-text)]">{title}</h3>}
@@ -33,7 +57,7 @@ export function Card({
           {right}
         </header>
       )}
-      <div className={cn("min-w-0 flex-1 px-4 pb-4", !title && !label && "pt-4", bodyClassName)}>
+      <div className={cn("min-w-0 flex-1 px-4 pb-4", title || label || right ? "pt-3" : "pt-4", bodyClassName)}>
         {children}
       </div>
     </section>
@@ -117,14 +141,11 @@ export function Panel({
   const accentColor = accent ? sevColor(accent) : undefined;
   return (
     <section
-      className={cn(
-        "flex min-w-0 flex-col overflow-hidden rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-panel)]",
-        className,
-      )}
+      className={cn("card flex min-w-0 flex-col overflow-hidden shadow-[var(--sh-rest)]", className)}
       style={accentColor ? { borderLeft: `2px solid ${accentColor}`, borderRadius: "0 var(--r-card) var(--r-card) 0" } : undefined}
     >
       {(title || label || right || icon) && (
-        <header className="flex items-center gap-2 border-b border-[var(--color-border)] px-3.5 py-2.5">
+        <header className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2.5">
           {icon && <span aria-hidden className="text-[var(--color-text-dim)]">{icon}</span>}
           <div className="min-w-0">
             {label && <div className="t-label">{label}</div>}

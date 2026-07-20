@@ -71,7 +71,7 @@ export function CategoryMatrix({
       }
     >
       {rows.length === 0 ? (
-        <div className="flex h-24 items-center justify-center text-sm text-[var(--color-text-faint)]">
+        <div className="py-6 text-center t-body text-[var(--color-text-faint)]">
           No categorized traffic
         </div>
       ) : (

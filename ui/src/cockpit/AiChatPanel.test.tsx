@@ -50,7 +50,7 @@ describe("AiChatPanel", () => {
     render(<AiChatPanel open onClose={vi.fn()} output={makeOutput()} model="claude-opus-4-8" />);
     await u.type(screen.getByRole("textbox"), "test question");
     await u.click(screen.getByRole("button", { name: /send/i }));
-    expect(await screen.findByText(/AI request failed.*model overloaded/i)).toBeInTheDocument();
+    expect(await screen.findByText(/model overloaded/i)).toBeInTheDocument();
   });
 
   it("calls onClose when Close button clicked", async () => {

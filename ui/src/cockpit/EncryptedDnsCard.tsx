@@ -15,7 +15,7 @@ export function EncryptedDnsCard({ hosts }: { hosts: EncryptedDnsHost[] }) {
 
   return (
     <Card
-      label="DNS"
+      label="ENCRYPTED DNS"
       title="Encrypted DNS"
       right={
         <span className="font-mono-num t-tag text-[var(--color-text-dim)]">
@@ -37,7 +37,7 @@ export function EncryptedDnsCard({ hosts }: { hosts: EncryptedDnsHost[] }) {
               {h.resolver}
             </span>
             {h.flows > 1 && (
-              <span className="font-mono-num ml-auto shrink-0 text-[0.65rem] text-[var(--color-text-faint)]">
+              <span className="font-mono-num ml-auto shrink-0 t-tag text-[var(--color-text-faint)]">
                 ×{humanNumber(h.flows)}
               </span>
             )}

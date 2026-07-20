@@ -67,11 +67,32 @@ describe("FindingsView", () => {
     expect(firstDataRow().textContent).toContain("10.0.0.7");
   });
 
+  it("sorts via the keyboard: column headers are real buttons with aria-sort on the th", async () => {
+    const u = userEvent.setup();
+    render(<FindingsView findings={FINDINGS} />);
+    const sourceButton = screen.getByRole("button", { name: "Source" });
+    sourceButton.focus();
+    await u.keyboard("{Enter}"); // → ascending by src_ip
+    expect(firstDataRow().textContent).toContain("10.0.0.7");
+    expect(sourceButton.closest("th")).toHaveAttribute("aria-sort", "ascending");
+    expect(sourceButton).toHaveFocus(); // focus survives the sort re-render
+  });
+
   it("clicking a row pivots to flows for its source host", async () => {
     const u = userEvent.setup();
     const onJump = vi.fn();
     render(<FindingsView findings={FINDINGS} onJumpToFlows={onJump} />);
     await u.click(within(table()).getByText("C2 Beacon"));
+    expect(onJump).toHaveBeenCalledWith({ ip: "10.0.0.9" });
+  });
+
+  it("pivots to flows via the keyboard on a focused row", async () => {
+    const u = userEvent.setup();
+    const onJump = vi.fn();
+    render(<FindingsView findings={FINDINGS} onJumpToFlows={onJump} />);
+    const row = screen.getByRole("row", { name: /view flows for 10\.0\.0\.9/i });
+    row.focus();
+    await u.keyboard("{Enter}");
     expect(onJump).toHaveBeenCalledWith({ ip: "10.0.0.9" });
   });
 
