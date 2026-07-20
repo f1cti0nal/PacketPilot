@@ -50,6 +50,23 @@ const PTS_EXTERNAL: i32 = 15;
 const PTS_ALL_INTERNAL: i32 = -10;
 const PTS_BEHAVIOR: i32 = 10;
 
+// ---- Behavioral-baseline deviation weights ---------------------------------------------
+//
+// A deviation is behavior-relative-to-self: an internal host doing something absent from its
+// learned per-host baseline. Weights mirror the philosophy above — a single deviation is a weak
+// signal (Medium at most); High/Critical must come from corroboration (a co-located IOC floor or
+// a beacon/exfil finding on the same host), never from stacking deviation points. The cap is the
+// enforcement, exactly like the reputation module's `REP_UPLIFT_CAP`.
+
+/// First-seen external peer the host never egressed to in its baseline. `== PTS_EXTERNAL`.
+pub const PTS_DEV_NEW_EXTERNAL_PEER: i32 = 15;
+/// First-seen destination service port not in the host's baseline service set.
+pub const PTS_DEV_NEW_PORT: i32 = 10;
+/// Outbound volume well beyond the host's baseline distribution (mean + k·σ).
+pub const PTS_DEV_VOLUME_SPIKE: i32 = 10;
+/// Deviation-alone score ceiling: caps a baseline deviation at Medium (see `Severity::from_score`).
+pub const DEV_UPLIFT_CAP: i32 = 45;
+
 /// Beacon byte ceiling. MUST match `classify::BEACON_MAX_BYTES` (kept local to avoid coupling
 /// to that module's private constants).
 const BEACON_MAX_BYTES: u64 = 4_096;
@@ -288,6 +305,42 @@ pub fn score_flow(rec: &FlowRecord, fm: &FeedMatch) -> ScoredFlow {
     }
 }
 
+/// The scored verdict for one host's set of baseline deviations. Mirrors [`ScoredFlow`]: every
+/// point reconciles to one `(±N)` evidence line and one [`ScoreTerm`], via the same [`add_term`]
+/// ledger, so "every point explained" holds for deviations too.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ScoredDeviation {
+    pub severity: Severity,
+    pub score: u16,
+    pub evidence: Vec<String>,
+    pub terms: Vec<ScoreTerm>,
+}
+
+/// Score a host's baseline-deviation dimensions into a capped, banded verdict. Each `dims` entry
+/// is a `(label, points)` pair the caller (the `baseline` module) built from the concrete
+/// deviation (the label carries the human evidence, the points a `PTS_DEV_*` weight). The sum is
+/// clamped to `[0, DEV_UPLIFT_CAP]` so a deviation alone tops out at Medium; the clamp delta is
+/// recorded so the evidence trail reconciles to the reported score. Returns an all-zero, empty
+/// verdict for an empty `dims` (a host that matches its baseline is silent).
+pub fn score_baseline_deviation(dims: &[(String, i32)]) -> ScoredDeviation {
+    let mut acc: i32 = 0;
+    let mut evidence: Vec<String> = Vec::new();
+    let mut terms: Vec<ScoreTerm> = Vec::new();
+    for (label, points) in dims {
+        add_term(&mut acc, &mut evidence, &mut terms, label.clone(), *points);
+    }
+    let score = acc.clamp(0, DEV_UPLIFT_CAP) as u16;
+    if i32::from(score) != acc {
+        evidence.push(format!("clamp: raw {acc} -> {score}"));
+    }
+    ScoredDeviation {
+        severity: Severity::from_score(score),
+        score,
+        evidence,
+        terms,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -517,5 +570,35 @@ mod tests {
             "clamp/floor must not appear in terms: {:?}",
             sc.terms
         );
+    }
+
+    #[test]
+    fn baseline_deviation_scores_and_caps_at_medium() {
+        // Empty dims -> silent.
+        let empty = score_baseline_deviation(&[]);
+        assert_eq!(empty.score, 0);
+        assert!(empty.evidence.is_empty());
+        assert_eq!(empty.severity, Severity::Info);
+
+        // One weak dim -> stays below Medium; each point has a reconciling evidence line + term.
+        let one = score_baseline_deviation(&[("baseline: new port 4444".into(), PTS_DEV_NEW_PORT)]);
+        assert_eq!(one.score, PTS_DEV_NEW_PORT as u16);
+        assert!(one
+            .evidence
+            .iter()
+            .any(|e| e == "baseline: new port 4444 (+10)"));
+        assert!(one.terms.iter().any(|t| t.points == 10));
+
+        // Many stacked deviations clamp at DEV_UPLIFT_CAP (Medium), never High.
+        let many = score_baseline_deviation(&[
+            ("a".into(), PTS_DEV_NEW_EXTERNAL_PEER),
+            ("b".into(), PTS_DEV_NEW_PORT),
+            ("c".into(), PTS_DEV_VOLUME_SPIKE),
+            ("d".into(), PTS_DEV_NEW_EXTERNAL_PEER),
+            ("e".into(), PTS_DEV_NEW_EXTERNAL_PEER),
+        ]);
+        assert_eq!(many.score, DEV_UPLIFT_CAP as u16);
+        assert!(many.severity.rank() <= Severity::Medium.rank());
+        assert!(many.evidence.iter().any(|e| e.starts_with("clamp:")));
     }
 }

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
+use crate::baseline::{compare_to_baseline, BaselineParams, BaselineProfile};
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
@@ -101,6 +102,15 @@ pub struct PipelineConfig {
     pub exposed_remote_access: ExposedRemoteAccessParams,
     /// OT/ICS control-command (write-to-PLC) detector tuning.
     pub ics_control: IcsControlParams,
+    /// Behavioral Baseline Learning: a saved baseline profile JSON to compare this capture against
+    /// (raising deviation findings); `None` => no comparison. Native-only (the browser passes an
+    /// in-memory profile via wasm instead).
+    pub baseline_in: Option<PathBuf>,
+    /// Behavioral Baseline Learning: compute the per-host egress snapshot and attach it to
+    /// [`AnalysisOutput::baseline`] so the CLI can persist/merge it. Cheap; off by default.
+    pub update_baseline: bool,
+    /// Behavioral Baseline Learning deviation thresholds + bounds.
+    pub baseline: BaselineParams,
 }
 
 impl Default for PipelineConfig {
@@ -141,6 +151,9 @@ impl Default for PipelineConfig {
             cryptomining: CryptominingParams::default(),
             exposed_remote_access: ExposedRemoteAccessParams::default(),
             ics_control: IcsControlParams::default(),
+            baseline_in: None,
+            update_baseline: false,
+            baseline: BaselineParams::default(),
         }
     }
 }
@@ -226,6 +239,9 @@ pub fn run_source_visiting<'a>(
     let classifier = Classifier::new(cfg.classify.clone());
     // Load the threat feed exactly once (fail fast on IO/parse/bad indicator).
     let enricher = Enricher::new(ThreatFeed::load_opt(cfg.threat_feed.as_deref())?);
+    // Load the behavioral baseline once (fail fast on IO/parse/newer-schema). `None` unless a
+    // comparison was requested; the browser passes `None` and folds via wasm instead.
+    let baseline_ref = BaselineProfile::load_opt(cfg.baseline_in.as_deref())?;
     let mut stats = StatsAccumulator::new(cfg.stats.clone());
     // Cross-flow behavioral tracker: fed one "contact" per closed flow, queried at finish for
     // beaconing/sweep findings. Bounded like every other per-key map.
@@ -508,6 +524,21 @@ pub fn run_source_visiting<'a>(
             .then(a.sha256.cmp(&b.sha256))
     });
     carved_files.truncate(TOP_K_CARVED);
+
+    // Behavioral Baseline Learning. The tracker is still fully populated and is NOT consumed by
+    // `stats.finish()` below, so we can both (a) snapshot this capture's per-host egress for the
+    // CLI to persist/merge, and (b) compare it against a loaded baseline — emitting deviation
+    // findings BEFORE `stats.apply_findings` so they uplift the per-IP threat cards and flow into
+    // incidents/chains exactly like every other detector.
+    let baseline_snapshot = if baseline_ref.is_some() || cfg.update_baseline {
+        Some(tracker.baseline_snapshot(&cfg.baseline))
+    } else {
+        None
+    };
+    if let (Some(base), Some(prof)) = (baseline_ref.as_ref(), baseline_snapshot.as_ref()) {
+        findings.extend(compare_to_baseline(base, prof, &cfg.baseline).into_findings());
+    }
+
     stats.apply_findings(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
@@ -542,6 +573,7 @@ pub fn run_source_visiting<'a>(
         elapsed_ms: start.elapsed().as_millis() as u64,
         #[cfg(target_arch = "wasm32")]
         elapsed_ms: 0,
+        baseline: baseline_snapshot,
     })
 }
 
@@ -1311,6 +1343,123 @@ mod tests {
         assert!(
             out.summary.incidents.iter().any(|i| i.host == b),
             "victim incident retained"
+        );
+    }
+
+    #[test]
+    fn baseline_learn_and_deviate_through_pipeline() {
+        use crate::baseline::{
+            update_baseline, BaselineParams, BaselineProfile, CaptureProfile, HostObservation,
+        };
+        use crate::gen::{GenConfig, Scenario, SynthGen};
+        use crate::model::finding::FindingKind;
+
+        // The Beacon scenario has a fixed internal host dialing a fixed EXTERNAL (public) C2, so the
+        // baseline snapshot captures real internal->external egress the whole feature depends on.
+        let cfg = GenConfig {
+            scenario: Scenario::Beacon,
+            packets: 20_000,
+            seed: 1,
+            host_count: 64,
+            ..Default::default()
+        };
+        let tf = tempfile::NamedTempFile::new().unwrap();
+        SynthGen::new(cfg).write_pcap(tf.path()).unwrap();
+
+        // 1. LEARN: analyze with the snapshot enabled; it must ride on the output.
+        let learn_cfg = PipelineConfig {
+            update_baseline: true,
+            ..Default::default()
+        };
+        let learned = run(tf.path(), &learn_cfg, |_, _, _| {}).unwrap();
+        let snap = learned
+            .baseline
+            .clone()
+            .expect("snapshot attached to output");
+        assert!(
+            !snap.hosts.is_empty(),
+            "beacon scenario must yield internal->external egress hosts"
+        );
+
+        // 2. Build a MATURE-but-STALE baseline for those hosts: warm-up satisfied, but with empty
+        //    peer/service sets, so this capture's egress reads as all-new (a deterministic deviation).
+        let params = BaselineParams::default();
+        let stale = CaptureProfile {
+            hosts: snap
+                .hosts
+                .iter()
+                .map(|h| HostObservation {
+                    host: h.host.clone(),
+                    bytes_out: 128,
+                    bytes_in: 128,
+                    flows: 1,
+                    peers: Vec::new(),
+                    services: Vec::new(),
+                })
+                .collect(),
+        };
+        let mut base = BaselineProfile::new();
+        for i in 0..params.min_captures {
+            let out = AnalysisOutput {
+                engine_version: "test".to_string(),
+                baseline: Some(stale.clone()),
+                ..Default::default()
+            };
+            base = update_baseline(base, &out, 1_000 + i as i64, &params);
+        }
+        let bf = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(bf.path(), base.to_json_pretty().unwrap()).unwrap();
+
+        // 3. COMPARE: re-analyze the same capture against the stale baseline; deviations must appear
+        //    in the summary findings (folded through the real pipeline, not just the module).
+        let cmp_cfg = PipelineConfig {
+            baseline_in: Some(bf.path().to_path_buf()),
+            ..Default::default()
+        };
+        let out2 = run(tf.path(), &cmp_cfg, |_, _, _| {}).unwrap();
+        let devs: Vec<_> = out2
+            .summary
+            .findings
+            .iter()
+            .filter(|f| f.kind == FindingKind::BaselineDeviation)
+            .collect();
+        assert!(
+            !devs.is_empty(),
+            "expected baseline deviations vs a stale (peerless) baseline"
+        );
+        // Every deviation is attributed to one of the learned internal egress hosts and carries
+        // reconciling evidence.
+        for d in &devs {
+            assert!(snap.hosts.iter().any(|h| h.host == d.src_ip));
+            assert!(d.evidence.iter().any(|e| e.contains("baseline:")));
+        }
+
+        // A conforming re-analysis (baseline learned FROM this capture) raises nothing new.
+        let self_base = {
+            let mut b = BaselineProfile::new();
+            for i in 0..params.min_captures {
+                b = update_baseline(b, &learned, 2_000 + i as i64, &params);
+            }
+            b
+        };
+        let sf = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(sf.path(), self_base.to_json_pretty().unwrap()).unwrap();
+        let out3 = run(
+            tf.path(),
+            &PipelineConfig {
+                baseline_in: Some(sf.path().to_path_buf()),
+                ..Default::default()
+            },
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(
+            !out3
+                .summary
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::BaselineDeviation),
+            "a host that matches its own baseline must not deviate"
         );
     }
 

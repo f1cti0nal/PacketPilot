@@ -33,6 +33,7 @@
 //! 5. Time unit is `i64` nanoseconds since the Unix epoch, end to end.
 
 pub mod analyze;
+pub mod baseline;
 pub(crate) mod carve;
 pub mod case;
 pub mod classify;
@@ -59,9 +60,12 @@ pub mod timemachine;
 pub mod tls;
 
 pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
-pub use case::{
-    run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator,
+pub use baseline::{
+    build_baseline, compare_to_baseline, merge as merge_baselines, update_baseline, BaselineParams,
+    BaselineProfile, CaptureProfile, Deviation, DeviationReport, HostBaseline, HostObservation,
+    RunningStat, BASELINE_SCHEMA_VERSION,
 };
+pub use case::{run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator};
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::{
     fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,

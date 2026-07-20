@@ -774,6 +774,64 @@ impl BehaviorTracker {
         }
     }
 
+    /// Project this capture's per-internal-host egress behavior for Behavioral Baseline Learning.
+    ///
+    /// Aggregates every observed contact channel whose source is an *internal* host and whose
+    /// destination is *external* (the monitored network's egress): outbound/inbound bytes, contact
+    /// count, and the external peer / destination-port sets, keyed by internal host. This is both
+    /// the learn payload folded into a persisted baseline and the compare input diffed against it.
+    /// Bounded by the `params` caps and deterministic (sorted). Reads only already-bounded tracker
+    /// state — no packet re-read.
+    pub fn baseline_snapshot(
+        &self,
+        params: &crate::baseline::BaselineParams,
+    ) -> crate::baseline::CaptureProfile {
+        use crate::enrich::classify_ip;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        #[derive(Default)]
+        struct Acc {
+            bytes_out: u64,
+            bytes_in: u64,
+            flows: u64,
+            peers: BTreeSet<IpAddr>,
+            services: BTreeSet<u16>,
+        }
+        let mut hosts: BTreeMap<IpAddr, Acc> = BTreeMap::new();
+        for (key, series) in &self.channels {
+            // Egress only: internal source reaching an external destination.
+            if classify_ip(key.src).is_external() || !classify_ip(key.dst).is_external() {
+                continue;
+            }
+            let acc = hosts.entry(key.src).or_default();
+            acc.bytes_out = acc.bytes_out.saturating_add(series.bytes_out());
+            acc.bytes_in = acc.bytes_in.saturating_add(series.bytes_in());
+            acc.flows = acc.flows.saturating_add(series.contacts());
+            acc.peers.insert(key.dst);
+            acc.services.insert(key.dst_port);
+        }
+        let mut out: Vec<crate::baseline::HostObservation> = hosts
+            .into_iter()
+            .map(|(host, acc)| {
+                let mut peers: Vec<String> = acc.peers.iter().map(|p| p.to_string()).collect();
+                peers.truncate(params.top_k_peers);
+                let mut services: Vec<u16> = acc.services.iter().copied().collect();
+                services.truncate(params.top_k_services);
+                crate::baseline::HostObservation {
+                    host: host.to_string(),
+                    bytes_out: acc.bytes_out,
+                    bytes_in: acc.bytes_in,
+                    flows: acc.flows,
+                    peers,
+                    services,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| a.host.cmp(&b.host));
+        out.truncate(params.max_hosts);
+        crate::baseline::CaptureProfile { hosts: out }
+    }
+
     /// Fold one plaintext PII exposure: `src` sent PII (`kind`) to `dst:port` in the clear. Counts
     /// exposures per channel and keeps the first kind seen. Bounded: a brand-new channel at
     /// capacity is dropped.
@@ -3661,6 +3719,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::MalwareSignature => 4, // command-and-control (signature-matched payload)
         FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
         FindingKind::IcsControlCommand => 6,   // impact (manipulation of an industrial process)
+        FindingKind::BaselineDeviation => 4, // command-and-control (anomalous egress / drift; generic like RuleMatch)
     }
 }
 
@@ -3690,6 +3749,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::MalwareSignature => "Command & Control",
         FindingKind::ExposedRemoteAccess => "Lateral Movement",
         FindingKind::IcsControlCommand => "Impact",
+        FindingKind::BaselineDeviation => "Command & Control",
     }
 }
 
@@ -3719,6 +3779,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::MalwareSignature => "downloaded a file matching a malware signature",
         FindingKind::ExposedRemoteAccess => "exposed remote access across the perimeter",
         FindingKind::IcsControlCommand => "issued a control command to an industrial device",
+        FindingKind::BaselineDeviation => "deviated from its learned baseline",
     }
 }
 

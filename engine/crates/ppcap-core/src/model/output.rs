@@ -22,6 +22,12 @@ pub struct AnalysisOutput {
     pub summary: Summary,
     pub flows_parquet_path: Option<String>,
     pub elapsed_ms: u64,
+    /// Behavioral Baseline Learning: this capture's per-internal-host behavioral snapshot
+    /// (egress peers/ports/volumes), the learn payload folded into a persisted baseline sidecar.
+    /// `None` unless the baseline snapshot was requested. `#[serde(default)]` keeps older
+    /// summaries readable and leaves the default output shape unchanged when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<crate::baseline::CaptureProfile>,
 }
 
 impl AnalysisOutput {
@@ -48,6 +54,7 @@ impl Default for AnalysisOutput {
             summary: Summary::empty(),
             flows_parquet_path: None,
             elapsed_ms: 0,
+            baseline: None,
         }
     }
 }

@@ -69,6 +69,11 @@ pub enum FindingKind {
     /// (e.g. a Modbus write to a PLC). Unauthorized command message / manipulation of control
     /// (ATT&CK for ICS T0855 / T0831).
     IcsControlCommand,
+    /// Behavioral baseline deviation: an internal host did something it never did in its learned
+    /// per-host baseline (first-seen external peer / destination port / periodic channel, or an
+    /// outbound-volume spike well beyond its historical distribution). Behavior-relative-to-self,
+    /// not an absolute-threshold or feed hit. Appended last to keep existing variant ordinals stable.
+    BaselineDeviation,
 }
 
 impl FindingKind {
@@ -98,6 +103,7 @@ impl FindingKind {
             FindingKind::MalwareSignature => "malware_signature",
             FindingKind::ExposedRemoteAccess => "exposed_remote_access",
             FindingKind::IcsControlCommand => "ics_control_command",
+            FindingKind::BaselineDeviation => "baseline_deviation",
         }
     }
 }
