@@ -28,7 +28,8 @@ capture.pcap ──▶ streaming Rust engine ──▶ triage dashboard ──�
 - **Ingest** classic pcap (LE/BE, µs/ns) and pcapng (multi-interface), streaming with a fixed
   64 KiB buffer — peak heap stays bounded (~38 MiB) regardless of capture size.
 - **Decode** Ethernet/VLAN/SLL · IPv4/IPv6 · TCP/UDP/SCTP/ICMP, plus payload **L7 sniffing**
-  (HTTP / DNS / TLS) and **TLS SNI** extraction — never panics on malformed input.
+  (HTTP / DNS / TLS / **QUIC + HTTP-3**) and **TLS/QUIC SNI** extraction — keyless, never
+  panics on malformed input.
 - **Reconstruct** bidirectional 5-tuple flows; **classify** traffic (payload-aware, not just
   ports); **enrich** with IP classification + a local **IOC threat feed** + **MITRE ATT&CK**.
 - **Score** every flow with a transparent weighted **severity** (Critical/High/Medium/Low/Info)
@@ -140,6 +141,7 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 ## Features
 - Streaming, bounded-memory ingest (pcap + pcapng); chain-of-custody SHA-256.
 - L2–L4 decode + L7 (HTTP/DNS/TLS) + **TLS SNI**; payload-aware classification.
+- **Keyless QUIC / HTTP-3**: structural QUIC identification (v1 + v2, any long-header type, port-agnostic) with keyless Initial **SNI/JA4** extraction and **HTTP/3** detection via ALPN — encrypted-transport visibility without keys.
 - Bidirectional flow reconstruction; traffic taxonomy (web/dns/email/file/remote/voip/iot/tunnel/scan/c2/anomalous).
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact

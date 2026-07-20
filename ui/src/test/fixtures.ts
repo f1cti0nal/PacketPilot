@@ -38,7 +38,7 @@ export function makeOutput(overrides: Partial<AnalysisOutput> = {}): AnalysisOut
     summary: {
       total_packets: 40_000, total_bytes: 5_700_000, captured_bytes: 5_700_000,
       total_flows: 39_000, decode_errors: 0, non_ip_frames: 0,
-      proto: { tcp: 27_838, udp: 12_162, dns: 12_162, http: 11_922, tls: 15_836, other_tcp: 80, other_udp: 0, truncated: 0, non_ipv4: 0 },
+      proto: { tcp: 27_838, udp: 12_162, dns: 12_162, http: 11_922, tls: 15_836, quic: 0, other_tcp: 80, other_udp: 0, truncated: 0, non_ipv4: 0 },
       first_ts_ns: 1_700_000_000_000_000_000, last_ts_ns: 1_700_000_120_000_000_000, duration_ns: 120_000_000_000,
       unique_hosts: 96,
       top_talkers: [

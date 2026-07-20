@@ -456,6 +456,7 @@ impl StatsAccumulator {
             match app {
                 AppProto::Http => self.proto.http += f.total_pkts(),
                 AppProto::Tls => self.proto.tls += f.total_pkts(),
+                AppProto::Quic => self.proto.quic += f.total_pkts(),
                 AppProto::Dns => self.proto.dns += f.total_pkts(),
                 AppProto::OtherTcp => self.proto.other_tcp += f.total_pkts(),
                 AppProto::OtherUdp => self.proto.other_udp += f.total_pkts(),
@@ -1055,6 +1056,7 @@ impl StatsAccumulator {
 enum AppProto {
     Http,
     Tls,
+    Quic,
     Dns,
     OtherTcp,
     OtherUdp,
@@ -1065,6 +1067,7 @@ impl AppProto {
         match self {
             AppProto::Http => "http",
             AppProto::Tls => "https",
+            AppProto::Quic => "quic",
             AppProto::Dns => "dns",
             AppProto::OtherTcp => "other",
             AppProto::OtherUdp => "other",
@@ -1080,7 +1083,8 @@ impl AppProto {
 fn app_bucket_for_flow(app_proto: &str, transport: Transport) -> AppProto {
     match app_proto {
         "http" | "http-proxy" => AppProto::Http,
-        "https" | "tls" | "quic" => AppProto::Tls,
+        "https" | "tls" => AppProto::Tls,
+        "quic" | "http3" => AppProto::Quic,
         "dns" | "mdns" | "dot" => AppProto::Dns,
         _ if transport == Transport::Udp => AppProto::OtherUdp,
         _ => AppProto::OtherTcp,

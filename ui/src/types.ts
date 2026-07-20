@@ -10,6 +10,8 @@ export interface ProtoCounts {
   dns: number;
   http: number;
   tls: number;
+  /** QUIC / HTTP-3 flows (structurally identified; port-agnostic). */
+  quic: number;
   other_tcp: number;
   other_udp: number;
   truncated: number;

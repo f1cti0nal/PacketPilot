@@ -238,6 +238,21 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                     meta.ja3 = ja3;
                     meta.ja4 = ja4;
                 }
+                L7Hint::Quic {
+                    http3,
+                    sni,
+                    ja3,
+                    ja4,
+                } => {
+                    meta.app_proto = if http3 {
+                        AppProto::Http3
+                    } else {
+                        AppProto::Quic
+                    };
+                    meta.sni = sni;
+                    meta.ja3 = ja3;
+                    meta.ja4 = ja4;
+                }
             }
         }
         // Cleartext credential exposure: a second, payload-free sniff over the same peek. Sets
@@ -441,6 +456,17 @@ pub enum L7Hint {
     },
     /// A TLS ClientHello; `sni` is the Server Name Indication host if present.
     Tls {
+        sni: Option<String>,
+        ja3: Option<String>,
+        ja4: Option<String>,
+    },
+    /// A QUIC packet identified structurally (any recognized long-header type).
+    /// `http3` is true when a decryptable Initial ClientHello advertised the `h3`
+    /// ALPN. `sni`/`ja3`/`ja4` are populated only when an Initial was decryptable
+    /// (QUIC v1/v2); for non-Initial or undecryptable packets they are `None` and
+    /// the flow is still recognized as QUIC.
+    Quic {
+        http3: bool,
         sni: Option<String>,
         ja3: Option<String>,
         ja4: Option<String>,
@@ -652,41 +678,47 @@ pub fn l7_hint(
             });
         }
     }
-    // QUIC Initial (UDP long header): form-bit precheck before any crypto.
-    // A QUIC long header has both 0x80 (long) and 0x40 (fixed bit) set.
-    if transport == Transport::Udp && payload.first().is_some_and(|b| b & 0xC0 == 0xC0) {
-        if let Some(ch) = crate::quic::extract_initial_client_hello(payload) {
-            // `extract_initial_client_hello` returns raw handshake bytes (first byte 0x01).
-            // Both `fingerprint_tls_client_hello` and `sniff_tls_client_hello` expect a
-            // TLS record (first byte 0x16), so wrap the handshake in a minimal record header.
-            let mut record = Vec::with_capacity(5 + ch.len());
-            record.push(22u8); // content_type = handshake
-            record.extend_from_slice(&[0x03, 0x03]); // record version TLS 1.2
-            record.extend_from_slice(&(ch.len() as u16).to_be_bytes());
-            record.extend_from_slice(&ch);
-            if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(
-                &record,
-                crate::fingerprint::Ja4Transport::Quic,
-            ) {
-                return Some(L7Hint::Tls {
-                    sni: fp.sni,
-                    ja3: Some(fp.ja3),
-                    ja4: Some(fp.ja4),
-                });
+    // QUIC (UDP long header): structurally identify the packet first — this
+    // recognizes QUIC (v1/v2/draft, any long-header type) on ANY port, so a flow
+    // is labeled QUIC even when its Initial ClientHello isn't the captured packet.
+    // When the packet IS a decryptable Initial, recover SNI/JA4 and the ALPN (to
+    // distinguish HTTP/3) keylessly.
+    if transport == Transport::Udp {
+        if let Some(info) = crate::quic::identify_quic(payload) {
+            let mut sni = None;
+            let mut ja3 = None;
+            let mut ja4 = None;
+            let mut http3 = false;
+            if info.kind == Some(crate::quic::QuicLongKind::Initial) {
+                if let Some(ch) = crate::quic::extract_initial_client_hello(payload) {
+                    // `extract_initial_client_hello` returns raw handshake bytes (first byte
+                    // 0x01); `fingerprint_tls_client_hello` expects a TLS record (0x16), so
+                    // wrap the handshake in a minimal record header.
+                    let mut record = Vec::with_capacity(5 + ch.len());
+                    record.push(22u8); // content_type = handshake
+                    record.extend_from_slice(&[0x03, 0x03]); // record version TLS 1.2
+                    record.extend_from_slice(&(ch.len() as u16).to_be_bytes());
+                    record.extend_from_slice(&ch);
+                    if let Some(fp) = crate::fingerprint::fingerprint_tls_client_hello(
+                        &record,
+                        crate::fingerprint::Ja4Transport::Quic,
+                    ) {
+                        // HTTP/3 is signalled by an "h3" ALPN entry (final RFC value; the
+                        // "h3-NN" drafts also start with "h3").
+                        http3 = fp.alpn.iter().any(|a| a == "h3" || a.starts_with("h3-"));
+                        sni = fp.sni;
+                        ja3 = Some(fp.ja3);
+                        ja4 = Some(fp.ja4);
+                    } else if let Some(s) = sniff_tls_client_hello(&record) {
+                        sni = s;
+                    }
+                }
             }
-            // Fallback: plain SNI extraction (no fingerprints).
-            if let Some(sni) = sniff_tls_client_hello(&record) {
-                return Some(L7Hint::Tls {
-                    sni,
-                    ja3: None,
-                    ja4: None,
-                });
-            }
-            // At minimum we know this was a QUIC Initial -> TLS.
-            return Some(L7Hint::Tls {
-                sni: None,
-                ja3: None,
-                ja4: None,
+            return Some(L7Hint::Quic {
+                http3,
+                sni,
+                ja3,
+                ja4,
             });
         }
     }
@@ -2590,7 +2622,12 @@ mod tests {
         let quic_payload = rfc9001_a2_udp_payload();
         let pkt = ipv4_udp_frame(12345, 443, &quic_payload);
         let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
-        assert_eq!(m.app_proto, AppProto::Tls);
+        // QUIC is now labeled distinctly (quic/http3), not folded into tls.
+        assert!(
+            matches!(m.app_proto, AppProto::Quic | AppProto::Http3),
+            "QUIC Initial must be labeled quic/http3, got {:?}",
+            m.app_proto
+        );
         assert_eq!(
             m.sni.as_deref(),
             Some("example.com"),
@@ -2611,6 +2648,38 @@ mod tests {
             "QUIC JA4 must start with 'q', got: {:?}",
             m.ja4
         );
+    }
+
+    /// A QUIC v2 (RFC 9369) Initial advertising the `h3` ALPN on a NON-standard
+    /// UDP port → recognized as HTTP/3 (keyless), regardless of port, with SNI +
+    /// QUIC JA4. Proves the v2 path + ALPN-based HTTP/3 labeling end to end.
+    #[test]
+    fn decode_quic_v2_http3_on_nonstandard_port() {
+        let dcid = [0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
+        let ch = crate::quic::testkit::client_hello("h3.example.org", &["h3"]);
+        let quic = crate::quic::testkit::protected_initial(0x6b33_43cf, &dcid, &ch);
+        // Deliberately NOT port 443 — identification is structural, not port-based.
+        let pkt = ipv4_udp_frame(40000, 8443, &quic);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Http3, "h3 ALPN must yield HTTP/3");
+        assert_eq!(m.sni.as_deref(), Some("h3.example.org"));
+        assert!(
+            m.ja4.as_deref().unwrap().starts_with('q'),
+            "QUIC JA4 'q' prefix"
+        );
+    }
+
+    /// A QUIC v1 Initial with no `h3` ALPN → labeled bare `quic` (still first-class),
+    /// not folded into `tls`.
+    #[test]
+    fn decode_quic_v1_without_h3_is_quic() {
+        let dcid = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let ch = crate::quic::testkit::client_hello("plain.example", &["hq-interop"]);
+        let quic = crate::quic::testkit::protected_initial(0x0000_0001, &dcid, &ch);
+        let pkt = ipv4_udp_frame(50000, 443, &quic);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &pkt)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Quic, "no h3 ALPN → bare quic");
+        assert_eq!(m.sni.as_deref(), Some("plain.example"));
     }
 
     /// Non-QUIC UDP payload (a DNS query) on :443 → sni unchanged (None), no panic.

@@ -22,6 +22,10 @@ pub struct ProtoCounts {
     pub dns: u64,
     pub http: u64,
     pub tls: u64,
+    /// QUIC / HTTP-3 flows (structurally identified; port-agnostic). `serde(default)`
+    /// so summaries serialized before this field existed still deserialize (→ 0).
+    #[serde(default)]
+    pub quic: u64,
     pub other_tcp: u64,
     pub other_udp: u64,
     /// Decode-truncated frames.

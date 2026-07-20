@@ -90,6 +90,7 @@ export function protoSegments(proto: ProtoCounts): ProtoSeg[] {
   const violet = cssVar("--color-spine-violet", "#7c5cff");
   const defs: { key: keyof ProtoCounts; label: string; color: string }[] = [
     { key: "tls", label: "TLS", color: accent },
+    { key: "quic", label: "QUIC / HTTP-3", color: cssVar("--color-spine-cyan", "#22d3ee") },
     { key: "http", label: "HTTP", color: amber },
     { key: "other_tcp", label: "Other TCP", color: cssVar("--color-accent-strong", "#beb2ff") },
     { key: "dns", label: "DNS", color: teal },
