@@ -443,6 +443,18 @@ pub struct CleartextCredCandidate {
     pub exposures: u64,
 }
 
+/// A `(client, plc, port)` channel over which OT/ICS write-control commands were issued.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtControlCandidate {
+    pub client: IpAddr,
+    pub plc: IpAddr,
+    pub port: u16,
+    /// Distinct Modbus write/control function codes seen, ascending.
+    pub funcs: Vec<u8>,
+    /// Total write/control commands on this channel.
+    pub commands: u64,
+}
+
 /// A `(source, dst, dst_port)` channel that transmitted plaintext PII.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PiiCandidate {
@@ -652,6 +664,19 @@ pub struct BehaviorTracker {
     disguised_dl: HashMap<(IpAddr, IpAddr), DisguisedDlStat>,
     /// Per-`(miner, pool)` cleartext Stratum (mining) message tallies. Bounded by `max_tracked_keys`.
     mining: HashMap<(IpAddr, IpAddr), StratumStat>,
+    /// Per-`(client, plc, port)` OT/ICS write-control commands: the set of Modbus function
+    /// codes issued and the total command count. Bounded by `max_tracked_keys`.
+    ot_control: HashMap<(IpAddr, IpAddr, u16), OtControlStat>,
+}
+
+/// Per-`(client, plc, port)` OT/ICS control statistics: which write function codes were issued
+/// and how many commands total.
+#[derive(Debug, Clone, Default)]
+struct OtControlStat {
+    /// Distinct Modbus write/control function codes seen (bounded — at most a handful exist).
+    funcs: std::collections::BTreeSet<u8>,
+    /// Total write/control commands observed on this channel.
+    commands: u64,
 }
 
 /// Per-`(miner, pool)` Stratum statistics: how many miner-side and pool-side messages were seen. A
@@ -745,6 +770,7 @@ impl BehaviorTracker {
             tool_ua: HashMap::new(),
             disguised_dl: HashMap::new(),
             mining: HashMap::new(),
+            ot_control: HashMap::new(),
         }
     }
 
@@ -776,6 +802,21 @@ impl BehaviorTracker {
         }
         let e = self.creds.entry(key).or_insert((scheme, 0));
         e.1 += 1;
+    }
+
+    /// Fold one OT/ICS write/control command: `client` issued Modbus function `func` to
+    /// `plc:port`. Counts commands and records the distinct function codes per channel.
+    /// Bounded: a brand-new channel at capacity is dropped.
+    pub fn observe_ot_control(&mut self, client: IpAddr, plc: IpAddr, port: u16, func: u8) {
+        let key = (client, plc, port);
+        if !self.ot_control.contains_key(&key)
+            && self.ot_control.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        let e = self.ot_control.entry(key).or_default();
+        e.funcs.insert(func);
+        e.commands += 1;
     }
 
     /// Fold one server TLS certificate observation: `client` reached `server:port` and the server
@@ -1538,6 +1579,31 @@ impl BehaviorTracker {
                 .then(a.src.cmp(&b.src))
                 .then(a.dst.cmp(&b.dst))
                 .then(a.dst_port.cmp(&b.dst_port))
+        });
+        out
+    }
+
+    /// All `(client, plc, port)` channels that issued at least `min_commands` OT/ICS write-control
+    /// commands. Returned strongest (most commands) first, then by channel for determinism.
+    pub fn ot_control_candidates(&self, min_commands: u64) -> Vec<OtControlCandidate> {
+        let mut out: Vec<OtControlCandidate> = self
+            .ot_control
+            .iter()
+            .filter(|(_, s)| s.commands >= min_commands)
+            .map(|(&(client, plc, port), s)| OtControlCandidate {
+                client,
+                plc,
+                port,
+                funcs: s.funcs.iter().copied().collect(),
+                commands: s.commands,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.commands
+                .cmp(&a.commands)
+                .then(a.client.cmp(&b.client))
+                .then(a.plc.cmp(&b.plc))
+                .then(a.port.cmp(&b.port))
         });
         out
     }
@@ -3594,6 +3660,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::MalwareDownload => 4, // command-and-control (confirmed malware delivery)
         FindingKind::MalwareSignature => 4, // command-and-control (signature-matched payload)
         FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
+        FindingKind::IcsControlCommand => 6,   // impact (manipulation of an industrial process)
     }
 }
 
@@ -3622,6 +3689,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::MalwareDownload => "Command & Control",
         FindingKind::MalwareSignature => "Command & Control",
         FindingKind::ExposedRemoteAccess => "Lateral Movement",
+        FindingKind::IcsControlCommand => "Impact",
     }
 }
 
@@ -3650,6 +3718,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::MalwareDownload => "downloaded a known-malicious file",
         FindingKind::MalwareSignature => "downloaded a file matching a malware signature",
         FindingKind::ExposedRemoteAccess => "exposed remote access across the perimeter",
+        FindingKind::IcsControlCommand => "issued a control command to an industrial device",
     }
 }
 
@@ -4428,6 +4497,83 @@ fn build_chain<'a>(
     }
 }
 
+/// Tuning for OT/ICS control-command detection.
+#[derive(Debug, Clone)]
+pub struct IcsControlParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Minimum write/control commands on a `(client, plc, port)` channel before it is reported.
+    /// A single write to a PLC is already noteworthy, so the default is 1.
+    pub min_commands: u64,
+}
+
+impl Default for IcsControlParams {
+    fn default() -> Self {
+        IcsControlParams {
+            enabled: true,
+            min_commands: 1,
+        }
+    }
+}
+
+/// Detect OT/ICS control commands from the behavioral tracker: one [`Finding`] per
+/// `(client, plc, port)` channel over which write/control functions were issued to an
+/// industrial device (Modbus write coil/register, mask-write, read/write-multiple). This is
+/// the "who is writing to the PLC?" signal — ATT&CK for ICS T0855 (Unauthorized Command
+/// Message) / T0831 (Manipulation of Control). Medium severity (a legitimate HMI also writes;
+/// the value is visibility). Deterministic order.
+pub fn detect_ics_control(tracker: &BehaviorTracker, params: &IcsControlParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.ot_control_candidates(params.min_commands) {
+        let fns: Vec<&str> = c
+            .funcs
+            .iter()
+            .map(|&f| crate::decode::modbus_fn_label(f))
+            .collect();
+        let plural = if c.commands == 1 { "" } else { "s" };
+        findings.push(Finding {
+            kind: FindingKind::IcsControlCommand,
+            severity: Severity::Medium,
+            score: 55,
+            title: format!(
+                "OT/ICS control command: {} → PLC {}:{} (Modbus {})",
+                c.client,
+                c.plc,
+                c.port,
+                fns.join(", ")
+            ),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.plc.to_string()),
+            dst_port: Some(c.port),
+            // ATT&CK for ICS: Unauthorized Command Message + Manipulation of Control.
+            attack: vec!["T0855".to_string(), "T0831".to_string()],
+            evidence: vec![
+                format!(
+                    "{} write/control command{} issued to industrial device {}:{}",
+                    c.commands, plural, c.plc, c.port
+                ),
+                format!("Modbus function(s): {}", fns.join(", ")),
+                "confirm the client is an authorized HMI/engineering workstation".to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: Some(c.commands),
+            // The behavioral OT-control tracker folds command counts + function codes, not
+            // timestamps, so this finding is untimed; attack-chain reconstruction still joins it
+            // to the PLC's story via the victim below.
+            first_seen_ns: None,
+            last_seen_ns: None,
+            // The PLC being written to is the victim, letting the actor->victim identity join in
+            // attack-chain reconstruction attach this control command to the device's timeline.
+            victims: vec![c.plc.to_string()],
+        });
+    }
+    findings
+}
+
 /// Fold post-hoc rule-match findings into a built [`Summary`]: uplift the implicated IP threat
 /// cards, append the findings, and re-correlate incidents + attack chains so the matches join their
 /// host's story. Re-running over `summary.findings` reproduces the original output plus the rule
@@ -4451,6 +4597,41 @@ mod tests {
     /// Absolute-tolerance float compare for the statistical assertions.
     fn approx(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "expected ~{b}, got {a}");
+    }
+
+    #[test]
+    fn ics_control_detects_plc_writes() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let client = ip(10, 0, 0, 5);
+        let plc = ip(10, 0, 0, 20);
+        // Two write-single-register (0x06) and one write-multiple (0x10) to the PLC.
+        t.observe_ot_control(client, plc, 502, 0x06);
+        t.observe_ot_control(client, plc, 502, 0x06);
+        t.observe_ot_control(client, plc, 502, 0x10);
+
+        let cands = t.ot_control_candidates(1);
+        assert_eq!(cands.len(), 1);
+        assert_eq!(cands[0].commands, 3);
+        assert_eq!(cands[0].funcs, vec![0x06, 0x10]); // distinct, ascending
+
+        let findings = detect_ics_control(&t, &IcsControlParams::default());
+        assert_eq!(findings.len(), 1);
+        let f = &findings[0];
+        assert_eq!(f.kind, FindingKind::IcsControlCommand);
+        assert_eq!(f.src_ip, "10.0.0.5");
+        assert_eq!(f.dst_ip.as_deref(), Some("10.0.0.20"));
+        assert!(f.attack.contains(&"T0855".to_string()));
+        assert_eq!(f.contacts, Some(3));
+
+        // Disabled → nothing.
+        assert!(detect_ics_control(
+            &t,
+            &IcsControlParams {
+                enabled: false,
+                ..Default::default()
+            }
+        )
+        .is_empty());
     }
 
     #[test]

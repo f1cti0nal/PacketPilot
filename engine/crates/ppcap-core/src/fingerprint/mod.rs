@@ -97,6 +97,9 @@ pub struct TlsFingerprints {
     pub ja4: String,
     /// Server Name Indication extracted from the ClientHello (if present).
     pub sni: Option<String>,
+    /// ALPN protocol IDs offered by the client, in wire order (e.g. `["h3"]` for
+    /// HTTP/3 over QUIC, `["h2","http/1.1"]` for TLS-over-TCP). Empty when absent.
+    pub alpn: Vec<String>,
 }
 
 // ── GREASE filter ─────────────────────────────────────────────────────────────
@@ -173,6 +176,7 @@ pub fn fingerprint_tls_client_hello(
     let mut curves: Vec<u16> = Vec::new();
     let mut ec_point_formats: Vec<u8> = Vec::new();
     let mut alpn_first: Option<String> = None;
+    let mut alpn_list: Vec<String> = Vec::new();
     let mut sig_algs: Vec<u16> = Vec::new();
     let mut supported_versions: Vec<u16> = Vec::new();
 
@@ -202,7 +206,10 @@ pub fn fingerprint_tls_client_hello(
                     .collect()
             }
             0x000b => ec_point_formats = parse_u8_list(data),
-            0x0010 => alpn_first = parse_first_alpn(data),
+            0x0010 => {
+                alpn_list = parse_alpn_list(data);
+                alpn_first = alpn_list.first().cloned();
+            }
             0x000d => sig_algs = parse_u16_list(data),
             // supported_versions (0x002b): RFC 8446 §4.2.1 — the ClientHello body uses a
             // 1-byte length prefix (versions<2..254>) followed by u16 version pairs.
@@ -225,7 +232,12 @@ pub fn fingerprint_tls_client_hello(
         sni.is_some(),
         alpn_first.as_deref(),
     );
-    Some(TlsFingerprints { ja3, ja4, sni })
+    Some(TlsFingerprints {
+        ja3,
+        ja4,
+        sni,
+        alpn: alpn_list,
+    })
 }
 
 // ── JA3 builder ───────────────────────────────────────────────────────────────
@@ -452,16 +464,26 @@ fn parse_u8_list(data: &[u8]) -> Vec<u8> {
 
 /// Parse the ALPN extension (0x0010) and return the first protocol string.
 /// Wire format: u16 total-list-length, then entries of u8-length + bytes.
-fn parse_first_alpn(data: &[u8]) -> Option<String> {
-    if data.len() < 2 {
-        return None;
+/// Parse every ALPN protocol ID from an ALPN extension body (RFC 7301): a 2-byte
+/// outer list length, then a sequence of `len(1) + bytes` entries. Non-UTF-8
+/// entries are skipped. Bounded + panic-free.
+fn parse_alpn_list(data: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    // Skip the 2-byte outer ProtocolNameList length; entries start at offset 2.
+    let mut pos = 2usize;
+    while pos < data.len() {
+        let proto_len = data[pos] as usize;
+        let start = pos + 1;
+        let end = match start.checked_add(proto_len) {
+            Some(e) if e <= data.len() => e,
+            _ => break,
+        };
+        if let Ok(s) = std::str::from_utf8(&data[start..end]) {
+            out.push(s.to_string());
+        }
+        pos = end;
     }
-    // Skip the 2-byte outer list length; first entry starts at offset 2.
-    let proto_len = *data.get(2)? as usize;
-    let proto_start = 3usize;
-    let proto_end = proto_start.checked_add(proto_len)?;
-    let bytes = data.get(proto_start..proto_end)?;
-    std::str::from_utf8(bytes).ok().map(|s| s.to_string())
+    out
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

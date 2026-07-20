@@ -103,6 +103,21 @@ pub enum AppProto {
     Dns,
     Http,
     Tls,
+    /// QUIC transport identified structurally (any recognized long-header packet),
+    /// where HTTP/3 could not be confirmed via ALPN.
+    Quic,
+    /// HTTP/3 — QUIC whose Initial ClientHello advertised the `h3` ALPN.
+    Http3,
+    /// Modbus/TCP (MBAP framing) — industrial control.
+    Modbus,
+    /// DNP3 (0x0564 link layer) — SCADA.
+    Dnp3,
+    /// Siemens S7comm (TPKT/COTP + S7 0x32).
+    S7comm,
+    /// BACnet/IP (BVLC 0x81) — building automation.
+    Bacnet,
+    /// EtherNet/IP + CIP (encapsulation header).
+    EnipCip,
 }
 
 impl AppProto {
@@ -114,7 +129,26 @@ impl AppProto {
             AppProto::Dns => "dns",
             AppProto::Http => "http",
             AppProto::Tls => "tls",
+            AppProto::Quic => "quic",
+            AppProto::Http3 => "http3",
+            AppProto::Modbus => "modbus",
+            AppProto::Dnp3 => "dnp3",
+            AppProto::S7comm => "s7comm",
+            AppProto::Bacnet => "bacnet",
+            AppProto::EnipCip => "ethernet-ip",
         }
+    }
+
+    /// True for the industrial (OT/ICS) protocols identified structurally.
+    pub fn is_ot(self) -> bool {
+        matches!(
+            self,
+            AppProto::Modbus
+                | AppProto::Dnp3
+                | AppProto::S7comm
+                | AppProto::Bacnet
+                | AppProto::EnipCip
+        )
     }
 
     /// True for any concrete payload-observed protocol; `Unknown` is the empty hint.
@@ -122,14 +156,25 @@ impl AppProto {
         !matches!(self, AppProto::Unknown)
     }
 
-    /// Specificity rank for flow aggregation: structural payload matches (Http/Tls) outrank
-    /// a port-only match (Dns), which outranks Unknown. Keeps the most-specific hint seen.
+    /// Specificity rank for flow aggregation: structural payload matches (Http/Tls/Quic/Http3)
+    /// outrank a port-only match (Dns), which outranks Unknown. Keeps the most-specific hint
+    /// seen. QUIC identification is structural and version-checked, so it outranks a coincidental
+    /// TLS sniff; HTTP/3 (ALPN-confirmed) outranks bare QUIC so an early Initial's verdict sticks.
     pub fn rank(self) -> u8 {
         match self {
             AppProto::Unknown => 0,
             AppProto::Dns => 1,
             AppProto::Http => 2,
             AppProto::Tls => 2,
+            AppProto::Quic => 3,
+            AppProto::Http3 => 4,
+            // OT protocols are structurally framed (length-validated) — highly specific,
+            // so they outrank a coincidental TLS/HTTP sniff on the same flow.
+            AppProto::Modbus
+            | AppProto::Dnp3
+            | AppProto::S7comm
+            | AppProto::Bacnet
+            | AppProto::EnipCip => 3,
         }
     }
 }
@@ -360,6 +405,12 @@ pub struct PacketMeta {
     /// Passive host identity from a DHCP message (client MAC + hostname/vendor class); `None` for
     /// non-DHCP packets. Folded into the per-MAC identity rollup, then dropped.
     pub dhcp: Option<DhcpInfo>,
+    /// Set to the Modbus function code when the packet is an OT/ICS **write/control** command
+    /// (write coil/register, mask-write, read-write-multiple) to an industrial device; `None`
+    /// otherwise. Folds into the ICS control-command detection. `serde(default)` keeps older
+    /// serialized `PacketMeta` readable.
+    #[serde(default)]
+    pub ot_control: Option<u8>,
 }
 
 impl PacketMeta {

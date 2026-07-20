@@ -457,6 +457,7 @@ mod tests {
             download_disguised: false,
             stratum: None,
             dhcp: None,
+            ot_control: None,
         }
     }
 

@@ -19,13 +19,13 @@ use crate::detect::{
     contact_from_flow, correlate_incidents, detect_arp_spoof, detect_beacons, detect_brute_force,
     detect_cleartext_creds, detect_cryptomining, detect_dga, detect_disguised_download,
     detect_dns_tunnel, detect_exfil, detect_exposed_remote_access, detect_icmp_tunnel,
-    detect_lateral_movement, detect_pii_exposure, detect_port_scan, detect_suspicious_ua,
-    detect_sweeps, detect_syn_flood, detect_tls_cert_health, detect_weak_tls,
+    detect_ics_control, detect_lateral_movement, detect_pii_exposure, detect_port_scan,
+    detect_suspicious_ua, detect_sweeps, detect_syn_flood, detect_tls_cert_health, detect_weak_tls,
     reconstruct_attack_chains, suppress_swept_by_lateral, ArpSpoofParams, BeaconParams,
     BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams, DetectConfig,
     DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams, ExposedRemoteAccessParams,
-    IcmpTunnelParams, LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams,
-    SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
+    IcmpTunnelParams, IcsControlParams, LateralMovementParams, PiiExposureParams, PortScanParams,
+    SuspiciousUaParams, SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
@@ -99,6 +99,8 @@ pub struct PipelineConfig {
     pub cryptomining: CryptominingParams,
     /// Exposed-remote-access (boundary-crossing remote-admin session) detector tuning.
     pub exposed_remote_access: ExposedRemoteAccessParams,
+    /// OT/ICS control-command (write-to-PLC) detector tuning.
+    pub ics_control: IcsControlParams,
 }
 
 impl Default for PipelineConfig {
@@ -138,6 +140,7 @@ impl Default for PipelineConfig {
             disguised_download: DisguisedDownloadParams::default(),
             cryptomining: CryptominingParams::default(),
             exposed_remote_access: ExposedRemoteAccessParams::default(),
+            ics_control: IcsControlParams::default(),
         }
     }
 }
@@ -359,6 +362,12 @@ pub fn run_source_visiting<'a>(
                 {
                     tracker.observe_stratum(role, src, dst);
                 }
+                // OT/ICS control command: a Modbus write/control to a PLC (client -> dst:port).
+                if let (Some(func), Some(src), Some(dst)) =
+                    (meta.ot_control, meta.src_ip, meta.dst_ip)
+                {
+                    tracker.observe_ot_control(src, dst, meta.dst_port, func);
+                }
             }
             Err(e) if !cfg.strict_decode && !e.is_fatal() => {
                 // Lenient mode: a frame that had a valid record header but could not be dissected
@@ -466,6 +475,7 @@ pub fn run_source_visiting<'a>(
     findings.extend(detect_suspicious_ua(&tracker, &cfg.suspicious_ua));
     findings.extend(detect_disguised_download(&tracker, &cfg.disguised_download));
     findings.extend(detect_cryptomining(&tracker, &cfg.cryptomining));
+    findings.extend(detect_ics_control(&tracker, &cfg.ics_control));
     // Carved HTTP files: surface each download's SHA-256 (IOC) and raise a finding for any whose
     // hash is in the embedded known-bad set.
     let carved = body_carver.into_results();

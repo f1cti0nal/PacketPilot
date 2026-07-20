@@ -120,6 +120,7 @@ fn observe_folds_fwd_and_rev() {
         download_disguised: false,
         stratum: None,
         dhcp: None,
+        ot_control: None,
     };
     let mut rev = fwd.clone();
     rev.ts_ns = 900;
@@ -202,6 +203,7 @@ fn mk(
         download_disguised: false,
         stratum: None,
         dhcp: None,
+        ot_control: None,
     }
 }
 

@@ -65,6 +65,10 @@ pub enum FindingKind {
     /// Exposed remote access: an established remote-administration session (RDP/VNC/SMB/WinRM/SSH/
     /// Telnet) crossing the internal↔external boundary — external remote services / pivot (T1133).
     ExposedRemoteAccess,
+    /// OT/ICS control command: a client issued a write/control function to an industrial device
+    /// (e.g. a Modbus write to a PLC). Unauthorized command message / manipulation of control
+    /// (ATT&CK for ICS T0855 / T0831).
+    IcsControlCommand,
 }
 
 impl FindingKind {
@@ -93,6 +97,7 @@ impl FindingKind {
             FindingKind::MalwareDownload => "malware_download",
             FindingKind::MalwareSignature => "malware_signature",
             FindingKind::ExposedRemoteAccess => "exposed_remote_access",
+            FindingKind::IcsControlCommand => "ics_control_command",
         }
     }
 }

@@ -28,7 +28,8 @@ capture.pcap ──▶ streaming Rust engine ──▶ triage dashboard ──�
 - **Ingest** classic pcap (LE/BE, µs/ns) and pcapng (multi-interface), streaming with a fixed
   64 KiB buffer — peak heap stays bounded (~38 MiB) regardless of capture size.
 - **Decode** Ethernet/VLAN/SLL · IPv4/IPv6 · TCP/UDP/SCTP/ICMP, plus payload **L7 sniffing**
-  (HTTP / DNS / TLS) and **TLS SNI** extraction — never panics on malformed input.
+  (HTTP / DNS / TLS / **QUIC + HTTP-3**) and **TLS/QUIC SNI** extraction — keyless, never
+  panics on malformed input.
 - **Reconstruct** bidirectional 5-tuple flows; **classify** traffic (payload-aware, not just
   ports); **enrich** with IP classification + a local **IOC threat feed** + **MITRE ATT&CK**.
 - **Score** every flow with a transparent weighted **severity** (Critical/High/Medium/Low/Info)
@@ -105,6 +106,10 @@ cargo run -p ppcap-cli --release -- rescan sample.index.json --threat-feed updat
 # pseudonymizes IP/MAC, redacts DNS/HTTP/SNI/credentials, recomputes checksums)
 cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.pcap
 ```
+
+OT/ICS captures (Modbus / DNP3 / S7comm / BACnet / EtherNet-IP) are identified from packet
+structure — even on non-standard ports — and land in the **IoT/OT** category and the
+`ip.<l4>.ot` protocol-hierarchy node.
 The HTML report is self-contained — open it in any browser and **print to PDF**.
 
 ### Desktop app — `cd ui`
@@ -140,7 +145,12 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 ## Features
 - Streaming, bounded-memory ingest (pcap + pcapng); chain-of-custody SHA-256.
 - L2–L4 decode + L7 (HTTP/DNS/TLS) + **TLS SNI**; payload-aware classification.
+- **Keyless QUIC / HTTP-3**: structural QUIC identification (v1 + v2, any long-header type, port-agnostic) with keyless Initial **SNI/JA4** extraction and **HTTP/3** detection via ALPN — encrypted-transport visibility without keys.
 - Bidirectional flow reconstruction; traffic taxonomy (web/dns/email/file/remote/voip/iot/tunnel/scan/c2/anomalous).
+- **OT/ICS protocol triage** — payload-based, length-validated identification of Modbus/TCP, DNP3,
+  S7comm, BACnet/IP, and EtherNet/IP-CIP (recognized on non-standard ports, not just by port), so
+  industrial traffic surfaces in the IoT/OT category and protocol hierarchy. Modbus **write/control
+  commands to a PLC** raise an explainable *ICS control command* finding (ATT&CK for ICS T0855/T0831).
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
