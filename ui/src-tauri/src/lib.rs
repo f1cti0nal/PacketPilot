@@ -28,6 +28,9 @@ fn analyze_capture(path: String) -> Result<AnalyzeDto, String> {
     let cfg = PipelineConfig {
         flows_parquet: Some(tmp.clone()),
         hash_source: true,
+        // Attach the per-host behavioral-baseline snapshot so the desktop app's Baseline tab can
+        // learn/compare (parity with the browser build's wasm `analyze`).
+        update_baseline: true,
         ..Default::default()
     };
 
