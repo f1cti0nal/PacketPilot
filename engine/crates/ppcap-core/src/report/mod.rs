@@ -618,6 +618,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::MalwareDownload => "Malware Download",
         FindingKind::MalwareSignature => "Malware Signature",
         FindingKind::ExposedRemoteAccess => "Exposed Remote Access",
+        FindingKind::IcsControlCommand => "ICS Control Command",
     }
 }
 

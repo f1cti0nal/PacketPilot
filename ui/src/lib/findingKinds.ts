@@ -10,6 +10,7 @@ import {
   ScreenShare,
   Unlock,
   Crosshair,
+  Factory,
   Fingerprint,
   FileWarning,
   FileSearch,
@@ -59,6 +60,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   malware_download: { label: "Malware Download", Icon: FileWarning },
   malware_signature: { label: "Malware Signature", Icon: FileSearch },
   exposed_remote_access: { label: "Exposed Remote Access", Icon: ScreenShare },
+  ics_control_command: { label: "ICS Control", Icon: Factory },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 

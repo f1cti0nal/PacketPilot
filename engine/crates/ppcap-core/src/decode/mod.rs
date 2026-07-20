@@ -83,6 +83,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         download_disguised: false,
         stratum: None,
         dhcp: None,
+        ot_control: None,
     };
 
     // 2. Branch on the link type to obtain (ethertype-or-equivalent, L3 slice).
@@ -253,8 +254,9 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                     meta.ja3 = ja3;
                     meta.ja4 = ja4;
                 }
-                L7Hint::Ot { app } => {
+                L7Hint::Ot { app, control_fn } => {
                     meta.app_proto = app;
+                    meta.ot_control = control_fn;
                 }
             }
         }
@@ -475,8 +477,12 @@ pub enum L7Hint {
         ja4: Option<String>,
     },
     /// An OT/ICS industrial protocol identified structurally (Modbus/DNP3/S7comm/
-    /// BACnet/EtherNet-IP). `app` is the specific protocol.
-    Ot { app: AppProto },
+    /// BACnet/EtherNet-IP). `app` is the specific protocol; `control_fn` is the Modbus
+    /// function code when the packet is a write/control command (else `None`).
+    Ot {
+        app: AppProto,
+        control_fn: Option<u8>,
+    },
 }
 
 /// True if either endpoint is the well-known DNS port (53).
@@ -731,7 +737,17 @@ pub fn l7_hint(
     // OT/ICS industrial protocols: structural, length-validated framing so they're
     // recognized regardless of port (OT gear is often on non-standard ports).
     if let Some(app) = sniff_ot(transport, src_port, dst_port, payload) {
-        return Some(L7Hint::Ot { app });
+        // For Modbus, additionally surface write/control function codes (the ICS
+        // control-command signal). A Modbus request travels TO port 502; gating on
+        // dst_port == 502 isolates the client→PLC request direction (responses echo the
+        // same function code FROM 502, so this also avoids double-counting). Other OT
+        // protocols: identification only for now.
+        let control_fn = if app == AppProto::Modbus && dst_port == 502 {
+            modbus_control_fn(payload)
+        } else {
+            None
+        };
+        return Some(L7Hint::Ot { app, control_fn });
     }
     // DNS is matched on port for both UDP and TCP.
     if (transport == Transport::Udp || transport == Transport::Tcp)
@@ -803,6 +819,30 @@ pub fn sniff_ot(
             sniff_enip(payload)
         }
         _ => None,
+    }
+}
+
+/// If a Modbus/TCP payload (already MBAP-validated by [`sniff_ot`]) is a **write/control**
+/// request, return its function code. Write/control functions per the Modbus spec:
+/// 0x05 write-single-coil, 0x06 write-single-register, 0x0F write-multiple-coils,
+/// 0x10 write-multiple-registers, 0x16 mask-write-register, 0x17 read/write-multiple. These
+/// change PLC state (vs. the read functions 0x01–0x04 which don't). Function-code exception
+/// replies (bit 0x80 set) are not commands and are ignored. Returns `None` for reads/other.
+pub fn modbus_control_fn(payload: &[u8]) -> Option<u8> {
+    let func = *payload.get(7)?;
+    matches!(func, 0x05 | 0x06 | 0x0F | 0x10 | 0x16 | 0x17).then_some(func)
+}
+
+/// A human label for a Modbus write/control function code (evidence text).
+pub fn modbus_fn_label(func: u8) -> &'static str {
+    match func {
+        0x05 => "write single coil",
+        0x06 => "write single register",
+        0x0F => "write multiple coils",
+        0x10 => "write multiple registers",
+        0x16 => "mask write register",
+        0x17 => "read/write multiple registers",
+        _ => "write/control",
     }
 }
 
@@ -1567,6 +1607,7 @@ mod tests {
             download_disguised: false,
             stratum: None,
             dhcp: None,
+            ot_control: None,
         }
     }
 
@@ -2880,6 +2921,57 @@ mod tests {
         assert_eq!(
             sniff_ot(Transport::Udp, 1, 2, &[0x81, 0x0a, 0xff, 0xff, 0x00]),
             None
+        );
+    }
+
+    #[test]
+    fn modbus_control_fn_flags_writes_only() {
+        // Read holding registers (0x03) is NOT a control command.
+        let read = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0a,
+        ];
+        assert_eq!(modbus_control_fn(&read), None);
+        // Write single register (0x06) IS a control command.
+        let write = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x06, 0x00, 0x01, 0x00, 0xff,
+        ];
+        assert_eq!(modbus_control_fn(&write), Some(0x06));
+        // Write multiple coils (0x0F) and mask-write (0x16) too.
+        let mut wm = write;
+        wm[7] = 0x0F;
+        assert_eq!(modbus_control_fn(&wm), Some(0x0F));
+        wm[7] = 0x16;
+        assert_eq!(modbus_control_fn(&wm), Some(0x16));
+    }
+
+    /// A Modbus WRITE request to port 502 sets the control-command signal; a READ does not,
+    /// and a write *response* (from 502) does not (only requests to 502 count).
+    #[test]
+    fn decode_modbus_write_sets_ot_control() {
+        let write = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x06, 0x00, 0x01, 0x00, 0xff,
+        ];
+        // client(50000) -> PLC(502): request direction → ot_control set.
+        let req = ipv4_tcp_frame(50000, 502, &write);
+        let m = decode_frame(&frame(LinkType::RawIpv4, &req)).unwrap();
+        assert_eq!(m.app_proto, AppProto::Modbus);
+        assert_eq!(m.ot_control, Some(0x06));
+
+        // A read request → identified as Modbus but no control signal.
+        let read = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0a,
+        ];
+        let rf = ipv4_tcp_frame(50000, 502, &read);
+        let mr = decode_frame(&frame(LinkType::RawIpv4, &rf)).unwrap();
+        assert_eq!(mr.app_proto, AppProto::Modbus);
+        assert_eq!(mr.ot_control, None);
+
+        // A write RESPONSE travels FROM 502 (dst_port != 502) → not counted as a command.
+        let resp = ipv4_tcp_frame(502, 50000, &write);
+        let mresp = decode_frame(&frame(LinkType::RawIpv4, &resp)).unwrap();
+        assert_eq!(
+            mresp.ot_control, None,
+            "responses must not be counted as commands"
         );
     }
 

@@ -405,6 +405,12 @@ pub struct PacketMeta {
     /// Passive host identity from a DHCP message (client MAC + hostname/vendor class); `None` for
     /// non-DHCP packets. Folded into the per-MAC identity rollup, then dropped.
     pub dhcp: Option<DhcpInfo>,
+    /// Set to the Modbus function code when the packet is an OT/ICS **write/control** command
+    /// (write coil/register, mask-write, read-write-multiple) to an industrial device; `None`
+    /// otherwise. Folds into the ICS control-command detection. `serde(default)` keeps older
+    /// serialized `PacketMeta` readable.
+    #[serde(default)]
+    pub ot_control: Option<u8>,
 }
 
 impl PacketMeta {

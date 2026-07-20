@@ -30,6 +30,7 @@ export const KIND_STAGE: Record<FindingKind, string> = {
   malware_signature: "Command & Control",
   exposed_remote_access: "Lateral Movement",
   ioc_match: "Detection",
+  ics_control_command: "Impact",
 };
 
 /** The noun for a finding kind's contributing count (e.g. "contacts", "hosts"). */
@@ -49,6 +50,7 @@ export const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   cryptomining: "messages",
   malware_download: "files",
   exposed_remote_access: "sessions",
+  ics_control_command: "commands",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */
