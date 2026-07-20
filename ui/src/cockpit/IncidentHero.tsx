@@ -171,7 +171,11 @@ export function IncidentHero({
         {beacon && (
           <div className="flex flex-col items-center gap-3 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
             <SectionLabel>Beacon lock</SectionLabel>
-            <BeaconRadar size={134} />
+            {/* The sweep period mirrors the interval shown below it (clamped inside BeaconRadar). */}
+            <BeaconRadar
+              size={134}
+              intervalSeconds={beacon.interval_ns != null ? beacon.interval_ns / 1e9 : undefined}
+            />
             <div className="font-mono-num text-center text-xs text-[var(--color-text-dim)]">
               {beacon.dst_ip}:{beacon.dst_port}
             </div>

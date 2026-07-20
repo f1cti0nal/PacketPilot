@@ -51,14 +51,16 @@ pub mod packets;
 pub(crate) mod quic;
 pub mod reader;
 pub mod report;
+pub mod sanitize;
 pub mod score;
 pub(crate) mod ssh;
 pub mod stats;
+pub mod timemachine;
 pub mod tls;
 
 pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
 pub use case::{
-    run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, IndicatorKind, SharedIndicator,
+    run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator,
 };
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::{
@@ -91,7 +93,17 @@ pub use packets::{
     FlowPackets, PacketCaps, PacketQuery, PacketRecord,
 };
 pub use report::{case_html, render_html};
+#[cfg(not(target_arch = "wasm32"))]
+pub use sanitize::sanitize_file;
+pub use sanitize::{
+    sanitize_bytes, sanitize_stream, PayloadMode, SanitizeCounts, SanitizeFormat, SanitizeManifest,
+    SanitizeOptions,
+};
 pub use score::{score_flow, ScoredFlow};
+pub use timemachine::{
+    build_index, rescan, CaptureIndex, Indicator, IndicatorKind, RescanHit, RescanReport,
+    INDEX_SCHEMA_VERSION,
+};
 pub use tls::decrypt::{DecryptedCarvedFile, TlsDecryptRecord, TlsDecryptResult};
 pub use tls::decrypted_http::HttpTxn;
 

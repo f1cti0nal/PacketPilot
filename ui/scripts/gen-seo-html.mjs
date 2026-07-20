@@ -43,7 +43,23 @@ function renderHead({ title, description, url, jsonLd }) {
   const scripts = jsonLd
     .map((o) => `    <script type="application/ld+json">${JSON.stringify(o)}</script>`)
     .join("\n");
-  return html.replace("</head>", `${scripts}\n  </head>`);
+  const out = html.replace("</head>", `${scripts}\n  </head>`);
+  // Guard: the regexes above match the exact shape of index.html's head markup.
+  // If a head reformat breaks them, fail the build loudly instead of silently
+  // shipping homepage meta on every SEO page.
+  for (const [what, needle] of [
+    ["title", `<title>${esc(title)}</title>`],
+    ["description", `content="${esc(description)}"`],
+    ["canonical", `href="${url}"`],
+    ["og:url", `<meta property="og:url" content="${esc(url)}" />`],
+    ["json-ld", `<script type="application/ld+json">`],
+  ]) {
+    if (!out.includes(needle)) {
+      console.error(`gen-seo-html: head rewrite failed for ${what} on ${url} — index.html head markup changed shape`);
+      process.exit(1);
+    }
+  }
+  return out;
 }
 
 // ── SEO tool pages ────────────────────────────────────────────────────────────
@@ -116,8 +132,8 @@ for (const post of posts) {
 }
 
 // sitemap.xml — public, indexable routes (marketing + SEO pages + blog).
-// /admin and /account are intentionally excluded (non-public / authed).
-const STATIC_ROUTES = ["", "app", "pricing", "security", "privacy", "terms", "blog"];
+// /admin is intentionally excluded (operator console, non-public).
+const STATIC_ROUTES = ["", "app", "security", "privacy", "terms", "blog"];
 const routes = [
   ...STATIC_ROUTES,
   ...pages.map((p) => p.slug),
@@ -132,7 +148,7 @@ writeFileSync(join(dist, "sitemap.xml"), sitemap, "utf8");
 
 writeFileSync(
   join(dist, "robots.txt"),
-  `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /account\n\nSitemap: ${SITE}/sitemap.xml\n`,
+  `User-agent: *\nAllow: /\nDisallow: /admin\n\nSitemap: ${SITE}/sitemap.xml\n`,
   "utf8",
 );
 

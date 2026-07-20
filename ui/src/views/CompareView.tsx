@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { ArrowLeftRight } from "lucide-react";
+import { ArrowLeftRight, X } from "lucide-react";
 import type { RecentEntry, IpThreat, Incident, Finding, Severity } from "../types";
 import { diffSummaries } from "../lib/diff";
 import type { Changed, DiffResult, FieldDelta } from "../lib/diff";
 import { severityColor } from "../lib/palette";
 import { kindLabel } from "../lib/findingKinds";
 import { humanBytes, humanNumber } from "../lib/format";
-import { Panel, Card, SectionHeader } from "../cockpit/primitives";
+import { BTN_OUTLINE, Panel, Card, SectionHeader } from "../cockpit/primitives";
+import { EmptyState } from "../components/state/EmptyState";
+import { cn } from "../lib/cn";
 
 /** A signed delta number, colored: increases (worse) red, decreases green. */
 function Signed({ n }: { n: number }) {
@@ -89,19 +91,19 @@ function DiffSection<T extends IpThreat | Incident | Finding>({
       <div className="flex flex-col gap-3">
         {result.added.length > 0 && (
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-high)]">{addedLabel} · {result.added.length}</div>
+            <div className="t-label" style={{ color: "var(--color-sev-high)" }}>{addedLabel} · {result.added.length}</div>
             {result.added.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="+" />)}
           </div>
         )}
         {result.removed.length > 0 && (
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-sev-low)]">{removedLabel} · {result.removed.length}</div>
+            <div className="t-label" style={{ color: "var(--color-sev-low)" }}>{removedLabel} · {result.removed.length}</div>
             {result.removed.map((t, i) => <EntityRow key={i} ipOrHost={label(t)} severity={t.severity} kind="−" />)}
           </div>
         )}
         {result.changed.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--color-text-dim)]">Changed · {result.changed.length}</div>
+            <div className="t-label" style={{ color: "var(--color-text-dim)" }}>Changed · {result.changed.length}</div>
             {result.changed.map((c: Changed<T>, i) => (
               <div key={i} className="flex flex-col gap-0.5">
                 <EntityRow ipOrHost={label(c.after)} severity={c.after.severity} kind="~" />
@@ -119,10 +121,11 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
   const [bannerDismissed, setBannerDismissed] = useState(false);
   if (!before || !after) {
     return (
-      <div data-component="CompareView" className="flex h-full items-center justify-center p-10 text-center">
-        <p className="max-w-sm text-sm text-[var(--color-text-dim)]">
-          One of the captures is no longer cached. Re-open it from the Recent tab and try comparing again.
-        </p>
+      <div data-component="CompareView" className="h-full">
+        <EmptyState
+          title="One of the captures is no longer cached"
+          hint="Re-open it from the Recent tab and try comparing again."
+        />
       </div>
     );
   }
@@ -149,11 +152,7 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
           <span aria-hidden>→</span>
           <span className="font-mono-num truncate">{after.name}</span>
         </div>
-        <button
-          type="button"
-          onClick={onSwap}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-        >
+        <button type="button" onClick={onSwap} className={cn(BTN_OUTLINE, "ml-auto")}>
           <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden /> Swap
         </button>
       </div>
@@ -168,13 +167,13 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
             aria-label="Dismiss"
             className="shrink-0 text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
           >
-            ✕
+            <X className="h-4 w-4" aria-hidden />
           </button>
         </div>
       )}
 
-      {/* Change summary — new / resolved tallies + headline scale deltas at a glance. */}
-      <Panel label="Change summary">
+      {/* Change summary: new / resolved tallies + headline scale deltas at a glance. */}
+      <Panel title="Change Summary">
         <div className="grid grid-cols-2 gap-2 px-3.5 pb-3 sm:grid-cols-3 lg:grid-cols-5">
           <ChangeStat label="Findings" added={diff.findings.added.length} removed={diff.findings.removed.length} />
           <ChangeStat label="Incidents" added={diff.incidents.added.length} removed={diff.incidents.removed.length} />
@@ -186,7 +185,7 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
 
       {/* Severity delta chips */}
       {diff.severity.length > 0 && (
-        <Panel label="Severity delta">
+        <Panel title="Severity Delta">
           <div className="flex flex-wrap gap-2 px-3.5 pb-3">
             {diff.severity.map((b) => (
               <div
@@ -204,9 +203,10 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
       {/* Diff content */}
       {noDiff ? (
         <Panel className="flex-1">
-          <div className="flex h-full items-center justify-center p-10 text-sm text-[var(--color-text-dim)]">
-            No differences between these captures.
-          </div>
+          <EmptyState
+            title="No differences between these captures"
+            hint="Both captures report the same threats, incidents, and findings."
+          />
         </Panel>
       ) : (
         <div className="flex flex-col gap-4">

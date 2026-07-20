@@ -145,6 +145,29 @@ fn carve_pcap_to(path_in: String, query: CarveQueryArg, path_out: String) -> Res
     Ok(res.packets)
 }
 
+/// Safe Share: sanitize `path_in` to `path_out` (+ `<path_out>.manifest.json`)
+/// with a fresh in-memory key. `options` mirrors `ppcap_core::SanitizeOptions`
+/// (missing fields take the privacy-safest defaults). Returns the manifest JSON.
+#[tauri::command]
+fn sanitize_capture(
+    path_in: String,
+    path_out: String,
+    options: serde_json::Value,
+) -> Result<String, String> {
+    let opts: ppcap_core::SanitizeOptions =
+        serde_json::from_value(options).map_err(|e| format!("bad sanitize options: {e}"))?;
+    let manifest = ppcap_core::sanitize_file(
+        Path::new(&path_in),
+        Path::new(&path_out),
+        None,
+        &opts,
+        now_unix_secs(),
+        |_, _, _| {},
+    )
+    .map_err(|e| e.to_string())?;
+    manifest.to_json_pretty().map_err(|e| e.to_string())
+}
+
 #[derive(serde::Serialize)]
 struct RuleApplyResult {
     output: ppcap_core::AnalysisOutput,
@@ -424,6 +447,7 @@ pub fn run() {
             export_sigma,
             extract_flow_packets,
             carve_pcap_to,
+            sanitize_capture,
             apply_rules_to,
             set_reputation_key,
             reputation_key_status,

@@ -17,6 +17,7 @@ export default {
           critical: "var(--color-sev-critical)",
           high: "var(--color-sev-high)",
           medium: "var(--color-sev-medium)",
+          low: "var(--color-sev-low)",
           info: "var(--color-sev-info)",
           none: "var(--color-sev-none)",
         },

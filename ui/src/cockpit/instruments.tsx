@@ -108,14 +108,19 @@ export function SeverityRing({ counts, size = 60 }: { counts: SeverityCounts; si
 
 /**
  * Beacon-lock radar scope: concentric rings + crosshair + a slow conic sweep,
- * with a pulsing blip locked on the C2. The sweep cadence mirrors the beacon's
- * machine-regular interval — the theater is literally the evidence.
+ * with a pulsing blip locked on the C2. When `intervalSeconds` (the beacon's
+ * observed interval) is provided, the sweep period matches it, clamped to
+ * 2-10s so it stays readable; otherwise the sweep runs at a fixed 4.2s.
  */
-export function BeaconRadar({ size = 150 }: { size?: number }) {
+export function BeaconRadar({ size = 150, intervalSeconds }: { size?: number; intervalSeconds?: number }) {
   const cx = size / 2;
   const rings = [0.94, 0.66, 0.36];
   // Blip locked at a fixed bearing/range (the C2 contact).
   const blip = polarToCartesian(cx, cx, (size / 2) * 0.66, 52);
+  const sweepSeconds =
+    intervalSeconds != null && Number.isFinite(intervalSeconds)
+      ? Math.min(10, Math.max(2, intervalSeconds))
+      : 4.2;
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -125,7 +130,7 @@ export function BeaconRadar({ size = 150 }: { size?: number }) {
         style={{
           background:
             "conic-gradient(from 0deg, transparent 0deg, color-mix(in srgb, var(--color-accent) 26%, transparent) 38deg, transparent 64deg)",
-          animation: "radar-spin 4.2s linear infinite",
+          animation: `radar-spin ${sweepSeconds}s linear infinite`,
           maskImage: "radial-gradient(circle, #000 70%, transparent 71%)",
           WebkitMaskImage: "radial-gradient(circle, #000 70%, transparent 71%)",
         }}

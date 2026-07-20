@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { IpThreat, Severity } from "../types";
-import { SEVERITY_META, SEVERITY_ORDER } from "../lib/severity";
+import { SEVERITY_ORDER } from "../lib/severity";
 import { humanBytes, humanNumber } from "../lib/format";
 import { sevColor } from "../cockpit/viz";
-import { ScoreBar, IocDot, Toolbar } from "../cockpit/primitives";
+import { INPUT_BASE, IocDot, ScoreBar, SeverityChip, Toolbar } from "../cockpit/primitives";
 import { ReputationChip, ReputationNotChecked } from "../cockpit/ReputationChip";
 import { EmptyState } from "../components/state/EmptyState";
 import { cn } from "../lib/cn";
@@ -49,11 +49,6 @@ export function ThreatsView({ threats, activeIp = null, onSelect, reputationConf
     );
   }
 
-  const inputBase =
-    "rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] " +
-    "text-[length:var(--fs-body)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] " +
-    "focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]";
-
   return (
     <div data-component="ThreatsView" className="flex h-full min-h-0 flex-col gap-3">
       <Toolbar className="gap-2">
@@ -65,7 +60,7 @@ export function ThreatsView({ threats, activeIp = null, onSelect, reputationConf
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter watchlist by host or class…"
             aria-label="Filter threats"
-            className={cn(inputBase, "w-full py-1.5 pl-8 pr-8")}
+            className={cn(INPUT_BASE, "w-full py-1.5 pl-8 pr-8")}
           />
           {query && (
             <button
@@ -82,7 +77,7 @@ export function ThreatsView({ threats, activeIp = null, onSelect, reputationConf
           <span className="font-mono-num text-[var(--color-text)]">{humanNumber(filtered.length)}</span>
           {" / "}
           <span className="font-mono-num">{humanNumber(threats.length)}</span>
-          {" hosts"}
+          {threats.length === 1 ? " host" : " hosts"}
         </div>
       </Toolbar>
 
@@ -123,7 +118,7 @@ function ThreatCard({
       aria-current={active ? "true" : undefined}
       aria-label={`${threat.ip}, ${threat.severity}, score ${threat.score} of 100${threat.ioc ? ", on an indicator feed" : ""}`}
       className={cn(
-        "relative flex w-full flex-col gap-2.5 overflow-hidden rounded-[var(--r-card)] border bg-[var(--color-panel)] px-3.5 py-3 text-left transition-colors",
+        "relative flex w-full flex-col gap-2.5 overflow-hidden rounded-[var(--r-card)] border bg-[var(--color-surface-1)] px-3.5 py-3 text-left transition-colors",
         active
           ? "border-[var(--color-accent)] bg-[var(--color-surface-2)]"
           : "border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]",
@@ -133,7 +128,7 @@ function ThreatCard({
       <div className="flex items-center gap-2 pl-1.5">
         <span className="font-mono-num min-w-0 flex-1 truncate text-sm text-[var(--color-text)]">{threat.ip}</span>
         {threat.ioc && <IocDot />}
-        <SeverityLabel severity={threat.severity} color={color} />
+        <SeverityChip severity={threat.severity} />
         <span className="font-mono-num shrink-0 text-sm font-medium tabular-nums" style={{ color }}>
           {threat.score}
         </span>
@@ -141,7 +136,9 @@ function ThreatCard({
       <ScoreBar score={threat.score} severity={threat.severity as Severity} className="ml-1.5" />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-1.5 text-[var(--color-text-faint)]">
         <span className="t-tag uppercase">{threat.ip_class}</span>
-        <span className="font-mono-num t-tag">{humanNumber(threat.flows)} flows</span>
+        <span className="font-mono-num t-tag">
+          {humanNumber(threat.flows)} {threat.flows === 1 ? "flow" : "flows"}
+        </span>
         <span className="font-mono-num t-tag">{humanBytes(threat.bytes)}</span>
         {threat.reputation && threat.reputation.length > 0 ? (
           <ReputationChip reputation={threat.reputation} />
@@ -150,17 +147,6 @@ function ThreatCard({
         ) : null}
       </div>
     </button>
-  );
-}
-
-function SeverityLabel({ severity, color }: { severity: Severity; color: string }) {
-  return (
-    <span
-      className="shrink-0 rounded-[var(--r-chip)] border px-1.5 py-0.5 t-tag font-medium uppercase"
-      style={{ color, borderColor: color, backgroundColor: "var(--color-surface-2)" }}
-    >
-      {SEVERITY_META[severity]?.label ?? severity}
-    </span>
   );
 }
 

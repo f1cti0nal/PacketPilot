@@ -5,6 +5,7 @@ import { loadFlows } from "../../lib/data";
 import { isCaptureFile } from "../../lib/wasmEngine";
 import { compactNumber, humanBytes } from "../../lib/format";
 import { cn } from "../../lib/cn";
+import { DIALOG_PANEL, OVERLAY_BACKDROP } from "../../cockpit/primitives";
 import { useDialogA11y } from "../../lib/useDialogA11y";
 
 type LoadStatus =
@@ -107,14 +108,14 @@ export function LoadCaptureDialog({
     <div
       ref={dialogRef}
       onKeyDown={onDialogKeyDown}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className={`${OVERLAY_BACKDROP} z-50 flex items-center justify-center p-4`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl border border-border bg-surface"
+        className={`${DIALOG_PANEL} w-full max-w-md`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -125,7 +126,7 @@ export function LoadCaptureDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
+            className="rounded-[var(--r-tile)] p-1 text-[var(--color-text-dim)] transition-colors hover:bg-surface-2 hover:text-[var(--color-text)]"
           >
             <X className="h-4 w-4" aria-hidden />
           </button>
@@ -146,7 +147,7 @@ export function LoadCaptureDialog({
               if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
             }}
             className={cn(
-              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors",
+              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[var(--r-card)] border-2 border-dashed px-6 py-10 text-center transition-colors",
               dragging
                 ? "border-[var(--color-accent)] bg-surface-2"
                 : "border-border hover:border-[var(--color-text-faint)]",
@@ -162,7 +163,7 @@ export function LoadCaptureDialog({
             <div className="text-xs text-[var(--color-text-dim)]">
               <span className="font-mono-num">.pcap</span> /{" "}
               <span className="font-mono-num">.pcapng</span>{" "}
-              (<span className="font-mono-num">.gz</span> ok) — analyzed in your browser
+              (<span className="font-mono-num">.gz</span> ok), analyzed in your browser
             </div>
             <div className="text-[11px] text-[var(--color-text-faint)]">
               or a <span className="font-mono-num">summary.json</span> +{" "}

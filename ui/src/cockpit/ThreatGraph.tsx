@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Share2 } from "lucide-react";
 import type { Finding, IpThreat, Severity } from "../types";
 import { buildThreatGraph } from "../lib/threatGraph";
 import { severityColor } from "../lib/palette";
 import { SEVERITY_META } from "../lib/severity";
+import { Card } from "./primitives";
 
 /** SVG canvas (viewBox) the force layout is fit into. */
 const W = 880;
@@ -253,28 +253,28 @@ export function ThreatGraph({
     <section
       data-component="ThreatGraph"
       aria-label="Threat relationship graph"
-      className="rounded-lg border border-border bg-surface p-4"
+      className="min-w-0"
     >
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-[var(--color-text-dim)]">
-          <Share2 size={15} className="text-[var(--color-accent)]" /> Threat relationships
-        </h2>
-        {hoverMeta && active ? (
-          <span className="flex items-center gap-2 t-tag text-[var(--color-text-dim)]">
-            <span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: severityColor(hoverMeta.severity) }} />
-            <span className="font-mono-num text-[var(--color-text)]">{active}</span>
-            <span className="text-[var(--color-text-faint)]">
-              {SEVERITY_META[hoverMeta.severity].label} · score {hoverMeta.score} · {hoverMeta.deg} link{hoverMeta.deg === 1 ? "" : "s"}
+      <Card
+        label="GRAPH"
+        title="Threat relationships"
+        right={
+          hoverMeta && active ? (
+            <span className="flex items-center gap-2 t-tag text-[var(--color-text-dim)]">
+              <span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: severityColor(hoverMeta.severity) }} />
+              <span className="font-mono-num text-[var(--color-text)]">{active}</span>
+              <span className="text-[var(--color-text-faint)]">
+                {SEVERITY_META[hoverMeta.severity].label} · score {hoverMeta.score} · {hoverMeta.deg} link{hoverMeta.deg === 1 ? "" : "s"}
+              </span>
             </span>
-          </span>
-        ) : (
-          <span className="font-mono-num text-xs text-[var(--color-text-faint)]">
-            {model.nodes.length} hosts · {model.edges.length} link{model.edges.length === 1 ? "" : "s"}
-            {model.truncated > 0 ? ` · +${model.truncated} more` : ""}
-          </span>
-        )}
-      </div>
-
+          ) : (
+            <span className="font-mono-num text-xs text-[var(--color-text-faint)]">
+              {model.nodes.length} hosts · {model.edges.length} link{model.edges.length === 1 ? "" : "s"}
+              {model.truncated > 0 ? ` · +${model.truncated} more` : ""}
+            </span>
+          )
+        }
+      >
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -396,13 +396,14 @@ export function ThreatGraph({
         <span className="t-tag text-[var(--color-text-faint)]">Hover to trace · drag to rearrange{onJump ? " · click to open flows" : ""}</span>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {(["critical", "high", "medium", "low"] as const).map((s) => (
-            <span key={s} className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--color-text-faint)]">
+            <span key={s} className="inline-flex items-center gap-1 t-tag text-[var(--color-text-faint)]">
               <span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: severityColor(s) }} />
               {SEVERITY_META[s].label}
             </span>
           ))}
         </div>
       </div>
+      </Card>
     </section>
   );
 }

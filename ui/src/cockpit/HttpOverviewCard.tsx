@@ -26,9 +26,9 @@ function BarList({
                 {humanNumber(r.flows)}
               </span>
             </div>
-            <div className="h-1 w-full overflow-hidden rounded bg-[var(--color-surface-2)]">
+            <div className="h-1 w-full overflow-hidden rounded-[var(--r-micro)] bg-[var(--color-surface-2)]">
               <div
-                className="h-full rounded bg-[var(--color-accent)]"
+                className="h-full rounded-[var(--r-micro)] bg-[var(--color-accent)]"
                 style={{ width: `${pct}%` }}
               />
             </div>

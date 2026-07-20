@@ -83,19 +83,19 @@ export interface ProtoSeg {
  * total_packets, so they get their own segment to keep the donut reconciled.
  */
 export function protoSegments(proto: ProtoCounts): ProtoSeg[] {
-  const accent = cssVar("--color-accent", "#38bdf8");
+  const accent = cssVar("--color-accent", "#9d87ff");
   const teal = cssVar("--color-sev-low", "#2dd4bf");
   const amber = cssVar("--color-sev-medium", "#fbbf24");
-  const dim = cssVar("--color-text-faint", "#5b6b80");
+  const dim = cssVar("--color-text-faint", "#8f909c");
   const violet = cssVar("--color-spine-violet", "#7c5cff");
   const defs: { key: keyof ProtoCounts; label: string; color: string }[] = [
     { key: "tls", label: "TLS", color: accent },
     { key: "http", label: "HTTP", color: amber },
-    { key: "other_tcp", label: "Other TCP", color: cssVar("--color-accent-strong", "#5fd0ff") },
+    { key: "other_tcp", label: "Other TCP", color: cssVar("--color-accent-strong", "#beb2ff") },
     { key: "dns", label: "DNS", color: teal },
     { key: "other_udp", label: "Other UDP", color: violet },
     { key: "non_ipv4", label: "Non-IPv4", color: dim },
-    { key: "truncated", label: "Undecoded", color: cssVar("--color-text-dim", "#8b98a5") },
+    { key: "truncated", label: "Undecoded", color: cssVar("--color-text-dim", "#a0a1ac") },
   ];
   return defs
     .map((d) => ({ ...d, value: proto[d.key] ?? 0 }))

@@ -15,6 +15,8 @@ export function ErrorState({ message, onRetry, title = "Couldn't load the captur
       role="alert"
       className="app-bg flex h-full min-h-0 flex-col items-center justify-center px-6 py-12 text-center"
     >
+      {/* rounded-2xl hero glyph tile + rounded-full retry pill: documented exceptions matching
+          HomeView's first-run hero (see the radius note in cockpit/primitives.tsx). */}
       <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--color-sev-critical)] bg-[color-mix(in_srgb,var(--color-sev-critical)_12%,transparent)] text-[var(--color-sev-critical)]">
         <AlertTriangle size={30} aria-hidden />
       </div>

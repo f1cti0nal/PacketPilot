@@ -36,7 +36,6 @@ export function ToolApp() {
           <span className="font-display text-[15px] font-medium tracking-tight">PacketPilot</span>
         </a>
         <div className="ml-auto flex items-center gap-3">
-          <a href="/pricing" className="text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text)]">Pricing</a>
           <ThemeToggle />
         </div>
       </header>
@@ -53,7 +52,6 @@ export function ToolApp() {
       <footer className="border-t border-[var(--color-border)] px-4 py-6 text-center">
         <nav className="flex flex-wrap justify-center gap-4 t-tag text-[var(--color-text-faint)]">
           <a href="/app" className="hover:text-[var(--color-text-dim)]">Launch app</a>
-          <a href="/pricing" className="hover:text-[var(--color-text-dim)]">Pricing</a>
           <a href="/security" className="hover:text-[var(--color-text-dim)]">Security</a>
           <a href="/privacy" className="hover:text-[var(--color-text-dim)]">Privacy</a>
         </nav>

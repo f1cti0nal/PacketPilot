@@ -239,7 +239,7 @@ body {
 .score-glow { filter: none; }
 .stroke-glow { filter: none; }
 
-/* Keyboard focus — cyan = focus is on-contract (Tailwind preflight resets it). */
+/* Keyboard focus — the violet accent outline is on-contract (Tailwind preflight resets it). */
 :where(button, a, [role="tab"], [tabindex]):focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
@@ -249,6 +249,16 @@ body {
 @keyframes node-pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 @keyframes radar-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes blip-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* State-transition enters (dialogs/menus pop, drawers slide, tab content fades).
+   All are neutralized by the universal prefers-reduced-motion clamp below. */
+@keyframes pp-pop-in { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes pp-slide-in-r { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes pp-view-in { from { opacity: 0; } to { opacity: 1; } }
+.pp-pop-in { animation: pp-pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1); }
+.pp-slide-in-r { animation: pp-slide-in-r 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
+/* Tab-switch content enter: opacity-only so layout never shifts. */
+[data-app-main] > * { animation: pp-view-in 0.12s ease-out; }
 
 @media (prefers-reduced-motion: reduce) {
   /* Universal safety net: neutralizes every animation/transition (Tailwind animate-spin
@@ -262,7 +272,6 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .glow-critical { animation: none; }
   .radar-sweep { animation: none !important; }
   .kill-spine-fill { animation: none !important; transform: none !important; }
   .kill-node { animation: none !important; opacity: 1 !important; transform: none !important; }

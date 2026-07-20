@@ -1,5 +1,8 @@
 # PacketPilot
 
+<img width="1908" height="907" alt="PacketPilo" src="https://github.com/user-attachments/assets/08e55323-bd45-45dd-b295-196aa9605c52" />
+
+
 **Your PCAP autopilot — from capture to conclusion in one click.**
 
 PacketPilot analyzes an *entire* packet capture (pcap/pcapng) and lands the analyst on a
@@ -36,7 +39,10 @@ capture.pcap ──▶ streaming Rust engine ──▶ triage dashboard ──�
   + drill-down, and **export** a self-contained HTML report (print-to-PDF) or JSON.
 - **Triage a whole folder** with `analyze --batch <dir>`: one ranked case index (`case.json` /
   `case.html`) + cross-capture indicator correlation (IP / SNI / JA3 seen across captures),
-  bounded-memory and local-first. See [`docs/batch-triage.md`](docs/batch-triage.md).
+  bounded-memory and local-first.
+- **Share safely** — one-click **Safe Share** exports a sanitized/anonymized copy of a capture
+  (prefix-preserving IP/MAC pseudonyms, payload scrub or L7-field redaction, recomputed checksums,
+  chain-of-custody manifest) so a capture can go to a vendor/CERT without leaking sensitive data.
 
 ## The gap it fills
 
@@ -90,6 +96,14 @@ cargo run -p ppcap-cli --release -- analyze sample.pcap \
 
 # Emit the DuckDB schema (for the external sidecar / DuckDB-Wasm)
 cargo run -p ppcap-cli --release -- init-db --out schema.sql
+
+# Time Machine: emit a capture-indicator index, then re-scan it later vs an updated feed
+cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --hash --index sample.index.json
+cargo run -p ppcap-cli --release -- rescan sample.index.json --threat-feed updated-feed.json
+
+# Safe Share: write a sanitized copy + chain-of-custody manifest (scrubs payloads,
+# pseudonymizes IP/MAC, redacts DNS/HTTP/SNI/credentials, recomputes checksums)
+cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.pcap
 ```
 The HTML report is self-contained — open it in any browser and **print to PDF**.
 
@@ -128,6 +142,10 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - L2–L4 decode + L7 (HTTP/DNS/TLS) + **TLS SNI**; payload-aware classification.
 - Bidirectional flow reconstruction; traffic taxonomy (web/dns/email/file/remote/voip/iot/tunnel/scan/c2/anomalous).
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3), MITRE ATT&CK.
+- **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
+  indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
+  indicators that were clean at capture time but are dirty now — no pcap re-read, fully offline.
+  See [docs/time-machine.md](docs/time-machine.md).
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.
@@ -136,6 +154,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
   AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
   bare public IP strings leave the device, never packets or internal IPs). See [docs/reputation.md](docs/reputation.md).
+- **Natural Language Querying** — a **Query** tab running read-only DuckDB SQL over the flow
+  table *entirely in-browser* (lazy DuckDB-Wasm; nothing leaves the device), with bundled +
+  saved queries, CSV export, and a flow_id cross-filter into the Flows view. With AI enabled,
+  ask in plain English and the model writes the SQL (only the question text is sent — the SQL
+  always runs locally). See [docs/nlq.md](docs/nlq.md).
 - **AI Analyst Assist** — opt-in NL executive brief + interactive chat over the *derived* summary
   (not raw packets). BYO endpoint — Anthropic/OpenAI/OpenRouter/Ollama/Custom. Privacy-preserving:
   only the engine's computed summary ever leaves; localhost endpoints stay fully on-device. Desktop
@@ -143,14 +166,10 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   See [docs/ai-assist.md](docs/ai-assist.md).
 
 ## Roadmap (optional)
+- Time Machine follow-ups: scheduled re-scans, live feed subscriptions (MISP/Sigma), file-hash
+  re-matching, and a shared team case store.
 - gzip-capture ingest; `packet_index` Parquet for packet-level drill-down.
 - AI: SNI-domain context in chat; multi-session conversation memory.
 - Self-hosted team server (shared cases, RBAC) — the "hybrid" other half.
 - Integrations: export findings to RuleForge AI (detection rules) and Sentinel (SOC incidents).
 
-## Docs
-- [docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md) — full specification & gap analysis.
-- [docs/reputation.md](docs/reputation.md) — online reputation enrichment operator guide.
-- [docs/ai-assist.md](docs/ai-assist.md) — AI analyst assist operator guide.
-- [engine/README.md](engine/README.md) — engine internals, build, schema.
-- [engine/BENCHMARK.md](engine/BENCHMARK.md) — performance methodology & results.

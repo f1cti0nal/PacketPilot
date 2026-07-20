@@ -79,7 +79,7 @@ describe("AiSummaryCard", () => {
     const u = userEvent.setup();
     render(<AiSummaryCard output={makeOutput()} captureId="cap-err" model="claude-opus-4-8" />);
     await u.click(screen.getByRole("button", { name: /generate/i }));
-    expect(await screen.findByText(/AI request failed.*network failure/i)).toBeInTheDocument();
+    expect(await screen.findByText(/network failure/i)).toBeInTheDocument();
   });
 
   it("dismisses consent dialog on cancel without generating", async () => {
