@@ -76,7 +76,7 @@ export function KpiCluster({ output }: { output: AnalysisOutput }) {
             </span>
           )}
         </div>
-        <span className="mt-1 t-tag text-[var(--color-text-faint)]">{onFire ? "active — see hero" : "none detected"}</span>
+        <span className="mt-1 t-tag text-[var(--color-text-faint)]">{onFire ? "active · see hero" : "none detected"}</span>
       </div>
 
       {/* Context ring — the most colorful widget rendered as the calmest. */}

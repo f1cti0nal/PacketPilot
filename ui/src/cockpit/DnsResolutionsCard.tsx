@@ -13,7 +13,7 @@ export function DnsResolutionsCard({ resolved }: { resolved: ResolvedDomain[] })
 
   return (
     <Card
-      label="DNS"
+      label="PASSIVE DNS"
       title="Passive DNS"
       right={
         <span className="font-mono-num t-tag text-[var(--color-text-dim)]">
@@ -35,7 +35,7 @@ export function DnsResolutionsCard({ resolved }: { resolved: ResolvedDomain[] })
               {r.domain}
             </span>
             {r.resolutions > 1 && (
-              <span className="font-mono-num ml-auto shrink-0 text-[0.65rem] text-[var(--color-text-faint)]">
+              <span className="font-mono-num ml-auto shrink-0 t-tag text-[var(--color-text-faint)]">
                 ×{humanNumber(r.resolutions)}
               </span>
             )}

@@ -19,7 +19,7 @@ export function BlogApp() {
   const post = isIndex ? undefined : blogBySlug[slug];
 
   useEffect(() => {
-    document.title = isIndex ? INDEX_TITLE : post ? post.metaTitle : "Not found — PacketPilot Blog";
+    document.title = isIndex ? INDEX_TITLE : post ? post.metaTitle : "Not found | PacketPilot Blog";
     const desc = isIndex ? INDEX_DESC : post?.metaDescription;
     if (!desc) return;
     let m = document.querySelector('meta[name="description"]');
@@ -46,7 +46,6 @@ export function BlogApp() {
         </a>
         <div className="ml-auto flex items-center gap-3">
           <a href="/blog" className="text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text)]">Blog</a>
-          <a href="/pricing" className="text-xs text-[var(--color-text-dim)] hover:text-[var(--color-text)]">Pricing</a>
           <ThemeToggle />
         </div>
       </header>
@@ -66,7 +65,6 @@ export function BlogApp() {
         <nav className="flex flex-wrap justify-center gap-4 t-tag text-[var(--color-text-faint)]">
           <a href="/blog" className="hover:text-[var(--color-text-dim)]">Blog</a>
           <a href="/app" className="hover:text-[var(--color-text-dim)]">Launch app</a>
-          <a href="/pricing" className="hover:text-[var(--color-text-dim)]">Pricing</a>
           <a href="/security" className="hover:text-[var(--color-text-dim)]">Security</a>
         </nav>
       </footer>

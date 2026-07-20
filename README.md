@@ -1,5 +1,8 @@
 # PacketPilot
 
+<img width="1908" height="907" alt="PacketPilo" src="https://github.com/user-attachments/assets/08e55323-bd45-45dd-b295-196aa9605c52" />
+
+
 **Your PCAP autopilot — from capture to conclusion in one click.**
 
 PacketPilot analyzes an *entire* packet capture (pcap/pcapng) and lands the analyst on a
@@ -141,6 +144,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
   AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
   bare public IP strings leave the device, never packets or internal IPs). See [docs/reputation.md](docs/reputation.md).
+- **Natural Language Querying** — a **Query** tab running read-only DuckDB SQL over the flow
+  table *entirely in-browser* (lazy DuckDB-Wasm; nothing leaves the device), with bundled +
+  saved queries, CSV export, and a flow_id cross-filter into the Flows view. With AI enabled,
+  ask in plain English and the model writes the SQL (only the question text is sent — the SQL
+  always runs locally). See [docs/nlq.md](docs/nlq.md).
 - **AI Analyst Assist** — opt-in NL executive brief + interactive chat over the *derived* summary
   (not raw packets). BYO endpoint — Anthropic/OpenAI/OpenRouter/Ollama/Custom. Privacy-preserving:
   only the engine's computed summary ever leaves; localhost endpoints stay fully on-device. Desktop
@@ -153,9 +161,3 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - Self-hosted team server (shared cases, RBAC) — the "hybrid" other half.
 - Integrations: export findings to RuleForge AI (detection rules) and Sentinel (SOC incidents).
 
-## Docs
-- [docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md) — full specification & gap analysis.
-- [docs/reputation.md](docs/reputation.md) — online reputation enrichment operator guide.
-- [docs/ai-assist.md](docs/ai-assist.md) — AI analyst assist operator guide.
-- [engine/README.md](engine/README.md) — engine internals, build, schema.
-- [engine/BENCHMARK.md](engine/BENCHMARK.md) — performance methodology & results.

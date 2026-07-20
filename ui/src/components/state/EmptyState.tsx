@@ -18,6 +18,8 @@ export function EmptyState({
       data-component="EmptyState"
       className="app-bg flex h-full min-h-0 flex-col items-center justify-center px-6 py-12 text-center"
     >
+      {/* rounded-2xl hero glyph tile + rounded-full CTA: documented exceptions matching
+          HomeView's first-run hero (see the radius note in cockpit/primitives.tsx). */}
       <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-1)] text-[var(--color-accent)]">
         <Radar size={30} aria-hidden />
       </div>

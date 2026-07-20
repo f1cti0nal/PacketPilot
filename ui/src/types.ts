@@ -333,6 +333,13 @@ export interface AnalysisOutput {
 }
 
 // ---------- flows.parquet ----------
+/**
+ * All 31 flow columns in canonical Parquet order — must mirror
+ * `flow_columns_in_order()` in engine/crates/ppcap-core/src/columnar/schema.rs
+ * (flow schema v10). Drift is CI-guarded from both sides: the engine's
+ * `schema_drift` test checks src/lib/query/flow_columns.json, and
+ * src/lib/query/schema.test.ts checks this list against that fixture.
+ */
 export const FLOW_COLUMNS = [
   "flow_id",
   "capture_id",
@@ -353,6 +360,15 @@ export const FLOW_COLUMNS = [
   "category",
   "app_proto_src",
   "sni",
+  "ja3",
+  "ja4",
+  "tls_version",
+  "tls_cipher",
+  "hassh",
+  "hassh_server",
+  "ja3s",
+  "http_host",
+  "http_ua",
   "severity",
   "threat_score",
   "ioc",
@@ -502,7 +518,7 @@ export interface FlowRow {
 }
 
 // ---------- load state ----------
-export const TAB_IDS = ["dashboard", "flows", "findings", "threats", "recent", "compare"] as const;
+export const TAB_IDS = ["dashboard", "flows", "query", "findings", "threats", "recent", "compare"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
 /** How a capture entered the app — drives whether it can be re-analyzed in place. */

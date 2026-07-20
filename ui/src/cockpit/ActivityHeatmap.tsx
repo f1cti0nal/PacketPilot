@@ -51,7 +51,7 @@ export function ActivityHeatmap({ histogram, bucketSecs, findings, className }: 
   if (histogram.length === 0) {
     return (
       <Card label="TIMELINE" title="Activity" className={className}>
-        <div className="flex h-[30px] items-center justify-center rounded-[var(--r-micro)] bg-[var(--color-surface-2)] t-label">
+        <div className="py-6 text-center t-body text-[var(--color-text-faint)]">
           No timeline data
         </div>
       </Card>

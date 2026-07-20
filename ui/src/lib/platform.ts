@@ -103,7 +103,7 @@ function withReportBranding(html: string): string {
     'font:13px/1.6 ui-sans-serif,system-ui,-apple-system,sans-serif;color:var(--muted,#94a3b8)">' +
     'Analyzed with <a href="https://packetpilot.app" style="color:var(--accent,#38bdf8);' +
     'text-decoration:none;font-weight:600">PacketPilot</a>' +
-    " — browser-local network forensics. The capture never left the device.</footer>";
+    ": browser-local network forensics. The capture never left the device.</footer>";
   return html.includes("</body>") ? html.replace("</body>", `${footer}</body>`) : html + footer;
 }
 

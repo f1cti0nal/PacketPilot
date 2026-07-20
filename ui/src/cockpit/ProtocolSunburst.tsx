@@ -1,9 +1,9 @@
 import { useMemo } from "react";
-import { Network } from "lucide-react";
 import type { ProtocolHierarchyNode } from "../types";
 import { buildSunburst } from "../lib/protocolSunburst";
 import { humanBytes } from "../lib/format";
 import { cssVar } from "../lib/palette";
+import { Card } from "./primitives";
 
 /** L4 transport -> theme token (the L7 ring inherits its L4's hue at lower opacity). */
 const L4_TOKEN: Record<string, string> = {
@@ -33,12 +33,9 @@ export function ProtocolSunburst({ hierarchy }: { hierarchy: ProtocolHierarchyNo
     <section
       data-component="ProtocolSunburst"
       aria-label="Protocol hierarchy"
-      className="rounded-lg border border-border bg-surface p-4"
+      className="min-w-0"
     >
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-[var(--color-text-dim)]">
-        <Network size={15} className="text-[var(--color-accent)]" /> Protocol hierarchy
-      </h2>
-
+      <Card label="HIERARCHY" title="Protocol hierarchy">
       <svg
         viewBox={`0 0 ${model.size} ${model.size}`}
         className="mx-auto block w-full max-w-[340px]"
@@ -93,7 +90,7 @@ export function ProtocolSunburst({ hierarchy }: { hierarchy: ProtocolHierarchyNo
         {present.map((l4) => (
           <span
             key={l4}
-            className="inline-flex items-center gap-1 text-[0.65rem] uppercase text-[var(--color-text-faint)]"
+            className="inline-flex items-center gap-1 t-tag uppercase text-[var(--color-text-faint)]"
           >
             <span
               aria-hidden
@@ -104,6 +101,7 @@ export function ProtocolSunburst({ hierarchy }: { hierarchy: ProtocolHierarchyNo
           </span>
         ))}
       </div>
+      </Card>
     </section>
   );
 }

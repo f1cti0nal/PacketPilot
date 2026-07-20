@@ -18,13 +18,13 @@ export function ToolPage({ page }: { page: SeoPage }) {
             href="/app"
             className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-deep)] px-5 py-2 text-sm font-medium text-[var(--color-on-accent)]"
           >
-            Analyze a PCAP — free
+            Analyze a PCAP for free
             <ArrowRight size={15} aria-hidden />
           </a>
           <a href="/app?sample=1" className="text-sm text-[var(--color-accent-strong)] hover:underline">
             or try a sample capture
           </a>
-          <span className="t-tag text-[var(--color-text-faint)]">Free to start · nothing uploaded</span>
+          <span className="t-tag text-[var(--color-text-faint)]">Free for everyone · nothing uploaded</span>
         </div>
       </header>
 
@@ -45,7 +45,7 @@ export function ToolPage({ page }: { page: SeoPage }) {
 
         <div className="rounded-[var(--r-card)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-6 text-center">
           <p className="text-sm text-[var(--color-text-dim)]">
-            Drop a capture and get a scored, MITRE-mapped verdict in seconds — in your browser.
+            Drop a capture and get a scored, MITRE-mapped verdict in seconds, in your browser.
           </p>
           <a
             href="/app"

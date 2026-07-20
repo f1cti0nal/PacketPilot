@@ -43,15 +43,4 @@ describe("RuleSetsMenu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Delete rule set lateral\.rules/i }));
     expect(screen.queryByText("lateral.rules")).toBeNull();
   });
-
-  it("when canSave=false (free plan) it hides the saved library and shows a Pro upsell, but keeps Load .rules", () => {
-    saveRuleSet("c2.rules", "alert tcp any any -> any 443 (sid:1;)");
-    render(<RuleSetsMenu onLoadFile={vi.fn()} onApply={vi.fn()} disabled={false} canSave={false} />);
-    fireEvent.click(screen.getByText(/Rules/i));
-    // One-off load+apply stays available…
-    expect(screen.getByText(/Load .rules file/i)).toBeTruthy();
-    // …but the saved set is NOT offered, replaced by the Pro upsell.
-    expect(screen.queryByText("c2.rules")).toBeNull();
-    expect(screen.getByText(/Pro/i)).toBeTruthy();
-  });
 });

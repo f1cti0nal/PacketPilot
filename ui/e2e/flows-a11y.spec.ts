@@ -11,16 +11,30 @@ async function uploadAndOpenFlows(page: Page) {
   await page.getByRole("button", { name: "Load capture", exact: true }).click();
   await dialog.locator('input[type="file"]').setInputFiles(PCAP);
   await expect(dialog).toBeHidden({ timeout: 30_000 });
-  // A capture with TLS SNI hostnames pops a one-time domain-reputation consent dialog
-  // (full-screen overlay); decline it so the Flows click isn't intercepted.
-  const consent = page.getByRole("dialog", { name: "Domain reputation consent" });
-  await consent
-    .getByRole("button", { name: "Cancel" })
-    .click({ timeout: 5_000 })
-    .catch(() => {});
-  await expect(consent).toBeHidden();
+  await dismissReputationConsents(page);
   await page.getByRole("button", { name: "Flows", exact: true }).click();
   await expect(page.getByLabel("Filter flows")).toBeVisible();
+}
+
+/** Enrichment is opt-in for everyone: analyzing a capture with public IPs / SNI hostnames pops
+ *  one-time reputation consent dialogs ("Reputation consent", "VirusTotal reputation consent" —
+ *  full-screen overlays, possibly stacked). Decline each so later clicks aren't intercepted.
+ *  Tolerant of captures/configs that don't trigger any. */
+async function dismissReputationConsents(page: Page) {
+  const consent = page.getByRole("dialog", { name: /reputation consent/i });
+  for (let i = 0; i < 3; i++) {
+    // Dismiss the TOP-MOST dialog first: when both the IP and VirusTotal consents stack they are
+    // sibling full-screen overlays, so the DOM-later one (.last()) paints on top and the earlier
+    // one (.first()) is covered — clicking the covered one fails the actionability hit-test.
+    const dismissed = await consent
+      .last()
+      .getByRole("button", { name: "Cancel" })
+      .click({ timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!dismissed) break;
+  }
+  await expect(consent).toHaveCount(0);
 }
 
 test.describe("Flows — keyboard operability (WCAG 2.1.1)", () => {

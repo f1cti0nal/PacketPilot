@@ -4,7 +4,7 @@ import { ProviderVerdictList } from "../components/transparency/ProviderVerdictL
 
 const RANK: Record<RepStatus, number> = { malicious: 5, benign: 4, unknown: 3, clean: 2, notfound: 1, unavailable: 0 };
 const COLOR: Record<RepStatus, string> = {
-  malicious: "var(--color-sev-critical, #c81e42)", benign: "var(--color-sev-low, #0f766e)",
+  malicious: "var(--color-sev-critical)", benign: "var(--color-sev-low)",
   unknown: "var(--color-text-faint)", clean: "var(--color-text-faint)",
   notfound: "var(--color-text-faint)", unavailable: "var(--color-text-faint)",
 };
@@ -17,7 +17,7 @@ export function ReputationNotChecked({ configured }: { configured: boolean }) {
   const label = configured ? "reputation not looked up" : "reputation not checked";
   const title = configured
     ? "This host was not queried (quota / priority cap / lookup failure)."
-    : "No reputation connectors configured (offline) — absence is not innocence.";
+    : "No reputation connectors configured (offline); absence is not innocence.";
   return (
     <span className="t-tag inline-flex items-center gap-1 text-[var(--color-text-faint)]" title={title}>
       <span
@@ -49,7 +49,7 @@ export function ReputationChip({ reputation }: { reputation: ReputationVerdict[]
         <span style={{ color: COLOR[worst.status] }}>{worst.source} {label}</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 min-w-[16rem] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
+        <div className="pp-pop-in absolute left-0 top-full z-20 mt-1 min-w-[16rem] rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
           <ProviderVerdictList verdicts={reputation} />
         </div>
       )}

@@ -72,7 +72,7 @@ export function LocalHostsCard({
               {h.mac}
             </span>
             {h.vendor && (
-              <span className="ml-auto shrink-0 rounded border border-[var(--color-border)] px-1 text-[0.65rem] text-[var(--color-text-dim)]">
+              <span className="ml-auto shrink-0 rounded-[var(--r-chip)] border border-[var(--color-border)] px-1 t-tag text-[var(--color-text-dim)]">
                 {h.vendor}
               </span>
             )}

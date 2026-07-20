@@ -1,5 +1,5 @@
 // Fixed 56px top bar for the content column: capture identity + live status pill on the
-// left, capture actions and the account control on the right. Primary navigation lives in
+// left, capture actions on the right. Primary navigation lives in
 // the left SideNav (desktop) or the BottomTabBar (mobile) — not here. On mobile, where there
 // is no SideNav, this bar also carries the clickable brand so "return to overview" stays
 // reachable.
@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { shortHash } from "../lib/format";
+import { BTN_GHOST_ICON, BTN_OUTLINE } from "./primitives";
 import { ExportMenu } from "./ExportMenu";
 import type { ExportAction } from "./ExportMenu";
 import { ThemeToggle } from "./ThemeToggle";
@@ -32,7 +33,6 @@ export function CommandBar({
   onOpenPalette,
   onOpenAiChat,
   rulesMenu,
-  accountMenu,
 }: {
   captureName: string;
   sha256?: string;
@@ -50,8 +50,6 @@ export function CommandBar({
   onOpenAiChat?: () => void;
   /** Slot for the RuleSetsMenu dropdown (or any rules affordance). */
   rulesMenu?: ReactNode;
-  /** Slot for the end-user account control (Sign in / account popover). */
-  accountMenu?: ReactNode;
 }) {
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3">
@@ -90,8 +88,7 @@ export function CommandBar({
                 {shortHash(sha256, 8, 6)}
               </span>
             )}
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+            <span className="inline-flex items-center rounded-full border border-[color:color-mix(in_srgb,var(--color-accent)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-2 py-0.5">
               <span className="t-tag font-medium uppercase text-[var(--color-accent)]">Analyzed</span>
             </span>
           </>
@@ -106,7 +103,7 @@ export function CommandBar({
         )}
       </div>
 
-      {/* Right: capture actions + account. */}
+      {/* Right: capture actions. */}
       <div className="ml-auto flex items-center gap-2">
         <ActionButton
           icon={<Upload size={14} />}
@@ -145,7 +142,7 @@ export function CommandBar({
             type="button"
             aria-label="Ask AI"
             onClick={onOpenAiChat}
-            className="inline-flex items-center justify-center rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent p-1.5 text-[var(--color-text-faint)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-dim)]"
+            className={BTN_GHOST_ICON}
           >
             <Sparkles size={14} />
           </button>
@@ -156,8 +153,6 @@ export function CommandBar({
         <span className="hidden lg:contents"><DensityToggle /></span>
         <ThemeToggle />
         {rulesMenu && <span className="hidden lg:contents">{rulesMenu}</span>}
-        {/* Account control is always visible (incl. phones) and anchors the far right. */}
-        {accountMenu}
       </div>
     </header>
   );
@@ -195,7 +190,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="inline-flex items-center gap-1.5 rounded-[var(--r-tile)] border border-[var(--color-border)] bg-transparent px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-dim)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)] disabled:cursor-default disabled:opacity-50"
+      className={BTN_OUTLINE}
     >
       {icon}
       <span className="hidden lg:inline">{label}</span>

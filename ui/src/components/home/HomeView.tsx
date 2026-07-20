@@ -22,7 +22,7 @@ import { compactNumber, humanBytes, humanNumber, relativeTime } from "../../lib/
 import { kindMeta } from "../../lib/findingKinds";
 import { captureKey } from "../../lib/ai/cache";
 import { annotationsForCapture } from "../../lib/annotations";
-import { StatTile, Sparkline } from "../../cockpit/primitives";
+import { BTN_OUTLINE, StatTile, Sparkline } from "../../cockpit/primitives";
 import { VerdictChip } from "../VerdictChip";
 import { cn } from "../../lib/cn";
 
@@ -45,6 +45,8 @@ export interface HomeViewProps {
   sampleAvailable?: boolean;
 }
 
+// Hero pill CTAs: the documented rounded-full exception (see the radius note in
+// cockpit/primitives.tsx). Everything else on this surface composes BTN_OUTLINE.
 const PRIMARY_BTN =
   "inline-flex items-center gap-2 rounded-full bg-[var(--color-accent-deep)] px-5 py-2 text-sm font-medium text-[var(--color-on-accent)] transition-opacity hover:opacity-90";
 const SECONDARY_BTN =
@@ -99,6 +101,7 @@ function FirstRun({
       data-component="HomeFirstRun"
       className="app-bg flex h-full min-h-0 flex-col items-center justify-center px-6 py-12 text-center"
     >
+      {/* rounded-2xl hero glyph tile: documented exception shared with the state screens. */}
       <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-1)] text-[var(--color-accent)]">
         <Radar size={30} aria-hidden />
       </div>
@@ -108,7 +111,7 @@ function FirstRun({
       <p className="mt-2 max-w-md text-sm text-[var(--color-text-dim)]">
         Drop a <span className="font-mono-num">.pcap</span> or{" "}
         <span className="font-mono-num">.pcapng</span> file to triage it for threats. Analysis
-        runs entirely in your browser — nothing is uploaded.
+        runs entirely in your browser. Nothing is uploaded.
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
@@ -125,9 +128,9 @@ function FirstRun({
       </div>
 
       <ol className="mt-10 grid w-full max-w-xl grid-cols-1 gap-3 text-left sm:grid-cols-3">
-        <Step n={1} title="Upload" desc="Drop a pcap or pick a file." />
-        <Step n={2} title="Review" desc="Findings, incidents, and threats surface automatically." />
-        <Step n={3} title="Export" desc="Share an HTML report, STIX, MISP, or CEF." />
+        <Step title="Upload" desc="Drop a pcap or pick a file." />
+        <Step title="Review" desc="Findings, incidents, and threats surface automatically." />
+        <Step title="Export" desc="Share an HTML report, STIX, MISP, or CEF." />
       </ol>
 
       <p className="mt-6 text-[11px] text-[var(--color-text-faint)]">
@@ -140,15 +143,11 @@ function FirstRun({
   );
 }
 
-function Step({ n, title, desc }: { n: number; title: string; desc: string }) {
+// The tiles read left-to-right in order, so no numbered chips: the title carries the step.
+function Step({ title, desc }: { title: string; desc: string }) {
   return (
     <li className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3">
-      <div className="flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-surface-3)] font-mono-num text-[11px] text-[var(--color-text-dim)]">
-          {n}
-        </span>
-        <span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
-      </div>
+      <div className="text-sm font-medium text-[var(--color-text)]">{title}</div>
       <p className="mt-1.5 text-xs text-[var(--color-text-dim)]">{desc}</p>
     </li>
   );
@@ -289,7 +288,7 @@ function ReviewBanner({
         <button
           type="button"
           onClick={() => onOpen(topCapture)}
-          className="shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+          className={cn("shrink-0", BTN_OUTLINE)}
         >
           Review
         </button>
@@ -360,11 +359,7 @@ function RecentLine({
         </div>
       </button>
       <VerdictChip verdict={verdict} />
-      <button
-        type="button"
-        onClick={() => onOpen(entry)}
-        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-      >
+      <button type="button" onClick={() => onOpen(entry)} className={BTN_OUTLINE}>
         Open
       </button>
     </div>
