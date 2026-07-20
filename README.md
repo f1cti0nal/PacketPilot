@@ -1,5 +1,8 @@
 # PacketPilot
 
+<img width="1908" height="907" alt="PacketPilo" src="https://github.com/user-attachments/assets/08e55323-bd45-45dd-b295-196aa9605c52" />
+
+
 **Your PCAP autopilot — from capture to conclusion in one click.**
 
 PacketPilot analyzes an *entire* packet capture (pcap/pcapng) and lands the analyst on a
