@@ -7,7 +7,7 @@
 | **Status** | Proposed — ready to implement |
 | **Feature branch** | `claude/behavioral-baseline-learning-7w6l0u` |
 | **Date** | 2026-07-20 |
-| **Scope** | Engine (Rust: new `baseline` module + `detect`/`analyze`/`model`/`score` seams) · CLI (`analyze` flags + `baseline` subcommand) · UI (React/TS Baseline tab + deviation panel) · WASM (two fold fns) · Desktop (two Tauri commands) · HTML report (free ride-through) |
+| **Scope** | Engine (Rust: new `baseline` module + `detect`/`analyze`/`model`/`score` seams) · CLI (`analyze` flags + `baseline` subcommand) · UI (React/TS Baseline tab + deviation panel) · WASM (two fold fns) · Desktop (two Tauri commands) · HTML report (findings ride through; one `kind_label` arm) |
 
 > **How this plan was produced.** Eight parallel readers each mapped one subsystem the
 > feature touches — the detection engine (`detect`), the data model (`model`), the persistence /
@@ -36,8 +36,8 @@ It is built almost entirely from machinery the engine already has: the `Behavior
 Welford `StreamStats` online-statistics primitive, the `Finding` → `apply_findings` → per-IP threat-card
 uplift path, the transparent `add_term` score ledger, and the Time Machine "distill to an offline JSON
 sidecar, re-evaluate as a pure transform" pattern. The genuinely new code is small and bounded: a
-serialisable/mergeable running-stat, a per-host hour-of-day histogram, a JA3-per-host fold, and the
-learn/merge/compare transforms.
+serialisable/mergeable running-stat, three per-host bounded accumulators (hour-of-day histogram, JA3 set,
+category histogram), and the learn/merge/compare transforms.
 
 ### What it changes vs. today's engine
 
@@ -85,7 +85,7 @@ deviation findings are attributed to the internal host via `Finding.src_ip`.
 ### 2.3 One substrate, one snapshot
 
 The richest per-host behavioral data lives in the **`BehaviorTracker`**: its
-`channels: HashMap<ContactKey, ContactSeries>` (`detect/mod.rs:634`) already tracks, per directed
+`channels: HashMap<ContactKey, ContactSeries>` (`detect/mod.rs:633`) already tracks, per directed
 `(src, dst, dst_port)` channel, the contact count, per-channel byte volume (`bytes_out`/`bytes_in`),
 inter-arrival `gaps: StreamStats` (period + jitter CV), first/last-seen, transport, and C2/named-service
 shape flags. Fan-out (`fanout`) and vertical-scan (`port_scan`) maps give distinct-peer / distinct-port
@@ -108,7 +108,7 @@ Each feature below names the exact engine field(s) that supply it. All are per *
 |---|---|---|
 | **Peer set** (distinct external dsts) | first-seen external peer; fan-out growth | `ContactSeries` keys `ContactKey.dst` (`detect/mod.rs:137`); `fanout` map (`:634`) |
 | **Service set** (distinct `(dst_port, transport)`) | first-seen destination port/service | `ContactKey.dst_port` + `transport` folded in `observe_flow_contact_with` (`:1006`); `port_scan` map |
-| **Protocol / category mix** | first use of a category (e.g. `tunnel`, `remote`) | `FlowRecord.category` (`flow.rs:146`) via `StatsAccumulator.per_category` (`stats/mod.rs:149`); `ContactSeries.add_class` |
+| **Protocol / category mix** | first use of a category (e.g. `tunnel`, `remote`) | `FlowRecord.category` (`flow.rs:146`) — **net-new per-host accumulator** (§7.3); `per_category` at `stats/mod.rs:149` is capture-wide, and `ContactSeries.add_class` only flags c2/named booleans |
 | **Outbound/inbound volume** | volume spike vs mean+k·σ | `ContactSeries.bytes_out/bytes_in` (`:154`); `StatsAccumulator.per_ip` bytes (`stats/mod.rs:142`) — folded into a `RunningStat` |
 | **Connection / contact rate** | activity-rate spike | `ContactSeries.contacts()` + `first/last_seen()` (`:201`/`:206`) |
 | **Beacon periodicity** | *new* beacon channel not previously present | `StreamStats::cv()` (`:99`) + `ContactSeries.jitter_cv()`/`interval_ns()` (`:218`/`:212`); diff `beacon_candidates()` keys (`:1383`) |
@@ -118,7 +118,9 @@ Each feature below names the exact engine field(s) that supply it. All are per *
 
 **Scoping note.** `StatsAccumulator.per_port` is keyed by port *alone*, not `(host, port)`
 (`stats/mod.rs:145`) — so per-host service sets must come from the tracker's channel keys, not from
-`per_port`. This is called out because it is an easy wrong turn.
+`per_port`. Likewise `per_category` (`stats/mod.rs:149`) is a capture-wide `[CatStat; 13]` with **no host
+key** — per-host category history is a net-new accumulator (§7.3), not a projection of `per_category`.
+These are called out because they are easy wrong turns.
 
 ---
 
@@ -316,8 +318,12 @@ mean+k·σ, so cross-sidecar `merge` stays sound.
 Add a single `FindingKind::BaselineDeviation` (`model/finding.rs:17`, append after `IcsControlCommand`
 at `:71` to preserve enum ordinal → `Ord`/`Hash` stability) with `as_str` arm `=> "baseline_deviation"`
 (`:76`). Deviation *dimensions* are encoded in `title`/`evidence` rather than proliferating kinds —
-exactly how `beacon_finding` distinguishes strict vs evasive under one kind. This keeps every downstream
-`match FindingKind` (incidents, attack-chains, ATT&CK map, UI `KIND_META`) to a single new arm.
+exactly how `beacon_finding` distinguishes strict vs evasive under one kind. The change is small, but the
+compiler *will* force a new arm at every **exhaustive (no-`_`) `match FindingKind`** site (§7.4):
+`finding.rs:76` `as_str`, `detect/mod.rs` `stage_ordinal`/`stage_label`/`kind_phrase`, and
+`report/mod.rs:597` `kind_label`. ATT&CK ids are **not** set by a central kind match — they are attached
+per-detector at `Finding` construction (`technique_name` is string-keyed with a `_ => id` fallback), so no
+ATT&CK match needs updating.
 
 A `BaselineDeviation` finding maps onto the existing `Finding` shape (`finding.rs:107`) with **no new
 required fields**: `src_ip` = the deviating internal host, `dst_ip`/`dst_port` = the offending peer/port
@@ -330,7 +336,7 @@ new capture window, `severity`/`score` from the deviation score (§6.3).
 |---|---|---|---|---|
 | **New external peer** | host contacts a public IP absent from `peers` | `fanout`/channel keys; `is_external()` gate | `new external peer 203.0.113.5 — not in 42-capture profile` | T1071 |
 | **New service/port** | `(dst_port, transport)` absent from `services` | channel keys | `new destination port 4444/tcp` | T1571 |
-| **New category** | first use of a `Category` slot with count 0 in baseline | `per_category` / `ContactSeries.add_class` | `first use of category tunnel` | T1048 (context) |
+| **New category** (M2) | first use of a `Category` with 0 baseline count | **net-new per-host `category[13]`** (§7.3) | `first use of category tunnel` | T1048 (context) |
 | **Volume spike** | `bytes_out` > `mean + k·stddev` (k from params, default 4) | `RunningStat` (Welford) | `outbound 12MB vs baseline mean 1.8MB ±0.3MB (33σ)` | T1030/T1048 |
 | **New JA3** | JA3 absent from host's `ja3` set | `observe_ja3` fold (§7.3) | `new TLS client fingerprint e7d7…6865` | T1071 |
 | **Off-hours** | activity in an hour with 0 baseline count (and baseline has ≥N populated hours) | `hour_of_day[24]` | `activity 03:14 outside active window 07:00–19:00` | T1029 (context) |
@@ -374,10 +380,11 @@ honest.
 
 **Carrying explainability into the card.** So a deviation appears in the machine-readable
 `IpThreat.score_terms` (not only `evidence`), add `#[serde(default)] pub terms: Vec<ScoreTerm>` to
-`Finding` (`finding.rs:107`) and, in the strict-raise branch of `StatsAccumulator::apply_findings`
-(`stats/mod.rs:613`) and `Summary::apply_findings` (`summary.rs:443`), copy `e.terms = f.terms.clone()`
-(mirroring `observe_scored_flow:504`). One additive field + two one-line copies; back-compat via
-`serde(default)`.
+`Finding` (`finding.rs:107`) and copy it into the card in the strict-raise branches: in
+`StatsAccumulator::apply_findings` (`stats/mod.rs:613`) `e.terms = f.terms.clone()` (the accumulator field
+is `terms`, `stats/mod.rs:504`); in `Summary::apply_findings` (`summary.rs:443`)
+`card.score_terms = f.terms.clone()` (the `IpThreat` field is `score_terms`, `summary.rs:180`, **not**
+`terms`). One additive field + two one-line copies; back-compat via `serde(default)`.
 
 ---
 
@@ -416,7 +423,7 @@ impl BehaviorTracker {
 carries this capture's peers/services/categories/ja3/hour-histogram/beacon-keys/volume for one host — the
 shape `update_baseline` folds and `compare_to_baseline` diffs.
 
-### 7.3 `detect/mod.rs` — two net-new bounded accumulators
+### 7.3 `detect/mod.rs` — three net-new bounded accumulators
 
 1. **JA3 per host** (JA3 never reaches the tracker today). Add field
    `ja3: HashMap<IpAddr, HashSet<String>>` to `BehaviorTracker` (`:631`), a bounded
@@ -427,16 +434,22 @@ shape `update_baseline` folds and `compare_to_baseline` diffs.
    `activity: HashMap<IpAddr, [u32; 24]>` to `BehaviorTracker`, folded in `observe_flow_contact_with`
    from the flow's `first_ts_ns` (ns → unix secs → `(secs / 3600) % 24`). Fixed 24-slot array per host,
    inherently bounded; host count bounded by `max_tracked_keys`.
+3. **Per-host category histogram** (`per_category` is capture-wide, not per-host; §3 scoping note). Add
+   `category: HashMap<IpAddr, [u32; 13]>` to `BehaviorTracker`, folded in `process_flow` from
+   `record.category` (`Category` has 13 variants — same fixed-array discipline as `per_category`'s
+   `[CatStat; 13]`). Powers the "new category" deviation (§6.2, M2).
 
-Both feed `baseline_snapshot`. Both follow the tracker's existing heavy-hitter/never-panic discipline.
+All three feed `baseline_snapshot`. All follow the tracker's existing heavy-hitter/never-panic discipline.
 
 ### 7.4 `model/finding.rs` — the new kind (+ optional `terms`)
 
 - `FindingKind::BaselineDeviation` variant (`:71`) + `as_str` arm (`:76`) → `"baseline_deviation"`.
 - Optional (§6.3): `#[serde(default)] pub terms: Vec<ScoreTerm>` on `Finding` (`:107`). Requires importing
   `ScoreTerm` (already in `model::summary`). Additive; existing constructors default it to `vec![]`.
-- Downstream exhaustive `match FindingKind` sites needing a new arm: the kill-chain stage/ordinal map and
-  ATT&CK-technique map in `detect/` (compiler-enforced — no `_` catch-all).
+- Downstream exhaustive `match FindingKind` sites needing a new arm (compiler-enforced, no `_`):
+  `detect/mod.rs` `stage_ordinal` (`:3639`), `stage_label` (`:3668`), `kind_phrase` (`:3697`), and
+  `report/mod.rs` `kind_label` (`:597`). **Not** ATT&CK: `technique_name` (`detect/mod.rs:3828`) is
+  string-keyed with a `_ => id` fallback, and deviation ATT&CK ids are set at `Finding` construction.
 
 ### 7.5 `analyze/mod.rs` — load, compare, learn
 
@@ -498,9 +511,13 @@ Add `score_baseline_deviation` + the `PTS_DEV_*`/`DEV_UPLIFT_CAP` constants (§6
   `AnalysisOutput.schema_version` bump** (additive-optional, matching how `findings`/`incidents` were
   added). A new `Finding` field must also be set in every existing `Finding {…}` constructor (compiler
   forces this).
-- **WASM & HTML ride-through:** deviation findings live on `summary.findings`, so the existing
-  `analyze`/`render_report`/`export_*` paths serialise them with **no wasm/report `.rs` change** — the
-  `attack_chains` precedent (`ppcap-wasm` serialises the whole `AnalysisOutput`).
+- **WASM ride-through:** deviation findings live on `summary.findings`, so `analyze`/`export_*` serialise
+  them with **no wasm `.rs` change** — the `attack_chains` precedent (`ppcap-wasm` serialises the whole
+  `AnalysisOutput`).
+- **HTML report — one arm, not free:** findings render for free, **but** `report/mod.rs::kind_label`
+  (`:597`) is an exhaustive `match FindingKind` with no `_`, so it needs **one new arm**
+  (`BaselineDeviation => "Baseline Deviation"`) or `ppcap-core` won't compile. This corrects an earlier
+  "free ride-through" assumption.
 - **Do NOT touch** the Parquet/flow schema (`columnar/*`, `FLOW_PARQUET_VERSION`, `sql/schema.sql`, wasm
   `FlowDto`, UI `flow_columns.json`) — BBL is a summary-level cross-capture aggregate, not a per-flow row,
   so the `schema_drift.rs` guard is unaffected.
@@ -690,9 +707,9 @@ via `makeOutput({ findings: [{ kind: "baseline_deviation", … }] })`; optional 
   subcommand. *Value: a CLI user can learn a baseline over N captures and get deviation findings on N+1,
   fully offline.* **Acceptance:** `learn_then_deviate` integration test green; deviations appear in
   `--json`/`--html`; bounded-memory + determinism tests pass; cc-free gate clean.
-- **M2 — Novelty dimensions complete.** JA3-per-host fold + active-hours histogram + new-beacon diff
-  (the two net-new accumulators). *Value: first-seen-JA3, off-hours, and new-periodic-channel deviations.*
-  **Acceptance:** unit tests per dimension; no perf regression.
+- **M2 — Novelty dimensions complete.** The three net-new per-host accumulators (JA3 set, active-hours
+  histogram, category histogram) + new-beacon diff. *Value: first-seen-JA3, off-hours, new-category, and
+  new-periodic-channel deviations.* **Acceptance:** unit tests per dimension; no perf regression.
 - **M3 — WASM + browser compute.** `build_baseline`/`compare_to_baseline` wasm exports; TS types;
   localStorage/File-System-Access persistence; bundled sample baseline. *Value: the web build learns &
   compares in-browser, nothing leaves the device.* **Acceptance:** wasm smoke test; web e2e.
@@ -735,7 +752,8 @@ via `makeOutput({ findings: [{ kind: "baseline_deviation", … }] })`; optional 
 |---|---|---|
 | `engine/crates/ppcap-core/src/baseline/mod.rs` | **Add** | Schema, `RunningStat`, `CaptureProfile`, build/update/merge/compare, `DeviationReport`, tests |
 | `engine/crates/ppcap-core/src/lib.rs` | Modify | `pub mod baseline;` + re-export block |
-| `engine/crates/ppcap-core/src/detect/mod.rs` | Modify | `baseline_snapshot()` accessor; `ja3` + `activity` fields + `observe_ja3`; folds |
+| `engine/crates/ppcap-core/src/detect/mod.rs` | Modify | `baseline_snapshot()`; `ja3`/`activity`/`category` per-host fields + folds; new arm in `stage_ordinal`/`stage_label`/`kind_phrase` |
+| `engine/crates/ppcap-core/src/report/mod.rs` | Modify | one new arm in exhaustive `kind_label` match (`:597`) |
 | `engine/crates/ppcap-core/src/model/finding.rs` | Modify | `FindingKind::BaselineDeviation` + `as_str`; optional `terms` field |
 | `engine/crates/ppcap-core/src/model/output.rs` | Modify | `#[serde(default)] baseline: Option<CaptureProfile>` |
 | `engine/crates/ppcap-core/src/analyze/mod.rs` | Modify | PipelineConfig fields; load/compare/snapshot seams; `observe_ja3` call in `process_flow` |
@@ -813,6 +831,22 @@ Adversarial review across engine/invariants/product lenses, most-load-bearing fi
    `evidence` — hence the additive `Finding.terms` field + the two `apply_findings` copies (§6.3).
 7. **Schema-drift guard untouched (invariants).** BBL is summary-level; the Parquet/flow schema and its
    cross-language `schema_drift.rs` guard are explicitly not touched (§8, §15).
+
+*Second review pass — verified against the tree post-draft:*
+
+8. **HTML report is not a zero-change ride-through (engine).** `report/mod.rs::kind_label` (`:597`) is an
+   exhaustive `match FindingKind` with no `_`, so the new variant needs one arm there or `ppcap-core`
+   won't compile. Corrected §1/§8/§15 (findings still render for free otherwise).
+9. **Per-host category is net-new (engine).** `per_category` (`stats/mod.rs:149`) is capture-wide, not
+   per-host, and `ContactSeries.add_class` stores no `Category` — so "new category" needs a *third*
+   net-new per-host accumulator (`category: HashMap<IpAddr,[u32;13]>`). Added in §7.3; dimension marked M2.
+10. **Compiler-forced match sites re-enumerated (engine).** The exhaustive `match FindingKind` sites are
+    `finding.rs:as_str`, `detect/mod.rs:{stage_ordinal,stage_label,kind_phrase}`, and
+    `report/mod.rs:kind_label` — **not** an ATT&CK map (`technique_name` is string-keyed with a `_ => id`
+    fallback; attack ids are set per-detector at construction). Corrected §6.1/§7.4.
+11. **`Summary::apply_findings` field name (engine).** The `IpThreat` card field is `score_terms`
+    (`summary.rs:180`), not `terms`, so the summary-side copy is `card.score_terms = f.terms.clone()`.
+    Corrected §6.3.
 
 ## Appendix B — Citation verification
 
