@@ -31,6 +31,7 @@ export const KIND_STAGE: Record<FindingKind, string> = {
   exposed_remote_access: "Lateral Movement",
   ioc_match: "Detection",
   ics_control_command: "Impact",
+  baseline_deviation: "Command & Control",
 };
 
 /** The noun for a finding kind's contributing count (e.g. "contacts", "hosts"). */

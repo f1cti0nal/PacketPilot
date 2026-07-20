@@ -282,6 +282,7 @@ export type FindingKind =
   | "malware_signature"
   | "exposed_remote_access"
   | "ics_control_command"
+  | "baseline_deviation"
   | "ioc_match";
 
 /**
@@ -417,6 +418,104 @@ export interface AnalysisOutput {
   summary: Summary;
   flows_parquet_path?: string; // present in sample; ignored at runtime
   elapsed_ms?: number;
+  /**
+   * Behavioral Baseline Learning: this capture's per-internal-host egress snapshot, attached by
+   * the wasm/native engine so the browser can learn/compare offline. Omitted when not computed.
+   */
+  baseline?: CaptureProfile | null;
+}
+
+// ---------- Behavioral Baseline Learning ----------
+// Mirrors engine/crates/ppcap-core/src/baseline/mod.rs. Post-M1 fields are optional so an M1
+// sidecar (or an engine that predates them) still typechecks.
+
+/** Welford online mean/variance + min/max + EWMA (serialisable). */
+export interface RunningStat {
+  count: number;
+  mean: number;
+  m2: number;
+  min: number;
+  max: number;
+  ewma: number;
+}
+
+/** A membership counter with recency (captures/total seen, first/last unix secs). */
+export interface SeenCount {
+  captures: number;
+  total: number;
+  first_seen_unix: number;
+  last_seen_unix: number;
+}
+
+export interface PeerStat {
+  ip: string;
+  seen: SeenCount;
+}
+export interface ServiceStat {
+  port: number;
+  seen: SeenCount;
+}
+export interface Ja3Stat {
+  ja3: string;
+  seen: SeenCount;
+}
+export interface BeaconStat {
+  dst: string;
+  port: number;
+  interval_ns: number;
+  jitter_cv: number;
+  seen: SeenCount;
+}
+
+/** A learned per-internal-host behavioral profile, accumulated across captures. */
+export interface HostBaseline {
+  host: string;
+  captures_seen: number;
+  bytes_out: RunningStat;
+  bytes_in: RunningStat;
+  flows: RunningStat;
+  peers: PeerStat[];
+  services: ServiceStat[];
+  ja3?: Ja3Stat[];
+  /** Contacts by hour-of-day (UTC), 24 slots. */
+  hour_of_day?: number[];
+  /** Flow counts by traffic category, 13 slots (Category order). */
+  categories?: number[];
+  beacons?: BeaconStat[];
+  first_seen_unix: number;
+  last_seen_unix: number;
+}
+
+/** The persisted baseline sidecar (derived stats only; no packets). */
+export interface BaselineProfile {
+  schema_version: number;
+  engine_version: string;
+  captures_merged?: number;
+  source_sha256s?: string[];
+  first_analyzed_unix_secs: number;
+  last_analyzed_unix_secs: number;
+  first_ts_ns: number;
+  last_ts_ns: number;
+  hosts: HostBaseline[];
+}
+
+/** One internal host's egress behavior in a single capture (the snapshot form). */
+export interface HostObservation {
+  host: string;
+  bytes_out: number;
+  bytes_in: number;
+  flows: number;
+  peers: string[];
+  services: number[];
+  ja3?: string[];
+  hour_of_day?: number[];
+  categories?: number[];
+  beacons?: { dst: string; port: number; interval_ns: number; jitter_cv: number }[];
+}
+
+/** This capture's per-internal-host snapshot (rides on {@link AnalysisOutput.baseline}). */
+export interface CaptureProfile {
+  hosts: HostObservation[];
 }
 
 // ---------- flows.parquet ----------
@@ -605,7 +704,7 @@ export interface FlowRow {
 }
 
 // ---------- load state ----------
-export const TAB_IDS = ["dashboard", "flows", "query", "findings", "threats", "attackchain", "recent", "compare"] as const;
+export const TAB_IDS = ["dashboard", "flows", "query", "findings", "threats", "attackchain", "baseline", "recent", "compare"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
 /** How a capture entered the app — drives whether it can be re-analyzed in place. */

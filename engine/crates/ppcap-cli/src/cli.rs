@@ -93,6 +93,14 @@ pub enum Command {
         /// later `ppcap rescan` against updated threat intel.
         #[arg(long)]
         index: Option<PathBuf>,
+        /// Behavioral Baseline: compare this capture's per-host egress against a saved baseline
+        /// JSON and raise deviation findings (read-only; findings appear in --json/--html/--csv).
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+        /// Behavioral Baseline: learn/merge this capture into the baseline JSON at this path,
+        /// creating it if absent (a sidecar side-channel, like --index).
+        #[arg(long = "update-baseline")]
+        update_baseline: Option<PathBuf>,
     },
     /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
     /// reporting indicators that were clean at capture time but are dirty now.
@@ -108,6 +116,11 @@ pub enum Command {
         /// Also report indicators that were ALREADY flagged at capture time.
         #[arg(long)]
         include_known: bool,
+    },
+    /// Behavioral Baseline: inspect or combine per-host baseline profile sidecars.
+    Baseline {
+        #[command(subcommand)]
+        action: BaselineAction,
     },
     /// Generate a synthetic capture for testing.
     Gen {
@@ -180,6 +193,47 @@ pub enum Command {
     },
 }
 
+/// `ppcap baseline` sub-actions: pure transforms over baseline profile sidecars.
+#[derive(Subcommand, Debug)]
+pub enum BaselineAction {
+    /// Print a human summary of a baseline profile to stderr (+ optional --json to a path/stdout).
+    Show {
+        /// The baseline profile JSON to inspect.
+        baseline: PathBuf,
+        /// Also write the profile JSON here; "-" or omitted => stderr summary only.
+        #[arg(long)]
+        json: Option<String>,
+    },
+    /// Merge two or more baseline profiles into one (folding per-host running statistics).
+    Merge {
+        /// The baseline profile JSON files to merge (at least two).
+        baselines: Vec<PathBuf>,
+        /// Output path for the merged baseline; "-" or omitted => stdout.
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// Build a baseline by folding one or more analyzed captures (each an `analyze --json` output
+    /// carrying a per-host snapshot, i.e. produced with `--update-baseline`/`--baseline`).
+    Build {
+        /// Analysis-output JSON files to fold in.
+        summaries: Vec<PathBuf>,
+        /// Output path for the baseline; "-" or omitted => stdout.
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// Compare an analyzed capture against a baseline and report the per-host deviations (a
+    /// re-analysis-free `analyze --baseline`).
+    Diff {
+        /// The reference baseline profile JSON.
+        baseline: PathBuf,
+        /// The analysis-output JSON to compare (must carry a per-host snapshot).
+        summary: PathBuf,
+        /// Write the full deviation report here; "-" or omitted => human summary to stderr only.
+        #[arg(long)]
+        json: Option<String>,
+    },
+}
+
 /// Embedded DuckDB DDL (shipped so the sidecar/Wasm can create the schema without the repo).
 const DUCKDB_SCHEMA: &str = include_str!("../../ppcap-core/sql/schema.sql");
 
@@ -221,6 +275,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             reputation,
             rules,
             index,
+            baseline,
+            update_baseline,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
             // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
@@ -264,6 +320,10 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     capture_id: fnv1a64(input.to_string_lossy().as_bytes()),
                     ..Default::default()
                 },
+                // Behavioral Baseline: compare against a saved profile, and/or snapshot this
+                // capture's per-host egress so it can be folded into a baseline after the run.
+                baseline_in: baseline.clone(),
+                update_baseline: update_baseline.is_some(),
                 ..Default::default()
             };
 
@@ -294,6 +354,19 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             if !quiet {
                 // Terminate the in-place progress line.
                 let _ = writeln!(std::io::stderr());
+            }
+
+            if baseline.is_some() && !quiet {
+                let n = out
+                    .summary
+                    .findings
+                    .iter()
+                    .filter(|f| f.kind == ppcap_core::FindingKind::BaselineDeviation)
+                    .count();
+                eprintln!(
+                    "baseline: {n} host deviation{} vs the saved profile",
+                    if n == 1 { "" } else { "s" }
+                );
             }
 
             if reputation {
@@ -428,6 +501,37 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     );
                 }
             }
+
+            if let Some(bpath) = update_baseline.as_ref() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                // Load the existing sidecar (create-or-merge); a missing file starts empty.
+                let prior = match std::fs::read_to_string(bpath) {
+                    Ok(t) => ppcap_core::BaselineProfile::from_json_str(&t)
+                        .with_context(|| format!("parse baseline {}", bpath.display()))?,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        ppcap_core::BaselineProfile::new()
+                    }
+                    Err(e) => {
+                        return Err(anyhow::Error::new(e))
+                            .with_context(|| format!("read baseline {}", bpath.display()));
+                    }
+                };
+                let params = ppcap_core::BaselineParams::default();
+                let updated = ppcap_core::update_baseline(prior, &out, now, &params);
+                std::fs::write(bpath, updated.to_json_pretty()?)
+                    .with_context(|| format!("write baseline to {}", bpath.display()))?;
+                if !quiet {
+                    eprintln!(
+                        "updated behavioral baseline ({} hosts, {} captures) -> {}",
+                        updated.hosts.len(),
+                        updated.captures_merged,
+                        bpath.display()
+                    );
+                }
+            }
             Ok(())
         }
         Command::Rescan {
@@ -494,6 +598,148 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Baseline { action } => match action {
+            BaselineAction::Show { baseline, json } => {
+                let text = std::fs::read_to_string(&baseline)
+                    .with_context(|| format!("read baseline {}", baseline.display()))?;
+                let profile = ppcap_core::BaselineProfile::from_json_str(&text)
+                    .with_context(|| format!("parse baseline {}", baseline.display()))?;
+                eprintln!(
+                    "baseline: {} hosts, {} captures merged (engine {})",
+                    profile.hosts.len(),
+                    profile.captures_merged,
+                    profile.engine_version
+                );
+                for h in profile.hosts.iter().take(20) {
+                    eprintln!(
+                        "  {:<20} seen x{:<4} peers={:<4} ports={:<4} out~{:.0}B",
+                        h.host,
+                        h.captures_seen,
+                        h.peers.len(),
+                        h.services.len(),
+                        h.bytes_out.mean
+                    );
+                }
+                if profile.hosts.len() > 20 {
+                    eprintln!("  ... and {} more hosts", profile.hosts.len() - 20);
+                }
+                if let Some(j) = json.as_deref() {
+                    let s = profile.to_json_pretty()?;
+                    match j {
+                        "-" => println!("{s}"),
+                        path => std::fs::write(path, &s)
+                            .with_context(|| format!("write baseline JSON to {path}"))?,
+                    }
+                }
+                Ok(())
+            }
+            BaselineAction::Merge { baselines, out } => {
+                if baselines.len() < 2 {
+                    return Err(anyhow!("baseline merge needs at least two profiles"));
+                }
+                let params = ppcap_core::BaselineParams::default();
+                let mut acc: Option<ppcap_core::BaselineProfile> = None;
+                for p in &baselines {
+                    let text = std::fs::read_to_string(p)
+                        .with_context(|| format!("read baseline {}", p.display()))?;
+                    let profile = ppcap_core::BaselineProfile::from_json_str(&text)
+                        .with_context(|| format!("parse baseline {}", p.display()))?;
+                    acc = Some(match acc {
+                        None => profile,
+                        Some(a) => ppcap_core::merge_baselines(a, profile, &params),
+                    });
+                }
+                let merged = acc.expect("at least two profiles were merged");
+                let s = merged.to_json_pretty()?;
+                match out.as_deref() {
+                    None | Some("-") => println!("{s}"),
+                    Some(path) => std::fs::write(path, &s)
+                        .with_context(|| format!("write merged baseline to {path}"))?,
+                }
+                eprintln!(
+                    "merged {} baselines -> {} hosts, {} captures",
+                    baselines.len(),
+                    merged.hosts.len(),
+                    merged.captures_merged
+                );
+                Ok(())
+            }
+            BaselineAction::Build { summaries, out } => {
+                if summaries.is_empty() {
+                    return Err(anyhow!(
+                        "baseline build needs at least one analysis-output file"
+                    ));
+                }
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let params = ppcap_core::BaselineParams::default();
+                let mut loaded = Vec::with_capacity(summaries.len());
+                for p in &summaries {
+                    let text = std::fs::read_to_string(p)
+                        .with_context(|| format!("read analysis output {}", p.display()))?;
+                    let out_json: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                        .with_context(|| format!("parse analysis output {}", p.display()))?;
+                    loaded.push(out_json);
+                }
+                let with_snapshot = loaded.iter().filter(|o| o.baseline.is_some()).count();
+                let refs: Vec<&ppcap_core::AnalysisOutput> = loaded.iter().collect();
+                let profile = ppcap_core::build_baseline(&refs, now, &params);
+                let s = profile.to_json_pretty()?;
+                match out.as_deref() {
+                    None | Some("-") => println!("{s}"),
+                    Some(path) => std::fs::write(path, &s)
+                        .with_context(|| format!("write baseline to {path}"))?,
+                }
+                eprintln!(
+                    "built baseline from {}/{} captures carrying a snapshot -> {} hosts",
+                    with_snapshot,
+                    summaries.len(),
+                    profile.hosts.len()
+                );
+                Ok(())
+            }
+            BaselineAction::Diff {
+                baseline,
+                summary,
+                json,
+            } => {
+                let btext = std::fs::read_to_string(&baseline)
+                    .with_context(|| format!("read baseline {}", baseline.display()))?;
+                let base = ppcap_core::BaselineProfile::from_json_str(&btext)
+                    .with_context(|| format!("parse baseline {}", baseline.display()))?;
+                let stext = std::fs::read_to_string(&summary)
+                    .with_context(|| format!("read analysis output {}", summary.display()))?;
+                let out_json: ppcap_core::AnalysisOutput = serde_json::from_str(&stext)
+                    .with_context(|| format!("parse analysis output {}", summary.display()))?;
+                let prof = out_json.baseline.ok_or_else(|| {
+                    anyhow!(
+                        "{} has no per-host snapshot (analyze with --update-baseline/--baseline)",
+                        summary.display()
+                    )
+                })?;
+                let params = ppcap_core::BaselineParams::default();
+                let report = ppcap_core::compare_to_baseline(&base, &prof, &params);
+                eprintln!(
+                    "baseline diff: {} host(s) compared, {} deviation(s)",
+                    report.hosts_compared,
+                    report.deviations.len()
+                );
+                for d in &report.deviations {
+                    eprintln!("  {:<8} {}", d.severity.as_str(), d.title);
+                }
+                if let Some(path) = json.as_deref() {
+                    let s = serde_json::to_string_pretty(&report)?;
+                    match path {
+                        "-" => println!("{s}"),
+                        p => std::fs::write(p, &s)
+                            .with_context(|| format!("write deviation report to {p}"))?,
+                    }
+                }
+                Ok(())
+            }
+        },
         Command::Gen {
             output,
             scenario,
@@ -821,6 +1067,64 @@ mod reputation_cli_tests {
     }
 
     #[test]
+    fn analyze_baseline_flags_parse() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "analyze",
+            "x.pcap",
+            "--baseline",
+            "net.baseline.json",
+            "--update-baseline",
+            "net.baseline.json",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Analyze {
+                baseline,
+                update_baseline,
+                ..
+            } => {
+                assert_eq!(
+                    baseline.as_deref(),
+                    Some(std::path::Path::new("net.baseline.json"))
+                );
+                assert_eq!(
+                    update_baseline.as_deref(),
+                    Some(std::path::Path::new("net.baseline.json"))
+                );
+            }
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn baseline_show_and_merge_parse() {
+        let show = Cli::try_parse_from(["ppcap", "baseline", "show", "net.baseline.json"]).unwrap();
+        match show.command {
+            Command::Baseline {
+                action: BaselineAction::Show { baseline, json },
+            } => {
+                assert_eq!(baseline, std::path::Path::new("net.baseline.json"));
+                assert!(json.is_none());
+            }
+            _ => panic!("expected Baseline::Show"),
+        }
+        let merge = Cli::try_parse_from([
+            "ppcap", "baseline", "merge", "a.json", "b.json", "--out", "-",
+        ])
+        .unwrap();
+        match merge.command {
+            Command::Baseline {
+                action: BaselineAction::Merge { baselines, out },
+            } => {
+                assert_eq!(baselines.len(), 2);
+                assert_eq!(out.as_deref(), Some("-"));
+            }
+            _ => panic!("expected Baseline::Merge"),
+        }
+    }
+
+    #[test]
     fn rescan_parses_indices_and_feed() {
         let cli = Cli::try_parse_from([
             "ppcap",
@@ -853,5 +1157,123 @@ mod reputation_cli_tests {
     fn rescan_requires_a_feed() {
         // Missing the required --threat-feed → clap parse error.
         assert!(Cli::try_parse_from(["ppcap", "rescan", "a.index.json"]).is_err());
+    }
+
+    #[test]
+    fn baseline_merge_and_show_dispatch() {
+        // A minimal valid single-host baseline profile (schema v1).
+        let mk = |sha: &str| {
+            format!(
+                r#"{{"schema_version":1,"engine_version":"t","captures_merged":1,"source_sha256s":["{sha}"],"first_analyzed_unix_secs":0,"last_analyzed_unix_secs":0,"first_ts_ns":0,"last_ts_ns":0,"hosts":[{{"host":"10.0.0.5","captures_seen":1,"bytes_out":{{"count":1,"mean":1000.0,"m2":0.0,"min":1000.0,"max":1000.0,"ewma":1000.0}},"bytes_in":{{"count":1,"mean":0.0,"m2":0.0,"min":0.0,"max":0.0,"ewma":0.0}},"flows":{{"count":1,"mean":1.0,"m2":0.0,"min":1.0,"max":1.0,"ewma":1.0}},"peers":[],"services":[],"first_seen_unix":0,"last_seen_unix":0}}]}}"#
+            )
+        };
+        let a = tempfile::NamedTempFile::new().unwrap();
+        let b = tempfile::NamedTempFile::new().unwrap();
+        let out = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(a.path(), mk("aa")).unwrap();
+        std::fs::write(b.path(), mk("bb")).unwrap();
+
+        // `baseline merge a b --out <out>` runs the dispatch body (not just clap parsing).
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "baseline",
+            "merge",
+            a.path().to_str().unwrap(),
+            b.path().to_str().unwrap(),
+            "--out",
+            out.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let merged: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(out.path()).unwrap()).unwrap();
+        assert_eq!(merged["captures_merged"], 2);
+        assert_eq!(merged["hosts"][0]["captures_seen"], 2);
+
+        // `baseline show <merged>` runs its dispatch body without error.
+        let cli2 = Cli::try_parse_from(["ppcap", "baseline", "show", out.path().to_str().unwrap()])
+            .unwrap();
+        dispatch(cli2).unwrap();
+
+        // `baseline merge <one>` is a usage error (needs >= 2).
+        let one = Cli::try_parse_from(["ppcap", "baseline", "merge", a.path().to_str().unwrap()])
+            .unwrap();
+        assert!(dispatch(one).is_err());
+    }
+
+    #[test]
+    fn baseline_build_and_diff_dispatch() {
+        // An analysis output carrying a per-host egress snapshot (as `--update-baseline` emits).
+        let out = ppcap_core::AnalysisOutput {
+            engine_version: "t".to_string(),
+            baseline: Some(ppcap_core::CaptureProfile {
+                hosts: vec![ppcap_core::HostObservation {
+                    host: "10.0.0.5".to_string(),
+                    bytes_out: 1000,
+                    bytes_in: 100,
+                    flows: 1,
+                    peers: vec!["203.0.113.7".to_string()],
+                    services: vec![443],
+                    ..Default::default()
+                }],
+            }),
+            ..Default::default()
+        };
+        let sfile = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(sfile.path(), out.to_json_pretty().unwrap()).unwrap();
+        let bfile = tempfile::NamedTempFile::new().unwrap();
+
+        // build: fold the summary into a fresh baseline.
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "baseline",
+            "build",
+            sfile.path().to_str().unwrap(),
+            "--out",
+            bfile.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let base: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(bfile.path()).unwrap()).unwrap();
+        assert_eq!(base["captures_merged"], 1);
+        assert!(base["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["host"] == "10.0.0.5"));
+
+        // diff: compare the same capture against its 1-capture baseline (warm-up not met -> 0
+        // deviations, but the host is counted as compared and the report is valid JSON).
+        let rep = tempfile::NamedTempFile::new().unwrap();
+        let cli2 = Cli::try_parse_from([
+            "ppcap",
+            "baseline",
+            "diff",
+            bfile.path().to_str().unwrap(),
+            sfile.path().to_str().unwrap(),
+            "--json",
+            rep.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli2).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(rep.path()).unwrap()).unwrap();
+        assert_eq!(report["hosts_compared"], 1);
+        assert!(report["deviations"].is_array());
+
+        // diff on a summary with no snapshot is a hard error.
+        let plain = ppcap_core::AnalysisOutput::default();
+        let pfile = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(pfile.path(), plain.to_json_pretty().unwrap()).unwrap();
+        let cli3 = Cli::try_parse_from([
+            "ppcap",
+            "baseline",
+            "diff",
+            bfile.path().to_str().unwrap(),
+            pfile.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        assert!(dispatch(cli3).is_err());
     }
 }

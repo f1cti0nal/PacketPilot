@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ActiveSource,
   AnalysisOutput,
+  BaselineProfile,
   FlowRow,
   Incident,
   RecentEntry,
@@ -37,6 +38,16 @@ import { ThreatsView } from "./views/ThreatsView";
 import { AttackChainView } from "./views/AttackChainView";
 import { RecentView } from "./components/recent/RecentView";
 import { CompareView } from "./views/CompareView";
+import { BaselineView } from "./views/BaselineView";
+import {
+  clearBaseline,
+  compareWithBaseline,
+  forgetHost,
+  hasBaseline,
+  learnFromOutput,
+  loadBaseline,
+  saveBaseline,
+} from "./lib/baseline";
 import {
   isTauri,
   openCaptureDialog,
@@ -171,6 +182,38 @@ export function App() {
   // drill-down. null whenever packets can't be re-extracted (sample, summary import, etc.).
   const [activeSource, setActiveSource] = useState<ActiveSource>(null);
 
+  // Behavioral Baseline Learning: the learned per-host profile, persisted in local storage
+  // (on-device). Loaded once; updated when the user learns a capture or forgets a host.
+  const [baseline, setBaseline] = useState<BaselineProfile | null>(() => loadBaseline());
+
+  // When a baseline is saved and the freshly-analyzed capture carries a snapshot, fold its
+  // `baseline_deviation` findings into the summary (so they surface in the dashboard, findings
+  // list, and Baseline tab). Guarded on the exact output object so it runs once and cannot loop.
+  const foldBaselineInto = useCallback((data: AnalysisOutput) => {
+    if (!data.baseline || !hasBaseline()) return;
+    void compareWithBaseline(data)
+      .then((withDeviations) => {
+        if (withDeviations === data) return;
+        setSummary((s) =>
+          s.status === "ready" && s.data === data
+            ? { status: "ready", data: withDeviations }
+            : s,
+        );
+      })
+      .catch(() => {
+        /* comparison is best-effort; a wasm hiccup must not break the capture view */
+      });
+  }, []);
+
+  const onLearnBaseline = useCallback(() => {
+    if (summary.status !== "ready" || !summary.data) return;
+    void learnFromOutput(summary.data)
+      .then((updated) => setBaseline(updated))
+      .catch(() => {
+        /* best-effort; keep the prior baseline on failure */
+      });
+  }, [summary]);
+
   // Recent captures: the persisted list, which entry is currently shown, and which (if any)
   // is mid-re-analysis. The load dialog's open state is lifted here so the Recent tab can
   // trigger it too.
@@ -269,6 +312,7 @@ export function App() {
     async (input: ApplyCaptureInput): Promise<void> => {
       const data = input.summary;
       setSummary({ status: "ready", data });
+      foldBaselineInto(data);
       if (input.flows) setFlows({ status: "ready", rows: input.flows });
       setSelectedIncident(null);
       setActiveIp(null);
@@ -302,7 +346,7 @@ export function App() {
       setRecent(list);
       setActiveId(id);
     },
-    [],
+    [foldBaselineInto],
   );
 
   // Apply a reputation fold to the freshest summary for THIS capture and commit it, serialized
@@ -511,6 +555,7 @@ export function App() {
   const handleSelectRecent = useCallback(async (entry: RecentEntry) => {
     setActiveId(entry.id);
     setSummary({ status: "ready", data: entry.summary });
+    foldBaselineInto(entry.summary);
     setTab("dashboard");
     setSelectedIncident(null);
     setActiveIp(null);
@@ -521,7 +566,7 @@ export function App() {
     setFlows({ status: "loading", rows: [] });
     const cached = await getFlows(entry.id);
     setFlows({ status: "ready", rows: cached ?? [] });
-  }, []);
+  }, [foldBaselineInto]);
 
   // Re-run the engine on the original file. Desktop re-analyzes in place from the stored
   // path; in the browser we no longer hold the bytes, so re-open the picker.
@@ -805,6 +850,22 @@ export function App() {
             const f = summary.status === "ready" ? summary.data?.summary.findings?.[idx] : undefined;
             if (f) jumpToFlows({ ip: f.src_ip });
           }}
+        />
+      ) : tab === "baseline" ? (
+        <BaselineView
+          output={summary.status === "ready" ? summary.data ?? null : null}
+          baseline={baseline}
+          onLearn={onLearnBaseline}
+          onForgetHost={(h) => setBaseline(forgetHost(h))}
+          onClear={() => {
+            clearBaseline();
+            setBaseline(null);
+          }}
+          onImport={(p) => {
+            saveBaseline(p);
+            setBaseline(p);
+          }}
+          onJumpToFlows={jumpToFlows}
         />
       ) : tab === "recent" ? (
         <RecentView

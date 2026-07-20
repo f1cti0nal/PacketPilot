@@ -667,7 +667,20 @@ pub struct BehaviorTracker {
     /// Per-`(client, plc, port)` OT/ICS write-control commands: the set of Modbus function
     /// codes issued and the total command count. Bounded by `max_tracked_keys`.
     ot_control: HashMap<(IpAddr, IpAddr, u16), OtControlStat>,
+    /// Behavioral-baseline: per-source set of distinct TLS JA3 client fingerprints presented
+    /// (the "new client stack / tool" novelty axis). Bounded in both dimensions.
+    ja3: HashMap<IpAddr, HashSet<String>>,
+    /// Behavioral-baseline: per-source active-hour histogram (contacts by hour-of-day, UTC) — the
+    /// off-hours novelty axis. A fixed 24-slot array per source (inherently bounded); key-count
+    /// bounded by `max_tracked_keys`.
+    activity: HashMap<IpAddr, [u32; 24]>,
+    /// Behavioral-baseline: per-source traffic-category histogram (13 slots, `Category` order) — the
+    /// "first use of a category" novelty axis. Fixed-width per source; key-count bounded.
+    category: HashMap<IpAddr, [u32; 13]>,
 }
+
+/// Cap on distinct JA3 fingerprints tracked per source (bounded memory on a pathological capture).
+const MAX_JA3_PER_SRC: usize = 64;
 
 /// Per-`(client, plc, port)` OT/ICS control statistics: which write function codes were issued
 /// and how many commands total.
@@ -771,6 +784,137 @@ impl BehaviorTracker {
             disguised_dl: HashMap::new(),
             mining: HashMap::new(),
             ot_control: HashMap::new(),
+            ja3: HashMap::new(),
+            activity: HashMap::new(),
+            category: HashMap::new(),
+        }
+    }
+
+    /// Project this capture's per-internal-host egress behavior for Behavioral Baseline Learning.
+    ///
+    /// Aggregates every observed contact channel whose source is an *internal* host and whose
+    /// destination is *external* (the monitored network's egress): outbound/inbound bytes, contact
+    /// count, and the external peer / destination-port sets, keyed by internal host. This is both
+    /// the learn payload folded into a persisted baseline and the compare input diffed against it.
+    /// Bounded by the `params` caps and deterministic (sorted). Reads only already-bounded tracker
+    /// state — no packet re-read.
+    pub fn baseline_snapshot(
+        &self,
+        params: &crate::baseline::BaselineParams,
+    ) -> crate::baseline::CaptureProfile {
+        use crate::enrich::classify_ip;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        #[derive(Default)]
+        struct Acc {
+            bytes_out: u64,
+            bytes_in: u64,
+            flows: u64,
+            peers: BTreeSet<IpAddr>,
+            services: BTreeSet<u16>,
+            beacons: Vec<crate::baseline::BeaconObs>,
+        }
+        let mut hosts: BTreeMap<IpAddr, Acc> = BTreeMap::new();
+        for (key, series) in &self.channels {
+            // Egress only: internal source reaching an external destination.
+            if classify_ip(key.src).is_external() || !classify_ip(key.dst).is_external() {
+                continue;
+            }
+            let acc = hosts.entry(key.src).or_default();
+            acc.bytes_out = acc.bytes_out.saturating_add(series.bytes_out());
+            acc.bytes_in = acc.bytes_in.saturating_add(series.bytes_in());
+            acc.flows = acc.flows.saturating_add(series.contacts());
+            acc.peers.insert(key.dst);
+            acc.services.insert(key.dst_port);
+            // A beacon-shaped egress channel: enough regular contacts (so the inter-arrival CV is
+            // meaningful) AND a positive mean interval (so a same-second burst isn't a "~0s" beacon)
+            // with low jitter — matching the periodicity gate the beacon detector enforces. Recorded
+            // so "a channel that is newly periodic" can be a deviation later.
+            if series.contacts() >= params.min_beacon_contacts
+                && series.interval_ns() > 0.0
+                && series.jitter_cv() <= params.max_beacon_cv
+            {
+                acc.beacons.push(crate::baseline::BeaconObs {
+                    dst: key.dst.to_string(),
+                    port: key.dst_port,
+                    interval_ns: series.interval_ns() as i64,
+                    jitter_cv: series.jitter_cv(),
+                });
+            }
+        }
+        // NOTE: the per-host sets are NOT magnitude-truncated here. Truncating a set sorted by
+        // IP/port would silently drop the highest-sorting peers/ports, blinding the new-peer /
+        // new-port novelty axes for that capture. The snapshot is already bounded by the tracker's
+        // own caps (channels/JA3 set), and the *persisted* profile applies the real heavy-hitter
+        // top_k cap (cap_peers/cap_services/cap_ja3/cap_beacons) across captures — so the snapshot
+        // must stay faithful. Only the host COUNT is capped (below).
+        let mut out: Vec<crate::baseline::HostObservation> = hosts
+            .into_iter()
+            .map(|(host, mut acc)| {
+                let peers: Vec<String> = acc.peers.iter().map(|p| p.to_string()).collect();
+                let services: Vec<u16> = acc.services.iter().copied().collect();
+                // JA3 fingerprints / active-hours / category mix are per-source host signals (not
+                // egress-keyed): the whole host's client stacks, active window, and traffic kinds.
+                let ja3: Vec<String> = self
+                    .ja3
+                    .get(&host)
+                    .map(|s| {
+                        let mut v: Vec<String> = s.iter().cloned().collect();
+                        v.sort();
+                        v
+                    })
+                    .unwrap_or_default();
+                let hour_of_day = self.activity.get(&host).copied().unwrap_or([0u32; 24]);
+                let categories = self.category.get(&host).copied().unwrap_or([0u32; 13]);
+                acc.beacons
+                    .sort_by(|a, b| a.dst.cmp(&b.dst).then(a.port.cmp(&b.port)));
+                crate::baseline::HostObservation {
+                    host: host.to_string(),
+                    bytes_out: acc.bytes_out,
+                    bytes_in: acc.bytes_in,
+                    flows: acc.flows,
+                    peers,
+                    services,
+                    ja3,
+                    hour_of_day,
+                    categories,
+                    beacons: acc.beacons,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| a.host.cmp(&b.host));
+        out.truncate(params.max_hosts);
+        crate::baseline::CaptureProfile { hosts: out }
+    }
+
+    /// Behavioral-baseline: record that `src` presented TLS JA3 fingerprint `ja3`. Bounded: a
+    /// brand-new source at capacity is dropped; the per-source set is capped at [`MAX_JA3_PER_SRC`].
+    pub fn observe_ja3(&mut self, src: IpAddr, ja3: &str) {
+        if ja3.is_empty() {
+            return;
+        }
+        if let Some(set) = self.ja3.get_mut(&src) {
+            if set.len() < MAX_JA3_PER_SRC {
+                set.insert(ja3.to_string());
+            }
+        } else if self.ja3.len() < self.cfg.max_tracked_keys.max(1) {
+            let mut set = HashSet::new();
+            set.insert(ja3.to_string());
+            self.ja3.insert(src, set);
+        }
+    }
+
+    /// Behavioral-baseline: fold one flow's traffic `category` for `src` into its per-source
+    /// category histogram (13 slots, `Category` iteration order). Bounded: key-count capped.
+    pub fn observe_category(&mut self, src: IpAddr, category: crate::model::category::Category) {
+        // Single source of truth for the fixed 13-slot category order.
+        let idx = crate::stats::category_index(category);
+        if let Some(h) = self.category.get_mut(&src) {
+            h[idx] = h[idx].saturating_add(1);
+        } else if self.category.len() < self.cfg.max_tracked_keys.max(1) {
+            let mut h = [0u32; 13];
+            h[idx] = 1;
+            self.category.insert(src, h);
         }
     }
 
@@ -1015,6 +1159,17 @@ impl BehaviorTracker {
         is_c2_shape: bool,
         is_named: bool,
     ) {
+        // Behavioral-baseline: fold this contact's hour-of-day into the source's active-hour
+        // histogram (off-hours novelty). Fixed 24-slot array per source; key-count bounded.
+        let hour = (((ts_ns.max(0) / 1_000_000_000) / 3600) % 24) as usize;
+        if let Some(h) = self.activity.get_mut(&src) {
+            h[hour] = h[hour].saturating_add(1);
+        } else if self.activity.len() < self.cfg.max_tracked_keys.max(1) {
+            let mut h = [0u32; 24];
+            h[hour] = 1;
+            self.activity.insert(src, h);
+        }
+
         // Per-channel inter-arrival series + byte totals (bounded: a brand-new channel at
         // capacity is dropped — best-effort heavy-hitter signal, not an exact set).
         let key = ContactKey::new(src, dst, dst_port);
@@ -3661,6 +3816,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::MalwareSignature => 4, // command-and-control (signature-matched payload)
         FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
         FindingKind::IcsControlCommand => 6,   // impact (manipulation of an industrial process)
+        FindingKind::BaselineDeviation => 4, // command-and-control (anomalous egress / drift; generic like RuleMatch)
     }
 }
 
@@ -3690,6 +3846,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::MalwareSignature => "Command & Control",
         FindingKind::ExposedRemoteAccess => "Lateral Movement",
         FindingKind::IcsControlCommand => "Impact",
+        FindingKind::BaselineDeviation => "Command & Control",
     }
 }
 
@@ -3719,6 +3876,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::MalwareSignature => "downloaded a file matching a malware signature",
         FindingKind::ExposedRemoteAccess => "exposed remote access across the perimeter",
         FindingKind::IcsControlCommand => "issued a control command to an industrial device",
+        FindingKind::BaselineDeviation => "deviated from its learned baseline",
     }
 }
 

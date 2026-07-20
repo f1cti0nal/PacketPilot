@@ -133,6 +133,42 @@ export function apply_rules(bytes, rules_text, output_json) {
 }
 
 /**
+ * Behavioral Baseline: fold a completed analysis into a baseline profile (create-or-merge).
+ *
+ * `output_json` is the `AnalysisOutput` from `analyze` (which carries the per-host egress
+ * snapshot); `prior_baseline_json` is an existing baseline sidecar to merge into, or `None` to
+ * start fresh; `analyzed_unix_secs` is the wall-clock analysis time (`0` if unknown). Returns the
+ * updated `BaselineProfile` as JSON for the page to persist. Pure + offline — nothing leaves the
+ * device; identical to the native `analyze --update-baseline`.
+ * @param {string} output_json
+ * @param {string | null | undefined} prior_baseline_json
+ * @param {bigint} analyzed_unix_secs
+ * @returns {string}
+ */
+export function build_baseline(output_json, prior_baseline_json, analyzed_unix_secs) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(output_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        var ptr1 = isLikeNone(prior_baseline_json) ? 0 : passStringToWasm0(prior_baseline_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        const ret = wasm.build_baseline(ptr0, len0, ptr1, len1, analyzed_unix_secs);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and carve out frames matching `query_json`
  * (a `CarveQueryDto`). Returns raw pcap bytes (`Uint8Array` on the JS side), or rejects with
  * an error string. The capture bytes never leave the device.
@@ -152,6 +188,42 @@ export function carve_pcap(bytes, query_json) {
     var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
     return v3;
+}
+
+/**
+ * Behavioral Baseline: compare a completed analysis against a saved baseline, folding the deviation
+ * findings into it.
+ *
+ * `output_json` is the `AnalysisOutput` from `analyze` (carrying the per-host snapshot);
+ * `baseline_json` is the saved `BaselineProfile`. Returns the updated `AnalysisOutput` as JSON —
+ * `baseline_deviation` findings appended to `summary.findings` with the per-IP threat cards
+ * uplifted (via the same `fold_rule_findings` path the Suricata pass uses). Pure + offline. When
+ * the output carries no snapshot (an older analysis), nothing is folded.
+ * @param {string} output_json
+ * @param {string} baseline_json
+ * @returns {string}
+ */
+export function compare_to_baseline(output_json, baseline_json) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(output_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(baseline_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.compare_to_baseline(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
 }
 
 /**

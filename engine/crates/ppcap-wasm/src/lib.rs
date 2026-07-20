@@ -255,6 +255,56 @@ mod tests {
         .unwrap();
         assert!(html2.contains("AI says: suspicious beacon"));
     }
+
+    #[test]
+    fn baseline_build_and_compare_across_the_json_boundary() {
+        let pcap = crafted_tcp443_pcap_with_abc();
+        // analyze now attaches the per-host baseline snapshot (10.0.0.1 -> 93.184.216.34:443).
+        let analyze_json = crate::analyze(&pcap, "t.pcap".into()).unwrap();
+        let analyze_val: serde_json::Value = serde_json::from_str(&analyze_json).unwrap();
+        let out_json = analyze_val["summary"].to_string();
+        assert!(
+            analyze_val["summary"]["baseline"]["hosts"]
+                .as_array()
+                .map(|a| !a.is_empty())
+                .unwrap_or(false),
+            "analyze must attach a baseline snapshot with hosts"
+        );
+
+        // build_baseline folds the capture into a fresh profile.
+        let base_json = crate::build_baseline(&out_json, None, 1_000).unwrap();
+        let bv: serde_json::Value = serde_json::from_str(&base_json).unwrap();
+        assert_eq!(bv["captures_merged"], 1);
+        assert!(bv["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["host"] == "10.0.0.1"));
+
+        // Warm the baseline to the warm-up threshold, then blank its peer/service sets so the same
+        // capture reads as all-new — a deterministic deviation through the wasm boundary.
+        let params = ppcap_core::BaselineParams::default();
+        let mut warm = base_json.clone();
+        for i in 1..params.min_captures {
+            warm = crate::build_baseline(&out_json, Some(warm), 1_000 + i as i64).unwrap();
+        }
+        let mut prof: ppcap_core::BaselineProfile = serde_json::from_str(&warm).unwrap();
+        for h in &mut prof.hosts {
+            h.peers.clear();
+            h.services.clear();
+        }
+        let stale = serde_json::to_string(&prof).unwrap();
+
+        let cmp_json = crate::compare_to_baseline(&out_json, &stale).unwrap();
+        let cv: serde_json::Value = serde_json::from_str(&cmp_json).unwrap();
+        let devs = cv["summary"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["kind"] == "baseline_deviation")
+            .count();
+        assert!(devs >= 1, "expected a baseline deviation vs the stale baseline");
+    }
 }
 
 /// JS-sent extraction caps (both optional; defaults to the engine's hard limits).
@@ -587,6 +637,55 @@ pub fn apply_domain_reputation(output_json: &str, verdicts_json: &str) -> Result
     serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Behavioral Baseline: fold a completed analysis into a baseline profile (create-or-merge).
+///
+/// `output_json` is the `AnalysisOutput` from `analyze` (which carries the per-host egress
+/// snapshot); `prior_baseline_json` is an existing baseline sidecar to merge into, or `None` to
+/// start fresh; `analyzed_unix_secs` is the wall-clock analysis time (`0` if unknown). Returns the
+/// updated `BaselineProfile` as JSON for the page to persist. Pure + offline — nothing leaves the
+/// device; identical to the native `analyze --update-baseline`.
+#[wasm_bindgen]
+pub fn build_baseline(
+    output_json: &str,
+    prior_baseline_json: Option<String>,
+    analyzed_unix_secs: i64,
+) -> Result<String, JsValue> {
+    let out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let prior = match prior_baseline_json {
+        Some(t) => ppcap_core::BaselineProfile::from_json_str(&t)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?,
+        None => ppcap_core::BaselineProfile::new(),
+    };
+    let params = ppcap_core::BaselineParams::default();
+    let updated = ppcap_core::update_baseline(prior, &out, analyzed_unix_secs, &params);
+    updated
+        .to_json_pretty()
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Behavioral Baseline: compare a completed analysis against a saved baseline, folding the deviation
+/// findings into it.
+///
+/// `output_json` is the `AnalysisOutput` from `analyze` (carrying the per-host snapshot);
+/// `baseline_json` is the saved `BaselineProfile`. Returns the updated `AnalysisOutput` as JSON —
+/// `baseline_deviation` findings appended to `summary.findings` with the per-IP threat cards
+/// uplifted (via the same `fold_rule_findings` path the Suricata pass uses). Pure + offline. When
+/// the output carries no snapshot (an older analysis), nothing is folded.
+#[wasm_bindgen]
+pub fn compare_to_baseline(output_json: &str, baseline_json: &str) -> Result<String, JsValue> {
+    let mut out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let base = ppcap_core::BaselineProfile::from_json_str(baseline_json)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let params = ppcap_core::BaselineParams::default();
+    if let Some(prof) = out.baseline.clone() {
+        let devs = ppcap_core::compare_to_baseline(&base, &prof, &params).into_findings();
+        ppcap_core::fold_rule_findings(&mut out.summary, &devs);
+    }
+    serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 /// Export the analysis findings as RFC 4180 CSV. `output_json` is the `AnalysisOutput` from `analyze`.
 #[wasm_bindgen]
 pub fn export_csv(output_json: &str) -> Result<String, JsValue> {
@@ -660,7 +759,13 @@ pub fn analyze(bytes: &[u8], name: String) -> Result<String, JsValue> {
     let source = ppcap_core::reader::open_reader(Cursor::new(bytes), Some(len))
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-    let cfg = PipelineConfig::default();
+    // Compute the per-host behavioral-baseline snapshot so the browser can learn/compare offline
+    // (it rides on `AnalysisOutput.baseline`; cheap and bounded). Omitted from JSON when absent, so
+    // this is additive for callers that don't use baselines.
+    let cfg = PipelineConfig {
+        update_baseline: true,
+        ..PipelineConfig::default()
+    };
     let mut flows: Vec<FlowDto> = Vec::new();
     let summary = run_source_visiting(
         source,

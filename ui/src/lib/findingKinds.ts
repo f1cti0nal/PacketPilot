@@ -14,6 +14,7 @@ import {
   Fingerprint,
   FileWarning,
   FileSearch,
+  Gauge,
   Pickaxe,
   VenetianMask,
   ScanSearch,
@@ -61,6 +62,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   malware_signature: { label: "Malware Signature", Icon: FileSearch },
   exposed_remote_access: { label: "Exposed Remote Access", Icon: ScreenShare },
   ics_control_command: { label: "ICS Control", Icon: Factory },
+  baseline_deviation: { label: "Baseline Deviation", Icon: Gauge },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 

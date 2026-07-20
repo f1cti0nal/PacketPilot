@@ -35,11 +35,34 @@ export function apply_reputation(output_json: string, verdicts_json: string): st
 export function apply_rules(bytes: Uint8Array, rules_text: string, output_json: string): string;
 
 /**
+ * Behavioral Baseline: fold a completed analysis into a baseline profile (create-or-merge).
+ *
+ * `output_json` is the `AnalysisOutput` from `analyze` (which carries the per-host egress
+ * snapshot); `prior_baseline_json` is an existing baseline sidecar to merge into, or `None` to
+ * start fresh; `analyzed_unix_secs` is the wall-clock analysis time (`0` if unknown). Returns the
+ * updated `BaselineProfile` as JSON for the page to persist. Pure + offline — nothing leaves the
+ * device; identical to the native `analyze --update-baseline`.
+ */
+export function build_baseline(output_json: string, prior_baseline_json: string | null | undefined, analyzed_unix_secs: bigint): string;
+
+/**
  * Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and carve out frames matching `query_json`
  * (a `CarveQueryDto`). Returns raw pcap bytes (`Uint8Array` on the JS side), or rejects with
  * an error string. The capture bytes never leave the device.
  */
 export function carve_pcap(bytes: Uint8Array, query_json: string): Uint8Array;
+
+/**
+ * Behavioral Baseline: compare a completed analysis against a saved baseline, folding the deviation
+ * findings into it.
+ *
+ * `output_json` is the `AnalysisOutput` from `analyze` (carrying the per-host snapshot);
+ * `baseline_json` is the saved `BaselineProfile`. Returns the updated `AnalysisOutput` as JSON —
+ * `baseline_deviation` findings appended to `summary.findings` with the per-IP threat cards
+ * uplifted (via the same `fold_rule_findings` path the Suricata pass uses). Pure + offline. When
+ * the output carries no snapshot (an older analysis), nothing is folded.
+ */
+export function compare_to_baseline(output_json: string, baseline_json: string): string;
 
 /**
  * Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and decrypt the TLS 1.3 flow described by
@@ -111,7 +134,9 @@ export interface InitOutput {
     readonly apply_domain_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_rules: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly build_baseline: (a: number, b: number, c: number, d: number, e: bigint) => [number, number, number, number];
     readonly carve_pcap: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly compare_to_baseline: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly decrypt_tls_flow: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly export_cef: (a: number, b: number) => [number, number, number, number];
     readonly export_csv: (a: number, b: number) => [number, number, number, number];

@@ -137,6 +137,10 @@ export function AppShell({
 
   const chainCount =
     summary.status === "ready" ? summary.data?.summary.attack_chains?.length ?? 0 : 0;
+  const deviationCount =
+    summary.status === "ready"
+      ? summary.data?.summary.findings?.filter((f) => f.kind === "baseline_deviation").length ?? 0
+      : 0;
 
   const tabs = useMemo(
     () => [
@@ -146,10 +150,11 @@ export function AppShell({
       { id: "findings" as const, label: "Findings" },
       { id: "threats" as const, label: "Threats", badge: threats.length || undefined },
       { id: "attackchain" as const, label: "Chains", badge: chainCount || undefined },
+      { id: "baseline" as const, label: "Baseline", badge: deviationCount || undefined },
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
       ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
     ],
-    [recentCount, compareActive, threats.length, chainCount],
+    [recentCount, compareActive, threats.length, chainCount, deviationCount],
   );
 
   const canExport = summary.status === "ready" && !!summary.data;
