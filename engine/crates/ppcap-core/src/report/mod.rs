@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 use time::macros::format_description;
 use time::OffsetDateTime;
 
+use crate::case::{CaptureStatus, CaseSummary, IndicatorKind};
 use crate::model::attack_chain::{AttackChain, EdgeKind};
 use crate::model::category::Category;
 use crate::model::finding::{Finding, FindingKind};
@@ -1135,6 +1136,133 @@ fn hhmmss_utc(secs: i64) -> String {
 // ---------------------------------------------------------------------------------------
 // Inline stylesheet (dark screen theme + print override).
 // ---------------------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------------------
+// Case (batch) report
+// ---------------------------------------------------------------------------------------
+
+/// Render a self-contained HTML5 **case** report for a batch/case run: a ranked capture table
+/// (each row deep-linking to that capture's single-capture report) + a cross-capture
+/// shared-indicator section. Reuses the single-capture report's styling. Pure/infallible;
+/// `generated_unix_secs` is supplied by the caller (kept unit-testable, like [`render_html`]).
+pub fn case_html(cs: &CaseSummary, generated_unix_secs: i64) -> String {
+    let mut s = String::with_capacity(32 * 1024);
+
+    s.push_str("<!doctype html>\n<html lang=\"en\"><head>\n<meta charset=\"utf-8\">\n");
+    s.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    s.push_str("<title>PacketPilot — Case Triage Report</title>\n<style>\n");
+    s.push_str(STYLE);
+    s.push_str("\n</style>\n</head><body>\n<main class=\"report\">\n");
+
+    // ---- header ----------------------------------------------------------------------
+    let ok = cs.captures.len() as u64 - cs.error_captures;
+    let _ = writeln!(
+        s,
+        "<div class=\"card\"><h1>Case Triage — {n} captures</h1>\
+         <div class=\"muted mono\">{dir}</div>\
+         <div class=\"tiles\" style=\"margin-top:14px\">\
+           <div class=\"tile\"><div class=\"v\">{n}</div><div class=\"k\">Captures</div></div>\
+           <div class=\"tile\"><div class=\"v\">{ok}</div><div class=\"k\">Analyzed</div></div>\
+           <div class=\"tile\"><div class=\"v\">{err}</div><div class=\"k\">Errors</div></div>\
+           <div class=\"tile\"><div class=\"v\">{shared}</div><div class=\"k\">Shared indicators</div></div>\
+         </div></div>",
+        n = cs.total_captures,
+        dir = esc(&cs.case_dir),
+        ok = ok,
+        err = cs.error_captures,
+        shared = cs.shared_indicators.len(),
+    );
+
+    // ---- ranked capture table --------------------------------------------------------
+    s.push_str("<div class=\"card\"><h2>Captures (worst severity first)</h2>\n<table>\n");
+    s.push_str(
+        "<thead><tr><th>#</th><th>Severity</th><th>Capture</th><th>Packets</th>\
+         <th>Flows</th><th>Findings</th><th>Crit</th><th>High</th></tr></thead>\n<tbody>\n",
+    );
+    for (i, e) in cs.captures.iter().enumerate() {
+        let sev_cell = match e.status {
+            CaptureStatus::Ok => format!(
+                "<span class=\"chip\" style=\"background:{c}\">{s}</span>",
+                c = sev_color(e.worst_severity),
+                s = esc(e.worst_severity.as_str()),
+            ),
+            CaptureStatus::Error => "<span class=\"ioc\">error</span>".to_string(),
+        };
+        // Deep-link the capture name to its per-capture report when one was written.
+        let name_cell = match (&e.report_path, e.status) {
+            (Some(rp), CaptureStatus::Ok) => {
+                format!(
+                    "<a href=\"{href}\">{name}</a>",
+                    href = esc(rp),
+                    name = esc(&e.filename)
+                )
+            }
+            _ => esc(&e.filename),
+        };
+        let detail = match (e.status, e.error.as_deref()) {
+            (CaptureStatus::Error, Some(msg)) => {
+                format!("<div class=\"muted\">{}</div>", esc(msg))
+            }
+            _ => String::new(),
+        };
+        let _ = writeln!(
+            s,
+            "<tr><td>{rank}</td><td>{sev}</td><td class=\"mono\">{name}{detail}</td>\
+             <td>{pkts}</td><td>{flows}</td><td>{find}</td><td>{crit}</td><td>{high}</td></tr>",
+            rank = i + 1,
+            sev = sev_cell,
+            name = name_cell,
+            detail = detail,
+            pkts = e.total_packets,
+            flows = e.total_flows,
+            find = e.finding_count,
+            crit = e.severity_counts.critical,
+            high = e.severity_counts.high,
+        );
+    }
+    s.push_str("</tbody>\n</table>\n</div>\n");
+
+    // ---- shared indicators -----------------------------------------------------------
+    s.push_str("<div class=\"card\"><h2>Shared indicators (seen in ≥2 captures)</h2>\n");
+    if cs.shared_indicators.is_empty() {
+        s.push_str(
+            "<div class=\"muted\">No indicator appeared across more than one capture.</div>\n",
+        );
+    } else {
+        s.push_str(
+            "<table>\n<thead><tr><th>Severity</th><th>Kind</th><th>Indicator</th>\
+                    <th>Captures</th></tr></thead>\n<tbody>\n",
+        );
+        for ind in &cs.shared_indicators {
+            let kind = match ind.kind {
+                IndicatorKind::Ip => "IP",
+                IndicatorKind::Domain => "Domain",
+                IndicatorKind::Ja3 => "JA3",
+            };
+            let _ = writeln!(
+                s,
+                "<tr><td><span class=\"chip\" style=\"background:{c}\">{sev}</span></td>\
+                 <td>{kind}</td><td class=\"mono\">{val}</td><td>{count}</td></tr>",
+                c = sev_color(ind.worst_severity),
+                sev = esc(ind.worst_severity.as_str()),
+                kind = kind,
+                val = esc(&ind.value),
+                count = ind.captures.len(),
+            );
+        }
+        s.push_str("</tbody>\n</table>\n");
+    }
+    s.push_str("</div>\n");
+
+    let _ = writeln!(
+        s,
+        "<footer>Generated by PacketPilot {ver} · {gen} · local-first case triage</footer>",
+        ver = esc(&cs.engine_version),
+        gen = esc(&fmt_unix_secs_utc(generated_unix_secs)),
+    );
+    s.push_str("</main>\n</body></html>\n");
+    s
+}
 
 const STYLE: &str = r#":root{
   --bg:#0a0e14; --surface:#111722; --surface-2:#0d131c; --text:#e2e8f0;

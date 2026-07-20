@@ -9,6 +9,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
   Share2,
+  Terminal,
   ListChecks,
   History,
   GitCompare,
@@ -50,6 +51,7 @@ export function useIsMobile(query = "(max-width: 767px)"): boolean {
 export const TAB_ICON: Record<TabId, LucideIcon> = {
   dashboard: LayoutDashboard,
   flows: Share2,
+  query: Terminal,
   findings: ListChecks,
   threats: ShieldAlert,
   attackchain: Waypoints,

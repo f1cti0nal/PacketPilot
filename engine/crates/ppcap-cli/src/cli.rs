@@ -27,12 +27,30 @@ pub struct Cli {
 }
 
 /// Subcommands.
+// The `Analyze` variant intentionally carries every analyze flag as a field (clap ergonomics);
+// it dwarfs `Gen`/`InitDb`, but boxing clap-derive fields is awkward and this enum is only ever
+// held briefly on the stack during dispatch.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Analyze a pcap/pcapng (optionally .gz): summary JSON (+ optional flows Parquet).
+    ///
+    /// Batch mode: pass `--batch <DIR>` (instead of a single `input`) to triage a *folder* of
+    /// captures into one case directory + a ranked `case.json` / `case.html` with cross-capture
+    /// indicator correlation.
     Analyze {
-        /// Input capture path (.pcap / .pcapng, optionally .gz).
-        input: PathBuf,
+        /// Input capture path (.pcap / .pcapng, optionally .gz). Omit when using `--batch`.
+        input: Option<PathBuf>,
+        /// Batch mode: analyze every capture under this directory (mutually exclusive with `input`).
+        #[arg(long, conflicts_with = "input")]
+        batch: Option<PathBuf>,
+        /// Batch mode: recurse into subdirectories when discovering captures.
+        #[arg(long)]
+        recursive: bool,
+        /// Batch mode: case output root (holds `parquet/`, `captures/`, `case.json`, `case.html`).
+        /// Defaults to `./case`.
+        #[arg(long = "case-out")]
+        case_out: Option<PathBuf>,
         /// JSON output path; "-" or omitted => stdout.
         #[arg(long)]
         json: Option<String>,
@@ -71,6 +89,25 @@ pub enum Command {
         /// Apply a Suricata-style ruleset (content matches → findings).
         #[arg(long)]
         rules: Option<PathBuf>,
+        /// Time Machine: also write a compact capture-indicator index (JSON) here for
+        /// later `ppcap rescan` against updated threat intel.
+        #[arg(long)]
+        index: Option<PathBuf>,
+    },
+    /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
+    /// reporting indicators that were clean at capture time but are dirty now.
+    Rescan {
+        /// One or more capture-index JSON files (from `analyze --index`).
+        indices: Vec<PathBuf>,
+        /// Updated threat-feed JSON to re-evaluate against.
+        #[arg(long = "threat-feed")]
+        threat_feed: PathBuf,
+        /// Write the full JSON report here; omit => human summary to stderr only.
+        #[arg(long)]
+        json: Option<String>,
+        /// Also report indicators that were ALREADY flagged at capture time.
+        #[arg(long)]
+        include_known: bool,
     },
     /// Generate a synthetic capture for testing.
     Gen {
@@ -95,6 +132,42 @@ pub enum Command {
         /// Raise it to thin out per-service connection counts (e.g. avoid emergent half-open floods).
         #[arg(long, default_value_t = 64)]
         hosts: u16,
+    },
+    /// Safe Share: write a sanitized/anonymized copy of a capture for safe sharing.
+    Sanitize {
+        /// Input capture path (.pcap / .pcapng, optionally .gz).
+        input: PathBuf,
+        /// Sanitized capture output path (.pcapng extension => pcapng, else classic pcap).
+        #[arg(long)]
+        out: PathBuf,
+        /// Manifest sidecar path (default: "<out>.manifest.json").
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        /// Payload policy: scrub (zero all payload bytes; default) or keep
+        /// (retain payloads; sensitive L7 fields are still redacted).
+        #[arg(long, default_value = "scrub")]
+        payload: String,
+        /// In scrub mode, retain the first N payload bytes per packet for protocol ID.
+        #[arg(long, default_value_t = 0)]
+        keep_first: usize,
+        /// Disable prefix-preserving address mapping (use a flat per-block permutation).
+        #[arg(long)]
+        no_preserve_prefix: bool,
+        /// Keep the vendor OUI (first 3 bytes) of pseudonymized MAC addresses.
+        #[arg(long)]
+        preserve_oui: bool,
+        /// Disable L7 redaction (DNS names / HTTP fields / TLS SNI / credentials).
+        #[arg(long)]
+        no_redact: bool,
+        /// Shift every timestamp by this many seconds (blunts timing correlation).
+        #[arg(long, default_value_t = 0)]
+        time_shift: i64,
+        /// Force pcapng output regardless of the --out extension.
+        #[arg(long)]
+        pcapng: bool,
+        /// Suppress stderr progress.
+        #[arg(long)]
+        quiet: bool,
     },
     /// Emit the embedded DuckDB DDL to stdout or a file (for the external duckdb sidecar/Wasm).
     InitDb {
@@ -132,6 +205,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         Command::Analyze {
             input,
+            batch,
+            recursive,
+            case_out,
             json,
             html,
             parquet,
@@ -144,7 +220,25 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             stix,
             reputation,
             rules,
+            index,
         } => {
+            // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
+            // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
+            // not apply here; the case artifacts live under --case-out.
+            if let Some(dir) = batch.as_ref() {
+                return dispatch_batch(
+                    dir,
+                    recursive,
+                    case_out.as_deref(),
+                    threat_feed.as_deref(),
+                    hash,
+                    strict,
+                    quiet,
+                );
+            }
+
+            let input = input
+                .ok_or_else(|| anyhow!("analyze needs an input capture path or --batch <DIR>"))?;
             // IMPL:
             //  - Build ppcap_core::PipelineConfig::default(), then set:
             //      strict_decode = strict; hash_source = hash;
@@ -317,6 +411,87 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     eprintln!("wrote STIX 2.1 bundle -> {}", stix_path.display());
                 }
             }
+
+            if let Some(index_path) = index.as_ref() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let idx = ppcap_core::build_index(&out, now);
+                let n = idx.indicators.len();
+                std::fs::write(index_path, idx.to_json_pretty()?)
+                    .with_context(|| format!("write capture index to {}", index_path.display()))?;
+                if !quiet {
+                    eprintln!(
+                        "wrote Time Machine index ({n} indicators) -> {}",
+                        index_path.display()
+                    );
+                }
+            }
+            Ok(())
+        }
+        Command::Rescan {
+            indices,
+            threat_feed,
+            json,
+            include_known,
+        } => {
+            if indices.is_empty() {
+                return Err(anyhow!("rescan needs at least one capture-index file"));
+            }
+            let feed = ppcap_core::ThreatFeed::load(&threat_feed)
+                .with_context(|| format!("load threat feed {}", threat_feed.display()))?;
+
+            let mut loaded = Vec::with_capacity(indices.len());
+            for p in &indices {
+                let text = std::fs::read_to_string(p)
+                    .with_context(|| format!("read capture index {}", p.display()))?;
+                let idx = ppcap_core::CaptureIndex::from_json_str(&text)
+                    .with_context(|| format!("parse capture index {}", p.display()))?;
+                loaded.push(idx);
+            }
+
+            let report = ppcap_core::rescan(&loaded, &feed);
+
+            // Human summary → stderr.
+            eprintln!(
+                "rescan: {} indices, {} indicators evaluated — {} newly flagged, {} already known",
+                report.indices_scanned,
+                report.indicators_evaluated,
+                report.newly_flagged.len(),
+                report.still_flagged.len(),
+            );
+            for h in &report.newly_flagged {
+                eprintln!(
+                    "  NEW  {:<6} {}  ({}){}",
+                    h.kind.as_str(),
+                    h.value,
+                    h.source_path,
+                    h.label
+                        .as_ref()
+                        .map(|l| format!(" [{l}]"))
+                        .unwrap_or_default(),
+                );
+            }
+            if include_known {
+                for h in &report.still_flagged {
+                    eprintln!(
+                        "  known {:<6} {}  ({})",
+                        h.kind.as_str(),
+                        h.value,
+                        h.source_path
+                    );
+                }
+            }
+
+            if let Some(path) = json.as_deref() {
+                let s = serde_json::to_string_pretty(&report)?;
+                match path {
+                    "-" => println!("{s}"),
+                    p => std::fs::write(p, &s)
+                        .with_context(|| format!("write rescan report to {p}"))?,
+                }
+            }
             Ok(())
         }
         Command::Gen {
@@ -362,6 +537,93 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             );
             Ok(())
         }
+        Command::Sanitize {
+            input,
+            out,
+            manifest,
+            payload,
+            keep_first,
+            no_preserve_prefix,
+            preserve_oui,
+            no_redact,
+            time_shift,
+            pcapng,
+            quiet,
+        } => {
+            use std::io::Write as _;
+
+            let payload_mode = match payload.as_str() {
+                "scrub" => ppcap_core::PayloadMode::Scrub,
+                "keep" => ppcap_core::PayloadMode::Keep,
+                other => return Err(anyhow!("unknown payload mode: {other} (scrub | keep)")),
+            };
+            let format = if pcapng
+                || out
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("pcapng"))
+            {
+                ppcap_core::SanitizeFormat::PcapNg
+            } else {
+                ppcap_core::SanitizeFormat::Pcap
+            };
+            let opts = ppcap_core::SanitizeOptions {
+                payload: payload_mode,
+                keep_first,
+                preserve_prefix: !no_preserve_prefix,
+                preserve_oui,
+                redact_l7: !no_redact,
+                time_shift_secs: time_shift,
+                format,
+            };
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            let mut last_tick: u64 = 0;
+            let progress = |pkts: u64, bytes: u64, size_hint: Option<u64>| {
+                if quiet || pkts == last_tick {
+                    return;
+                }
+                last_tick = pkts;
+                let pct = match size_hint {
+                    Some(total) if total > 0 => {
+                        format!(" ({:.0}%)", (bytes as f64 / total as f64) * 100.0)
+                    }
+                    _ => String::new(),
+                };
+                let mut err = std::io::stderr();
+                let _ = write!(err, "\rpkts={pkts} bytes={bytes}{pct}");
+                let _ = err.flush();
+            };
+
+            let m =
+                ppcap_core::sanitize_file(&input, &out, manifest.as_deref(), &opts, now, progress)
+                    .with_context(|| {
+                        format!("sanitize {} -> {}", input.display(), out.display())
+                    })?;
+
+            if !quiet {
+                let _ = writeln!(std::io::stderr());
+                eprintln!(
+                    "sanitized {} packets -> {} ({} IPv4 / {} IPv6 / {} MAC pseudonyms, \
+                     {} DNS names, {} HTTP fields, {} SNI, {} credentials redacted, \
+                     {} payload bytes scrubbed)",
+                    m.counts.packets_written,
+                    out.display(),
+                    m.counts.unique_ipv4,
+                    m.counts.unique_ipv6,
+                    m.counts.unique_macs,
+                    m.counts.dns_names_redacted,
+                    m.counts.http_fields_redacted,
+                    m.counts.tls_snis_redacted,
+                    m.counts.credentials_redacted,
+                    m.counts.payload_bytes_scrubbed,
+                );
+            }
+            Ok(())
+        }
         Command::InitDb { out, case_dir } => {
             // IMPL:
             //  - let ddl = match case_dir { Some(d) => DUCKDB_SCHEMA.replace("{CASE_DIR}", &d),
@@ -385,6 +647,74 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+/// Batch / case triage dispatch: analyze every capture under `dir` into a case directory and
+/// write `case.json` + `case.html`. Per-capture errors are skipped (recorded in the index) unless
+/// `strict`. Progress is one line per capture on stderr unless `quiet`.
+fn dispatch_batch(
+    dir: &std::path::Path,
+    recursive: bool,
+    case_out: Option<&std::path::Path>,
+    threat_feed: Option<&std::path::Path>,
+    hash: bool,
+    strict: bool,
+    quiet: bool,
+) -> anyhow::Result<()> {
+    use std::io::Write as _;
+
+    let case_out = case_out
+        .unwrap_or_else(|| std::path::Path::new("case"))
+        .to_path_buf();
+
+    let case_cfg = ppcap_core::CaseConfig {
+        case_out: case_out.clone(),
+        recursive,
+        strict,
+        per_capture_html: true,
+    };
+    // Per-capture base pipeline: same detection/enrichment as a single-capture run. `hash_source`
+    // carries each capture's SHA-256 into its summary JSON (useful case provenance).
+    let base = ppcap_core::PipelineConfig {
+        hash_source: hash,
+        threat_feed: threat_feed.map(|p| p.to_path_buf()),
+        ..Default::default()
+    };
+
+    let generated = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let on_capture = |idx: usize, total: usize, path: &std::path::Path| {
+        if !quiet {
+            let mut err = std::io::stderr();
+            let _ = writeln!(err, "[{}/{}] {}", idx + 1, total, path.display());
+        }
+    };
+
+    let case = ppcap_core::run_case(dir, &case_cfg, &base, generated, on_capture)?;
+
+    // Case-level artifacts (pure serializations of the returned summary).
+    std::fs::create_dir_all(&case_out)
+        .with_context(|| format!("create case dir {}", case_out.display()))?;
+    let case_json = case_out.join("case.json");
+    std::fs::write(&case_json, case.to_json_pretty()?)
+        .with_context(|| format!("write {}", case_json.display()))?;
+    let case_html = case_out.join("case.html");
+    std::fs::write(&case_html, ppcap_core::case_html(&case, generated))
+        .with_context(|| format!("write {}", case_html.display()))?;
+
+    if !quiet {
+        eprintln!(
+            "case: {} captures ({} error), {} shared indicators -> {}",
+            case.total_captures,
+            case.error_captures,
+            case.shared_indicators.len(),
+            case_out.display()
+        );
+    }
+    Ok(())
 }
 
 /// FNV-1a 64-bit hash of a byte slice. Used to derive a stable, non-zero capture id from the
@@ -422,6 +752,48 @@ mod reputation_cli_tests {
     }
 
     #[test]
+    fn sanitize_parses_with_defaults() {
+        let cli =
+            Cli::try_parse_from(["ppcap", "sanitize", "in.pcap", "--out", "out.pcap"]).unwrap();
+        match cli.command {
+            Command::Sanitize {
+                payload,
+                keep_first,
+                no_preserve_prefix,
+                preserve_oui,
+                no_redact,
+                time_shift,
+                pcapng,
+                ..
+            } => {
+                assert_eq!(payload, "scrub");
+                assert_eq!(keep_first, 0);
+                assert!(!no_preserve_prefix);
+                assert!(!preserve_oui);
+                assert!(!no_redact);
+                assert_eq!(time_shift, 0);
+                assert!(!pcapng);
+            }
+            _ => panic!("expected Sanitize"),
+        }
+    }
+
+    #[test]
+    fn sanitize_rejects_bad_payload_mode() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "sanitize",
+            "in.pcap",
+            "--out",
+            "o.pcap",
+            "--payload",
+            "nope",
+        ])
+        .unwrap();
+        assert!(dispatch(cli).is_err());
+    }
+
+    #[test]
     fn rules_flag_parses() {
         let cli =
             Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--rules", "r.rules"]).unwrap();
@@ -431,5 +803,55 @@ mod reputation_cli_tests {
             }
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn analyze_index_flag_parses() {
+        let cli = Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--index", "cap.index.json"])
+            .unwrap();
+        match cli.command {
+            Command::Analyze { index, .. } => {
+                assert_eq!(
+                    index.as_deref(),
+                    Some(std::path::Path::new("cap.index.json"))
+                )
+            }
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn rescan_parses_indices_and_feed() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "rescan",
+            "a.index.json",
+            "b.index.json",
+            "--threat-feed",
+            "feed.json",
+            "--json",
+            "-",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Rescan {
+                indices,
+                threat_feed,
+                json,
+                include_known,
+            } => {
+                assert_eq!(indices.len(), 2);
+                assert_eq!(threat_feed, std::path::Path::new("feed.json"));
+                assert_eq!(json.as_deref(), Some("-"));
+                assert!(!include_known);
+            }
+            _ => panic!("expected Rescan"),
+        }
+    }
+
+    #[test]
+    fn rescan_requires_a_feed() {
+        // Missing the required --threat-feed → clap parse error.
+        assert!(Cli::try_parse_from(["ppcap", "rescan", "a.index.json"]).is_err());
     }
 }

@@ -1,7 +1,10 @@
-//! CI drift guard: the DuckDB `flow` view SELECT, the Arrow schema, and
-//! `flow_columns_in_order()` must all agree on column names and order.
+//! CI drift guard: the DuckDB `flow` view SELECT, the Arrow schema,
+//! `flow_columns_in_order()`, and the UI's shared fixture
+//! (ui/src/lib/query/flow_columns.json) must all agree on column names and order.
 
-use ppcap_core::columnar::schema::{flow_arrow_schema, flow_columns_in_order};
+use ppcap_core::columnar::schema::{
+    flow_arrow_schema, flow_columns_in_order, FLOW_PARQUET_VERSION,
+};
 
 /// The shipped DDL embedded at compile time (same file the CLI emits).
 const SCHEMA_SQL: &str = include_str!("../sql/schema.sql");
@@ -51,5 +54,37 @@ fn sql_view_select_matches_canonical_order() {
     assert_eq!(
         parsed, canonical,
         "DuckDB flow VIEW SELECT list drifted from flow_columns_in_order()"
+    );
+}
+
+/// The UI builds its in-browser DuckDB `flow` table from this shared fixture's
+/// column list (ui/src/lib/query/schema.ts guards its side with a vitest). A
+/// schema change here must ship with an updated fixture, or CI fails on both ends.
+#[test]
+fn ui_fixture_matches_canonical_order() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../ui/src/lib/query/flow_columns.json"
+    );
+    let raw = std::fs::read_to_string(path)
+        .expect("ui/src/lib/query/flow_columns.json present (shared drift fixture)");
+    let fixture: serde_json::Value = serde_json::from_str(&raw).expect("fixture is valid JSON");
+
+    assert_eq!(
+        fixture["flow_schema_version"].as_u64(),
+        Some(u64::from(FLOW_PARQUET_VERSION)),
+        "fixture flow_schema_version drifted from FLOW_PARQUET_VERSION"
+    );
+
+    let columns: Vec<&str> = fixture["columns"]
+        .as_array()
+        .expect("fixture has a columns array")
+        .iter()
+        .map(|v| v.as_str().expect("column names are strings"))
+        .collect();
+    assert_eq!(
+        columns.as_slice(),
+        &flow_columns_in_order()[..],
+        "UI flow_columns.json fixture drifted from flow_columns_in_order()"
     );
 }

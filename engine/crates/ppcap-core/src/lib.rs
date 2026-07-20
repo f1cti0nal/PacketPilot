@@ -34,6 +34,7 @@
 
 pub mod analyze;
 pub(crate) mod carve;
+pub mod case;
 pub mod classify;
 pub mod columnar;
 pub mod decode;
@@ -50,12 +51,17 @@ pub mod packets;
 pub(crate) mod quic;
 pub mod reader;
 pub mod report;
+pub mod sanitize;
 pub mod score;
 pub(crate) mod ssh;
 pub mod stats;
+pub mod timemachine;
 pub mod tls;
 
 pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
+pub use case::{
+    run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator,
+};
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::{
     fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
@@ -89,8 +95,18 @@ pub use packets::{
     carve_pcap, decrypt_tls_flow, extract_flow_packets, CarveQuery, CarveResult, CarveTarget,
     FlowPackets, PacketCaps, PacketQuery, PacketRecord,
 };
-pub use report::render_html;
+pub use report::{case_html, render_html};
+#[cfg(not(target_arch = "wasm32"))]
+pub use sanitize::sanitize_file;
+pub use sanitize::{
+    sanitize_bytes, sanitize_stream, PayloadMode, SanitizeCounts, SanitizeFormat, SanitizeManifest,
+    SanitizeOptions,
+};
 pub use score::{score_flow, ScoredFlow};
+pub use timemachine::{
+    build_index, rescan, CaptureIndex, Indicator, IndicatorKind, RescanHit, RescanReport,
+    INDEX_SCHEMA_VERSION,
+};
 pub use tls::decrypt::{DecryptedCarvedFile, TlsDecryptRecord, TlsDecryptResult};
 pub use tls::decrypted_http::HttpTxn;
 

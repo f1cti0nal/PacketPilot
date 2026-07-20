@@ -14,6 +14,7 @@ export const export_sigma: (a: number, b: number) => [number, number, number, nu
 export const export_stix: (a: number, b: number, c: bigint) => [number, number, number, number];
 export const extract_packets: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const render_report: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number, number];
+export const sanitize: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => [number, number, number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

@@ -51,6 +51,8 @@ export interface AppShellProps {
   onCopyCef?: () => Promise<ExportResult | undefined>;
   onExportSigma?: () => Promise<ExportResult | undefined>;
   onCopySigma?: () => Promise<ExportResult | undefined>;
+  /** Open the Safe Share (sanitized capture export) dialog. Only provided when the raw capture is available. */
+  onExportSanitized?: () => void;
   /** Threat data from the active capture — powers the "Threats" nav badge and palette host search. */
   threats: IpThreat[];
   /** Called when the user picks a host (palette host search). */
@@ -110,6 +112,7 @@ export function AppShell({
   onCopyCef,
   onExportSigma,
   onCopySigma,
+  onExportSanitized,
   threats,
   onSelectThreat,
   collapsed,
@@ -139,6 +142,7 @@ export function AppShell({
     () => [
       { id: "dashboard" as const, label: "Dashboard" },
       { id: "flows" as const, label: "Flows" },
+      { id: "query" as const, label: "Query" },
       { id: "findings" as const, label: "Findings" },
       { id: "threats" as const, label: "Threats", badge: threats.length || undefined },
       { id: "attackchain" as const, label: "Chains", badge: chainCount || undefined },
@@ -231,8 +235,11 @@ export function AppShell({
       { id: "cef-copy", label: "Copy CEF", run: () => void runExport(onCopyCef) },
       { id: "sigma", label: "Download Sigma rules", run: () => void runExport(onExportSigma) },
       { id: "sigma-copy", label: "Copy Sigma rules", run: () => void runExport(onCopySigma) },
+      ...(onExportSanitized
+        ? [{ id: "sanitized", label: "Sanitized capture (Safe Share)…", run: onExportSanitized }]
+        : []),
     ],
-    [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma],
+    [runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma, onExportSanitized],
   );
 
   // Capture filename: derived from the App-owned summary state.
@@ -251,6 +258,7 @@ export function AppShell({
     ...(onGoHome ? [{ id: "go-home", label: "Go to overview", hint: "view", run: onGoHome }] : []),
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
+    { id: "go-query", label: "Go to Query", hint: "view", run: () => onTabChange("query") },
     { id: "go-findings", label: "Go to Findings", hint: "view", run: () => onTabChange("findings") },
     { id: "go-threats", label: "Go to Threats", hint: "view", run: () => onTabChange("threats") },
     { id: "go-recent", label: "Go to Recent", hint: "view", run: () => onTabChange("recent") },
@@ -277,7 +285,10 @@ export function AppShell({
       { id: "export-sigma", label: "Export Sigma rules", hint: "action", run: () => void runExport(onExportSigma) },
       { id: "export-sigma-copy", label: "Copy Sigma rules", hint: "action", run: () => void runExport(onCopySigma) },
     ] : []),
-  ], [onGoHome, onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, onMatchIocs, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma]);
+    ...(canExport && onExportSanitized ? [
+      { id: "export-sanitized", label: "Export sanitized capture (Safe Share)…", hint: "action", run: onExportSanitized },
+    ] : []),
+  ], [onGoHome, onTabChange, onRequestLoad, onToggleCollapse, collapsed, onLoadRules, onMatchIocs, canExport, runExport, onExport, onExportCsv, onCopyCsv, onExportStix, onCopyStix, onExportMisp, onCopyMisp, onExportCef, onCopyCef, onExportSigma, onCopySigma, onExportSanitized]);
 
   return (
     <div data-component="AppShell" className="flex h-full min-h-0 bg-bg text-[var(--color-text)]">

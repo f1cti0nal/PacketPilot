@@ -371,15 +371,12 @@ impl ExtractSink {
             return None;
         }
         // Flush + close the file (drop the writer) before renaming, for Windows compatibility.
-        match self.writer.take() {
-            Some(mut w) => {
-                if w.flush().is_err() {
-                    return None;
-                }
-                // `w` (and its file handle) drops here, closing the file before the rename below.
-            }
-            None => return None,
+        let mut w = self.writer.take()?;
+        if w.flush().is_err() {
+            return None;
         }
+        // Drop `w` (and its file handle) now, closing the file before the rename below.
+        drop(w);
         let mut name = String::with_capacity(hash_hex.len() + 16);
         name.push_str(hash_hex);
         if !ext.is_empty() {

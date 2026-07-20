@@ -15,7 +15,9 @@ export function AiConsent({ model, onProceed, onCancel }:
             Your capture&apos;s <b>derived summary</b> will be sent <b>via PacketPilot&apos;s servers</b> to
             the AI provider (model <b>{model}</b>) to generate this. The summary covers severity counts,
             top incidents, threat IPs (with evidence), and contacted domains: never raw packets, payloads,
-            or the capture file.
+            or the capture file. In the Query console, <b>questions you type</b> (including any IPs or
+            hostnames in them) plus generated SQL and its error text are sent the same way — flow data
+            never leaves your device.
           </p>
         </div>
         <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
