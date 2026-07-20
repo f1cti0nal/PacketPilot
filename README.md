@@ -153,9 +153,3 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - Self-hosted team server (shared cases, RBAC) — the "hybrid" other half.
 - Integrations: export findings to RuleForge AI (detection rules) and Sentinel (SOC incidents).
 
-## Docs
-- [docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md) — full specification & gap analysis.
-- [docs/reputation.md](docs/reputation.md) — online reputation enrichment operator guide.
-- [docs/ai-assist.md](docs/ai-assist.md) — AI analyst assist operator guide.
-- [engine/README.md](engine/README.md) — engine internals, build, schema.
-- [engine/BENCHMARK.md](engine/BENCHMARK.md) — performance methodology & results.
