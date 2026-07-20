@@ -614,6 +614,12 @@ fn process_flow(
             is_c2_shape,
             is_named,
         );
+        // Behavioral-baseline novelty axes attributed to the initiating (client) host: its TLS JA3
+        // fingerprints and its traffic-category mix.
+        if let Some(j) = record.ja3.as_deref() {
+            tracker.observe_ja3(c.client, j);
+        }
+        tracker.observe_category(c.client, record.category);
     }
 
     // Single-pass scan uplift: promote an UNNAMED flow to Scan when either endpoint is a
@@ -1395,6 +1401,7 @@ mod tests {
                     flows: 1,
                     peers: Vec::new(),
                     services: Vec::new(),
+                    ..Default::default()
                 })
                 .collect(),
         };

@@ -64,6 +64,14 @@ pub const PTS_DEV_NEW_EXTERNAL_PEER: i32 = 15;
 pub const PTS_DEV_NEW_PORT: i32 = 10;
 /// Outbound volume well beyond the host's baseline distribution (mean + k·σ).
 pub const PTS_DEV_VOLUME_SPIKE: i32 = 10;
+/// First-seen TLS JA3 client fingerprint for the host (new client stack / tool).
+pub const PTS_DEV_NEW_JA3: i32 = 10;
+/// First-ever use of a traffic category the host never exhibited.
+pub const PTS_DEV_NEW_CATEGORY: i32 = 10;
+/// Activity in an hour-of-day the host was never active in (off its baseline window).
+pub const PTS_DEV_OFF_HOURS: i32 = 10;
+/// A newly-periodic channel (beacon) the host's baseline never carried.
+pub const PTS_DEV_NEW_BEACON: i32 = 15;
 /// Deviation-alone score ceiling: caps a baseline deviation at Medium (see `Severity::from_score`).
 pub const DEV_UPLIFT_CAP: i32 = 45;
 

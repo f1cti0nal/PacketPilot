@@ -6,20 +6,22 @@
 //! small JSON sidecar. A [`CaptureProfile`] is this capture's per-host egress snapshot (produced by
 //! [`crate::detect::BehaviorTracker::baseline_snapshot`] during the streaming pass);
 //! [`update_baseline`] folds one such snapshot into a persisted [`BaselineProfile`] (running
-//! per-host statistics + seen peer/port sets), and [`compare_to_baseline`] diffs a fresh snapshot
-//! against the learned profile — a host doing something it never did before (a first-seen external
-//! peer or destination port, or an outbound-volume spike well beyond its historical distribution)
-//! yields a [`FindingKind::BaselineDeviation`] finding.
+//! per-host statistics + seen sets), and [`compare_to_baseline`] diffs a fresh snapshot against the
+//! learned profile — a host doing something it never did before yields a
+//! [`FindingKind::BaselineDeviation`] finding.
 //!
 //! It complements Time Machine: Time Machine asks *"threat intel caught up — did I already talk to
 //! something now-known-bad?"*; a baseline asks *"my network changed — is this host doing something
 //! it never did before?"*
 //!
-//! Scope note: this Phase-1 (M1) core learns the highest-signal egress dimensions — external peers,
-//! destination ports, and outbound volume — per internal host, over the offline sidecar. First-seen
-//! JA3, off-hours activity, per-host category novelty, and new-beacon detection are deliberately out
-//! of scope here and tracked as follow-ups; a shared/team baseline store is out of the local-first
-//! core entirely. Invariants preserved: bounded memory (per-host `top_k` caps + a host cap),
+//! Deviation dimensions (per internal host, egress-scoped where applicable): first-seen external
+//! peer, first-seen destination port, outbound-volume spike (mean + k·σ), first-seen TLS JA3
+//! fingerprint, first-use traffic category, off-hours activity (vs the host's learned active
+//! window), and a newly-periodic channel (beacon) absent from the host's beacon profile.
+//!
+//! Scope note: this is the local-first core over an offline JSON sidecar. A shared/team baseline
+//! store, scheduled auto-baselining, and statistical/ML upgrades are out of scope here and tracked
+//! as follow-ups. Invariants preserved: bounded memory (per-host `top_k` caps + a host cap),
 //! C-compiler-free (pure-Rust `serde_json` + f64), local-first (offline sidecar, pure compare),
 //! i64 ns capture windows / i64 unix-secs wall-clock, and deterministic output (`BTreeMap`
 //! accumulate → sorted `Vec`; order-independent stat folds).
@@ -32,7 +34,8 @@ use crate::model::finding::{Finding, FindingKind};
 use crate::model::output::AnalysisOutput;
 use crate::model::severity::Severity;
 use crate::score::{
-    score_baseline_deviation, PTS_DEV_NEW_EXTERNAL_PEER, PTS_DEV_NEW_PORT, PTS_DEV_VOLUME_SPIKE,
+    score_baseline_deviation, PTS_DEV_NEW_BEACON, PTS_DEV_NEW_CATEGORY, PTS_DEV_NEW_EXTERNAL_PEER,
+    PTS_DEV_NEW_JA3, PTS_DEV_NEW_PORT, PTS_DEV_OFF_HOURS, PTS_DEV_VOLUME_SPIKE,
 };
 
 /// On-disk schema version for the baseline sidecar.
@@ -55,6 +58,18 @@ pub struct BaselineParams {
     pub top_k_peers: usize,
     /// Cap on tracked destination service ports per host.
     pub top_k_services: usize,
+    /// Cap on tracked JA3 fingerprints per host.
+    pub top_k_ja3: usize,
+    /// Cap on tracked beacon channels per host.
+    pub top_k_beacons: usize,
+    /// Minimum regular contacts before a channel is considered beacon-shaped in the snapshot.
+    pub min_beacon_contacts: u64,
+    /// Maximum inter-arrival coefficient-of-variation for a channel to count as a beacon.
+    pub max_beacon_cv: f64,
+    /// Off-hours guard: a baseline must have at least this many *and* fewer than 24 populated hours
+    /// to have a meaningful active window (else "off-hours" is not raised — a 24/7 or too-sparse
+    /// baseline has no defined window).
+    pub min_active_hours: u32,
     /// Cap on the provenance `source_sha256s` list.
     pub max_source_shas: usize,
     /// EWMA smoothing factor for the recency-weighted mean (hint only; the deviation gate uses
@@ -71,6 +86,11 @@ impl Default for BaselineParams {
             max_hosts: 100_000,
             top_k_peers: 128,
             top_k_services: 64,
+            top_k_ja3: 16,
+            top_k_beacons: 16,
+            min_beacon_contacts: 4,
+            max_beacon_cv: 0.35,
+            min_active_hours: 3,
             max_source_shas: 256,
             ewma_alpha: 0.30,
         }
@@ -196,6 +216,36 @@ pub struct ServiceStat {
     pub seen: SeenCount,
 }
 
+/// A tracked TLS JA3 client fingerprint for a host.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ja3Stat {
+    pub ja3: String,
+    pub seen: SeenCount,
+}
+
+/// A tracked beacon-shaped egress channel `(dst, port)` for a host, with its latest observed
+/// period + jitter (informational) and how often it was seen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BeaconStat {
+    pub dst: String,
+    pub port: u16,
+    /// Latest observed mean inter-contact interval (ns).
+    pub interval_ns: i64,
+    /// Latest observed inter-arrival coefficient of variation (regularity; lower = more regular).
+    pub jitter_cv: f64,
+    pub seen: SeenCount,
+}
+
+/// One beacon-shaped egress channel observed in a single capture (the snapshot form of
+/// [`BeaconStat`]).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BeaconObs {
+    pub dst: String,
+    pub port: u16,
+    pub interval_ns: i64,
+    pub jitter_cv: f64,
+}
+
 // ---- Per-capture snapshot (the learn payload) -------------------------------------------------
 
 /// One internal host's egress behavior observed in a single capture — the projection produced by
@@ -212,6 +262,18 @@ pub struct HostObservation {
     pub peers: Vec<String>,
     /// External destination ports contacted (sorted, capped).
     pub services: Vec<u16>,
+    /// Distinct TLS JA3 client fingerprints this host presented (sorted, capped).
+    #[serde(default)]
+    pub ja3: Vec<String>,
+    /// Contacts by hour-of-day (UTC), 24 slots — the host's active window this capture.
+    #[serde(default)]
+    pub hour_of_day: [u32; 24],
+    /// Flow counts by traffic category, 13 slots in `Category` order.
+    #[serde(default)]
+    pub categories: [u32; 13],
+    /// Beacon-shaped egress channels observed this capture (sorted, capped).
+    #[serde(default)]
+    pub beacons: Vec<BeaconObs>,
 }
 
 /// This capture's per-internal-host behavioral snapshot. Serialised onto
@@ -241,6 +303,18 @@ pub struct HostBaseline {
     pub peers: Vec<PeerStat>,
     /// Learned destination service ports, sorted by port (bounded).
     pub services: Vec<ServiceStat>,
+    /// Learned TLS JA3 client fingerprints, sorted by value (bounded).
+    #[serde(default)]
+    pub ja3: Vec<Ja3Stat>,
+    /// Cumulative contacts by hour-of-day (UTC), 24 slots — the host's learned active window.
+    #[serde(default)]
+    pub hour_of_day: [u64; 24],
+    /// Cumulative flow counts by traffic category, 13 slots in `Category` order.
+    #[serde(default)]
+    pub categories: [u64; 13],
+    /// Learned beacon-shaped channels, sorted by (dst, port) (bounded).
+    #[serde(default)]
+    pub beacons: Vec<BeaconStat>,
     pub first_seen_unix: i64,
     pub last_seen_unix: i64,
 }
@@ -255,6 +329,10 @@ impl HostBaseline {
             flows: RunningStat::default(),
             peers: Vec::new(),
             services: Vec::new(),
+            ja3: Vec::new(),
+            hour_of_day: [0u64; 24],
+            categories: [0u64; 13],
+            beacons: Vec::new(),
             first_seen_unix: 0,
             last_seen_unix: 0,
         }
@@ -289,6 +367,42 @@ impl HostBaseline {
             services.entry(*port).or_default().observe(1, now_unix);
         }
         self.services = cap_services(services, params.top_k_services);
+
+        // JA3: keyed set with recency.
+        let mut ja3: BTreeMap<String, SeenCount> = std::mem::take(&mut self.ja3)
+            .into_iter()
+            .map(|j| (j.ja3, j.seen))
+            .collect();
+        for j in &obs.ja3 {
+            ja3.entry(j.clone()).or_default().observe(1, now_unix);
+        }
+        self.ja3 = cap_ja3(ja3, params.top_k_ja3);
+
+        // Hour-of-day + category: element-wise additive histograms.
+        for (slot, add) in self.hour_of_day.iter_mut().zip(obs.hour_of_day.iter()) {
+            *slot = slot.saturating_add(*add as u64);
+        }
+        for (slot, add) in self.categories.iter_mut().zip(obs.categories.iter()) {
+            *slot = slot.saturating_add(*add as u64);
+        }
+
+        // Beacons: keyed by (dst, port); refresh latest interval/cv + recency.
+        let mut beacons: BTreeMap<(String, u16), (i64, f64, SeenCount)> =
+            std::mem::take(&mut self.beacons)
+                .into_iter()
+                .map(|b| ((b.dst, b.port), (b.interval_ns, b.jitter_cv, b.seen)))
+                .collect();
+        for b in &obs.beacons {
+            let e = beacons.entry((b.dst.clone(), b.port)).or_insert((
+                b.interval_ns,
+                b.jitter_cv,
+                SeenCount::default(),
+            ));
+            e.0 = b.interval_ns;
+            e.1 = b.jitter_cv;
+            e.2.observe(1, now_unix);
+        }
+        self.beacons = cap_beacons(beacons, params.top_k_beacons);
     }
 
     fn merge(a: &HostBaseline, b: &HostBaseline, params: &BaselineParams) -> HostBaseline {
@@ -314,6 +428,47 @@ impl HostBaseline {
                 .and_modify(|e| *e = SeenCount::merge(e, &s.seen))
                 .or_insert_with(|| s.seen.clone());
         }
+        // JA3 union.
+        let mut ja3: BTreeMap<String, SeenCount> = a
+            .ja3
+            .iter()
+            .map(|j| (j.ja3.clone(), j.seen.clone()))
+            .collect();
+        for j in &b.ja3 {
+            ja3.entry(j.ja3.clone())
+                .and_modify(|e| *e = SeenCount::merge(e, &j.seen))
+                .or_insert_with(|| j.seen.clone());
+        }
+        // Beacon union (latest interval/cv from b when present).
+        let mut beacons: BTreeMap<(String, u16), (i64, f64, SeenCount)> = a
+            .beacons
+            .iter()
+            .map(|x| {
+                (
+                    (x.dst.clone(), x.port),
+                    (x.interval_ns, x.jitter_cv, x.seen.clone()),
+                )
+            })
+            .collect();
+        for x in &b.beacons {
+            beacons
+                .entry((x.dst.clone(), x.port))
+                .and_modify(|e| {
+                    e.0 = x.interval_ns;
+                    e.1 = x.jitter_cv;
+                    e.2 = SeenCount::merge(&e.2, &x.seen);
+                })
+                .or_insert((x.interval_ns, x.jitter_cv, x.seen.clone()));
+        }
+        // Element-wise histogram add.
+        let mut hour_of_day = a.hour_of_day;
+        for (slot, add) in hour_of_day.iter_mut().zip(b.hour_of_day.iter()) {
+            *slot = slot.saturating_add(*add);
+        }
+        let mut categories = a.categories;
+        for (slot, add) in categories.iter_mut().zip(b.categories.iter()) {
+            *slot = slot.saturating_add(*add);
+        }
         HostBaseline {
             host: a.host.clone(),
             captures_seen: a.captures_seen + b.captures_seen,
@@ -322,6 +477,10 @@ impl HostBaseline {
             flows: RunningStat::merge(&a.flows, &b.flows),
             peers: cap_peers(peers, params.top_k_peers),
             services: cap_services(services, params.top_k_services),
+            ja3: cap_ja3(ja3, params.top_k_ja3),
+            hour_of_day,
+            categories,
+            beacons: cap_beacons(beacons, params.top_k_beacons),
             first_seen_unix: fold_min_ts(a.first_seen_unix, b.first_seen_unix),
             last_seen_unix: fold_max_ts(a.last_seen_unix, b.last_seen_unix),
         }
@@ -469,6 +628,51 @@ fn cap_services(map: BTreeMap<u16, SeenCount>, k: usize) -> Vec<ServiceStat> {
         v.truncate(k);
     }
     v.sort_by_key(|s| s.port);
+    v
+}
+
+/// Materialize a JA3 map into a `Vec` sorted by value, keeping the top-`k` by frequency.
+fn cap_ja3(map: BTreeMap<String, SeenCount>, k: usize) -> Vec<Ja3Stat> {
+    let mut v: Vec<Ja3Stat> = map
+        .into_iter()
+        .map(|(ja3, seen)| Ja3Stat { ja3, seen })
+        .collect();
+    if v.len() > k {
+        v.sort_by(|a, b| {
+            b.seen
+                .captures
+                .cmp(&a.seen.captures)
+                .then(b.seen.total.cmp(&a.seen.total))
+                .then(a.ja3.cmp(&b.ja3))
+        });
+        v.truncate(k);
+    }
+    v.sort_by(|a, b| a.ja3.cmp(&b.ja3));
+    v
+}
+
+/// Materialize a beacon map into a `Vec` sorted by (dst, port), keeping the top-`k` by frequency.
+fn cap_beacons(map: BTreeMap<(String, u16), (i64, f64, SeenCount)>, k: usize) -> Vec<BeaconStat> {
+    let mut v: Vec<BeaconStat> = map
+        .into_iter()
+        .map(|((dst, port), (interval_ns, jitter_cv, seen))| BeaconStat {
+            dst,
+            port,
+            interval_ns,
+            jitter_cv,
+            seen,
+        })
+        .collect();
+    if v.len() > k {
+        v.sort_by(|a, b| {
+            b.seen
+                .captures
+                .cmp(&a.seen.captures)
+                .then_with(|| (a.dst.as_str(), a.port).cmp(&(b.dst.as_str(), b.port)))
+        });
+        v.truncate(k);
+    }
+    v.sort_by(|a, b| (a.dst.as_str(), a.port).cmp(&(b.dst.as_str(), b.port)));
     v
 }
 
@@ -739,6 +943,92 @@ pub fn compare_to_baseline(
             }
         }
 
+        // --- New TLS JA3 fingerprint ---
+        let known_ja3: std::collections::HashSet<&str> =
+            hb.ja3.iter().map(|j| j.ja3.as_str()).collect();
+        let mut new_ja3: Vec<&String> = obs
+            .ja3
+            .iter()
+            .filter(|j| !known_ja3.contains(j.as_str()))
+            .collect();
+        new_ja3.sort();
+        if !new_ja3.is_empty() {
+            dims.push((
+                format!(
+                    "baseline: new TLS client fingerprint(s) {} — not in this host's JA3 profile",
+                    fmt_list_str(&new_ja3, 3)
+                ),
+                PTS_DEV_NEW_JA3,
+            ));
+        }
+
+        // --- First use of a traffic category ---
+        let mut new_cats: Vec<&'static str> = Vec::new();
+        for (c, cat) in crate::model::category::Category::all().iter().enumerate() {
+            if obs.categories.get(c).copied().unwrap_or(0) > 0
+                && hb.categories.get(c).copied().unwrap_or(0) == 0
+            {
+                new_cats.push(cat.as_str());
+            }
+        }
+        if !new_cats.is_empty() {
+            dims.push((
+                format!(
+                    "baseline: first use of category {} for this host",
+                    new_cats.join(", ")
+                ),
+                PTS_DEV_NEW_CATEGORY,
+            ));
+        }
+
+        // --- Off-hours activity (only when the baseline has a defined active window) ---
+        let populated = hb.hour_of_day.iter().filter(|&&v| v > 0).count() as u32;
+        if populated >= params.min_active_hours && populated < 24 {
+            let mut off: Vec<usize> = (0..24)
+                .filter(|&h| obs.hour_of_day[h] > 0 && hb.hour_of_day[h] == 0)
+                .collect();
+            off.sort_unstable();
+            if !off.is_empty() {
+                let hours: Vec<String> = off.iter().take(6).map(|h| format!("{h:02}:00")).collect();
+                dims.push((
+                    format!(
+                        "baseline: activity at {} UTC outside the host's usual active window",
+                        hours.join(", ")
+                    ),
+                    PTS_DEV_OFF_HOURS,
+                ));
+            }
+        }
+
+        // --- Newly-periodic channel (beacon) not in the host's beacon profile ---
+        let known_beacons: std::collections::HashSet<(&str, u16)> = hb
+            .beacons
+            .iter()
+            .map(|b| (b.dst.as_str(), b.port))
+            .collect();
+        let mut new_beacons: Vec<&BeaconObs> = obs
+            .beacons
+            .iter()
+            .filter(|b| !known_beacons.contains(&(b.dst.as_str(), b.port)))
+            .collect();
+        new_beacons.sort_by(|a, b| (a.dst.as_str(), a.port).cmp(&(b.dst.as_str(), b.port)));
+        if let Some(b0) = new_beacons.first() {
+            if peer.is_none() {
+                peer = Some(b0.dst.clone());
+            }
+            if port.is_none() {
+                port = Some(b0.port);
+            }
+            let interval_s = (b0.interval_ns as f64) / 1e9;
+            dims.push((
+                format!(
+                    "baseline: new periodic channel to {}:{} (~{:.0}s, cv {:.2}) not in the host's beacon profile",
+                    b0.dst, b0.port, interval_s, b0.jitter_cv
+                ),
+                PTS_DEV_NEW_BEACON,
+            ));
+        }
+
         if dims.is_empty() {
             continue;
         }
@@ -802,6 +1092,7 @@ mod tests {
             flows: (peers.len() as u64).max(1),
             peers: peers.iter().map(|s| s.to_string()).collect(),
             services: services.to_vec(),
+            ..Default::default()
         }
     }
 
@@ -915,6 +1206,130 @@ mod tests {
         // Both peers learned.
         let peers: Vec<&str> = ab.hosts[0].peers.iter().map(|p| p.ip.as_str()).collect();
         assert!(peers.contains(&"203.0.113.7") && peers.contains(&"203.0.113.8"));
+    }
+
+    /// A richer observation exercising the M2 dimensions (JA3 / hours / categories / beacons).
+    #[allow(clippy::too_many_arguments)]
+    fn obs_full(
+        host: &str,
+        bytes: u64,
+        peers: &[&str],
+        svcs: &[u16],
+        ja3: &[&str],
+        active_hours: &[usize],
+        cats: &[usize],
+        beacons: &[(&str, u16)],
+    ) -> HostObservation {
+        let mut hod = [0u32; 24];
+        for &h in active_hours {
+            hod[h] = 10;
+        }
+        let mut c = [0u32; 13];
+        for &ci in cats {
+            c[ci] = 5;
+        }
+        HostObservation {
+            host: host.to_string(),
+            bytes_out: bytes,
+            bytes_in: bytes / 4,
+            flows: (peers.len() as u64).max(1),
+            peers: peers.iter().map(|s| s.to_string()).collect(),
+            services: svcs.to_vec(),
+            ja3: ja3.iter().map(|s| s.to_string()).collect(),
+            hour_of_day: hod,
+            categories: c,
+            beacons: beacons
+                .iter()
+                .map(|(d, p)| BeaconObs {
+                    dst: d.to_string(),
+                    port: *p,
+                    interval_ns: 60_000_000_000,
+                    jitter_cv: 0.05,
+                })
+                .collect(),
+        }
+    }
+
+    fn warm_full(base_obs: &HostObservation, n: u64, params: &BaselineParams) -> BaselineProfile {
+        let mut base = BaselineProfile::new();
+        for i in 0..n {
+            let out = AnalysisOutput {
+                engine_version: "t".to_string(),
+                baseline: Some(CaptureProfile {
+                    hosts: vec![base_obs.clone()],
+                }),
+                ..Default::default()
+            };
+            base = update_baseline(base, &out, 1000 + i as i64, params);
+        }
+        base
+    }
+
+    #[test]
+    fn m2_novelty_dimensions_raise_deviations() {
+        let params = BaselineParams::default();
+        // Baseline: active 08–17 UTC, category Web(0), JA3 "aaaa", beacon to 203.0.113.7:443.
+        let base_obs = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &["aaaaaaaa"],
+            &[8, 9, 10, 17],
+            &[0],
+            &[("203.0.113.7", 443)],
+        );
+        let base = warm_full(&base_obs, params.min_captures, &params);
+        // Persisted profile with M2 fields roundtrips.
+        assert_eq!(
+            base,
+            BaselineProfile::from_json_str(&base.to_json_pretty().unwrap()).unwrap()
+        );
+
+        // New capture: new JA3, first-use category TunnelVpn(7), off-hour 03, new beacon.
+        let dev = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &["aaaaaaaa", "bbbbbbbb"],
+            &[8, 9, 3],
+            &[0, 7],
+            &[("203.0.113.7", 443), ("198.51.100.9", 8443)],
+        );
+        let report = compare_to_baseline(&base, &CaptureProfile { hosts: vec![dev] }, &params);
+        assert_eq!(report.deviations.len(), 1);
+        let ev = &report.deviations[0].evidence;
+        assert!(ev.iter().any(|e| e.contains("fingerprint")), "{ev:?}");
+        assert!(ev.iter().any(|e| e.contains("category")), "{ev:?}");
+        assert!(ev.iter().any(|e| e.contains("active window")), "{ev:?}");
+        assert!(ev.iter().any(|e| e.contains("periodic channel")), "{ev:?}");
+        // Deviation-alone stays at Medium at most.
+        assert!(report.deviations[0].severity.rank() <= Severity::Medium.rank());
+    }
+
+    #[test]
+    fn m2_conforming_is_quiet() {
+        let params = BaselineParams::default();
+        let base_obs = obs_full(
+            "10.0.0.5",
+            1000,
+            &["203.0.113.7"],
+            &[443],
+            &["aaaaaaaa"],
+            &[8, 9, 10, 17],
+            &[0],
+            &[("203.0.113.7", 443)],
+        );
+        let base = warm_full(&base_obs, params.min_captures, &params);
+        let report = compare_to_baseline(
+            &base,
+            &CaptureProfile {
+                hosts: vec![base_obs.clone()],
+            },
+            &params,
+        );
+        assert!(report.deviations.is_empty(), "{:?}", report.deviations);
     }
 
     /// Build a warmed-up baseline (N identical captures) for a host, then compare.
