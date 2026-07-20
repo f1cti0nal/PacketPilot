@@ -4,7 +4,7 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
+import type { AnalysisOutput, BaselineProfile, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
 import initWasm, {
@@ -14,6 +14,8 @@ import initWasm, {
   apply_reputation as wasmApplyReputation,
   apply_domain_reputation as wasmApplyDomainReputation,
   apply_rules as wasmApplyRules,
+  build_baseline as wasmBuildBaseline,
+  compare_to_baseline as wasmCompareToBaseline,
   export_csv as wasmExportCsv,
   export_stix as wasmExportStix,
   export_misp as wasmExportMisp,
@@ -23,6 +25,38 @@ import initWasm, {
   render_report as wasmRenderReport,
   sanitize as wasmSanitize,
 } from "../wasm/ppcap_wasm.js";
+
+/**
+ * Behavioral Baseline: fold a completed analysis into a baseline profile (create-or-merge).
+ * Pure + offline — the capture's per-host snapshot rides on `output.baseline`; nothing leaves
+ * the page. Returns the updated {@link BaselineProfile} for the caller to persist.
+ */
+export async function buildBaselineViaWasm(
+  output: AnalysisOutput,
+  prior: BaselineProfile | null,
+  analyzedUnixSecs: number,
+): Promise<BaselineProfile> {
+  await ensureWasm();
+  const json = wasmBuildBaseline(
+    JSON.stringify(output),
+    prior ? JSON.stringify(prior) : undefined,
+    BigInt(Math.trunc(analyzedUnixSecs)),
+  ) as string;
+  return JSON.parse(json) as BaselineProfile;
+}
+
+/**
+ * Behavioral Baseline: compare a completed analysis against a saved baseline, folding
+ * `baseline_deviation` findings into it (cards uplifted). Returns the updated AnalysisOutput.
+ */
+export async function compareToBaselineViaWasm(
+  output: AnalysisOutput,
+  baseline: BaselineProfile,
+): Promise<AnalysisOutput> {
+  await ensureWasm();
+  const json = wasmCompareToBaseline(JSON.stringify(output), JSON.stringify(baseline)) as string;
+  return JSON.parse(json) as AnalysisOutput;
+}
 
 export async function extractPacketsViaWasm(bytes: ArrayBuffer, query: object): Promise<WireFlowPackets> {
   await ensureWasm();

@@ -11,6 +11,7 @@ const ROUTES = new Set<string>([
   "/app#findings",
   "/app#threats",
   "/app#attackchain",
+  "/app#baseline",
   "/app#recent",
   "/app#compare",
   "/admin#dashboard",
