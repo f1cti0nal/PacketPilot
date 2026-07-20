@@ -83,6 +83,33 @@ test.describe("accessibility (axe, real browser) — WCAG A/AA incl. contrast", 
     expect(vs, fmt(vs)).toEqual([]);
   });
 
+  // Query console: audit with the engine ready AND a populated results grid,
+  // so the dynamic-column grid, status line, and toolbar are all in the scan.
+  async function openQueryWithResults(page: Page) {
+    await page.getByRole("button", { name: "Query", exact: true }).click();
+    await expect(page.getByText(/flows loaded · local only/)).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: /^Run$/ }).click();
+    await expect(page.getByText(/^\d[\d,.]* rows?$/).first()).toBeVisible({ timeout: 30_000 });
+  }
+
+  test("Query view — dark", async ({ page }) => {
+    test.setTimeout(120_000); // wasm engine boot + populated grid before the scan
+    await freshLoad(page, "dark");
+    await openQueryWithResults(page);
+    await settle(page);
+    const vs = await audit(page);
+    expect(vs, fmt(vs)).toEqual([]);
+  });
+
+  test("Query view — light", async ({ page }) => {
+    test.setTimeout(120_000); // wasm engine boot + populated grid before the scan
+    await freshLoad(page, "light");
+    await openQueryWithResults(page);
+    await settle(page);
+    const vs = await audit(page);
+    expect(vs, fmt(vs)).toEqual([]);
+  });
+
   test("keyboard shortcuts overlay", async ({ page }) => {
     await freshLoad(page, "dark");
     await page.keyboard.press("Shift+Slash");

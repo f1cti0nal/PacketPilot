@@ -50,6 +50,7 @@ pub mod packets;
 pub(crate) mod quic;
 pub mod reader;
 pub mod report;
+pub mod sanitize;
 pub mod score;
 pub(crate) mod ssh;
 pub mod stats;
@@ -88,6 +89,12 @@ pub use packets::{
     FlowPackets, PacketCaps, PacketQuery, PacketRecord,
 };
 pub use report::render_html;
+#[cfg(not(target_arch = "wasm32"))]
+pub use sanitize::sanitize_file;
+pub use sanitize::{
+    sanitize_bytes, sanitize_stream, PayloadMode, SanitizeCounts, SanitizeFormat, SanitizeManifest,
+    SanitizeOptions,
+};
 pub use score::{score_flow, ScoredFlow};
 pub use timemachine::{
     build_index, rescan, CaptureIndex, Indicator, IndicatorKind, RescanHit, RescanReport,

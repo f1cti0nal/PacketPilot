@@ -682,7 +682,7 @@ fn drain(
 // module ships a small, self-contained, FIPS-180-4 SHA-256 (unit-tested below against the
 // published vectors). If you would rather depend on the `sha2` crate, delete `Sha256` and
 // `hash_file_sha256` and call `sha2` here — no public signature changes.
-fn hash_file_sha256(path: &Path) -> Result<String> {
+pub(crate) fn hash_file_sha256(path: &Path) -> Result<String> {
     use std::io::Read;
 
     let mut file = std::fs::File::open(path)

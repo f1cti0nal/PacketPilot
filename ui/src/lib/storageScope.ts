@@ -7,10 +7,11 @@
 // data leak.
 //
 // This module holds the CURRENT account scope. Storage modules derive their keys/DB names from it
-// via `scopedKey`/`scopedDbName`, so each account gets an isolated namespace. `useSession` sets the
-// scope from the signed-in user id (before <App/> mounts, since AppGate gates on an authed session)
-// and clears it on sign-out. Offline / self-host / public-demo builds have no accounts → the single
-// "anon" scope, which is still isolated from the orphaned pre-namespacing ("legacy") stores.
+// via `scopedKey`/`scopedDbName`. PacketPilot no longer has user accounts, so nothing sets the
+// scope at runtime and everything lives in the single "anon" namespace — which is still isolated
+// from both the orphaned pre-namespacing ("legacy") stores and any `u_<id>`-scoped data left over
+// from the retired signed-in era. The scoping machinery is kept so those old namespaces stay
+// untouched and a future scope concept can slot back in.
 
 type Listener = () => void;
 

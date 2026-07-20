@@ -44,7 +44,7 @@ export function LegalApp() {
           <a href="/terms" className="hover:text-[var(--color-text-dim)]">Terms</a>
           <a href="/app" className="hover:text-[var(--color-text-dim)]">Launch app</a>
         </nav>
-        <p className="mt-2 t-tag text-[var(--color-text-faint)]">© 2026 PacketPilot · Runs locally — your captures stay yours</p>
+        <p className="mt-2 t-tag text-[var(--color-text-faint)]">© 2026 PacketPilot · Runs locally · Your captures stay yours</p>
       </footer>
     </div>
   );

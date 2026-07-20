@@ -390,6 +390,45 @@ export function render_report(output_json, generated_unix_secs, ai_summary) {
         wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
     }
 }
+
+/**
+ * Sanitize a raw capture entirely in the browser (Safe Share).
+ *
+ * `options_json` mirrors `ppcap_core::SanitizeOptions` (missing fields take the
+ * privacy-safest defaults). `key` must be 32 bytes from `crypto.getRandomValues`
+ * — wasm has no OS entropy, so the page supplies the per-run secret; it exists
+ * only in memory and is never part of the output. Returns a JSON string
+ * `{ manifest, pcap_b64 }`; the capture never leaves the device.
+ * @param {Uint8Array} bytes
+ * @param {string} options_json
+ * @param {Uint8Array} key
+ * @param {bigint} created_unix_secs
+ * @returns {string}
+ */
+export function sanitize(bytes, options_json, key, created_unix_secs) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(options_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.sanitize(ptr0, len0, ptr1, len1, ptr2, len2, created_unix_secs);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,

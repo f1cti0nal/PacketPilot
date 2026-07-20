@@ -11,11 +11,6 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/app")).toBe("app");
     expect(resolveRoute("/app/flows")).toBe("app");
   });
-  it("maps /account and subpaths to account", () => {
-    expect(resolveRoute("/account")).toBe("account");
-    expect(resolveRoute("/account/")).toBe("account");
-    expect(resolveRoute("/account/billing")).toBe("account");
-  });
   it("maps the legal paths to legal", () => {
     expect(resolveRoute("/security")).toBe("legal");
     expect(resolveRoute("/privacy")).toBe("legal");
@@ -26,17 +21,13 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/security-policy")).toBe("landing");
     expect(resolveRoute("/privacy/extra")).toBe("landing");
   });
-  it("maps /pricing to pricing (exact only)", () => {
-    expect(resolveRoute("/pricing")).toBe("pricing");
-    expect(resolveRoute("/pricing/")).toBe("pricing");
-    expect(resolveRoute("/pricing-plans")).toBe("landing");
-  });
-  it("maps the dedicated auth endpoints to auth", () => {
-    expect(resolveRoute("/login")).toBe("auth");
-    expect(resolveRoute("/login/")).toBe("auth");
-    expect(resolveRoute("/signup")).toBe("auth");
-    expect(resolveRoute("/logout")).toBe("auth");
-    expect(resolveRoute("/loginner")).toBe("landing"); // near-miss
+  it("maps the retired gated-SaaS paths to landing (routes removed in the free pivot)", () => {
+    expect(resolveRoute("/pricing")).toBe("landing");
+    expect(resolveRoute("/login")).toBe("landing");
+    expect(resolveRoute("/signup")).toBe("landing");
+    expect(resolveRoute("/logout")).toBe("landing");
+    expect(resolveRoute("/account")).toBe("landing");
+    expect(resolveRoute("/account/billing")).toBe("landing");
   });
   it("maps the SEO tool slugs to tool", () => {
     expect(resolveRoute("/analyze-pcap-online")).toBe("tool");
@@ -76,6 +67,6 @@ describe("admin subdomain isolation", () => {
     expect(resolveRouteFor("packetpilot.app", "/")).toBe("landing");
     expect(resolveRouteFor("packetpilot.app", "/app")).toBe("app");
     expect(resolveRouteFor("packetpilot.app", "/admin")).toBe("admin");
-    expect(resolveRouteFor("packetpilot.app", "/pricing")).toBe("pricing");
+    expect(resolveRouteFor("packetpilot.app", "/pricing")).toBe("landing");
   });
 });

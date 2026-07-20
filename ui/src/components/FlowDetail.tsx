@@ -38,6 +38,7 @@ import {
 } from "../lib/format";
 import { SEVERITY_META } from "../lib/severity";
 import { severityColor, chartPalette } from "../lib/palette";
+import { SeverityChip } from "../cockpit/primitives";
 
 /**
  * Props for the flow detail side panel.
@@ -75,7 +76,7 @@ function Field({
 }) {
   return (
     <div className="flex items-start justify-between gap-3 py-1.5">
-      <dt className="flex shrink-0 items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-text-faint)]">
+      <dt className="t-label flex shrink-0 items-center gap-1.5">
         {icon}
         {label}
       </dt>
@@ -104,7 +105,7 @@ function Section({
 }) {
   return (
     <section className="border-t border-[var(--color-border)] px-4 py-3 first:border-t-0">
-      <h3 className="mb-1.5 flex items-center gap-1.5 text-[0.7rem] font-medium uppercase tracking-wider text-[var(--color-text-dim)]">
+      <h3 className="t-label mb-1.5 flex items-center gap-1.5 text-[var(--color-text-dim)]">
         {icon}
         {title}
       </h3>
@@ -120,7 +121,7 @@ function CategoryChip({ flow }: { flow: FlowRow }) {
   const catLabel = flow.category.replace(/_/g, " ");
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize"
+      className="inline-flex items-center gap-1.5 rounded-[var(--r-chip)] border px-2.5 py-0.5 text-xs font-medium capitalize"
       style={{
         color,
         borderColor: color,
@@ -232,7 +233,7 @@ function TrafficBreakdown({ flow }: { flow: FlowRow }) {
               contentStyle={{
                 background: "var(--color-surface-2)",
                 border: "1px solid var(--color-border)",
-                borderRadius: 8,
+                borderRadius: "var(--r-tile)",
                 fontSize: 12,
                 color: "var(--color-text)",
               }}
@@ -257,7 +258,7 @@ function EmptyDetail() {
       data-component="FlowDetail"
       className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
     >
-      <div className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+      <div className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
         <Network size={22} className="text-[var(--color-text-faint)]" />
       </div>
       <p className="text-sm font-medium text-[var(--color-text-dim)]">
@@ -304,7 +305,7 @@ export function FlowDetail({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <CategoryChip flow={flow} />
-            <span className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-text-dim)]">
+            <span className="rounded-[var(--r-micro)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-text-dim)]">
               {flow.protoLabel}
             </span>
           </div>
@@ -316,7 +317,7 @@ export function FlowDetail({
           type="button"
           onClick={onClose}
           aria-label="Close flow detail"
-          className="shrink-0 rounded-md p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+          className="shrink-0 rounded-[var(--r-tile)] p-1.5 text-[var(--color-text-dim)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
         >
           <X size={18} />
         </button>
@@ -334,7 +335,7 @@ export function FlowDetail({
               : "Packets are only available for captures analyzed from a pcap"
           }
           className={cn(
-            "flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
+            "flex flex-1 items-center justify-center gap-2 rounded-[var(--r-tile)] border px-3 py-1.5 text-sm transition-colors",
             canInspect
               ? "border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
               : "cursor-not-allowed border-[var(--color-border)] text-[var(--color-text-faint)]",
@@ -352,7 +353,7 @@ export function FlowDetail({
               : "Packets are only available for captures analyzed from a pcap"
           }
           className={cn(
-            "flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
+            "flex flex-1 items-center justify-center gap-2 rounded-[var(--r-tile)] border px-3 py-1.5 text-sm transition-colors",
             canInspect
               ? "border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
               : "cursor-not-allowed border-[var(--color-border)] text-[var(--color-text-faint)]",
@@ -400,10 +401,7 @@ export function FlowDetail({
           }
         >
           {flow.appProtoSrc === "payload" ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-              <span style={{ color: "var(--color-accent)" }}>payload</span>
-            </span>
+            <span style={{ color: "var(--color-accent)" }}>payload</span>
           ) : flow.appProtoSrc === "port" ? (
             <span className="text-[var(--color-text-dim)]">port</span>
           ) : (
@@ -498,21 +496,7 @@ export function FlowDetail({
       {/* Threat */}
       <Section icon={<ShieldAlert size={13} />} title="Threat">
         <Field label="Severity">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium"
-            style={{
-              color: severityColor(flow.severity),
-              borderColor: severityColor(flow.severity),
-              backgroundColor: "var(--color-surface-2)",
-            }}
-          >
-            <span
-              aria-hidden
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: severityColor(flow.severity) }}
-            />
-            {SEVERITY_META[flow.severity].label}
-          </span>
+          <SeverityChip severity={flow.severity} />
         </Field>
         <Field label="Threat score" mono>
           <div className="flex items-center justify-end gap-2">
@@ -534,7 +518,7 @@ export function FlowDetail({
         <Field label="IOC">
           {flow.ioc ? (
             <span
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium"
+              className="inline-flex items-center gap-1 rounded-[var(--r-chip)] px-1.5 py-0.5 text-xs font-medium"
               style={{
                 color: "var(--color-sev-critical)",
                 backgroundColor:

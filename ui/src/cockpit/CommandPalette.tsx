@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, Search } from "lucide-react";
 import type { IpThreat } from "../types";
 import { humanNumber } from "../lib/format";
+import { OVERLAY_BACKDROP } from "./primitives";
 import { SEVERITY_META } from "../lib/severity";
 import { sevColor } from "./viz";
 import { fuzzyScore } from "./match";
@@ -113,10 +114,10 @@ export function CommandPalette({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[12vh]" role="dialog" aria-modal="true" aria-labelledby={labelId}>
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className={OVERLAY_BACKDROP} onClick={onClose} />
       <div
         ref={panelRef}
-        className="glass-band relative w-full max-w-lg rounded-[var(--r-card)] border border-[var(--color-border)]"
+        className="glass-band pp-pop-in relative w-full max-w-lg rounded-[var(--r-card)] border border-[var(--color-border)]"
         style={{ boxShadow: "var(--sh-float)" }}
         onKeyDown={onKeyDown}
       >
@@ -136,7 +137,7 @@ export function CommandPalette({
             aria-activedescendant={items.length > 0 ? optionId(active) : undefined}
             className="font-mono-num w-full bg-transparent py-3 text-sm text-[var(--color-text)] outline-none placeholder:font-sans placeholder:text-[var(--color-text-faint)]"
           />
-          <kbd className="t-tag shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-text-faint)]">ESC</kbd>
+          <kbd className="t-tag shrink-0 rounded-[var(--r-micro)] border border-[var(--color-border)] px-1.5 py-0.5 text-[var(--color-text-faint)]">ESC</kbd>
         </div>
         <ul id={listId} role="listbox" aria-label="Results" className="max-h-[50vh] overflow-y-auto p-1.5">
           {items.length === 0 && threats.length === 0 && query.trim() !== "" && (

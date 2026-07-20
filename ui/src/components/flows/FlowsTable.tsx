@@ -14,7 +14,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import clsx from "clsx";
 import type { FlowRow, Severity } from "../../types";
 import { SEVERITY_META, severityForCategory } from "../../lib/severity";
-import { severityColor } from "../../lib/palette";
+import { SeverityChip } from "../../cockpit/primitives";
 import { humanBytes, humanNumber, msToTime } from "../../lib/format";
 
 // Rank used to make the Severity column sortable (critical highest).
@@ -52,7 +52,7 @@ function CategoryChip({ category }: { category: string }) {
   const color = `var(${SEVERITY_META[sev].cssVar})`;
   return (
     <span
-      className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border px-2 py-0.5 text-xs font-medium"
+      className="inline-flex max-w-full items-center gap-1.5 truncate rounded-[var(--r-chip)] border px-2 py-0.5 text-xs font-medium"
       style={{
         color,
         borderColor: color,
@@ -71,37 +71,21 @@ function CategoryChip({ category }: { category: string }) {
 }
 
 function SeverityCell({ flow }: { flow: FlowRow }) {
-  const color = severityColor(flow.severity);
-  const label = SEVERITY_META[flow.severity].label;
   return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span
-        className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full border px-2 py-0.5 text-xs font-medium"
-        style={{
-          color,
-          borderColor: color,
-          backgroundColor: "var(--color-surface-2)",
-        }}
-      >
-        <span
-          aria-hidden
-          className="h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{ backgroundColor: color }}
-        />
-        <span className="truncate">{label}</span>
-      </span>
+    <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+      <SeverityChip severity={flow.severity} />
       {flow.ioc && (
         <span
           // Outlined chip (transparent fill) rather than a same-hue tint: the rose IOC text on a
           // rose-tinted background only reached 4.39:1 (below WCAG AA 4.5:1); on the row's plain
           // surface it clears 4.5:1 in both themes. The border keeps the chip affordance.
-          className="shrink-0 rounded border px-1 py-0.5 text-[0.6rem] font-medium"
+          className="t-tag shrink-0 rounded-[var(--r-micro)] border px-1 py-0.5"
           style={{
             color: "var(--color-sev-critical)",
             borderColor:
               "color-mix(in srgb, var(--color-sev-critical) 45%, transparent)",
           }}
-          title={`IOC — threat score ${flow.threatScore}/100`}
+          title={`IOC: threat score ${flow.threatScore}/100`}
         >
           IOC
         </span>
@@ -161,7 +145,9 @@ export function FlowsTable({
         id: "arrow",
         header: "",
         enableSorting: false,
-        size: 28,
+        // Wide enough that the glyph keeps breathing room inside the
+        // 13px pp-table cell padding.
+        size: 34,
         cell: () => (
           <span className="text-[var(--color-text-faint)]" aria-hidden>
             →
@@ -248,7 +234,7 @@ export function FlowsTable({
               )}
               {f.tlsVersion && (
                 <span
-                  className="font-mono-num shrink-0 rounded border border-[var(--color-border)] px-1 text-[0.65rem] text-[var(--color-text-faint)]"
+                  className="t-tag shrink-0 rounded-[var(--r-micro)] border border-[var(--color-border)] px-1 text-[var(--color-text-faint)]"
                   title={f.tlsCipher ? `${f.tlsVersion} · ${f.tlsCipher}` : f.tlsVersion}
                 >
                   {f.tlsVersion}
@@ -393,7 +379,8 @@ export function FlowsTable({
                     }
                     style={{ width: header.getSize() }}
                     className={clsx(
-                      "group flex shrink-0 items-center gap-1 px-[10px] py-[7px] font-normal uppercase tracking-[.04em] text-[var(--color-text-faint)] select-none",
+                      // 9px/13px padding mirrors the canonical .pp-table thead th metrics.
+                      "group flex shrink-0 items-center gap-1 px-[13px] py-[9px] font-normal uppercase tracking-[.04em] text-[var(--color-text-faint)] select-none",
                       "text-[length:var(--fs-label)]",
                       align && "justify-end text-right",
                       canSort &&
@@ -467,7 +454,10 @@ export function FlowsTable({
                     key={cell.id}
                     role="gridcell"
                     style={{ width: cell.column.getSize() }}
-                    className="flex min-w-0 shrink-0 items-center px-[10px] text-[var(--color-text)]"
+                    // 13px horizontal padding mirrors .pp-table td; the vertical
+                    // metric comes from the fixed 36px row (items-center), which
+                    // the virtualizer's size math depends on — no py here.
+                    className="flex min-w-0 shrink-0 items-center px-[13px] text-[var(--color-text)]"
                   >
                     {flexRender(
                       cell.column.columnDef.cell,

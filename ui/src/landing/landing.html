@@ -22,13 +22,14 @@
     --pill: #131316;
     --pill-hover: #26262c;
     --on-pill: #ffffff;
-    /* Severity hues sized for AA both as white-text chip fills and as text
-       on light surfaces (critical 5.6+, high 5.0+ each way). */
-    --sev-critical: #c81e42;
-    --sev-high: #c2410c;
-    --sev-medium: #b45309;
+    /* Severity hues shared with the app's light theme (index.css) so the
+       brand speaks one severity language; each holds AA as text on the
+       light surfaces used here. */
+    --sev-critical: #c5183f;
+    --sev-high: #a8380a;
+    --sev-medium: #94470a;
     --sev-low: #0f766e;
-    --sev-info: #0369a1;
+    --sev-info: #056291;
     --display: "Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, "Segoe UI", sans-serif;
     --sans: "Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -41,7 +42,8 @@
     background: var(--bg);
     color: var(--ink);
     font-family: var(--sans);
-    font-size: 16px;
+    /* Matches the app root (index.css) so both surfaces share one base scale. */
+    font-size: 17px;
     font-weight: 400;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
@@ -82,11 +84,6 @@
     color: var(--ink-2);
     letter-spacing: 0.02em;
     margin-bottom: 18px;
-  }
-  .pp-kicker-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent);
-    flex-shrink: 0;
   }
   .pp-section-title {
     font-family: var(--display);
@@ -131,7 +128,7 @@
   .pp-landing .pp-btn-accent {
     background: var(--accent);
     color: var(--on-accent);
-    box-shadow: 0 8px 24px rgba(108, 77, 246, 0.32);
+    box-shadow: 0 8px 24px rgba(108, 77, 246, 0.18);
   }
   .pp-landing .pp-btn-accent:hover { background: var(--accent-deep); transform: translateY(-1px); }
   .pp-landing .pp-btn-secondary {
@@ -206,7 +203,7 @@
     align-items: center;
     justify-content: center;
     color: #fff;
-    box-shadow: 0 4px 12px rgba(108, 77, 246, 0.35);
+    box-shadow: 0 4px 12px rgba(108, 77, 246, 0.22);
     flex-shrink: 0;
   }
   .pp-nav-links {
@@ -364,7 +361,6 @@
     color: var(--ink-2);
     animation: pp-bob 7s ease-in-out infinite;
   }
-  .pp-float-chip .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
   .pp-float-chip.c1 { left: 1%;  top: 16%;  animation-delay: 0s;    transform: rotate(-6deg); }
   .pp-float-chip.c2 { left: 4%;  top: 52%;  animation-delay: -1.6s; transform: rotate(4deg); }
   .pp-float-chip.c3 { left: 10%; top: 84%;  animation-delay: -3.1s; transform: rotate(-3deg); }
@@ -403,8 +399,6 @@
     background: var(--surface-soft);
     border-bottom: 1px solid var(--line);
   }
-  .pp-titlebar-dots { display: flex; gap: 6px; }
-  .pp-titlebar-dots span { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
   .pp-titlebar-url {
     flex: 1;
     max-width: 420px;
@@ -433,152 +427,7 @@
     border-radius: 999px;
     flex-shrink: 0;
   }
-  .pp-app-layout { display: flex; min-height: 430px; }
-
-  .pp-rail {
-    width: 52px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding: 14px 0;
-    background: var(--surface-soft);
-    border-right: 1px solid var(--line);
-  }
-  .pp-rail-icon {
-    width: 34px; height: 34px;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 10px;
-    color: var(--ink-3);
-  }
-  .pp-rail-icon.active { background: var(--accent-soft); color: var(--accent-deep); }
-  .pp-rail-sep { width: 22px; height: 1px; background: var(--line); margin: 4px 0; }
-
-  .pp-sidebar {
-    width: 250px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--line);
-    background: var(--surface);
-  }
-  .pp-sidebar-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 13px 14px 9px;
-  }
-  .pp-sidebar-title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
-  .pp-sidebar-count { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
-  .pp-findings { display: flex; flex-direction: column; gap: 4px; padding: 0 8px; }
-  .pp-finding {
-    padding: 8px 9px;
-    border-radius: 10px;
-    border: 1px solid transparent;
-  }
-  .pp-finding.active { background: var(--accent-wash); border-color: rgba(108, 77, 246, 0.22); }
-  .pp-finding-top { display: flex; align-items: center; gap: 7px; }
-  .pp-finding-name { font-size: 12px; font-weight: 500; color: var(--ink); }
-  .pp-finding-mitre { margin-top: 3px; font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); }
-  .pp-finding-more { padding: 8px 9px; font-size: 11px; color: var(--ink-3); }
-  .pp-sev-chip {
-    font-family: var(--mono);
-    font-size: 8.5px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    padding: 2px 6px;
-    border-radius: 5px;
-    color: #fff;
-    flex-shrink: 0;
-  }
-  .pp-sev-chip.critical { background: var(--sev-critical); }
-  .pp-sev-chip.high { background: var(--sev-high); }
-  .pp-sev-chip.medium { background: var(--sev-medium); }
-  .pp-sev-chip.low { background: var(--sev-low); }
-  .pp-sev-chip.info { background: var(--sev-info); }
-  .pp-stat-tiles {
-    margin-top: auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    padding: 10px;
-    border-top: 1px solid var(--line);
-  }
-  .pp-stat-tile {
-    background: var(--surface-soft);
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    padding: 7px 9px;
-  }
-  .pp-stat-val { font-family: var(--mono); font-size: 14px; font-weight: 500; color: var(--ink); }
-  .pp-stat-val.critical { color: var(--sev-critical); }
-  .pp-stat-label { font-size: 9.5px; color: var(--ink-3); margin-top: 1px; }
-
-  .pp-main-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
-  .pp-panel-tabs {
-    display: flex;
-    gap: 2px;
-    padding: 10px 14px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .pp-tab {
-    padding: 7px 13px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--ink-3);
-    border-radius: 9px 9px 0 0;
-    border-bottom: 2px solid transparent;
-  }
-  .pp-tab.active { color: var(--accent-deep); border-bottom-color: var(--accent); }
-  .pp-flows-table { flex: 1; padding: 8px 14px; overflow: hidden; }
-  .pp-table-head, .pp-flow-row {
-    display: grid;
-    grid-template-columns: 22px minmax(150px, 1.6fr) 52px 58px 62px 52px 64px;
-    gap: 8px;
-    align-items: center;
-  }
-  .pp-table-head { padding: 7px 8px; }
-  .pp-th { font-family: var(--mono); font-size: 9px; letter-spacing: 0.07em; color: var(--ink-3); }
-  .pp-flow-row {
-    padding: 7px 8px;
-    border-radius: 8px;
-    font-family: var(--mono);
-    font-size: 10.5px;
-    color: var(--ink-2);
-  }
-  .pp-flow-row:nth-child(odd) { background: var(--surface-soft); }
-  .pp-flow-row.flagged { background: rgba(200, 30, 66, 0.05); }
-  .pp-flow-row.flagged .src { color: var(--sev-critical); }
-  .pp-flow-flag { width: 14px; height: 14px; color: var(--sev-critical); }
-  .pp-flow-flag svg { width: 100%; height: 100%; }
-  .pp-td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pp-td.dim { color: var(--ink-3); }
-  .proto-tls { color: var(--accent-deep); }
-  .proto-dns { color: var(--sev-info); }
-  .proto-http { color: var(--sev-high); }
-  .proto-quic { color: var(--sev-low); }
-  .pp-panel-info {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 9px 18px;
-    border-top: 1px solid var(--line);
-    background: var(--surface-soft);
-    font-size: 10.5px;
-    color: var(--ink-3);
-    flex-wrap: wrap;
-  }
-  .pp-panel-info-item { display: inline-flex; align-items: center; gap: 6px; }
-  .pp-panel-info-item strong { color: var(--ink); font-weight: 600; }
-  @media (max-width: 900px) {
-    .pp-sidebar { display: none; }
-  }
-  @media (max-width: 640px) {
-    .pp-rail { display: none; }
-    .pp-table-head, .pp-flow-row { grid-template-columns: 20px minmax(120px, 1.6fr) 46px 50px; }
-    .pp-th:nth-child(n+5), .pp-flow-row .pp-td:nth-child(n+5) { display: none; }
-  }
+  .pp-mockup-shot { display: block; width: 100%; height: auto; }
 
   /* ─────────────────────────────  4. STANDARDS MARQUEE  ───────────────────────────── */
   .pp-standards { padding: 54px 0 20px; }
@@ -618,7 +467,6 @@
     color: var(--ink-2);
     white-space: nowrap;
   }
-  .pp-standard-chip .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
   /* ─────────────────────────────  5. BENTO FEATURES  ───────────────────────────── */
   .pp-bento {
@@ -724,7 +572,13 @@
   .pp-flow-tab:hover { color: var(--ink); }
   .pp-flow-tab.is-active { color: var(--ink); border-bottom-color: var(--accent); }
   .pp-flow-panel { display: none; }
-  .pp-flow-panel.is-active { display: block; }
+  /* State-transition feedback: the incoming panel rises in when a tab is
+     selected (collapses to instant under prefers-reduced-motion below). */
+  .pp-flow-panel.is-active { display: block; animation: pp-panel-in 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes pp-panel-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
   .pp-step-card {
     display: grid;
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -736,21 +590,7 @@
     padding: 44px;
     align-items: center;
   }
-  .pp-step-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 13px;
-    background: var(--accent-soft);
-    color: var(--accent-deep);
-    border-radius: 999px;
-    font-size: 12.5px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    width: fit-content;
-  }
   .pp-step-title {
-    margin-top: 16px;
     font-family: var(--display);
     font-size: clamp(24px, 3vw, 32px);
     font-weight: 600;
@@ -770,24 +610,25 @@
     background: var(--bg);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 18px;
-    min-height: 300px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    overflow: hidden;
   }
-  .pp-step-visual svg { width: 100%; height: auto; max-height: 300px; display: block; }
+  .pp-step-visual img { width: 100%; height: auto; display: block; }
   @media (max-width: 900px) {
     .pp-step-card { grid-template-columns: 1fr; padding: 28px; }
-    .pp-step-visual { min-height: 0; }
   }
 
   /* ─────────────────────────────  7. USE-CASE CARDS  ───────────────────────────── */
+  /* Asymmetric 7/5 then 5/7: two rows that mirror each other instead of a
+     four-equal-card strip. */
   .pp-cases-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 18px;
   }
+  .pp-case-card:nth-child(1) { grid-column: span 7; }
+  .pp-case-card:nth-child(2) { grid-column: span 5; }
+  .pp-case-card:nth-child(3) { grid-column: span 5; }
+  .pp-case-card:nth-child(4) { grid-column: span 7; }
   .pp-case-card {
     display: flex;
     flex-direction: column;
@@ -833,11 +674,11 @@
   }
   .pp-case-card:hover .pp-case-more { color: var(--accent-deep); }
   .pp-case-card:hover .pp-case-more .pp-arrow { transform: translateX(3px); }
-  @media (max-width: 1000px) { .pp-cases-grid { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 560px) { .pp-cases-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .pp-landing .pp-case-card { grid-column: span 6; } }
+  @media (max-width: 560px) { .pp-landing .pp-case-card { grid-column: span 12; } }
 
   /* ─────────────────────────────  8. STATS BAND  ───────────────────────────── */
-  .pp-stats { padding: 24px 0 96px; }
+  .pp-stats { padding: 48px 0 96px; }
   .pp-stats-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -869,86 +710,61 @@
     .pp-stat-block:nth-child(n+3) { border-top: 1px solid var(--line); }
   }
 
-  /* ─────────────────────────────  9. TESTIMONIALS CAROUSEL  ───────────────────────────── */
-  .pp-carousel { position: relative; max-width: 760px; margin: 0 auto; }
-  .pp-carousel-track { position: relative; }
-  .pp-slide {
-    display: none;
-    background: var(--surface);
-    border: 1px solid var(--line);
+  /* ─────────────────────────────  9. FIELD REPORT  ───────────────────────────── */
+  /* Dark excerpt panel: real numbers from the bundled sample capture, linking
+     to the blog teardown. Uses the same near-black family as the strip,
+     primary buttons, and footer. */
+  .pp-report {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    background: var(--pill);
     border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-card);
-    padding: 46px 52px;
-    text-align: center;
+    overflow: hidden;
+    color: #fff;
   }
-  .pp-slide.is-active { display: block; }
-  .pp-quote-mark {
-    font-family: var(--display);
-    font-size: 56px;
-    font-weight: 700;
-    line-height: 0.6;
-    color: var(--accent);
-    margin-bottom: 20px;
+  .pp-report-main {
+    padding: 48px 52px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
   }
-  .pp-quote {
+  .pp-report-quote {
     font-family: var(--display);
-    font-size: clamp(17px, 2.2vw, 21px);
+    font-size: clamp(19px, 2.4vw, 24px);
     font-weight: 500;
-    letter-spacing: -0.01em;
-    line-height: 1.5;
-    color: var(--ink);
+    letter-spacing: -0.015em;
+    line-height: 1.45;
   }
-  .pp-attrib {
-    margin-top: 26px;
+  .pp-report-source {
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.62);
+  }
+  .pp-report-cta { margin-top: 30px; }
+  .pp-report-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .pp-report-stat {
+    padding: 26px 28px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
     display: flex;
-    align-items: center;
+    flex-direction: column;
     justify-content: center;
-    gap: 11px;
+    gap: 5px;
   }
-  .pp-avatar {
-    width: 40px; height: 40px;
-    border-radius: 50%;
-    background: var(--accent-soft);
-    color: var(--accent-deep);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  .pp-report-stat:nth-child(-n + 2) { border-top: none; }
+  .pp-report-stat:nth-child(even) { border-left: 1px solid rgba(255, 255, 255, 0.12); }
+  .pp-report-stat .val { font-family: var(--mono); font-size: 25px; font-weight: 500; color: #fff; }
+  .pp-report-stat .cap { font-size: 12.5px; line-height: 1.45; color: rgba(255, 255, 255, 0.62); }
+  @media (max-width: 900px) {
+    .pp-report { grid-template-columns: 1fr; }
+    .pp-report-main { padding: 32px 28px; }
+    .pp-report-stats { border-left: none; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+    .pp-report-stat { padding: 20px 24px; }
   }
-  .pp-attrib-role { font-size: 14px; font-weight: 600; color: var(--ink); }
-  .pp-attrib-note { display: block; font-size: 12.5px; color: var(--ink-3); }
-  .pp-carousel-ctrls {
-    margin-top: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 18px;
-  }
-  .pp-carousel-arrow {
-    width: 40px; height: 40px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--surface);
-    border: 1px solid var(--line-strong);
-    border-radius: 50%;
-    color: var(--ink);
-    cursor: pointer;
-    transition: border-color 0.16s, transform 0.16s;
-  }
-  .pp-carousel-arrow:hover { border-color: var(--ink-3); transform: translateY(-1px); }
-  .pp-dots { display: flex; gap: 8px; }
-  .pp-dot {
-    width: 8px; height: 8px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: var(--line-strong);
-    cursor: pointer;
-    transition: background 0.16s, width 0.16s;
-  }
-  .pp-dot.is-active { background: var(--accent); width: 22px; border-radius: 999px; }
-  @media (max-width: 640px) { .pp-slide { padding: 32px 24px; } }
 
   /* ─────────────────────────────  10. INTEGRATIONS ORBIT  ───────────────────────────── */
   .pp-orbit-wrap {
@@ -977,7 +793,7 @@
     width: 84px; height: 84px;
     border-radius: 24px;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
-    box-shadow: 0 18px 44px rgba(108, 77, 246, 0.45);
+    box-shadow: 0 18px 44px rgba(108, 77, 246, 0.28);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1002,7 +818,6 @@
     white-space: nowrap;
     z-index: 1;
   }
-  .pp-orbit-node .dot { width: 7px; height: 7px; border-radius: 3px; flex-shrink: 0; }
   .pp-orbit-caption {
     margin-top: 8px;
     text-align: center;
@@ -1019,131 +834,6 @@
     }
   }
   .pp-orbit-fallback { display: none; }
-
-  /* ─────────────────────────────  11. PRICING  ───────────────────────────── */
-  .pp-toggle {
-    display: inline-flex;
-    gap: 4px;
-    margin-top: 26px;
-    padding: 4px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-  }
-  .pp-toggle-btn {
-    appearance: none;
-    border: none;
-    background: none;
-    padding: 8px 20px;
-    border-radius: 999px;
-    font-family: var(--sans);
-    font-size: 13.5px;
-    font-weight: 500;
-    color: var(--ink-2);
-    cursor: pointer;
-    transition: background 0.16s, color 0.16s;
-  }
-  .pp-toggle-btn[aria-pressed="true"] { background: var(--pill); color: var(--on-pill); }
-  .pp-toggle-save {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent);
-    margin-left: 4px;
-  }
-  .pp-toggle-btn[aria-pressed="true"] .pp-toggle-save { color: #b7a6ff; }
-
-  .pp-price-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 18px;
-    align-items: stretch;
-  }
-  .pp-price-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
-    padding: 30px 28px;
-  }
-  .pp-price-card.featured {
-    background: var(--pill);
-    border-color: var(--pill);
-    color: #fff;
-    box-shadow: var(--shadow-deep);
-  }
-  .pp-price-tag {
-    position: absolute;
-    top: 24px;
-    right: 24px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    padding: 4px 11px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: #fff;
-  }
-  .pp-plan-name {
-    font-family: var(--display);
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--ink);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .pp-price-card.featured .pp-plan-name { color: #fff; }
-  .pp-plan-note {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--ink-3);
-    background: var(--bg-soft);
-    border-radius: 999px;
-    padding: 2px 9px;
-  }
-  .pp-price-card.featured .pp-plan-note { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.7); }
-  .pp-price-amt { display: flex; align-items: baseline; gap: 5px; margin-top: 16px; }
-  .pp-price-big {
-    font-family: var(--display);
-    font-size: 44px;
-    font-weight: 600;
-    letter-spacing: -0.03em;
-    line-height: 1;
-    color: var(--ink);
-  }
-  .pp-price-card.featured .pp-price-big { color: #fff; }
-  .pp-price-per { font-size: 14px; color: var(--ink-3); }
-  .pp-price-card.featured .pp-price-per { color: rgba(255,255,255,0.6); }
-  .pp-price-note { margin-top: 7px; font-size: 12.5px; color: var(--ink-3); }
-  .pp-price-card.featured .pp-price-note { color: rgba(255,255,255,0.65); }
-  .pp-price-annual { display: none; }
-  .pp-price-feats {
-    display: flex;
-    flex-direction: column;
-    gap: 11px;
-    margin: 24px 0;
-    padding-top: 22px;
-    border-top: 1px solid var(--line);
-    flex: 1;
-  }
-  .pp-price-card.featured .pp-price-feats { border-top-color: rgba(255,255,255,0.14); }
-  .pp-price-feat {
-    display: flex;
-    align-items: flex-start;
-    gap: 9px;
-    font-size: 13.5px;
-    line-height: 1.5;
-    color: var(--ink-2);
-  }
-  .pp-price-card.featured .pp-price-feat { color: rgba(255,255,255,0.82); }
-  .pp-price-feat svg { flex-shrink: 0; margin-top: 3px; color: var(--sev-low); }
-  .pp-price-card.featured .pp-price-feat svg { color: #9d87ff; }
-  @media (max-width: 900px) {
-    .pp-price-grid { grid-template-columns: 1fr; max-width: 440px; margin: 0 auto; }
-  }
 
   /* ─────────────────────────────  12. FINAL CTA  ───────────────────────────── */
   .pp-final { padding: 40px 0 0; }
@@ -1291,7 +981,7 @@
 <!-- ═══════════════ 1. ANNOUNCEMENT STRIP ═══════════════ -->
 <div class="pp-strip">
   <a href="/app">
-    Analyze a .pcap entirely in your browser — <strong>nothing is ever uploaded</strong>
+    Analyze a .pcap entirely in your browser: <strong>nothing is ever uploaded</strong>
     <svg class="pp-strip-chev" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="M4.5 2.5L8.5 6.5L4.5 10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </a>
 </div>
@@ -1309,11 +999,10 @@
       <a href="#features">Features</a>
       <a href="#workflow">Workflow</a>
       <a href="#privacy">Privacy</a>
-      <a href="/pricing">Pricing</a>
       <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">Docs</a>
     </div>
     <div class="pp-nav-actions">
-      <a class="pp-btn pp-btn-primary" href="/app">Launch app&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
+      <a class="pp-btn pp-btn-primary" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
       <button class="pp-nav-toggle" type="button" data-pp-nav-toggle aria-expanded="false" aria-controls="pp-nav-menu" aria-label="Toggle navigation menu">
         <svg class="pp-burger" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <svg class="pp-x" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -1324,9 +1013,8 @@
     <a href="#features">Features</a>
     <a href="#workflow">Workflow</a>
     <a href="#privacy">Privacy</a>
-    <a href="/pricing">Pricing</a>
     <a href="https://github.com/f1cti0nal/PacketPilot" target="_blank" rel="noopener">Docs</a>
-    <a class="pp-btn pp-btn-primary" href="/app">Launch app&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
+    <a class="pp-btn pp-btn-primary" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
   </div>
 </nav>
 
@@ -1337,12 +1025,12 @@
   <div class="pp-hero-ring r2" aria-hidden="true"></div>
 
   <div class="pp-float-chips" aria-hidden="true">
-    <div class="pp-float-chip c1"><span class="dot" style="background:#6c4df6;"></span>TLS 1.3</div>
-    <div class="pp-float-chip c2"><span class="dot" style="background:#0f766e;"></span>QUIC</div>
-    <div class="pp-float-chip c3"><span class="dot" style="background:#0369a1;"></span>DNS</div>
-    <div class="pp-float-chip c4"><span class="dot" style="background:#e0570f;"></span>STIX 2.1</div>
-    <div class="pp-float-chip c5"><span class="dot" style="background:#b45309;"></span>MISP</div>
-    <div class="pp-float-chip c6"><span class="dot" style="background:#dc2648;"></span>Sigma</div>
+    <div class="pp-float-chip c1">TLS 1.3</div>
+    <div class="pp-float-chip c2">QUIC</div>
+    <div class="pp-float-chip c3">DNS</div>
+    <div class="pp-float-chip c4">STIX 2.1</div>
+    <div class="pp-float-chip c5">MISP</div>
+    <div class="pp-float-chip c6">Sigma</div>
   </div>
 
   <div class="inner">
@@ -1353,13 +1041,13 @@
           <span><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="5.2" cy="5.2" r="3.4" stroke="currentColor" stroke-width="1.1"/><path d="M7.8 7.8L10.4 10.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
           <span><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 8.5L4.8 5.7L6.8 7.7L10 4.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </span>
-        <span><strong>Runs 100% in your browser</strong> — built for analysts</span>
+        <span><strong>Runs 100% in your browser</strong>, built for analysts</span>
       </div>
       <h1 class="pp-hero-headline" data-pp-reveal>
         Triage faster, dig deeper, keep it <em>private.</em>
       </h1>
       <p class="pp-hero-sub" data-pp-reveal>
-        PacketPilot turns raw packet captures into severity-ranked, MITRE-mapped threat findings in seconds — powered by a Rust/WASM engine that never sends a packet off your device.
+        Severity-ranked, MITRE-mapped threat findings in seconds, from a Rust/WASM engine that never sends a packet off your device.
       </p>
       <div class="pp-hero-ctas" data-pp-reveal>
         <a class="pp-btn pp-btn-primary pp-btn-lg" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
@@ -1369,168 +1057,20 @@
         </a>
       </div>
 
-      <!-- LIVE CONSOLE MOCKUP — a decorative picture of the app: no interactive
-           elements inside, so the whole frame is hidden from assistive tech. -->
-      <div class="pp-mockup-wrap" aria-hidden="true">
+      <!-- PRODUCT SHOT — the real dashboard triaging the bundled sample capture,
+           captured from the app itself (public/media, regenerate via Playwright
+           against /app?sample=1 in light theme when the dashboard changes). -->
+      <div class="pp-mockup-wrap">
         <div class="pp-mockup-glow" aria-hidden="true"></div>
         <div class="pp-tilt" data-pp-tilt>
           <div class="pp-mockup">
             <div class="pp-titlebar">
-              <div class="pp-titlebar-dots" aria-hidden="true"><span></span><span></span><span></span></div>
-              <div class="pp-titlebar-url">packetpilot.app &mdash; suspicious_traffic_2026-06-14.pcapng</div>
+              <div class="pp-titlebar-url">packetpilot.app &middot; sample.pcap</div>
               <div class="pp-titlebar-badge">LOCAL ONLY</div>
             </div>
-
-            <div class="pp-app-layout">
-              <!-- rail -->
-              <div class="pp-rail" aria-hidden="true">
-                <div class="pp-rail-icon active">
-                  <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
-                </div>
-                <div class="pp-rail-icon">
-                  <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="12" x2="10" y2="12" stroke="currentColor" stroke-width="1.2"/></svg>
-                </div>
-                <div class="pp-rail-sep"></div>
-                <div class="pp-rail-icon">
-                  <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 2L14 5V9C14 12.3 11.3 14.9 8 15C4.7 14.9 2 12.3 2 9V5L8 2Z" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="7" x2="8" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11" r="0.7" fill="currentColor"/></svg>
-                </div>
-                <div class="pp-rail-icon">
-                  <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3.5" r="2.2" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="12.5" r="2.2" stroke="currentColor" stroke-width="1.2"/><circle cx="13" cy="12.5" r="2.2" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="5.7" x2="4" y2="10.6" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="5.7" x2="12" y2="10.6" stroke="currentColor" stroke-width="1.2"/></svg>
-                </div>
-                <div class="pp-rail-icon">
-                  <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 10V2M5 5L8 2L11 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11V13H13V11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                </div>
-              </div>
-
-              <!-- findings sidebar -->
-              <div class="pp-sidebar">
-                <div class="pp-sidebar-header">
-                  <span class="pp-sidebar-title">Threats</span>
-                  <span class="pp-sidebar-count">11 findings</span>
-                </div>
-                <div class="pp-findings">
-                  <div class="pp-finding active">
-                    <div class="pp-finding-top"><span class="pp-sev-chip critical">CRIT</span><span class="pp-finding-name">Malware Download</span></div>
-                    <div class="pp-finding-mitre">T1105 &middot; Ingress Tool Transfer</div>
-                  </div>
-                  <div class="pp-finding">
-                    <div class="pp-finding-top"><span class="pp-sev-chip high">HIGH</span><span class="pp-finding-name">C2 Beaconing</span></div>
-                    <div class="pp-finding-mitre">T1071 &middot; App Layer Protocol</div>
-                  </div>
-                  <div class="pp-finding">
-                    <div class="pp-finding-top"><span class="pp-sev-chip medium">MED</span><span class="pp-finding-name">DGA Domains</span></div>
-                    <div class="pp-finding-mitre">T1568.002 &middot; Dynamic Resolution</div>
-                  </div>
-                  <div class="pp-finding">
-                    <div class="pp-finding-top"><span class="pp-sev-chip low">LOW</span><span class="pp-finding-name">Weak TLS</span></div>
-                    <div class="pp-finding-mitre">T1040 &middot; Network Sniffing</div>
-                  </div>
-                  <div class="pp-finding">
-                    <div class="pp-finding-top"><span class="pp-sev-chip info">INFO</span><span class="pp-finding-name">Encrypted DNS</span></div>
-                    <div class="pp-finding-mitre">T1572 &middot; Protocol Tunneling</div>
-                  </div>
-                  <div class="pp-finding-more">+ 6 more findings</div>
-                </div>
-                <div class="pp-stat-tiles">
-                  <div class="pp-stat-tile"><div class="pp-stat-val critical">2</div><div class="pp-stat-label">Critical</div></div>
-                  <div class="pp-stat-tile"><div class="pp-stat-val">14.2k</div><div class="pp-stat-label">Flows</div></div>
-                  <div class="pp-stat-tile"><div class="pp-stat-val">3</div><div class="pp-stat-label">High</div></div>
-                  <div class="pp-stat-tile"><div class="pp-stat-val">187</div><div class="pp-stat-label">Hosts</div></div>
-                </div>
-              </div>
-
-              <!-- flows table -->
-              <div class="pp-main-panel">
-                <div class="pp-panel-tabs" aria-hidden="true">
-                  <div class="pp-tab">Overview</div>
-                  <div class="pp-tab active">Flows</div>
-                  <div class="pp-tab">Hosts</div>
-                  <div class="pp-tab">Export</div>
-                </div>
-                <div class="pp-flows-table">
-                  <div class="pp-table-head">
-                    <div class="pp-th"></div>
-                    <div class="pp-th">SRC &rarr; DST</div>
-                    <div class="pp-th">PROTO</div>
-                    <div class="pp-th">DST PORT</div>
-                    <div class="pp-th">BYTES</div>
-                    <div class="pp-th">PKTS</div>
-                    <div class="pp-th">JA3</div>
-                  </div>
-                  <div class="pp-table-body">
-                    <div class="pp-flow-row flagged">
-                      <div class="pp-flow-flag"><svg viewBox="0 0 12 12" fill="none"><path d="M6 2v4M6 8v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1"/></svg></div>
-                      <div class="pp-td src">10.0.0.54 &rarr; 185.220.101.47</div>
-                      <div class="pp-td proto-tls">TLS</div>
-                      <div class="pp-td">443</div>
-                      <div class="pp-td">2.1 MB</div>
-                      <div class="pp-td">4,821</div>
-                      <div class="pp-td">a1b2c3&hellip;</div>
-                    </div>
-                    <div class="pp-flow-row">
-                      <div class="pp-flow-flag"></div>
-                      <div class="pp-td src">10.0.0.12 &rarr; 8.8.8.8</div>
-                      <div class="pp-td proto-dns">DNS</div>
-                      <div class="pp-td">53</div>
-                      <div class="pp-td">4.2 KB</div>
-                      <div class="pp-td">38</div>
-                      <div class="pp-td dim">&mdash;</div>
-                    </div>
-                    <div class="pp-flow-row flagged">
-                      <div class="pp-flow-flag"><svg viewBox="0 0 12 12" fill="none"><path d="M6 2v4M6 8v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1"/></svg></div>
-                      <div class="pp-td src">10.0.0.54 &rarr; 91.108.56.181</div>
-                      <div class="pp-td proto-http">HTTP</div>
-                      <div class="pp-td">80</div>
-                      <div class="pp-td">842 KB</div>
-                      <div class="pp-td">1,205</div>
-                      <div class="pp-td dim">&mdash;</div>
-                    </div>
-                    <div class="pp-flow-row">
-                      <div class="pp-flow-flag"></div>
-                      <div class="pp-td src">10.0.0.1 &rarr; 172.217.14.196</div>
-                      <div class="pp-td proto-quic">QUIC</div>
-                      <div class="pp-td">443</div>
-                      <div class="pp-td">156 KB</div>
-                      <div class="pp-td">302</div>
-                      <div class="pp-td">f7e8d9&hellip;</div>
-                    </div>
-                    <div class="pp-flow-row">
-                      <div class="pp-flow-flag"></div>
-                      <div class="pp-td src">10.0.0.23 &rarr; 1.1.1.1</div>
-                      <div class="pp-td proto-dns">DNS</div>
-                      <div class="pp-td">53</div>
-                      <div class="pp-td">8.7 KB</div>
-                      <div class="pp-td">72</div>
-                      <div class="pp-td dim">&mdash;</div>
-                    </div>
-                    <div class="pp-flow-row">
-                      <div class="pp-flow-flag"></div>
-                      <div class="pp-td src">10.0.0.5 &rarr; 104.26.10.229</div>
-                      <div class="pp-td proto-tls">TLS</div>
-                      <div class="pp-td">443</div>
-                      <div class="pp-td">48.2 KB</div>
-                      <div class="pp-td">89</div>
-                      <div class="pp-td">3c4d5e&hellip;</div>
-                    </div>
-                    <div class="pp-flow-row">
-                      <div class="pp-flow-flag"></div>
-                      <div class="pp-td src">192.168.1.42 &rarr; 34.120.54.230</div>
-                      <div class="pp-td proto-tls">TLS</div>
-                      <div class="pp-td">443</div>
-                      <div class="pp-td">91.7 KB</div>
-                      <div class="pp-td">178</div>
-                      <div class="pp-td">9b8c7d&hellip;</div>
-                    </div>
-                  </div>
-                </div>
-                <div class="pp-panel-info">
-                  <div class="pp-panel-info-item"><strong>14,281</strong>&nbsp;flows</div>
-                  <div class="pp-panel-info-item"><strong>187</strong>&nbsp;hosts</div>
-                  <div class="pp-panel-info-item"><strong>2</strong>&nbsp;IOC matches</div>
-                  <div class="pp-panel-info-item" style="margin-left:auto;"><strong>analyzed in seconds</strong></div>
-                </div>
-              </div>
-            </div>
+            <img class="pp-mockup-shot" src="/media/app-dashboard-light.png" width="2880" height="1800"
+                 fetchpriority="high" decoding="async"
+                 alt="The PacketPilot dashboard triaging a sample capture: 99,079 flows across 547 hosts summarized, one critical incident scored 89 out of 100 with its kill chain, MITRE techniques, and ranked findings." />
           </div>
         </div>
       </div>
@@ -1544,37 +1084,37 @@
   <div class="pp-marquee" aria-hidden="true">
     <div class="pp-marquee-track">
       <!-- set A -->
-      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>PCAP</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>PCAPNG</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>GZIP</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>TLS 1.2 / 1.3</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>QUIC / HTTP3</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>JA3 / JA4</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>JA3S</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>HASSH</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>Suricata rules</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>MITRE ATT&amp;CK</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>STIX 2.1</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>MISP</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>CEF</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>CSV</span>
+      <span class="pp-standard-chip">PCAP</span>
+      <span class="pp-standard-chip">PCAPNG</span>
+      <span class="pp-standard-chip">GZIP</span>
+      <span class="pp-standard-chip">TLS 1.2 / 1.3</span>
+      <span class="pp-standard-chip">QUIC / HTTP3</span>
+      <span class="pp-standard-chip">JA3 / JA4</span>
+      <span class="pp-standard-chip">JA3S</span>
+      <span class="pp-standard-chip">HASSH</span>
+      <span class="pp-standard-chip">Suricata rules</span>
+      <span class="pp-standard-chip">MITRE ATT&amp;CK</span>
+      <span class="pp-standard-chip">STIX 2.1</span>
+      <span class="pp-standard-chip">MISP</span>
+      <span class="pp-standard-chip">CEF</span>
+      <span class="pp-standard-chip">Sigma</span>
+      <span class="pp-standard-chip">CSV</span>
       <!-- set B (duplicate for seamless loop) -->
-      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>PCAP</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>PCAPNG</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>GZIP</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>TLS 1.2 / 1.3</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>QUIC / HTTP3</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>JA3 / JA4</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>JA3S</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>HASSH</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>Suricata rules</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>MITRE ATT&amp;CK</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>STIX 2.1</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>MISP</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>CEF</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>CSV</span>
+      <span class="pp-standard-chip">PCAP</span>
+      <span class="pp-standard-chip">PCAPNG</span>
+      <span class="pp-standard-chip">GZIP</span>
+      <span class="pp-standard-chip">TLS 1.2 / 1.3</span>
+      <span class="pp-standard-chip">QUIC / HTTP3</span>
+      <span class="pp-standard-chip">JA3 / JA4</span>
+      <span class="pp-standard-chip">JA3S</span>
+      <span class="pp-standard-chip">HASSH</span>
+      <span class="pp-standard-chip">Suricata rules</span>
+      <span class="pp-standard-chip">MITRE ATT&amp;CK</span>
+      <span class="pp-standard-chip">STIX 2.1</span>
+      <span class="pp-standard-chip">MISP</span>
+      <span class="pp-standard-chip">CEF</span>
+      <span class="pp-standard-chip">Sigma</span>
+      <span class="pp-standard-chip">CSV</span>
     </div>
   </div>
 </section>
@@ -1583,7 +1123,6 @@
 <section class="pp-section" id="features">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Why analysts choose PacketPilot</span>
       <h2 class="pp-section-title">A complete forensics workspace, without the upload.</h2>
       <p class="pp-section-sub">Purpose-built for SOC analysts, incident responders, and threat hunters who can't ship evidence to someone else's cloud.</p>
     </div>
@@ -1608,7 +1147,7 @@
           </svg>
         </div>
         <div class="pp-card-title">Your capture never leaves this tab</div>
-        <div class="pp-card-desc">Parsing, detection, fingerprinting, carving — all of it runs in a Rust engine compiled to WebAssembly, inside your browser. Works offline and air-gapped. The optional AI summary sends derived stats only, never packets.</div>
+        <div class="pp-card-desc">Parsing, detection, fingerprinting, carving: all of it runs in a Rust engine compiled to WebAssembly, inside your browser. Works offline and air-gapped. The optional AI summary sends derived stats only, never packets.</div>
       </div>
 
       <!-- Right 2x2 grid -->
@@ -1659,7 +1198,7 @@
             </svg>
           </div>
           <div class="pp-card-title">20+ MITRE-mapped detectors</div>
-          <div class="pp-card-desc">C2 beaconing, DGA, port scans, ARP spoofing, SYN floods, lateral movement, exfiltration, cryptomining, cleartext creds — each mapped to ATT&amp;CK.</div>
+          <div class="pp-card-desc">C2 beaconing, DGA, port scans, ARP spoofing, SYN floods, lateral movement, exfiltration, cryptomining, cleartext creds, each mapped to ATT&amp;CK.</div>
         </div>
 
         <div class="pp-card" data-pp-reveal>
@@ -1694,7 +1233,7 @@
               </g>
               <rect x="10" y="80" width="260" height="30" rx="8" fill="#fbfbfc" stroke="#e8e8ec"/>
               <circle cx="27" cy="95" r="6" fill="none" stroke="#6c4df6" stroke-width="1.1"/><path d="M24 95l2 2 4-4" stroke="#6c4df6" stroke-width="1.1" fill="none"/>
-              <text x="42" y="99" fill="#55565f" font-size="8.5" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">AI summary &mdash; derived stats only, never packets</text>
+              <text x="42" y="99" fill="#55565f" font-size="8.5" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">AI summary: derived stats only, never packets</text>
             </svg>
           </div>
           <div class="pp-card-title">Open exports + an AI analyst</div>
@@ -1706,12 +1245,11 @@
 </section>
 
 <!-- ═══════════════ 6. WORKFLOW TABS ═══════════════ -->
-<section class="pp-section" id="workflow" style="padding-top: 24px;">
+<section class="pp-section" id="workflow" style="padding-top: 48px;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Your workflow, streamlined</span>
       <h2 class="pp-section-title">From capture to evidence, step by step.</h2>
-      <p class="pp-section-sub">No setup, no upload — your capture never leaves the browser.</p>
+      <p class="pp-section-sub">No setup, no upload. Your capture never leaves the browser.</p>
     </div>
 
     <div data-pp-tabs data-pp-reveal>
@@ -1724,98 +1262,56 @@
 
       <div class="pp-flow-panel is-active" role="tabpanel" id="pp-wpanel-1" aria-labelledby="pp-wtab-1" data-pp-panel="drop">
         <div class="pp-step-card">
-          <div>
-            <span class="pp-step-tag">Step 1</span>
-            <h3 class="pp-step-title">Drop a .pcap</h3>
-            <p class="pp-step-desc">Drag-and-drop a .pcap, .pcapng, or gzip-compressed capture. Works in any modern browser — nothing is installed and nothing is uploaded.</p>
-            <div class="pp-step-meta">.pcap &middot; .pcapng &middot; .pcap.gz</div>
-            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Try it now&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+          <div>            <h3 class="pp-step-title">Drop a .pcap</h3>
+            <p class="pp-step-desc">Drag-and-drop a .pcap, .pcapng, or gzip-compressed capture. Works in any modern browser. Nothing is installed and nothing is uploaded.</p>
+            <div class="pp-step-meta">Supports .pcap, .pcapng, and .pcap.gz</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
           </div>
-          <div class="pp-step-visual" aria-hidden="true">
-            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
-              <rect x="120" y="50" width="200" height="130" rx="14" fill="#ffffff" stroke="#6c4df6" stroke-width="1.4" stroke-dasharray="6 6"/>
-              <path d="M220 145V95M200 113l20-20 20 20" stroke="#6c4df6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-              <text x="220" y="168" fill="#85868f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">drop capture here</text>
-              <rect x="30" y="196" width="120" height="30" rx="9" fill="#ffffff" stroke="#e8e8ec"/><text x="90" y="215" fill="#55565f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">traffic.pcapng</text>
-              <rect x="166" y="196" width="108" height="30" rx="9" fill="#ffffff" stroke="#e8e8ec"/><text x="220" y="215" fill="#55565f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">edge.pcap.gz</text>
-              <rect x="290" y="196" width="120" height="30" rx="9" fill="#ffffff" stroke="#e8e8ec"/><text x="350" y="215" fill="#55565f" font-size="10" font-family="'Geist Mono',monospace" text-anchor="middle">incident01.pcap</text>
-              <circle cx="366" cy="66" r="18" fill="#efebfe"/><path d="M360 66l4 4 8-8" stroke="#5636e8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+          <div class="pp-step-visual">
+            <img src="/media/step-drop.png" width="1480" height="780" loading="lazy" decoding="async"
+                 alt="The app's first-run screen: drop a .pcap or .pcapng file, or open the sample capture." />
           </div>
         </div>
       </div>
 
       <div class="pp-flow-panel" role="tabpanel" id="pp-wpanel-2" aria-labelledby="pp-wtab-2" data-pp-panel="triage" hidden>
         <div class="pp-step-card">
-          <div>
-            <span class="pp-step-tag">Step 2</span>
-            <h3 class="pp-step-title">Instant, ranked triage</h3>
-            <p class="pp-step-desc">The Rust/WASM engine decodes packets, runs 20+ MITRE-mapped detectors, fingerprints TLS flows, and ranks findings by severity — in seconds.</p>
-            <div class="pp-step-meta">20+ detectors &middot; ATT&amp;CK mapped &middot; transparent scoring</div>
-            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app?sample=1">See a live triage&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+          <div>            <h3 class="pp-step-title">Instant, ranked triage</h3>
+            <p class="pp-step-desc">The Rust/WASM engine decodes packets, runs 20+ MITRE-mapped detectors, fingerprints TLS flows, and ranks findings by severity, in seconds.</p>
+            <div class="pp-step-meta">20+ ATT&amp;CK-mapped detectors, transparent scoring</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app?sample=1">See a live capture&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
           </div>
-          <div class="pp-step-visual" aria-hidden="true">
-            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
-              <rect x="40" y="34" width="360" height="38" rx="10" fill="rgba(220,38,72,0.07)" stroke="#dc2648"/><rect x="54" y="46" width="44" height="13" rx="4" fill="#dc2648"/><text x="61" y="56" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">CRIT</text><text x="112" y="57" fill="#0e0e12" font-size="11" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">Malware download</text><text x="386" y="57" fill="#dc2648" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+42</text>
-              <rect x="40" y="82" width="322" height="38" rx="10" fill="rgba(224,87,15,0.07)" stroke="#e0570f"/><rect x="54" y="94" width="44" height="13" rx="4" fill="#e0570f"/><text x="61" y="104" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">HIGH</text><text x="112" y="105" fill="#0e0e12" font-size="11" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">C2 beaconing</text><text x="348" y="105" fill="#e0570f" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+25</text>
-              <rect x="40" y="130" width="252" height="38" rx="10" fill="rgba(180,83,9,0.07)" stroke="#b45309"/><rect x="54" y="142" width="38" height="13" rx="4" fill="#b45309"/><text x="60" y="152" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">MED</text><text x="104" y="153" fill="#0e0e12" font-size="11" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">DGA domains</text><text x="278" y="153" fill="#b45309" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+14</text>
-              <rect x="40" y="178" width="182" height="38" rx="10" fill="rgba(15,118,110,0.07)" stroke="#0f766e"/><rect x="54" y="190" width="38" height="13" rx="4" fill="#0f766e"/><text x="60" y="200" fill="#fff" font-size="8" font-family="'Geist Mono',monospace">LOW</text><text x="104" y="201" fill="#0e0e12" font-size="11" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">Weak TLS</text><text x="208" y="201" fill="#0f766e" font-size="11" font-family="'Geist Mono',monospace" text-anchor="end">+6</text>
-              <text x="40" y="240" fill="#85868f" font-size="9.5" font-family="'Geist Mono',monospace">risk score 87 / 100 &middot; every term auditable</text>
-            </svg>
+          <div class="pp-step-visual">
+            <img src="/media/step-triage.png" width="1756" height="800" loading="lazy" decoding="async"
+                 alt="A critical incident scored 89 out of 100, with MITRE techniques and the reconstructed kill chain from discovery to exfiltration." />
           </div>
         </div>
       </div>
 
       <div class="pp-flow-panel" role="tabpanel" id="pp-wpanel-3" aria-labelledby="pp-wtab-3" data-pp-panel="investigate" hidden>
         <div class="pp-step-card">
-          <div>
-            <span class="pp-step-tag">Step 3</span>
-            <h3 class="pp-step-title">Pivot and drill down</h3>
+          <div>            <h3 class="pp-step-title">Pivot and drill down</h3>
             <p class="pp-step-desc">Pivot from a finding to its flows, follow a TCP stream, inspect packets and payloads on demand, chase a JA3 across hosts, and map relationships in the threat graph.</p>
-            <div class="pp-step-meta">flows &middot; packets &middot; threat graph &middot; passive DNS</div>
-            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Open the workspace&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+            <div class="pp-step-meta">Flows, packets, threat graph, passive DNS</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
           </div>
-          <div class="pp-step-visual" aria-hidden="true">
-            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
-              <line x1="220" y1="130" x2="120" y2="64" stroke="#dc2648" stroke-width="1.2" opacity="0.55"/>
-              <line x1="220" y1="130" x2="322" y2="64" stroke="#e0570f" stroke-width="1.2" opacity="0.55"/>
-              <line x1="220" y1="130" x2="120" y2="200" stroke="#b45309" stroke-width="1.2" opacity="0.55"/>
-              <line x1="220" y1="130" x2="322" y2="200" stroke="#85868f" stroke-width="1.2" opacity="0.45"/>
-              <circle cx="220" cy="130" r="34" fill="#efebfe" stroke="#6c4df6" stroke-width="1.6"/>
-              <text x="220" y="127" fill="#5636e8" font-size="10" text-anchor="middle" font-family="'Geist Mono',monospace">10.0.1.42</text>
-              <text x="220" y="141" fill="#85868f" font-size="8" text-anchor="middle" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">host</text>
-              <circle cx="120" cy="64" r="22" fill="#ffffff" stroke="#dc2648" stroke-width="1.3"/><text x="120" y="68" fill="#dc2648" font-size="9" text-anchor="middle" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">IOC</text>
-              <circle cx="322" cy="64" r="22" fill="#ffffff" stroke="#e0570f" stroke-width="1.3"/><text x="322" y="68" fill="#e0570f" font-size="9" text-anchor="middle" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">C2</text>
-              <circle cx="120" cy="200" r="22" fill="#ffffff" stroke="#b45309" stroke-width="1.3"/><text x="120" y="204" fill="#b45309" font-size="9" text-anchor="middle" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">DGA</text>
-              <circle cx="322" cy="200" r="22" fill="#ffffff" stroke="#85868f" stroke-width="1.3"/><text x="322" y="204" fill="#55565f" font-size="9" text-anchor="middle" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">DNS</text>
-            </svg>
+          <div class="pp-step-visual">
+            <img src="/media/step-investigate.png" width="1944" height="1166" loading="lazy" decoding="async"
+                 alt="The flows table: 99,079 flows filterable by IP, port, category, or SNI, with protocol, category, and severity per row." />
           </div>
         </div>
       </div>
 
       <div class="pp-flow-panel" role="tabpanel" id="pp-wpanel-4" aria-labelledby="pp-wtab-4" data-pp-panel="export" hidden>
         <div class="pp-step-card">
-          <div>
-            <span class="pp-step-tag">Step 4</span>
-            <h3 class="pp-step-title">Export the evidence</h3>
-            <p class="pp-step-desc">Hand off findings in the formats your stack already understands: STIX 2.1, MISP, CEF, Sigma, CSV — or a self-contained HTML report you can share as-is.</p>
-            <div class="pp-step-meta">STIX &middot; MISP &middot; CEF &middot; Sigma &middot; CSV &middot; HTML</div>
-            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/pricing">See what's included&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
+          <div>            <h3 class="pp-step-title">Export the evidence</h3>
+            <p class="pp-step-desc">Hand off findings in the formats your stack already understands: STIX 2.1, MISP, CEF, Sigma, CSV, or a self-contained HTML report you can share as-is.</p>
+            <div class="pp-step-meta">STIX, MISP, CEF, Sigma, CSV, HTML</div>
+            <div class="pp-step-cta"><a class="pp-btn pp-btn-primary" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a></div>
           </div>
-          <div class="pp-step-visual" aria-hidden="true">
-            <svg viewBox="0 0 440 260" xmlns="http://www.w3.org/2000/svg">
-              <g font-family="'Geist Mono',monospace" font-size="11">
-                <rect x="60" y="40" width="94" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="107" y="62" fill="#5636e8" text-anchor="middle">STIX 2.1</text>
-                <rect x="172" y="40" width="86" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="215" y="62" fill="#5636e8" text-anchor="middle">MISP</text>
-                <rect x="276" y="40" width="78" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="315" y="62" fill="#5636e8" text-anchor="middle">CEF</text>
-                <rect x="102" y="94" width="88" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="146" y="116" fill="#5636e8" text-anchor="middle">Sigma</text>
-                <rect x="208" y="94" width="78" height="36" rx="10" fill="#efebfe" stroke="rgba(108,77,246,0.4)"/><text x="247" y="116" fill="#5636e8" text-anchor="middle">CSV</text>
-              </g>
-              <rect x="94" y="160" width="252" height="52" rx="12" fill="#ffffff" stroke="#e8e8ec"/>
-              <circle cx="122" cy="186" r="10" fill="#efebfe"/><path d="M118 186l3 3 6-6" stroke="#5636e8" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-              <text x="142" y="182" fill="#0e0e12" font-size="11" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">incident-report.html</text>
-              <text x="142" y="198" fill="#85868f" font-size="9" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">self-contained &middot; shareable</text>
-            </svg>
+          <div class="pp-step-visual">
+            <img src="/media/step-export.png" width="1426" height="792" loading="lazy" decoding="async"
+                 alt="The export menu over the dashboard: HTML report, CSV, STIX bundle, MISP event, CEF, and Sigma rules." />
           </div>
         </div>
       </div>
@@ -1824,10 +1320,9 @@
 </section>
 
 <!-- ═══════════════ 7. USE CASES ═══════════════ -->
-<section class="pp-section" id="cases" style="padding-top: 24px;">
+<section class="pp-section" id="cases" style="padding-top: 48px;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Built for analysts</span>
       <h2 class="pp-section-title">Discover how PacketPilot handles your investigation.</h2>
     </div>
     <div class="pp-cases-grid">
@@ -1836,7 +1331,7 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3L20 6.5V11C20 16 16.6 20.4 12 21.5C7.4 20.4 4 16 4 11V6.5L12 3Z" stroke="currentColor" stroke-width="1.5"/><path d="M9 12l2.2 2.2L15.5 9.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
         <div class="pp-case-title">Incident response, unblocked.</div>
-        <div class="pp-case-desc">Triage a suspicious capture in seconds, pull severity-ranked findings, and export STIX straight into a case — without shipping evidence anywhere.</div>
+        <div class="pp-case-desc">Triage a suspicious capture in seconds, pull severity-ranked findings, and export STIX straight into a case, without shipping evidence anywhere.</div>
         <span class="pp-case-more">Explore more <span class="pp-arrow" aria-hidden="true">&#8594;</span></span>
       </a>
       <a class="pp-case-card" href="/wireshark-alternative" data-pp-reveal>
@@ -1844,7 +1339,7 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </span>
         <div class="pp-case-title">Threat hunting made fast.</div>
-        <div class="pp-case-desc">Pivot from a JA3 fingerprint to every flow that shares it, follow the C2 beacon, and carve the dropped payload — all in one browser tab.</div>
+        <div class="pp-case-desc">Pivot from a JA3 fingerprint to every flow that shares it, follow the C2 beacon, and carve the dropped payload, all in one browser tab.</div>
         <span class="pp-case-more">Explore more <span class="pp-arrow" aria-hidden="true">&#8594;</span></span>
       </a>
       <a class="pp-case-card" href="/extract-files-from-pcap" data-pp-reveal>
@@ -1860,7 +1355,7 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3L21 7L12 11L3 7L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 9.5v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5" stroke="currentColor" stroke-width="1.5"/></svg>
         </span>
         <div class="pp-case-title">Teaching &amp; lab-ready.</div>
-        <div class="pp-case-desc">Open PacketPilot on any lab machine, air-gapped if needed, and let students explore real captures with zero install — then export flows to CSV.</div>
+        <div class="pp-case-desc">Open PacketPilot on any lab machine, air-gapped if needed, and let students explore real captures with zero install, then export flows to CSV.</div>
         <span class="pp-case-more">Explore more <span class="pp-arrow" aria-hidden="true">&#8594;</span></span>
       </a>
     </div>
@@ -1877,7 +1372,7 @@
       </div>
       <div class="pp-stat-block">
         <div class="pp-stat-num" data-pp-count="0">0</div>
-        <div class="pp-stat-cap">Packets uploaded —<br>analysis stays on-device</div>
+        <div class="pp-stat-cap">Packets uploaded.<br>Analysis stays on-device</div>
       </div>
       <div class="pp-stat-block">
         <div class="pp-stat-num" data-pp-count="5">5</div>
@@ -1891,68 +1386,35 @@
   </div>
 </section>
 
-<!-- ═══════════════ 9. TESTIMONIALS ═══════════════ -->
-<section class="pp-section" style="padding-top: 12px;">
+<!-- ═══════════════ 9. FIELD REPORT ═══════════════ -->
+<section class="pp-section" id="field-report" style="padding-top: 48px;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>In the field</span>
-      <h2 class="pp-section-title">How teams put PacketPilot to work.</h2>
+      <h2 class="pp-section-title">One sample capture, the whole kill chain.</h2>
+      <p class="pp-section-sub">These numbers come from the sample capture that ships with the app, not a benchmark: one compromised host, six attack stages, every step evidenced.</p>
     </div>
-    <div class="pp-carousel" data-pp-carousel data-pp-reveal role="region" aria-roledescription="carousel" aria-label="Use cases">
-      <div class="pp-carousel-track" aria-live="polite">
-        <div class="pp-slide is-active" data-pp-slide role="group" aria-roledescription="slide" aria-label="1 of 3">
-          <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
-          <p class="pp-quote">Triage a suspicious capture in seconds, pull severity-ranked findings, and export STIX straight into a case — without uploading sensitive evidence to anyone's cloud.</p>
-          <div class="pp-attrib">
-            <span class="pp-avatar" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2L16 4.5V9C16 12.6 13.3 15.8 10 16.5C6.7 15.8 4 12.6 4 9V4.5L10 2Z" stroke="currentColor" stroke-width="1.3"/><path d="M7.3 9.3L9.2 11.2L13 7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </span>
-            <span><span class="pp-attrib-role">Incident response</span><span class="pp-attrib-note">evidence-safe triage</span></span>
-          </div>
-        </div>
-        <div class="pp-slide" data-pp-slide role="group" aria-roledescription="slide" aria-label="2 of 3">
-          <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
-          <p class="pp-quote">Pivot from a JA3 fingerprint to every flow that shares it, follow the C2 beacon, and carve the dropped payload — all in one browser tab.</p>
-          <div class="pp-attrib">
-            <span class="pp-avatar" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.3"/><line x1="12.5" y1="12.5" x2="17" y2="17" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-            </span>
-            <span><span class="pp-attrib-role">Threat hunting</span><span class="pp-attrib-note">fingerprint-driven pivots</span></span>
-          </div>
-        </div>
-        <div class="pp-slide" data-pp-slide role="group" aria-roledescription="slide" aria-label="3 of 3">
-          <div class="pp-quote-mark" aria-hidden="true">&ldquo;</div>
-          <p class="pp-quote">Open PacketPilot in a browser on any lab machine, air-gapped if needed, and let students explore real captures with zero install.</p>
-          <div class="pp-attrib">
-            <span class="pp-avatar" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3L18 6.5L10 10L2 6.5L10 3Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 8v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5V8" stroke="currentColor" stroke-width="1.3"/></svg>
-            </span>
-            <span><span class="pp-attrib-role">Security education</span><span class="pp-attrib-note">zero-install labs</span></span>
-          </div>
+    <div class="pp-report" data-pp-reveal>
+      <div class="pp-report-main">
+        <p class="pp-report-quote">Host 10.13.37.7 swept the network, brute-forced SSH, moved laterally over RDP, beaconed to a C2 every 30 seconds, tunneled data over DNS, then exfiltrated 1.2 MB. PacketPilot ranked it critical and mapped every stage to ATT&amp;CK.</p>
+        <div class="pp-report-source">sample.pcap &middot; analyzed in the browser</div>
+        <div class="pp-report-cta">
+          <a class="pp-btn pp-btn-ghost-light" href="/blog/anatomy-of-a-pcap-kill-chain">Read the full teardown&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
         </div>
       </div>
-      <div class="pp-carousel-ctrls">
-        <button class="pp-carousel-arrow" type="button" data-pp-prev aria-label="Previous use case">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div class="pp-dots" role="group" aria-label="Choose use case">
-          <button class="pp-dot is-active" type="button" data-pp-dot data-index="0" aria-label="Use case 1"></button>
-          <button class="pp-dot" type="button" data-pp-dot data-index="1" aria-label="Use case 2"></button>
-          <button class="pp-dot" type="button" data-pp-dot data-index="2" aria-label="Use case 3"></button>
-        </div>
-        <button class="pp-carousel-arrow" type="button" data-pp-next aria-label="Next use case">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+      <div class="pp-report-stats">
+        <div class="pp-report-stat"><span class="val">99,079</span><span class="cap">flows triaged</span></div>
+        <div class="pp-report-stat"><span class="val">547</span><span class="cap">hosts profiled</span></div>
+        <div class="pp-report-stat"><span class="val">89 / 100</span><span class="cap">incident risk score</span></div>
+        <div class="pp-report-stat"><span class="val">0.014</span><span class="cap">beacon jitter CV</span></div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ═══════════════ 10. INTEGRATIONS ORBIT ═══════════════ -->
-<section class="pp-section" id="integrations" style="padding-top: 12px; overflow: hidden;">
+<section class="pp-section" id="integrations" style="padding-top: 48px; overflow: hidden;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Seamless handoffs</span>
       <h2 class="pp-section-title">Plays well with the rest of your stack.</h2>
       <p class="pp-section-sub">Import Suricata rules, enrich with VirusTotal, AbuseIPDB, and GreyNoise, and export to the formats your SIEM and CTI tools already read.</p>
     </div>
@@ -1964,89 +1426,41 @@
       <div class="pp-orbit-center">
         <svg width="34" height="34" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.3" opacity="0.55"/><circle cx="8" cy="8" r="2.6" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="2.4" r="1.4" fill="currentColor"/></svg>
       </div>
-      <span class="pp-orbit-node" style="left: 50%; top: -6%;"><span class="dot" style="background:#6c4df6;"></span>STIX 2.1</span>
-      <span class="pp-orbit-node" style="left: 27%; top: 12%;"><span class="dot" style="background:#0f766e;"></span>Suricata</span>
-      <span class="pp-orbit-node" style="left: 73%; top: 12%;"><span class="dot" style="background:#e0570f;"></span>MISP</span>
-      <span class="pp-orbit-node" style="left: 12%; top: 46%;"><span class="dot" style="background:#0369a1;"></span>VirusTotal</span>
-      <span class="pp-orbit-node" style="left: 88%; top: 46%;"><span class="dot" style="background:#b45309;"></span>AbuseIPDB</span>
-      <span class="pp-orbit-node" style="left: 20%; top: 82%;"><span class="dot" style="background:#dc2648;"></span>GreyNoise</span>
-      <span class="pp-orbit-node" style="left: 80%; top: 82%;"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
-      <span class="pp-orbit-node" style="left: 33%; top: 76%;"><span class="dot" style="background:#0f766e;"></span>CEF</span>
-      <span class="pp-orbit-node" style="left: 67%; top: 76%;"><span class="dot" style="background:#e0570f;"></span>CSV</span>
+      <span class="pp-orbit-node" style="left: 50%; top: -6%;">STIX 2.1</span>
+      <span class="pp-orbit-node" style="left: 27%; top: 12%;">Suricata</span>
+      <span class="pp-orbit-node" style="left: 73%; top: 12%;">MISP</span>
+      <span class="pp-orbit-node" style="left: 12%; top: 46%;">VirusTotal</span>
+      <span class="pp-orbit-node" style="left: 88%; top: 46%;">AbuseIPDB</span>
+      <span class="pp-orbit-node" style="left: 20%; top: 82%;">GreyNoise</span>
+      <span class="pp-orbit-node" style="left: 80%; top: 82%;">Sigma</span>
+      <span class="pp-orbit-node" style="left: 33%; top: 76%;">CEF</span>
+      <span class="pp-orbit-node" style="left: 67%; top: 76%;">CSV</span>
     </div>
     <div class="pp-orbit-fallback" data-pp-reveal>
-      <span class="pp-standard-chip"><span class="dot" style="background:#6c4df6;"></span>STIX 2.1</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>Suricata</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>MISP</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0369a1;"></span>VirusTotal</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#b45309;"></span>AbuseIPDB</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#dc2648;"></span>GreyNoise</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#5636e8;"></span>Sigma</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#0f766e;"></span>CEF</span>
-      <span class="pp-standard-chip"><span class="dot" style="background:#e0570f;"></span>CSV</span>
+      <span class="pp-standard-chip">STIX 2.1</span>
+      <span class="pp-standard-chip">Suricata</span>
+      <span class="pp-standard-chip">MISP</span>
+      <span class="pp-standard-chip">VirusTotal</span>
+      <span class="pp-standard-chip">AbuseIPDB</span>
+      <span class="pp-standard-chip">GreyNoise</span>
+      <span class="pp-standard-chip">Sigma</span>
+      <span class="pp-standard-chip">CEF</span>
+      <span class="pp-standard-chip">CSV</span>
     </div>
-    <div class="pp-orbit-caption" data-pp-reveal>Reputation lookups are opt-in and send only public indicators — IPs, domains, and file hashes. Never packets.</div>
+    <div class="pp-orbit-caption" data-pp-reveal>Reputation lookups are opt-in and send only public indicators: IPs, domains, and file hashes. Never packets.</div>
   </div>
 </section>
 
-<!-- ═══════════════ 11. PRICING ═══════════════ -->
-<section class="pp-section" id="pricing" style="padding-top: 40px;">
+<!-- ═══════════════ 11. FREE FOR EVERYONE ═══════════════ -->
+<section class="pp-section" id="pricing" style="padding-top: 48px;">
   <div class="inner">
     <div class="pp-section-head" data-pp-reveal>
-      <span class="pp-kicker"><span class="pp-kicker-dot" aria-hidden="true"></span>Pricing</span>
-      <h2 class="pp-section-title">Simple, transparent pricing.</h2>
-      <p class="pp-section-sub">The analyzer is free forever. Upgrade to Pro for the full analyst toolkit. Cancel anytime.</p>
-      <div class="pp-toggle" role="group" aria-label="Billing period">
-        <button class="pp-toggle-btn" type="button" data-pp-period="monthly" aria-pressed="true">Monthly</button>
-        <button class="pp-toggle-btn" type="button" data-pp-period="annual" aria-pressed="false">Yearly <span class="pp-toggle-save">&minus;17%</span></button>
-      </div>
-    </div>
-
-    <div class="pp-price-grid">
-      <!-- Free -->
-      <div class="pp-price-card" data-pp-reveal>
-        <div class="pp-plan-name">Free</div>
-        <div class="pp-price-amt"><span class="pp-price-big">$0</span></div>
-        <div class="pp-price-note">Free forever</div>
-        <div class="pp-price-feats">
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited in-browser triage</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Behavioral detectors, MITRE mapping, dashboards</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Runs offline / air-gapped</div>
-        </div>
-        <a class="pp-btn pp-btn-secondary" href="/app">Open the app</a>
-      </div>
-
-      <!-- Pro (featured dark) -->
-      <div class="pp-price-card featured" data-pp-reveal>
-        <span class="pp-price-tag">Popular</span>
-        <div class="pp-plan-name">Pro</div>
-        <div class="pp-price-amt" data-pp-price="monthly">
-          <span class="pp-price-big">$19</span><span class="pp-price-per">/mo</span>
-        </div>
-        <div class="pp-price-amt pp-price-annual" data-pp-price="annual">
-          <span class="pp-price-big">$190</span><span class="pp-price-per">/yr</span>
-        </div>
-        <div class="pp-price-note" data-pp-price="monthly">Billed monthly. Cancel anytime.</div>
-        <div class="pp-price-note pp-price-annual" data-pp-price="annual">2 months free &middot; billed annually</div>
-        <div class="pp-price-feats">
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited captures &amp; larger files</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>All exports — STIX, MISP, CEF, Sigma, CSV, HTML report</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>AI analyst summary + reputation enrichment</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>PCAP &amp; file carving, multi-capture compare, saved rules</div>
-        </div>
-        <a class="pp-btn pp-btn-accent" href="/pricing">Get Pro</a>
-      </div>
-
-      <!-- Founder -->
-      <div class="pp-price-card" data-pp-reveal>
-        <div class="pp-plan-name">Founder<span class="pp-plan-note">annual only</span></div>
-        <div class="pp-price-amt"><span class="pp-price-big">$149</span><span class="pp-price-per">/yr</span></div>
-        <div class="pp-price-note">Rate locked for life &middot; limited seats</div>
-        <div class="pp-price-feats">
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Everything in Pro, at a price that never goes up</div>
-          <div class="pp-price-feat"><svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><polyline points="3,8 6.2,11 12,4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Back an indie tool early and help shape the roadmap</div>
-        </div>
-        <a class="pp-btn pp-btn-secondary" href="/pricing">Claim a founder seat</a>
+      <span class="pp-kicker">Free for everyone</span>
+      <h2 class="pp-section-title">Every feature. No account. $0.</h2>
+      <p class="pp-section-sub">PacketPilot is completely free: the full analyzer, every detector, every export, AI summaries, reputation enrichment, carving, saved rules. No sign-up, no plans, no paywall.</p>
+      <div class="pp-final-ctas" style="justify-content: center;">
+        <a class="pp-btn pp-btn-primary" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
+        <a class="pp-btn pp-btn-secondary" href="/app?sample=1">See a live capture</a>
       </div>
     </div>
   </div>
@@ -2063,10 +1477,10 @@
         <div class="pp-final-chip f4">ATT&amp;CK</div>
       </div>
       <h2 class="pp-final-title">Ready to triage<br>your first capture?</h2>
-      <p class="pp-final-sub">Drop a .pcap and get severity-ranked findings in seconds. Free to start. No upload — no data leaves your device.</p>
+      <p class="pp-final-sub">Drop a .pcap and get severity-ranked findings in seconds. Free for everyone, no account needed, nothing leaves your device.</p>
       <div class="pp-final-ctas">
         <a class="pp-btn pp-btn-primary pp-btn-lg" href="/app">Launch PacketPilot&nbsp;<span class="pp-arrow" aria-hidden="true">&#8594;</span></a>
-        <a class="pp-btn pp-btn-ghost-light pp-btn-lg" href="/pricing">View pricing</a>
+        <a class="pp-btn pp-btn-ghost-light pp-btn-lg" href="/app?sample=1">See a live capture</a>
       </div>
     </div>
   </div>
@@ -2091,7 +1505,6 @@
           <a href="#features">Features</a>
           <a href="#workflow">Workflow</a>
           <a href="#privacy">Privacy</a>
-          <a href="/pricing">Pricing</a>
           <a href="/blog">Blog</a>
         </div>
       </div>

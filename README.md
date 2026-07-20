@@ -1,5 +1,8 @@
 # PacketPilot
 
+<img width="1908" height="907" alt="PacketPilo" src="https://github.com/user-attachments/assets/08e55323-bd45-45dd-b295-196aa9605c52" />
+
+
 **Your PCAP autopilot — from capture to conclusion in one click.**
 
 PacketPilot analyzes an *entire* packet capture (pcap/pcapng) and lands the analyst on a
@@ -34,6 +37,10 @@ capture.pcap ──▶ streaming Rust engine ──▶ triage dashboard ──�
   **threat report cards**.
 - **Present** a summary-first dashboard + a virtualized flows table (millions of rows at 60 fps)
   + drill-down, and **export** a self-contained HTML report (print-to-PDF) or JSON.
+- **Share safely** — one-click **Safe Share** exports a sanitized/anonymized copy of a capture
+  (prefix-preserving IP/MAC pseudonyms, payload scrub or L7-field redaction, recomputed checksums,
+  chain-of-custody manifest) so a capture can go to a vendor/CERT without leaking sensitive data.
+  See [docs/sharing-captures-safely.md](docs/sharing-captures-safely.md).
 
 ## The gap it fills
 
@@ -91,6 +98,10 @@ cargo run -p ppcap-cli --release -- init-db --out schema.sql
 # Time Machine: emit a capture-indicator index, then re-scan it later vs an updated feed
 cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --hash --index sample.index.json
 cargo run -p ppcap-cli --release -- rescan sample.index.json --threat-feed updated-feed.json
+
+# Safe Share: write a sanitized copy + chain-of-custody manifest (scrubs payloads,
+# pseudonymizes IP/MAC, redacts DNS/HTTP/SNI/credentials, recomputes checksums)
+cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.pcap
 ```
 The HTML report is self-contained — open it in any browser and **print to PDF**.
 
@@ -141,6 +152,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
   AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
   bare public IP strings leave the device, never packets or internal IPs). See [docs/reputation.md](docs/reputation.md).
+- **Natural Language Querying** — a **Query** tab running read-only DuckDB SQL over the flow
+  table *entirely in-browser* (lazy DuckDB-Wasm; nothing leaves the device), with bundled +
+  saved queries, CSV export, and a flow_id cross-filter into the Flows view. With AI enabled,
+  ask in plain English and the model writes the SQL (only the question text is sent — the SQL
+  always runs locally). See [docs/nlq.md](docs/nlq.md).
 - **AI Analyst Assist** — opt-in NL executive brief + interactive chat over the *derived* summary
   (not raw packets). BYO endpoint — Anthropic/OpenAI/OpenRouter/Ollama/Custom. Privacy-preserving:
   only the engine's computed summary ever leaves; localhost endpoints stay fully on-device. Desktop
@@ -155,10 +171,3 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - Self-hosted team server (shared cases, RBAC) — the "hybrid" other half.
 - Integrations: export findings to RuleForge AI (detection rules) and Sentinel (SOC incidents).
 
-## Docs
-- [docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md) — full specification & gap analysis.
-- [docs/reputation.md](docs/reputation.md) — online reputation enrichment operator guide.
-- [docs/ai-assist.md](docs/ai-assist.md) — AI analyst assist operator guide.
-- [docs/time-machine.md](docs/time-machine.md) — retrospective re-scan (Time Machine) guide.
-- [engine/README.md](engine/README.md) — engine internals, build, schema.
-- [engine/BENCHMARK.md](engine/BENCHMARK.md) — performance methodology & results.

@@ -1,5 +1,6 @@
 // ProtocolMix — a single segmented stacked bar of L4/L7 protocol composition.
-// TLS leads the mix here, which is the carrier for the C2 beacon profile.
+// When TLS dominates, a caption notes it; the C2-beacon framing only appears
+// when the parent confirms a beacon incident exists (beaconIncident prop).
 import { useMemo } from "react";
 import { humanNumber, percent } from "../lib/format";
 import { protoSegments } from "./viz";
@@ -13,10 +14,14 @@ const FILTERABLE = new Set(["dns", "http", "tls"]);
 export function ProtocolMix({
   proto,
   onSelect,
+  beaconIncident = false,
 }: {
   proto: ProtoCounts;
   /** Drill into Flows filtered on the clicked protocol token. Legend is static when omitted. */
   onSelect?: (key: string) => void;
+  /** True when the capture actually carries a beacon incident; gates the C2-profile caption
+   *  so a TLS-heavy mix alone never claims a beacon that was not detected. */
+  beaconIncident?: boolean;
 }): JSX.Element {
   const segs = useMemo(() => protoSegments(proto), [proto]);
   const total = useMemo(() => segs.reduce((sum, s) => sum + s.value, 0), [segs]);
@@ -28,7 +33,7 @@ export function ProtocolMix({
   return (
     <Card label="PROTOCOLS" title="Protocol mix">
       {total === 0 ? (
-        <div className="t-label py-6 text-center">No protocol traffic</div>
+        <div className="py-6 text-center t-body text-[var(--color-text-faint)]">No protocol traffic</div>
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex h-3 w-full overflow-hidden rounded-[var(--r-tile)] bg-[var(--color-surface-3)]">
@@ -81,7 +86,11 @@ export function ProtocolMix({
           </div>
 
           {tlsHeavy && (
-            <div className="t-label">TLS-heavy — consistent with the C2 beacon profile</div>
+            <div className="t-label">
+              {beaconIncident
+                ? "TLS-heavy, consistent with the C2 beacon profile"
+                : "TLS-heavy traffic mix"}
+            </div>
           )}
         </div>
       )}

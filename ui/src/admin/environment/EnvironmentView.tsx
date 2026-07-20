@@ -12,9 +12,8 @@ const PUBLIC_VARS: { name: string; value: string | undefined; mask: (v: string |
 
 // Static inventory — the browser CANNOT and MUST NOT query these. Names + locations only.
 const SERVER_SECRETS: { name: string; location: string; usedBy: string }[] = [
-  { name: "STRIPE_SECRET_KEY", location: "Supabase → Edge Function secrets", usedBy: "create-checkout-session, create-portal-session, stripe-webhook" },
+  { name: "STRIPE_SECRET_KEY", location: "Supabase → Edge Function secrets", usedBy: "stripe-webhook (legacy-subscription wind-down)" },
   { name: "STRIPE_WEBHOOK_SECRET", location: "Supabase → Edge Function secrets", usedBy: "stripe-webhook" },
-  { name: "STRIPE_PRICE_PRO", location: "Supabase → Edge Function secrets", usedBy: "create-checkout-session" },
   { name: "SUPABASE_SERVICE_ROLE_KEY", location: "Supabase → Edge Function secrets", usedBy: "stripe-webhook" },
   { name: "AI_API_KEY", location: "Supabase → Edge Function secrets", usedBy: "ai-proxy" },
   { name: "ABUSEIPDB_KEY", location: "Supabase → Edge Function secrets", usedBy: "reputation-proxy" },

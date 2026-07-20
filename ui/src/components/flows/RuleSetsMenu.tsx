@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { BTN_OUTLINE, MENU_PANEL } from "../../cockpit/primitives";
 import { listRuleSets, removeRuleSet, type RuleSet } from "../../lib/ruleSets";
 import { useMenuKeyboard } from "../../lib/useMenuKeyboard";
 
@@ -6,9 +8,6 @@ export interface RuleSetsMenuProps {
   onLoadFile: () => void;
   onApply: (rs: RuleSet) => void;
   disabled: boolean;
-  /** Whether the saved rule-set LIBRARY (persist + reuse) is available. Pro-gated on hosted; the
-   *  one-off "Load .rules file…" path stays available regardless. Defaults to true (offline/self-host). */
-  canSave?: boolean;
   onNotice?: (msg: string) => void;
 }
 
@@ -16,7 +15,7 @@ export interface RuleSetsMenuProps {
  * A "Rules ▾" dropdown for loading and applying saved Suricata/Snort rule sets.
  * Mirrors the FilterProfiles open + outside-click pattern exactly.
  */
-export function RuleSetsMenu({ onLoadFile, onApply, disabled, canSave = true, onNotice: _onNotice }: RuleSetsMenuProps) {
+export function RuleSetsMenu({ onLoadFile, onApply, disabled, onNotice: _onNotice }: RuleSetsMenuProps) {
   const [open, setOpen] = useState(false);
   const [sets, setSets] = useState<RuleSet[]>(listRuleSets);
   const ref = useRef<HTMLDivElement>(null);
@@ -45,13 +44,14 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, canSave = true, on
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+        className={BTN_OUTLINE}
       >
-        Rules ▾
+        Rules
+        <ChevronDown size={13} aria-hidden />
       </button>
 
       {open && (
-        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Rule sets" className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1">
+        <div ref={menuRef} onKeyDown={onMenuKeyDown} role="menu" aria-label="Rule sets" className={`${MENU_PANEL} absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden`}>
           {/* Load .rules file row */}
           <button
             type="button"
@@ -68,17 +68,8 @@ export function RuleSetsMenu({ onLoadFile, onApply, disabled, canSave = true, on
           {/* Divider */}
           <div className="my-1 border-t border-[var(--color-border)]" />
 
-          {/* Saved rule-set library — Pro. Free/hosted users still get one-off load+apply above. */}
-          {!canSave ? (
-            <a
-              href="/pricing"
-              role="menuitem"
-              tabIndex={-1}
-              className="block px-3 py-2 text-xs text-[var(--color-text-faint)] hover:text-[var(--color-accent)]"
-            >
-              Save &amp; reuse rule sets is a <span className="font-medium text-[var(--color-accent)]">Pro</span> feature ↗
-            </a>
-          ) : sets.length === 0 ? (
+          {/* Saved rule-set library — persists loaded .rules files for reuse across captures. */}
+          {sets.length === 0 ? (
             <p className="px-3 py-2 text-xs text-[var(--color-text-faint)] italic">
               No saved rule sets yet.
             </p>

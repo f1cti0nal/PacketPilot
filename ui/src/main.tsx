@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import ReactDOM from "react-dom/client";
-import { AppGate } from "./auth/AppGate";
+import App from "./App";
 import { Landing } from "./landing/Landing";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { LoadingState } from "./components/state/LoadingState";
@@ -21,14 +21,12 @@ purgeLegacyGlobalStores();
 // Runs before render so the entrance page view fires before route components mount.
 initGaFromStoredConsent();
 
-// Pathname routing: "/" → marketing landing, "/app" → triage app, "/admin" → the
-// (lazy-loaded, role-gated) admin panel. On Vercel, /app and /admin are rewritten
-// to /index.html (see vercel.json) so this same bundle loads and branches here.
+// Pathname routing: "/" → marketing landing, "/app" → triage app (free for everyone, no
+// sign-in), "/admin" → the (lazy-loaded, role-gated) operator admin panel. On Vercel, /app and
+// /admin are rewritten to /index.html (see vercel.json) so this same bundle loads and branches
+// here.
 const AdminApp = React.lazy(() => import("./admin/AdminApp"));
-const AccountApp = React.lazy(() => import("./account/AccountApp"));
-const AuthApp = React.lazy(() => import("./auth/AuthApp"));
 const LegalApp = React.lazy(() => import("./legal/LegalApp"));
-const PricingApp = React.lazy(() => import("./pricing/PricingApp"));
 const ToolApp = React.lazy(() => import("./seo/ToolApp"));
 const BlogApp = React.lazy(() => import("./blog/BlogApp"));
 const route = resolveRouteFor(window.location.hostname, window.location.pathname);
@@ -36,25 +34,13 @@ const route = resolveRouteFor(window.location.hostname, window.location.pathname
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {route === "auth" ? (
-        <Suspense fallback={<LoadingState label="Loading…" />}>
-          <AuthApp />
-        </Suspense>
-      ) : route === "admin" ? (
+      {route === "admin" ? (
         <Suspense fallback={<LoadingState label="Loading admin…" />}>
           <AdminApp />
-        </Suspense>
-      ) : route === "account" ? (
-        <Suspense fallback={<LoadingState label="Loading account…" />}>
-          <AccountApp />
         </Suspense>
       ) : route === "legal" ? (
         <Suspense fallback={<LoadingState label="Loading…" />}>
           <LegalApp />
-        </Suspense>
-      ) : route === "pricing" ? (
-        <Suspense fallback={<LoadingState label="Loading…" />}>
-          <PricingApp />
         </Suspense>
       ) : route === "tool" ? (
         <Suspense fallback={<LoadingState label="Loading…" />}>
@@ -65,7 +51,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <BlogApp />
         </Suspense>
       ) : route === "app" ? (
-        <AppGate />
+        <App />
       ) : (
         <Landing />
       )}

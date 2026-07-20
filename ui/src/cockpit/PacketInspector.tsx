@@ -7,6 +7,7 @@ import { hexLines } from "../lib/hexdump";
 import { FOCUSABLE } from "../lib/useDialogA11y";
 import { tcpFlagsLabel } from "../lib/tcpFlags";
 import { buildStream, streamText } from "../lib/followStream";
+import { OVERLAY_BACKDROP } from "./primitives";
 import type { FlowPackets, FlowRow, PacketRow, TlsDecryptResult } from "../types";
 
 const ROW_H = 28;
@@ -51,8 +52,8 @@ export function PacketInspector({ flow, packets, loading, error, onClose, onDecr
 
   return (
     <div role="dialog" aria-modal="true" aria-label={`Packets for ${flow.srcIp}:${flow.srcPort} to ${flow.dstIp}:${flow.dstPort}`} className="fixed inset-0 z-50 flex items-stretch justify-end">
-      <button aria-hidden type="button" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-      <section ref={sectionRef} className="glass-band relative flex h-full w-full max-w-[860px] flex-col border-l border-[var(--color-border)]">
+      <button aria-hidden type="button" tabIndex={-1} onClick={onClose} className={OVERLAY_BACKDROP} />
+      <section ref={sectionRef} className="glass-band pp-slide-in-r relative flex h-full w-full max-w-[860px] flex-col border-l border-[var(--color-border)]">
         <header className="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="font-mono-num truncate text-[13px] text-[var(--color-text)]">{flow.srcIp}:{flow.srcPort} → {flow.dstIp}:{flow.dstPort}</div>
@@ -149,13 +150,13 @@ function StreamView({ rows, listTruncated, hex, onToggleHex }: {
       </div>
       {(stream.truncated || stream.payloadCapped) && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-4 py-1.5 t-tag text-[var(--color-text-faint)]">
-          {stream.truncated && <span>Showing the first {humanNumber(rows.length)} packets — stream is partial. </span>}
+          {stream.truncated && <span>Showing the first {humanNumber(rows.length)} packets, so the stream is partial. </span>}
           {stream.payloadCapped && <span>Payloads are capped per packet; segments show a prefix.</span>}
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {stream.segments.length === 0 ? (
-          <div className="text-sm text-[var(--color-text-faint)]">No payload bytes in this flow — only control packets (SYN/ACK/FIN).</div>
+          <div className="text-sm text-[var(--color-text-faint)]">No payload bytes in this flow, only control packets (SYN/ACK/FIN).</div>
         ) : (
           stream.segments.map((seg, i) => (
             <div key={i} className="mb-2 pl-2" style={{ borderLeft: `2px solid ${seg.direction === "c2s" ? "var(--color-accent)" : "var(--color-border-strong)"}` }}>
@@ -263,7 +264,7 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
         ) : !result ? (
           <div className="max-w-prose space-y-2 text-sm text-[var(--color-text-faint)]">
             <p>Load the <span className="font-mono-num">SSLKEYLOGFILE</span> your browser or app wrote while this capture ran to decrypt the TLS session. The key-log never leaves your browser.</p>
-            <p className="t-tag">Decrypts TLS 1.2 + 1.3 (AEAD &amp; CBC). The decrypted HTTP is re-analyzed — requests, and any file downloaded inside HTTPS — right here.</p>
+            <p className="t-tag">Decrypts TLS 1.2 + 1.3 (AEAD &amp; CBC). The decrypted HTTP is re-analyzed right here: requests, and any file downloaded inside HTTPS.</p>
           </div>
         ) : !decrypted ? (
           <div className="rounded-[var(--r-tile)] border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-2 text-sm text-[var(--color-text-dim)]">
@@ -276,11 +277,11 @@ function DecryptView({ onDecrypt }: { onDecrypt: (keylogText: string) => Promise
           <DecryptedFilesList files={result.carved} />
         ) : (
           <>
-            {result.truncated && <div className="mb-2 t-tag text-[var(--color-text-faint)]">Showing the first {humanNumber(result.records.length)} records — output capped.</div>}
+            {result.truncated && <div className="mb-2 t-tag text-[var(--color-text-faint)]">Showing the first {humanNumber(result.records.length)} records. Output capped.</div>}
             {result.records.map((r, i) => (
               <div key={i} className="mb-2 pl-2" style={{ borderLeft: `2px solid ${r.direction === "c2s" ? "var(--color-accent)" : "var(--color-border-strong)"}` }}>
                 <div className="t-tag mb-0.5 text-[var(--color-text-faint)]">
-                  {r.direction === "c2s" ? "client → server" : "server → client"} · #{r.seq} · {innerTypeLabel(r.innerType)} · {humanBytes(r.plaintext.length)}
+                  {r.direction === "c2s" ? "client → server" : "server → client"} #{r.seq} · {innerTypeLabel(r.innerType)} · {humanBytes(r.plaintext.length)}
                 </div>
                 {hex ? (
                   <table className="font-mono-num text-xs leading-5"><tbody>
@@ -324,7 +325,7 @@ function DecryptedHttpList({ result }: { result: TlsDecryptResult }) {
               <span className="ml-auto shrink-0 font-mono-num text-[var(--color-text-dim)]">{t.status}</span>
             )}
           </div>
-          <div className="flex items-baseline gap-1.5 text-[0.65rem] text-[var(--color-text-dim)]">
+          <div className="flex items-baseline gap-1.5 text-[11px] text-[var(--color-text-dim)]">
             {t.host && <span className="truncate font-mono-num" title={t.host}>{t.host}</span>}
             {t.content_type && <span className="truncate text-[var(--color-text-faint)]">{t.content_type}</span>}
             {t.resp_bytes > 0 && <span className="font-mono-num text-[var(--color-text-faint)]">{humanBytes(t.resp_bytes)}</span>}
@@ -347,14 +348,14 @@ function DecryptedFilesList({ files }: { files: TlsDecryptResult["carved"] }) {
           <div className="flex items-baseline gap-2">
             <span className="min-w-0 truncate font-mono-num text-[var(--color-text)]" title={f.sha256}>{f.sha256.slice(0, 20)}…</span>
             {f.known_bad && (
-              <span className="shrink-0 rounded px-1 text-[0.6rem] font-medium uppercase" style={{ color: "var(--color-sev-critical)" }}>known-bad</span>
+              <span className="t-tag shrink-0 rounded-[var(--r-micro)] px-1 uppercase" style={{ color: "var(--color-sev-critical)" }}>known-bad</span>
             )}
-            <span className="ml-auto shrink-0 font-mono-num text-[0.65rem] text-[var(--color-text-faint)]">{humanBytes(f.size)}</span>
+            <span className="ml-auto shrink-0 font-mono-num text-[11px] text-[var(--color-text-faint)]">{humanBytes(f.size)}</span>
           </div>
           {f.signatures.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {f.signatures.slice(0, 6).map((s) => (
-                <span key={s} className="rounded bg-[var(--color-surface-2)] px-1 text-[0.6rem] text-[var(--color-text-dim)]">{s}</span>
+                <span key={s} className="t-tag rounded-[var(--r-micro)] bg-[var(--color-surface-2)] px-1 text-[var(--color-text-dim)]">{s}</span>
               ))}
             </div>
           )}

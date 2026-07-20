@@ -1,6 +1,7 @@
-// Consent flags: stored in localStorage per-browser, namespaced to the signed-in account
-// (storageScope) so one account never inherits another's authorization to send indicators offsite.
-// Off by default. Enabled/config is read from admin rep_config via useAppSettings().rep.
+// Consent flags: stored per-browser in localStorage. PacketPilot has no user accounts; keys still
+// go through storageScope (now a single "anon" namespace) so a browser never inherits an
+// authorization to send indicators offsite from retired signed-in-era data. Off by default.
+// Enabled/config is read from admin rep_config via useAppSettings().rep.
 import { scopedKey } from "../storageScope";
 
 export function consentGiven(): boolean { return localStorage.getItem(scopedKey("pp.rep.consent")) === "1"; }
