@@ -92,6 +92,17 @@ export function extract_packets(bytes: Uint8Array, query_json: string, caps_json
  */
 export function render_report(output_json: string, generated_unix_secs: bigint, ai_summary?: string | null): string;
 
+/**
+ * Sanitize a raw capture entirely in the browser (Safe Share).
+ *
+ * `options_json` mirrors `ppcap_core::SanitizeOptions` (missing fields take the
+ * privacy-safest defaults). `key` must be 32 bytes from `crypto.getRandomValues`
+ * — wasm has no OS entropy, so the page supplies the per-run secret; it exists
+ * only in memory and is never part of the output. Returns a JSON string
+ * `{ manifest, pcap_b64 }`; the capture never leaves the device.
+ */
+export function sanitize(bytes: Uint8Array, options_json: string, key: Uint8Array, created_unix_secs: bigint): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -109,6 +120,7 @@ export interface InitOutput {
     readonly export_stix: (a: number, b: number, c: bigint) => [number, number, number, number];
     readonly extract_packets: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly render_report: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number, number];
+    readonly sanitize: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

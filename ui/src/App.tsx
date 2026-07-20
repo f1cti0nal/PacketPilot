@@ -75,6 +75,7 @@ import { pickRuleBase } from "./lib/ruleBase";
 import { saveRuleSet, type RuleSet } from "./lib/ruleSets";
 import { RuleSetsMenu } from "./components/flows/RuleSetsMenu";
 import { IocDialog } from "./cockpit/IocDialog";
+import { SafeShareDialog } from "./components/SafeShareDialog";
 import { matchIocs, parseIocs } from "./lib/ioc/ioc";
 import { trackPageView } from "./lib/analytics/track";
 import { gaPageView } from "./lib/analytics/ga";
@@ -213,6 +214,7 @@ export function App() {
   const [ruleNotice, setRuleNotice] = useState<string | null>(null);
   const rulesInputRef = useRef<HTMLInputElement | null>(null);
   const [iocDialogOpen, setIocDialogOpen] = useState(false);
+  const [safeShareOpen, setSafeShareOpen] = useState(false);
 
   // The app no longer auto-loads the bundled sample — launch lands on the Home surface
   // (upload-first hero for new visitors, workspace overview for returning ones). The sample
@@ -760,6 +762,7 @@ export function App() {
       onOpenAiChat={aiOn && summary.status === "ready" && summary.data ? () => setAiChatOpen(true) : undefined}
       onLoadRules={packetsAvailable(activeSource) ? () => rulesInputRef.current?.click() : undefined}
       onMatchIocs={summary.status === "ready" && summary.data ? () => setIocDialogOpen(true) : undefined}
+      onExportSanitized={summary.status === "ready" && summary.data && activeSource ? () => setSafeShareOpen(true) : undefined}
       rulesMenu={<RuleSetsMenu onLoadFile={() => rulesInputRef.current?.click()} onApply={applyRuleSet} disabled={!packetsAvailable(activeSource)} />}
     >
       <ErrorBoundary resetKey={`${activeId ?? ""}:${tab}`}>
@@ -863,6 +866,13 @@ export function App() {
     )}
     {summary.status === "ready" && summary.data && (
       <AiChatPanel open={aiChatOpen} onClose={() => setAiChatOpen(false)} output={summary.data} model={aiModel} />
+    )}
+    {safeShareOpen && summary.status === "ready" && summary.data && (
+      <SafeShareDialog
+        source={activeSource}
+        summary={summary.data}
+        onClose={() => setSafeShareOpen(false)}
+      />
     )}
     {iocDialogOpen && (
       <IocDialog onMatch={applyIocs} onClose={() => setIocDialogOpen(false)} />

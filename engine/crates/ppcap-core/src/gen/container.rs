@@ -96,7 +96,11 @@ pub fn write_legacy_record<W: std::io::Write>(
 
 /// Write the pcapng SHB + a single IDB for `link`. Returns bytes written.
 pub fn write_pcapng_shb_idb<W: std::io::Write>(w: &mut W, link: LinkType) -> Result<usize> {
-    // --- Section Header Block (no options) ---
+    Ok(write_pcapng_shb(w)? + write_pcapng_idb(w, link)?)
+}
+
+/// Write the pcapng Section Header Block (no options). Returns bytes written.
+pub fn write_pcapng_shb<W: std::io::Write>(w: &mut W) -> Result<usize> {
     // block_type(4) + block_total_len(4) + byte_order_magic(4) + major(2) + minor(2)
     //   + section_length(8) + block_total_len(4) = 28 bytes.
     let shb_len: u32 = 28;
@@ -109,7 +113,12 @@ pub fn write_pcapng_shb_idb<W: std::io::Write>(w: &mut W, link: LinkType) -> Res
     shb.extend_from_slice(&(-1i64).to_le_bytes()); // section length: unspecified
     shb.extend_from_slice(&shb_len.to_le_bytes());
     write_all(w, &shb, "write pcapng SHB")?;
+    Ok(shb_len as usize)
+}
 
+/// Write one pcapng Interface Description Block for `link` (ns resolution).
+/// Returns bytes written. May be called repeatedly for multi-interface output.
+pub fn write_pcapng_idb<W: std::io::Write>(w: &mut W, link: LinkType) -> Result<usize> {
     // --- Interface Description Block with one if_tsresol=9 option ---
     // block_type(4)+total_len(4)+linktype(2)+reserved(2)+snaplen(4) = 16 bytes base.
     // One option: code(2)+len(2)+value(1)+pad(3) = 8 bytes. opt_endofopt(4) = 4 bytes.
@@ -130,8 +139,7 @@ pub fn write_pcapng_shb_idb<W: std::io::Write>(w: &mut W, link: LinkType) -> Res
     idb.extend_from_slice(&0u16.to_le_bytes()); // opt_endofopt length
     idb.extend_from_slice(&idb_len.to_le_bytes());
     write_all(w, &idb, "write pcapng IDB")?;
-
-    Ok((shb_len + idb_len) as usize)
+    Ok(idb_len as usize)
 }
 
 /// Write one pcapng Enhanced Packet Block. Returns bytes written.

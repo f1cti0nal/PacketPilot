@@ -96,6 +96,42 @@ pub enum Command {
         #[arg(long, default_value_t = 64)]
         hosts: u16,
     },
+    /// Safe Share: write a sanitized/anonymized copy of a capture for safe sharing.
+    Sanitize {
+        /// Input capture path (.pcap / .pcapng, optionally .gz).
+        input: PathBuf,
+        /// Sanitized capture output path (.pcapng extension => pcapng, else classic pcap).
+        #[arg(long)]
+        out: PathBuf,
+        /// Manifest sidecar path (default: "<out>.manifest.json").
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        /// Payload policy: scrub (zero all payload bytes; default) or keep
+        /// (retain payloads; sensitive L7 fields are still redacted).
+        #[arg(long, default_value = "scrub")]
+        payload: String,
+        /// In scrub mode, retain the first N payload bytes per packet for protocol ID.
+        #[arg(long, default_value_t = 0)]
+        keep_first: usize,
+        /// Disable prefix-preserving address mapping (use a flat per-block permutation).
+        #[arg(long)]
+        no_preserve_prefix: bool,
+        /// Keep the vendor OUI (first 3 bytes) of pseudonymized MAC addresses.
+        #[arg(long)]
+        preserve_oui: bool,
+        /// Disable L7 redaction (DNS names / HTTP fields / TLS SNI / credentials).
+        #[arg(long)]
+        no_redact: bool,
+        /// Shift every timestamp by this many seconds (blunts timing correlation).
+        #[arg(long, default_value_t = 0)]
+        time_shift: i64,
+        /// Force pcapng output regardless of the --out extension.
+        #[arg(long)]
+        pcapng: bool,
+        /// Suppress stderr progress.
+        #[arg(long)]
+        quiet: bool,
+    },
     /// Emit the embedded DuckDB DDL to stdout or a file (for the external duckdb sidecar/Wasm).
     InitDb {
         /// Output path; omit => stdout.
@@ -362,6 +398,93 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             );
             Ok(())
         }
+        Command::Sanitize {
+            input,
+            out,
+            manifest,
+            payload,
+            keep_first,
+            no_preserve_prefix,
+            preserve_oui,
+            no_redact,
+            time_shift,
+            pcapng,
+            quiet,
+        } => {
+            use std::io::Write as _;
+
+            let payload_mode = match payload.as_str() {
+                "scrub" => ppcap_core::PayloadMode::Scrub,
+                "keep" => ppcap_core::PayloadMode::Keep,
+                other => return Err(anyhow!("unknown payload mode: {other} (scrub | keep)")),
+            };
+            let format = if pcapng
+                || out
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("pcapng"))
+            {
+                ppcap_core::SanitizeFormat::PcapNg
+            } else {
+                ppcap_core::SanitizeFormat::Pcap
+            };
+            let opts = ppcap_core::SanitizeOptions {
+                payload: payload_mode,
+                keep_first,
+                preserve_prefix: !no_preserve_prefix,
+                preserve_oui,
+                redact_l7: !no_redact,
+                time_shift_secs: time_shift,
+                format,
+            };
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            let mut last_tick: u64 = 0;
+            let progress = |pkts: u64, bytes: u64, size_hint: Option<u64>| {
+                if quiet || pkts == last_tick {
+                    return;
+                }
+                last_tick = pkts;
+                let pct = match size_hint {
+                    Some(total) if total > 0 => {
+                        format!(" ({:.0}%)", (bytes as f64 / total as f64) * 100.0)
+                    }
+                    _ => String::new(),
+                };
+                let mut err = std::io::stderr();
+                let _ = write!(err, "\rpkts={pkts} bytes={bytes}{pct}");
+                let _ = err.flush();
+            };
+
+            let m =
+                ppcap_core::sanitize_file(&input, &out, manifest.as_deref(), &opts, now, progress)
+                    .with_context(|| {
+                        format!("sanitize {} -> {}", input.display(), out.display())
+                    })?;
+
+            if !quiet {
+                let _ = writeln!(std::io::stderr());
+                eprintln!(
+                    "sanitized {} packets -> {} ({} IPv4 / {} IPv6 / {} MAC pseudonyms, \
+                     {} DNS names, {} HTTP fields, {} SNI, {} credentials redacted, \
+                     {} payload bytes scrubbed)",
+                    m.counts.packets_written,
+                    out.display(),
+                    m.counts.unique_ipv4,
+                    m.counts.unique_ipv6,
+                    m.counts.unique_macs,
+                    m.counts.dns_names_redacted,
+                    m.counts.http_fields_redacted,
+                    m.counts.tls_snis_redacted,
+                    m.counts.credentials_redacted,
+                    m.counts.payload_bytes_scrubbed,
+                );
+            }
+            Ok(())
+        }
         Command::InitDb { out, case_dir } => {
             // IMPL:
             //  - let ddl = match case_dir { Some(d) => DUCKDB_SCHEMA.replace("{CASE_DIR}", &d),
@@ -419,6 +542,48 @@ mod reputation_cli_tests {
             Command::Analyze { reputation, .. } => assert!(!reputation),
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn sanitize_parses_with_defaults() {
+        let cli =
+            Cli::try_parse_from(["ppcap", "sanitize", "in.pcap", "--out", "out.pcap"]).unwrap();
+        match cli.command {
+            Command::Sanitize {
+                payload,
+                keep_first,
+                no_preserve_prefix,
+                preserve_oui,
+                no_redact,
+                time_shift,
+                pcapng,
+                ..
+            } => {
+                assert_eq!(payload, "scrub");
+                assert_eq!(keep_first, 0);
+                assert!(!no_preserve_prefix);
+                assert!(!preserve_oui);
+                assert!(!no_redact);
+                assert_eq!(time_shift, 0);
+                assert!(!pcapng);
+            }
+            _ => panic!("expected Sanitize"),
+        }
+    }
+
+    #[test]
+    fn sanitize_rejects_bad_payload_mode() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "sanitize",
+            "in.pcap",
+            "--out",
+            "o.pcap",
+            "--payload",
+            "nope",
+        ])
+        .unwrap();
+        assert!(dispatch(cli).is_err());
     }
 
     #[test]

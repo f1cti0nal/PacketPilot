@@ -37,6 +37,10 @@ capture.pcap ──▶ streaming Rust engine ──▶ triage dashboard ──�
   **threat report cards**.
 - **Present** a summary-first dashboard + a virtualized flows table (millions of rows at 60 fps)
   + drill-down, and **export** a self-contained HTML report (print-to-PDF) or JSON.
+- **Share safely** — one-click **Safe Share** exports a sanitized/anonymized copy of a capture
+  (prefix-preserving IP/MAC pseudonyms, payload scrub or L7-field redaction, recomputed checksums,
+  chain-of-custody manifest) so a capture can go to a vendor/CERT without leaking sensitive data.
+  See [docs/sharing-captures-safely.md](docs/sharing-captures-safely.md).
 
 ## The gap it fills
 
@@ -90,6 +94,10 @@ cargo run -p ppcap-cli --release -- analyze sample.pcap \
 
 # Emit the DuckDB schema (for the external sidecar / DuckDB-Wasm)
 cargo run -p ppcap-cli --release -- init-db --out schema.sql
+
+# Safe Share: write a sanitized copy + chain-of-custody manifest (scrubs payloads,
+# pseudonymizes IP/MAC, redacts DNS/HTTP/SNI/credentials, recomputes checksums)
+cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.pcap
 ```
 The HTML report is self-contained — open it in any browser and **print to PDF**.
 
