@@ -22,6 +22,7 @@ import {
   ShieldOff,
   Shuffle,
   Split,
+  TrendingUp,
   Waves,
   Waypoints,
   type LucideIcon,
@@ -63,6 +64,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   exposed_remote_access: { label: "Exposed Remote Access", Icon: ScreenShare },
   ics_control_command: { label: "ICS Control", Icon: Factory },
   baseline_deviation: { label: "Baseline Deviation", Icon: Gauge },
+  traffic_anomaly: { label: "Traffic Forecast Anomaly", Icon: TrendingUp },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 

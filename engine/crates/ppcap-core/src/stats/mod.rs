@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::IpAddr;
 
 use crate::enrich::{classify_ip, cloud_provider};
+use crate::forecast::{ForecastInput, ForecastParams, HostSeries};
 use crate::model::category::Category;
 use crate::model::flow::FlowRecord;
 use crate::model::packet::{DownloadKind, PacketMeta, Transport};
@@ -44,6 +45,12 @@ pub struct StatsConfig {
     /// many "nice"-width buckets (see [`choose_bucket_width`]). Keeps the timeline series — and
     /// the downstream summary JSON / report SVG — small and readable for any capture duration.
     pub max_time_buckets: usize,
+    /// Upper bound on `(internal host, second)` egress cells retained for Predictive Anomaly
+    /// Detection (see [`StatsAccumulator::forecast_input`]). Bounds the one net-new accumulator's
+    /// heap independently of `max_tracked_keys` (which is far larger); the bound is **insert-only**
+    /// (new cells past the cap are dropped, existing cells keep accumulating), so the fold stays O(1)
+    /// and never distorts an interior bin of a host's series. ~50 B/cell (default ~6-8 MiB).
+    pub max_forecast_cells: usize,
 }
 
 impl Default for StatsConfig {
@@ -56,6 +63,7 @@ impl Default for StatsConfig {
             top_k_ip_threats: 50,
             max_evidence_per_ip: 6,
             max_time_buckets: 1_000,
+            max_forecast_cells: 131_072,
         }
     }
 }
@@ -145,6 +153,12 @@ pub struct StatsAccumulator {
     per_port: HashMap<(u16, u8), PortStat>,
     per_proto_path: HashMap<String, PathStat>,
     per_second: HashMap<i64, SecStat>,
+    /// Predictive Anomaly Detection substrate: per-`(internal host, epoch second)` **egress** wire
+    /// bytes. Projected at EOF into per-host, zero-gap-filled bin series for the forecaster
+    /// ([`Self::forecast_input`]). Bounded by `max_forecast_cells` with an **insert-only** cap (an
+    /// existing cell always accumulates; a new cell past the cap is dropped) — O(1) per packet and
+    /// non-distorting under saturation (see the fold site in `observe_packet`).
+    per_host_epoch: HashMap<(IpAddr, i64), u64>,
 
     /// Fixed 13-slot category breakdown indexed by `Category::all()` position.
     per_category: [CatStat; 13],
@@ -231,6 +245,7 @@ impl StatsAccumulator {
             per_port: HashMap::new(),
             per_proto_path: HashMap::new(),
             per_second: HashMap::new(),
+            per_host_epoch: HashMap::new(),
             per_category: [CatStat::default(); 13],
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
@@ -306,6 +321,28 @@ impl StatsAccumulator {
         let wire = u64::from(p.wire_len);
         self.bump_ip(src_ip, wire);
         self.bump_ip(dst_ip, wire);
+
+        // Predictive Anomaly Detection: fold this packet's egress bytes into the sender's
+        // per-second cell — but only for an INTERNAL sender (we forecast the monitored network's
+        // hosts, not the internet — the same scoping as Behavioral Baseline Learning) and only when
+        // the timestamp is REAL (a synthesized/absent ts must not open a spurious second-0 bin).
+        //
+        // Unlike the other stats maps, this key `(host, second)` grows with capture *duration*, so it
+        // uses an INSERT-ONLY bound (like `arp_macs`/`dhcp`), NOT the heavy-hitter `bump_bounded`
+        // evictor: an existing cell always accumulates, but once `max_forecast_cells` distinct cells
+        // exist a brand-new cell is dropped. This keeps the fold O(1) per packet (no per-cell eviction
+        // scan that would scale with capture length) and, because eviction never removes an interior
+        // cell, the per-host series the forecaster reads is never silently corrupted into a false
+        // drop — a saturated capture simply stops extending the series rather than distorting it.
+        if p.ts_known && !classify_ip(src_ip).is_external() {
+            let epoch_sec = p.ts_ns.div_euclid(1_000_000_000);
+            let key = (src_ip, epoch_sec);
+            if let Some(cell) = self.per_host_epoch.get_mut(&key) {
+                *cell += wire;
+            } else if self.per_host_epoch.len() < self.cfg.max_forecast_cells {
+                self.per_host_epoch.insert(key, wire);
+            }
+        }
 
         // Transport + app-proto inference. The "service port" is the well-known side,
         // i.e. the smaller of the two ports for port-bearing transports.
@@ -640,6 +677,75 @@ impl StatsAccumulator {
         match self.scan_spread.get(&src) {
             Some(ports) => ports.len() as u64 >= u64::from(threshold),
             None => false,
+        }
+    }
+
+    /// Project the per-host egress cells into a [`ForecastInput`] for Predictive Anomaly Detection:
+    /// per internal host, outbound bytes re-bucketed to the same adaptive width the time histogram
+    /// uses (so forecast bins line up with the UI timeline), zero-gap-filled across each host's own
+    /// active window (a silent interior bin must be a visible zero for a drop to be detectable; a
+    /// leading zero-prefix is avoided by starting at the host's first active bin).
+    ///
+    /// Read-only — called at EOF *before* [`finish`](Self::finish) consumes the accumulator, so the
+    /// forecast findings can uplift per-IP cards and flow into incidents/chains like every other
+    /// detector. Deterministic (`BTreeMap` ordering; host ranking by total egress with an `IpAddr`
+    /// tie-break) and bounded (top-`max_hosts` hosts, ≤ `max_time_buckets` bins per host).
+    pub fn forecast_input(&self, params: &ForecastParams) -> ForecastInput {
+        let (Some(first_ns), Some(last_ns)) = (self.first_ts, self.last_ts) else {
+            return ForecastInput::default();
+        };
+        if self.per_host_epoch.is_empty() {
+            return ForecastInput::default();
+        }
+        let first_sec = first_ns.div_euclid(1_000_000_000);
+        let last_sec = last_ns.div_euclid(1_000_000_000);
+        let width = choose_bucket_width(first_sec, last_sec, self.cfg.max_time_buckets).max(1);
+
+        // Group cells by host -> (width-aligned bin start -> bytes), deterministically.
+        let mut by_host: BTreeMap<IpAddr, BTreeMap<i64, u64>> = BTreeMap::new();
+        let mut totals: BTreeMap<IpAddr, u64> = BTreeMap::new();
+        for (&(ip, sec), &bytes) in &self.per_host_epoch {
+            let bin_start = sec.div_euclid(width) * width;
+            *by_host.entry(ip).or_default().entry(bin_start).or_default() += bytes;
+            *totals.entry(ip).or_default() += bytes;
+        }
+
+        // Rank hosts by total egress (desc), tie-break by ip (asc); keep the heaviest `max_hosts`.
+        let mut ranked: Vec<(IpAddr, u64)> = totals.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        ranked.truncate(params.max_hosts);
+        let kept: BTreeSet<IpAddr> = ranked.into_iter().map(|(ip, _)| ip).collect();
+
+        // Materialize each kept host as a contiguous, zero-gap-filled series across its active window.
+        let mut series: Vec<HostSeries> = Vec::new();
+        for (ip, binmap) in &by_host {
+            if !kept.contains(ip) {
+                continue;
+            }
+            let (Some(&first_bin), Some(&last_bin)) =
+                (binmap.keys().next(), binmap.keys().next_back())
+            else {
+                continue;
+            };
+            let span = ((last_bin - first_bin) / width) as usize + 1;
+            let n = span.min(self.cfg.max_time_buckets);
+            let mut bins = vec![0u64; n];
+            for (&bin_start, &bytes) in binmap {
+                let idx = ((bin_start - first_bin) / width) as usize;
+                if idx < n {
+                    bins[idx] = bytes;
+                }
+            }
+            series.push(HostSeries {
+                host: ip.to_string(),
+                start_epoch_sec: first_bin,
+                bin_secs: width,
+                bins,
+            });
+        }
+        ForecastInput {
+            bin_secs: width,
+            series,
         }
     }
 
@@ -2081,6 +2187,86 @@ mod tests {
     }
 
     #[test]
+    fn forecast_input_projects_internal_egress_and_detects_a_spike() {
+        use crate::forecast::{detect_traffic_anomalies, ForecastParams};
+        use crate::model::finding::FindingKind;
+
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let src = ip4(10, 0, 0, 1); // internal sender we forecast
+        let dst = ip4(10, 0, 0, 2); // internal peer (only ever a destination)
+        let base = 1_700_000_000i64 * 1_000_000_000; // second-aligned
+
+        // 40 one-second bins of steady 200-byte egress from `src`, with one 60 KB spike at bin 20.
+        for i in 0..40i64 {
+            let ts = base + i * 1_000_000_000;
+            let wire = if i == 20 { 60_000 } else { 200 };
+            acc.observe_packet(&pkt(
+                i as u64,
+                ts,
+                wire,
+                Transport::Tcp,
+                Some(src),
+                Some(dst),
+                50_000,
+                443,
+                0x18, // PSH|ACK
+            ));
+        }
+
+        let params = ForecastParams::default();
+        let input = acc.forecast_input(&params);
+        // The internal *sender* has a series; the pure destination does not (egress-only).
+        assert!(input.series.iter().any(|s| s.host == "10.0.0.1"));
+        assert!(!input.series.iter().any(|s| s.host == "10.0.0.2"));
+        let spiky = input.series.iter().find(|s| s.host == "10.0.0.1").unwrap();
+        assert_eq!(spiky.bin_secs, 1, "40 s over 1000 buckets -> 1 s bins");
+        assert_eq!(spiky.bins.len(), 40);
+        assert_eq!(spiky.bins[20], 60_000);
+
+        let rep = detect_traffic_anomalies(&input, &params);
+        assert_eq!(rep.hosts_analyzed, 1);
+        assert_eq!(
+            rep.anomalies.len(),
+            1,
+            "the egress spike must raise one anomaly"
+        );
+        assert_eq!(rep.anomalies[0].host, "10.0.0.1");
+        let findings = rep.into_findings();
+        assert_eq!(findings[0].kind, FindingKind::TrafficAnomaly);
+        assert!(findings[0].first_seen_ns.is_some());
+    }
+
+    #[test]
+    fn forecast_input_skips_external_senders() {
+        use crate::forecast::ForecastParams;
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let ext = ip4(8, 8, 8, 8); // genuinely public — not part of the monitored network
+        let int = ip4(10, 0, 0, 9);
+        let base = 1_700_000_000i64 * 1_000_000_000;
+        for i in 0..40i64 {
+            let ts = base + i * 1_000_000_000;
+            let wire = if i == 20 { 60_000 } else { 200 };
+            // External host is the sender -> must NOT be forecast (we model our own hosts only).
+            acc.observe_packet(&pkt(
+                i as u64,
+                ts,
+                wire,
+                Transport::Tcp,
+                Some(ext),
+                Some(int),
+                443,
+                50_000,
+                0x18,
+            ));
+        }
+        let input = acc.forecast_input(&ForecastParams::default());
+        assert!(
+            input.series.iter().all(|s| s.host != "8.8.8.8"),
+            "external senders are excluded from the forecast substrate"
+        );
+    }
+
+    #[test]
     fn is_scanner_tracks_distinct_dst_ports_on_syn_only() {
         let mut acc = StatsAccumulator::new(StatsConfig::default());
         let src = ip4(10, 0, 0, 9);
@@ -2131,6 +2317,7 @@ mod tests {
             top_k_ip_threats: 50,
             max_evidence_per_ip: 6,
             max_time_buckets: 1_000,
+            max_forecast_cells: 131_072,
         };
         let mut acc = StatsAccumulator::new(cfg);
         // Talkers are tracked per IP endpoint, so a packet needs BOTH a src and dst IP

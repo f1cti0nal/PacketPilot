@@ -62,6 +62,9 @@ fn weights_for(scenario: Scenario) -> (u64, u64, u64, u64, u64) {
         Scenario::BulkTransfer => (70, 20, 0, 10, 0),
         // Multi-host attack chain: benign TLS/DNS background around the staged pivot (like Beacon).
         Scenario::AttackChain => (0, 90, 10, 0, 0),
+        // Traffic spike: TLS egress from one host (a burst rides a steady baseline). Uses a dedicated
+        // emission path, so this plan is a coarse proto-mix hint only (the golden test uses `Mixed`).
+        Scenario::TrafficSpike => (0, 100, 0, 0, 0),
     }
 }
 

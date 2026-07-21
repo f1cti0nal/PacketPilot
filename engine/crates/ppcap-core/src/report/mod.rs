@@ -620,6 +620,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::ExposedRemoteAccess => "Exposed Remote Access",
         FindingKind::IcsControlCommand => "ICS Control Command",
         FindingKind::BaselineDeviation => "Baseline Deviation",
+        FindingKind::TrafficAnomaly => "Traffic Forecast Anomaly",
     }
 }
 

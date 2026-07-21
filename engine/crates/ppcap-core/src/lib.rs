@@ -45,6 +45,7 @@ pub mod error;
 pub mod export;
 pub mod fingerprint;
 pub mod flow;
+pub mod forecast;
 pub mod gen;
 pub mod metrics;
 pub mod model;
@@ -81,6 +82,9 @@ pub use enrich::{
 pub use error::{PpError, Result};
 pub use export::{cef_records, findings_csv, misp_event, sigma_rules, stix_bundle};
 pub use fingerprint::{fingerprint_tls_client_hello, Ja4Transport, TlsFingerprints};
+pub use forecast::{
+    detect_traffic_anomalies, Anomaly, ForecastInput, ForecastParams, ForecastReport, HostSeries,
+};
 pub use model::attack_chain::{
     AttackChain, ChainEdge, ChainStep, EdgeKind, TacticStep, TechniqueRef,
 };

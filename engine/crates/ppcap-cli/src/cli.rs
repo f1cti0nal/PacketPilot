@@ -101,6 +101,11 @@ pub enum Command {
         /// creating it if absent (a sidecar side-channel, like --index).
         #[arg(long = "update-baseline")]
         update_baseline: Option<PathBuf>,
+        /// Predictive Anomaly Detection: disable the per-host traffic forecaster. It is ON by
+        /// default (single-capture, no sidecar), raising `traffic_anomaly` findings for hosts whose
+        /// volume departed from their own one-step forecast; pass this to skip that stage.
+        #[arg(long = "no-forecast")]
+        no_forecast: bool,
     },
     /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
     /// reporting indicators that were clean at capture time but are dirty now.
@@ -277,6 +282,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             index,
             baseline,
             update_baseline,
+            no_forecast,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
             // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
@@ -324,6 +330,12 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 // capture's per-host egress so it can be folded into a baseline after the run.
                 baseline_in: baseline.clone(),
                 update_baseline: update_baseline.is_some(),
+                // Predictive Anomaly Detection: on by default (single-capture, no sidecar); the
+                // `--no-forecast` flag opts out. Only `enabled` is overridden; thresholds stay default.
+                forecast: ppcap_core::ForecastParams {
+                    enabled: !no_forecast,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
 
@@ -367,6 +379,21 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     "baseline: {n} host deviation{} vs the saved profile",
                     if n == 1 { "" } else { "s" }
                 );
+            }
+
+            if !no_forecast && !quiet {
+                let n = out
+                    .summary
+                    .findings
+                    .iter()
+                    .filter(|f| f.kind == ppcap_core::FindingKind::TrafficAnomaly)
+                    .count();
+                if n > 0 {
+                    eprintln!(
+                        "forecast: {n} predictive traffic anomal{}",
+                        if n == 1 { "y" } else { "ies" }
+                    );
+                }
             }
 
             if reputation {
@@ -1047,6 +1074,22 @@ mod reputation_cli_tests {
             Command::Analyze { rules, .. } => {
                 assert_eq!(rules.as_deref(), Some(std::path::Path::new("r.rules")))
             }
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn analyze_no_forecast_flag_parses() {
+        // Default: forecast on (the flag is absent).
+        let on = Cli::try_parse_from(["ppcap", "analyze", "x.pcap"]).unwrap();
+        match on.command {
+            Command::Analyze { no_forecast, .. } => assert!(!no_forecast),
+            _ => panic!("expected Analyze"),
+        }
+        // Opt out.
+        let off = Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--no-forecast"]).unwrap();
+        match off.command {
+            Command::Analyze { no_forecast, .. } => assert!(no_forecast),
             _ => panic!("expected Analyze"),
         }
     }

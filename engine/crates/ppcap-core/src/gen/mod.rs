@@ -53,6 +53,11 @@ pub enum Scenario {
     /// an external C2 and exfiltrates — the pivot (victim becomes actor) that `reconstruct_attack_chains`
     /// fuses into one cross-host chain.
     AttackChain,
+    /// One internal host with a steady per-second egress baseline and a concentrated **burst** in
+    /// the middle of the capture — a clean fixture for Predictive Anomaly Detection: the forecaster
+    /// tracks the flat baseline, then the spike bin lands far outside its prediction band. Needs
+    /// `packets >= ~60` to exhibit the spike (below that it degrades to a flat, silent baseline).
+    TrafficSpike,
 }
 
 impl Scenario {
@@ -66,6 +71,7 @@ impl Scenario {
             "beacon" => Some(Scenario::Beacon),
             "bulk" | "bulk-transfer" | "bulktransfer" => Some(Scenario::BulkTransfer),
             "chain" | "attack-chain" | "attackchain" => Some(Scenario::AttackChain),
+            "spike" | "traffic-spike" | "trafficspike" => Some(Scenario::TrafficSpike),
             _ => None,
         }
     }
@@ -80,6 +86,7 @@ impl Scenario {
             Scenario::Beacon,
             Scenario::BulkTransfer,
             Scenario::AttackChain,
+            Scenario::TrafficSpike,
         ]
     }
 }
@@ -379,6 +386,9 @@ impl SynthGen {
         if self.cfg.scenario == Scenario::AttackChain {
             return self.next_attack_chain();
         }
+        if self.cfg.scenario == Scenario::TrafficSpike {
+            return self.next_traffic_spike();
+        }
         let kind = self.schedule.next_kind(&mut self.rng)?;
         let ts = self.cursor_ts;
 
@@ -545,6 +555,59 @@ impl SynthGen {
         frame.extend_from_slice(&ip);
         frame.extend_from_slice(&udp);
         frame
+    }
+
+    /// Dedicated emission for [`Scenario::TrafficSpike`]: one internal host (`host_ip(0)`) sends a
+    /// steady ~1 frame/second TLS baseline to a peer, with a concentrated **burst** of large frames
+    /// all landing in a single mid-capture second. The result is a per-host egress series that is
+    /// flat except for one bin far outside the forecaster's prediction band — a deterministic,
+    /// self-contained fixture for Predictive Anomaly Detection. Fully deterministic: no RNG draws, so
+    /// same `packets` ⇒ byte-identical output.
+    ///
+    /// Layout for `n = packets` frames (`spike = n − 40` when `n ≥ 40`, else no burst):
+    /// secs `0..20` baseline · sec `20` the `spike` burst · secs `20..40` baseline.
+    fn next_traffic_spike(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
+        let n = self.cfg.packets;
+        let i = self.emitted;
+        if i >= n {
+            return None;
+        }
+        let spike = n.saturating_sub(40);
+        let a = 0u16; // the internal host we spike
+        let b = 1u16; // its steady internal peer
+        let client_ip = host_ip(a);
+        let server_ip = host_ip(b);
+        let client_port = 50000;
+
+        // Choose this frame's second and size from its position in the layout above.
+        let (sec, big) = if i < 20 {
+            (i as i64, false) // baseline, secs 0..19
+        } else if i < 20 + spike {
+            (20i64, true) // the burst — every frame in sec 20
+        } else {
+            (20i64 + (i - 20 - spike) as i64, false) // baseline, secs 20..39
+        };
+        let ts = self.cfg.start_ts_ns.saturating_add(sec * 1_000_000_000);
+
+        // Large TLS application-data record for the burst; a small, well-typed ClientHello otherwise.
+        let payload: Vec<u8> = if big {
+            vec![0x17u8; 1400]
+        } else {
+            frames::tls_client_hello_payload(sni_host(b))
+        };
+        self.record_flow(client_ip, server_ip, client_port, 443, IP_PROTO_TCP);
+        let frame = self.ip_tcp_frame(
+            a,
+            b,
+            client_ip,
+            server_ip,
+            client_port,
+            443,
+            TCP_PSH | TCP_ACK,
+            &payload,
+        );
+        self.emitted += 1;
+        Some((ts, FrameKind::Tls, frame))
     }
 
     /// Dedicated emission for [`Scenario::Beacon`]: a regular C2 callback once per cycle from a
@@ -1375,8 +1438,16 @@ mod tests {
             Some(Scenario::AttackChain)
         );
         assert_eq!(Scenario::from_str_opt("chain"), Some(Scenario::AttackChain));
+        assert_eq!(
+            Scenario::from_str_opt("traffic-spike"),
+            Some(Scenario::TrafficSpike)
+        );
+        assert_eq!(
+            Scenario::from_str_opt("spike"),
+            Some(Scenario::TrafficSpike)
+        );
         assert_eq!(Scenario::from_str_opt("nonsense"), None);
-        assert_eq!(Scenario::all().len(), 7);
+        assert_eq!(Scenario::all().len(), 8);
     }
 
     #[test]
