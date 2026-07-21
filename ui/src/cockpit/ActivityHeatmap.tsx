@@ -3,6 +3,7 @@
 // critical. Hover a cell for its timestamp / packet / byte readout.
 import { useMemo, useState } from "react";
 import { cn } from "../lib/cn";
+import { forecastBand } from "../lib/forecast";
 import { humanBytes, humanNumber, nsToDateTime, nsToTime, durationHumanNs } from "../lib/format";
 import { Card } from "./primitives";
 import type { Finding, TimeHistogramEntry } from "../types";
@@ -48,6 +49,46 @@ export function ActivityHeatmap({ histogram, bucketSecs, findings, className }: 
     };
   }, [histogram, bucketSecs]);
 
+  // Forecast-band overlay: the Predictive Anomaly Detection forecaster (same Holt + residual-EWMA
+  // band as the engine) run over the visible byte series, so the analyst sees the "expected traffic
+  // envelope" behind the actual line, with the bins the engine flagged (`traffic_anomaly` findings)
+  // marked. The band is capture-wide context; the markers are the real per-host detections.
+  const overlay = useMemo(() => {
+    const n = histogram.length;
+    if (n < 3) return null; // too few bins for a meaningful forecast
+    const values = histogram.map((b) => b.bytes);
+    const maxY = values.reduce((m, v) => Math.max(m, v), 0);
+    if (maxY <= 0) return null;
+    const band = forecastBand(values);
+
+    // Bins covered by a traffic_anomaly finding window (the engine's per-host detections).
+    const anomalyBins = new Set<number>();
+    for (const f of findings ?? []) {
+      if (f.kind !== "traffic_anomaly") continue;
+      const lo = f.first_seen_ns;
+      const hi = f.last_seen_ns;
+      if (lo == null || hi == null) continue;
+      for (let i = 0; i < n; i++) {
+        const ns = histogram[i].epoch_sec * 1e9;
+        if (ns >= lo && ns < hi) anomalyBins.add(i);
+      }
+    }
+
+    const H = 40;
+    const topPad = 3;
+    const usable = H - topPad;
+    const px = (i: number) => (n === 1 ? 0.5 : i + 0.5);
+    const py = (v: number) => H - (Math.min(Math.max(v, 0), maxY) / maxY) * usable;
+
+    const upper = band.upper.map((v, i) => `${px(i)},${py(v)}`);
+    const lower = band.lower.map((v, i) => `${px(i)},${py(v)}`).reverse();
+    const bandPath = `M${upper.join(" L")} L${lower.join(" L")} Z`;
+    const forecastPath = `M${band.forecast.map((v, i) => `${px(i)},${py(v)}`).join(" L")}`;
+    const actualPath = `M${values.map((v, i) => `${px(i)},${py(v)}`).join(" L")}`;
+    const markers = [...anomalyBins].sort((a, b) => a - b).map((i) => px(i));
+    return { n, H, bandPath, forecastPath, actualPath, markers };
+  }, [histogram, findings]);
+
   if (histogram.length === 0) {
     return (
       <Card label="TIMELINE" title="Activity" className={className}>
@@ -63,6 +104,77 @@ export function ActivityHeatmap({ histogram, bucketSecs, findings, className }: 
   return (
     <Card label="TIMELINE" title="Activity" className={className}>
       <div className="relative">
+        {/* Forecast-band overlay: expected total-traffic envelope (Holt + residual band) with the
+            engine's traffic_anomaly bins marked. Shares the ribbon's even-spaced time axis. */}
+        {overlay && (
+          <div className="mb-1.5">
+            <div className="mb-1 flex items-center gap-3 t-label normal-case tracking-normal text-[var(--color-text-faint)]">
+              <span className="flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="inline-block h-2 w-3 rounded-[1px]"
+                  style={{ backgroundColor: "color-mix(in srgb, var(--color-accent) 22%, transparent)" }}
+                />
+                forecast band
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden className="inline-block h-[2px] w-3 rounded-full bg-[var(--color-accent-strong)]" />
+                actual bytes
+              </span>
+              {overlay.markers.length > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden className="inline-block h-2.5 w-[2px] rounded-full bg-[var(--color-sev-high)]" />
+                  forecast anomaly
+                </span>
+              )}
+            </div>
+            <svg
+              viewBox={`0 0 ${overlay.n} ${overlay.H}`}
+              preserveAspectRatio="none"
+              className="block h-[42px] w-full overflow-visible"
+              role="img"
+              aria-label={
+                "Traffic forecast band — expected total-traffic envelope with actual bytes" +
+                (overlay.markers.length > 0
+                  ? `; ${overlay.markers.length} bin${overlay.markers.length === 1 ? "" : "s"} flagged as a traffic anomaly`
+                  : "")
+              }
+            >
+              <path d={overlay.bandPath} fill="var(--color-accent)" fillOpacity={0.16} stroke="none" />
+              <path
+                d={overlay.forecastPath}
+                fill="none"
+                stroke="var(--color-accent)"
+                strokeOpacity={0.55}
+                strokeWidth={1}
+                strokeDasharray="3 2"
+                vectorEffect="non-scaling-stroke"
+              />
+              <path
+                d={overlay.actualPath}
+                fill="none"
+                stroke="var(--color-accent-strong)"
+                strokeWidth={1.25}
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+              {overlay.markers.map((mx, k) => (
+                <line
+                  key={k}
+                  x1={mx}
+                  y1={0}
+                  x2={mx}
+                  y2={overlay.H}
+                  stroke="var(--color-sev-high)"
+                  strokeOpacity={0.55}
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
+            </svg>
+          </div>
+        )}
+
         {/* Ribbon */}
         <div
           className="flex gap-px"

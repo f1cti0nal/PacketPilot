@@ -23,12 +23,32 @@ describe("ActivityHeatmap", () => {
     const { container } = render(
       <ActivityHeatmap histogram={hist} bucketSecs={120} findings={findings} />,
     );
-    // The ribbon div has gap-px and one flex-1 child per bucket
-    const ribbon = container.querySelector('[role="img"]');
+    // The ribbon div has gap-px and one flex-1 child per bucket (select it by its own aria-label
+    // so the forecast-band overlay — also role="img" — isn't matched instead).
+    const ribbon = container.querySelector('[aria-label^="Activity"]');
     expect(ribbon).not.toBeNull();
     // Each bucket is a div.relative.flex-1 child of the ribbon
     const cells = ribbon!.querySelectorAll(":scope > div");
     expect(cells).toHaveLength(hist.length);
+  });
+
+  it("renders the forecast-band overlay for a multi-bucket capture", () => {
+    render(<ActivityHeatmap histogram={hist} bucketSecs={120} findings={findings} />);
+    expect(screen.getByLabelText(/Traffic forecast band/i)).toBeInTheDocument();
+    expect(screen.getByText(/forecast band/i)).toBeInTheDocument();
+  });
+
+  it("marks forecast-anomaly bins when a traffic_anomaly finding covers a bucket", () => {
+    // Place a traffic_anomaly window over the first bucket's second.
+    const b0 = hist[0].epoch_sec;
+    const anomaly = {
+      ...findings[0],
+      kind: "traffic_anomaly" as const,
+      first_seen_ns: b0 * 1e9,
+      last_seen_ns: (b0 + 120) * 1e9,
+    };
+    render(<ActivityHeatmap histogram={hist} bucketSecs={120} findings={[anomaly]} />);
+    expect(screen.getByText(/forecast anomaly/i)).toBeInTheDocument();
   });
 
   it("renders empty state when histogram is empty", () => {
