@@ -89,7 +89,7 @@ test.describe("PacketPilot — core analysis flows", () => {
     await page.getByRole("button", { name: /export/i }).click();
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("menuitem", { name: /CSV.*download/i }).click(),
+      page.getByRole("menuitem", { name: /download csv/i }).click(),
     ]);
     expect(download.suggestedFilename()).toMatch(/\.csv$/i);
   });

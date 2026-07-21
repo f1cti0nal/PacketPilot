@@ -45,13 +45,15 @@ async function dismissReputationConsents(page: Page) {
 }
 
 // Every "download" export format goes through the WASM exporters + downloadText/downloadBinary.
+// The menu labels read "Download <FORMAT>" (e.g. "Download CSV"), so match that word order —
+// and anchor on "download" so these never collide with the sibling "Copy <FORMAT>" items.
 const DOWNLOADS = [
   { item: /^HTML report$/, ext: /\.html$/i },
-  { item: /CSV.*download/i, ext: /\.csv$/i },
-  { item: /STIX.*download/i, ext: /\.json$/i },
-  { item: /MISP.*download/i, ext: /\.json$/i },
-  { item: /CEF.*download/i, ext: /\.(txt|cef)$/i },
-  { item: /Sigma.*download/i, ext: /\.(ya?ml)$/i },
+  { item: /download csv/i, ext: /\.csv$/i },
+  { item: /download stix/i, ext: /\.json$/i },
+  { item: /download misp/i, ext: /\.json$/i },
+  { item: /download cef/i, ext: /\.(txt|cef)$/i },
+  { item: /download sigma/i, ext: /\.(ya?ml)$/i },
 ];
 
 test.describe("PacketPilot — exports & recent", () => {
