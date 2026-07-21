@@ -74,6 +74,13 @@ pub enum FindingKind {
     /// outbound-volume spike well beyond its historical distribution). Behavior-relative-to-self,
     /// not an absolute-threshold or feed hit. Appended last to keep existing variant ordinals stable.
     BaselineDeviation,
+    /// Predictive traffic anomaly: an internal host's traffic time-series departed from what a
+    /// one-step-ahead forecast (Holt level+trend) predicted for it — a spike or drop outside the
+    /// forecast's prediction band, or a sustained level shift (CUSUM changepoint). Behavior-relative-
+    /// to-its-own-recent-trajectory, learned *within this single capture* (no cross-capture history),
+    /// so it catches temporal shape a per-capture aggregate baseline cannot. Appended last to keep
+    /// existing variant ordinals stable.
+    TrafficAnomaly,
 }
 
 impl FindingKind {
@@ -104,6 +111,7 @@ impl FindingKind {
             FindingKind::ExposedRemoteAccess => "exposed_remote_access",
             FindingKind::IcsControlCommand => "ics_control_command",
             FindingKind::BaselineDeviation => "baseline_deviation",
+            FindingKind::TrafficAnomaly => "traffic_anomaly",
         }
     }
 }

@@ -34,6 +34,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   exposed_remote_access: "Lateral Movement",
   ics_control_command: "Impact",
   baseline_deviation: "Command & Control",
+  traffic_anomaly: "Exfiltration",
   ioc_match: "Detection",
 };
 

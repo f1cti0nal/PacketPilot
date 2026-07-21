@@ -3817,6 +3817,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
         FindingKind::IcsControlCommand => 6,   // impact (manipulation of an industrial process)
         FindingKind::BaselineDeviation => 4, // command-and-control (anomalous egress / drift; generic like RuleMatch)
+        FindingKind::TrafficAnomaly => 5, // exfiltration/impact (a volume spike/drop/level-shift; generic egress-shape signal)
     }
 }
 
@@ -3847,6 +3848,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::ExposedRemoteAccess => "Lateral Movement",
         FindingKind::IcsControlCommand => "Impact",
         FindingKind::BaselineDeviation => "Command & Control",
+        FindingKind::TrafficAnomaly => "Exfiltration",
     }
 }
 
@@ -3877,6 +3879,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::ExposedRemoteAccess => "exposed remote access across the perimeter",
         FindingKind::IcsControlCommand => "issued a control command to an industrial device",
         FindingKind::BaselineDeviation => "deviated from its learned baseline",
+        FindingKind::TrafficAnomaly => "showed a traffic pattern its own forecast did not predict",
     }
 }
 

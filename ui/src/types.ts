@@ -283,6 +283,7 @@ export type FindingKind =
   | "exposed_remote_access"
   | "ics_control_command"
   | "baseline_deviation"
+  | "traffic_anomaly"
   | "ioc_match";
 
 /**

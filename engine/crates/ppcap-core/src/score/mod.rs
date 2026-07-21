@@ -75,6 +75,25 @@ pub const PTS_DEV_NEW_BEACON: i32 = 15;
 /// Deviation-alone score ceiling: caps a baseline deviation at Medium (see `Severity::from_score`).
 pub const DEV_UPLIFT_CAP: i32 = 45;
 
+// ---- Predictive traffic-anomaly weights ------------------------------------------------
+//
+// A traffic anomaly is behavior-relative-to-its-own-recent-trajectory: an internal host whose
+// traffic time-series departed from what a one-step-ahead forecast (Holt level+trend) predicted.
+// Weights follow the same philosophy — a single forecast breach is a weak signal (Medium at most);
+// High/Critical must come from corroboration (a co-located IOC floor or a beacon/exfil finding on
+// the same host), never from stacking anomaly points. The cap is the enforcement, exactly like
+// `DEV_UPLIFT_CAP` and the reputation module's `REP_UPLIFT_CAP`.
+
+/// Outbound volume spiked above the forecast's upper prediction band (`forecast + z·σ`).
+pub const PTS_FC_SPIKE: i32 = 15;
+/// Outbound volume collapsed below the forecast's lower prediction band — a *transient* drop toward
+/// silence that later recovers (end-of-capture silence has no trailing bins and is out of scope).
+pub const PTS_FC_DROP: i32 = 10;
+/// A sustained level shift (CUSUM changepoint) — a ramp/plateau, not a single-bin blip.
+pub const PTS_FC_LEVEL_SHIFT: i32 = 15;
+/// Anomaly-alone score ceiling: caps a traffic-forecast anomaly at Medium (see `Severity::from_score`).
+pub const FC_UPLIFT_CAP: i32 = 45;
+
 /// Beacon byte ceiling. MUST match `classify::BEACON_MAX_BYTES` (kept local to avoid coupling
 /// to that module's private constants).
 const BEACON_MAX_BYTES: u64 = 4_096;
@@ -338,6 +357,31 @@ pub fn score_baseline_deviation(dims: &[(String, i32)]) -> ScoredDeviation {
         add_term(&mut acc, &mut evidence, &mut terms, label.clone(), *points);
     }
     let score = acc.clamp(0, DEV_UPLIFT_CAP) as u16;
+    if i32::from(score) != acc {
+        evidence.push(format!("clamp: raw {acc} -> {score}"));
+    }
+    ScoredDeviation {
+        severity: Severity::from_score(score),
+        score,
+        evidence,
+        terms,
+    }
+}
+
+/// Score a host's predictive traffic-anomaly dimensions into a capped, banded verdict. Identical in
+/// shape to [`score_baseline_deviation`]: each `dims` entry is a `(label, points)` pair the caller
+/// (the `forecast` module) built from a concrete anomaly (the label carries the human evidence, the
+/// points a `PTS_FC_*` weight). The sum is clamped to `[0, FC_UPLIFT_CAP]` so an anomaly alone tops
+/// out at Medium; the clamp delta is recorded so the evidence trail reconciles to the reported
+/// score. Returns an all-zero, empty verdict for an empty `dims` (a conforming host is silent).
+pub fn score_traffic_anomaly(dims: &[(String, i32)]) -> ScoredDeviation {
+    let mut acc: i32 = 0;
+    let mut evidence: Vec<String> = Vec::new();
+    let mut terms: Vec<ScoreTerm> = Vec::new();
+    for (label, points) in dims {
+        add_term(&mut acc, &mut evidence, &mut terms, label.clone(), *points);
+    }
+    let score = acc.clamp(0, FC_UPLIFT_CAP) as u16;
     if i32::from(score) != acc {
         evidence.push(format!("clamp: raw {acc} -> {score}"));
     }

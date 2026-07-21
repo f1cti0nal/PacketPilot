@@ -30,6 +30,7 @@ use crate::detect::{
 };
 use crate::enrich::{Enricher, ThreatFeed};
 use crate::flow::{FlowConfig, FlowTable};
+use crate::forecast::{detect_traffic_anomalies, ForecastParams};
 use crate::model::flow::FlowRecord;
 use crate::model::output::AnalysisOutput;
 use crate::model::packet::Transport;
@@ -111,6 +112,10 @@ pub struct PipelineConfig {
     pub update_baseline: bool,
     /// Behavioral Baseline Learning deviation thresholds + bounds.
     pub baseline: BaselineParams,
+    /// Predictive Anomaly Detection: per-host traffic-forecast thresholds. Enabled by default (it
+    /// needs no sidecar and no prior captures — a single capture is enough), so anomalies ride
+    /// through the CLI/JSON/HTML/wasm output with no flag; set `forecast.enabled = false` to skip.
+    pub forecast: ForecastParams,
 }
 
 impl Default for PipelineConfig {
@@ -154,6 +159,7 @@ impl Default for PipelineConfig {
             baseline_in: None,
             update_baseline: false,
             baseline: BaselineParams::default(),
+            forecast: ForecastParams::default(),
         }
     }
 }
@@ -537,6 +543,15 @@ pub fn run_source_visiting<'a>(
     };
     if let (Some(base), Some(prof)) = (baseline_ref.as_ref(), baseline_snapshot.as_ref()) {
         findings.extend(compare_to_baseline(base, prof, &cfg.baseline).into_findings());
+    }
+
+    // Predictive Anomaly Detection. `stats` is still live (not consumed until `finish()` below), so
+    // we project its per-host egress series and forecast each host — emitting traffic-anomaly
+    // findings BEFORE `stats.apply_findings` so they uplift the per-IP threat cards and flow into
+    // incidents/chains exactly like every other detector. Single-capture; no sidecar, no history.
+    if cfg.forecast.enabled {
+        let fc_input = stats.forecast_input(&cfg.forecast);
+        findings.extend(detect_traffic_anomalies(&fc_input, &cfg.forecast).into_findings());
     }
 
     stats.apply_findings(&findings);
