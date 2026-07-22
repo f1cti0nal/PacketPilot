@@ -740,6 +740,12 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     .with_context(|| format!("read analysis output {}", summary.display()))?;
                 let out_json: ppcap_core::AnalysisOutput = serde_json::from_str(&stext)
                     .with_context(|| format!("parse analysis output {}", summary.display()))?;
+                // Phase the seasonal forecast on the capture's own wall-clock start when available.
+                let capture_unix = out_json
+                    .summary
+                    .first_ts_ns
+                    .map(|ns| ns.div_euclid(1_000_000_000))
+                    .unwrap_or(0);
                 let prof = out_json.baseline.ok_or_else(|| {
                     anyhow!(
                         "{} has no per-host snapshot (analyze with --update-baseline/--baseline)",
@@ -747,7 +753,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     )
                 })?;
                 let params = ppcap_core::BaselineParams::default();
-                let report = ppcap_core::compare_to_baseline(&base, &prof, &params);
+                let report =
+                    ppcap_core::compare_to_baseline_at(&base, &prof, capture_unix, &params);
                 eprintln!(
                     "baseline diff: {} host(s) compared, {} deviation(s)",
                     report.hosts_compared,

@@ -90,6 +90,25 @@ pub struct BaselineParams {
     pub min_forecast_points: u64,
     /// Cap on retained per-capture volume samples per host (a bounded recency ring for the forecast).
     pub max_recent_points: usize,
+
+    // ---- Seasonality (Holt-Winters additive) ----
+    /// When `true`, and a host has enough per-*phase* history, the volume forecast is season-aware:
+    /// it learns an additive seasonal factor per phase slot (e.g. per weekday) and forecasts with
+    /// **level + trend + seasonal factor** (Holt-Winters additive over the deseasonalised history),
+    /// so a host's normal weekly/diurnal rhythm does not false-positive but an *off-rhythm* value
+    /// does. Falls back to the plain trend forecast when the per-phase profile is too sparse.
+    pub seasonal_enabled: bool,
+    /// Number of seasonal phase slots — the season length. `7` = day-of-week (default), `24` =
+    /// hour-of-day. Pair with `seasonal_slot_secs`.
+    pub seasonal_period: u32,
+    /// Wall-clock seconds per phase slot — `86_400` = day-of-week (default), `3_600` = hour-of-day.
+    /// A capture's phase is `(capture_unix / seasonal_slot_secs) % seasonal_period`.
+    pub seasonal_slot_secs: i64,
+    /// Minimum samples in a phase slot before that slot's seasonal expectation is trusted.
+    pub min_seasonal_samples: u64,
+    /// Minimum distinct populated phase slots before seasonality engages (else the plain trend
+    /// forecast is used — a profile with only one phase carries no seasonal information).
+    pub min_seasonal_phases: u32,
 }
 
 impl Default for BaselineParams {
@@ -112,8 +131,65 @@ impl Default for BaselineParams {
             forecast_z: 3.0,
             min_forecast_points: 4,
             max_recent_points: 24,
+            seasonal_enabled: true,
+            seasonal_period: 7,         // day-of-week
+            seasonal_slot_secs: 86_400, // one day per slot
+            min_seasonal_samples: 2,
+            min_seasonal_phases: 3,
         }
     }
+}
+
+impl BaselineParams {
+    /// Human label for the configured seasonal cycle (for evidence strings).
+    fn seasonal_label(&self) -> &'static str {
+        match (self.seasonal_slot_secs, self.seasonal_period) {
+            (86_400, 7) => "day-of-week",
+            (3_600, 24) => "hour-of-day",
+            _ => "seasonal",
+        }
+    }
+}
+
+/// The phase slot `[0, seasonal_period)` for a wall-clock second under the configured seasonal cycle.
+/// `0` when seasonality is misconfigured (period/slot ≤ 0), so callers degrade gracefully.
+fn seasonal_phase(unix: i64, params: &BaselineParams) -> usize {
+    if params.seasonal_period == 0 || params.seasonal_slot_secs <= 0 {
+        return 0;
+    }
+    let period = params.seasonal_period as i64;
+    (unix
+        .div_euclid(params.seasonal_slot_secs)
+        .rem_euclid(period)) as usize
+}
+
+/// Fold `value` into a per-phase seasonal profile, resizing/rebuilding to `period` slots if needed
+/// (a period change starts the seasonal history fresh — bounded and deterministic).
+fn observe_seasonal(
+    profile: &mut Vec<RunningStat>,
+    phase: usize,
+    value: f64,
+    period: usize,
+    alpha: f64,
+) {
+    if profile.len() != period {
+        *profile = vec![RunningStat::default(); period];
+    }
+    if let Some(slot) = profile.get_mut(phase) {
+        slot.observe(value, alpha);
+    }
+}
+
+/// Merge two per-phase seasonal profiles slot-wise (order-independent; missing slots default).
+fn merge_seasonal(a: &[RunningStat], b: &[RunningStat]) -> Vec<RunningStat> {
+    let n = a.len().max(b.len());
+    (0..n)
+        .map(|i| {
+            let da = a.get(i).cloned().unwrap_or_default();
+            let db = b.get(i).cloned().unwrap_or_default();
+            RunningStat::merge(&da, &db)
+        })
+        .collect()
 }
 
 // ---- Running statistics -----------------------------------------------------------------------
@@ -375,6 +451,15 @@ pub struct HostBaseline {
     pub bytes_in_recent: Vec<RecentPoint>,
     #[serde(default)]
     pub flows_recent: Vec<RecentPoint>,
+    /// Seasonal profiles — one [`RunningStat`] per phase slot (e.g. per weekday), learned from each
+    /// capture's *capture-time* phase, for the Holt-Winters additive seasonal factor. `#[serde(default)]`
+    /// so older sidecars (no profiles) simply use the plain trend forecast until enough phases fill in.
+    #[serde(default)]
+    pub bytes_out_seasonal: Vec<RunningStat>,
+    #[serde(default)]
+    pub bytes_in_seasonal: Vec<RunningStat>,
+    #[serde(default)]
+    pub flows_seasonal: Vec<RunningStat>,
     pub first_seen_unix: i64,
     pub last_seen_unix: i64,
 }
@@ -396,12 +481,25 @@ impl HostBaseline {
             bytes_out_recent: Vec::new(),
             bytes_in_recent: Vec::new(),
             flows_recent: Vec::new(),
+            bytes_out_seasonal: Vec::new(),
+            bytes_in_seasonal: Vec::new(),
+            flows_seasonal: Vec::new(),
             first_seen_unix: 0,
             last_seen_unix: 0,
         }
     }
 
-    fn observe(&mut self, obs: &HostObservation, now_unix: i64, params: &BaselineParams) {
+    /// Fold one capture's observation. `now_unix` is the wall-clock analysis time (provenance);
+    /// `capture_unix` is the capture's own wall-clock second (from its timestamp window) — the recency
+    /// rings order by, and the seasonal profiles phase on, *capture* time, so re-analysing captures
+    /// out of order still yields the right trend and rhythm.
+    fn observe(
+        &mut self,
+        obs: &HostObservation,
+        now_unix: i64,
+        capture_unix: i64,
+        params: &BaselineParams,
+    ) {
         self.captures_seen += 1;
         self.bytes_out
             .observe(obs.bytes_out as f64, params.ewma_alpha);
@@ -409,30 +507,44 @@ impl HostBaseline {
             .observe(obs.bytes_in as f64, params.ewma_alpha);
         self.flows.observe(obs.flows as f64, params.ewma_alpha);
         // Cross-capture predictive mode: retain this capture's outbound/inbound volume and connection
-        // count as time-stamped samples for the Holt trend forecast (bounded recency rings).
-        push_recent(
-            &mut self.bytes_out_recent,
-            RecentPoint {
-                unix: now_unix,
-                value: obs.bytes_out as f64,
-            },
-            params.max_recent_points,
+        // count as capture-time-stamped samples for the Holt trend forecast (bounded recency rings).
+        for (ring, value) in [
+            (&mut self.bytes_out_recent, obs.bytes_out as f64),
+            (&mut self.bytes_in_recent, obs.bytes_in as f64),
+            (&mut self.flows_recent, obs.flows as f64),
+        ] {
+            push_recent(
+                ring,
+                RecentPoint {
+                    unix: capture_unix,
+                    value,
+                },
+                params.max_recent_points,
+            );
+        }
+        // Seasonality: fold each metric into its capture-time phase slot (Holt-Winters seasonal factor).
+        let phase = seasonal_phase(capture_unix, params);
+        let period = params.seasonal_period as usize;
+        observe_seasonal(
+            &mut self.bytes_out_seasonal,
+            phase,
+            obs.bytes_out as f64,
+            period,
+            params.ewma_alpha,
         );
-        push_recent(
-            &mut self.bytes_in_recent,
-            RecentPoint {
-                unix: now_unix,
-                value: obs.bytes_in as f64,
-            },
-            params.max_recent_points,
+        observe_seasonal(
+            &mut self.bytes_in_seasonal,
+            phase,
+            obs.bytes_in as f64,
+            period,
+            params.ewma_alpha,
         );
-        push_recent(
-            &mut self.flows_recent,
-            RecentPoint {
-                unix: now_unix,
-                value: obs.flows as f64,
-            },
-            params.max_recent_points,
+        observe_seasonal(
+            &mut self.flows_seasonal,
+            phase,
+            obs.flows as f64,
+            period,
+            params.ewma_alpha,
         );
         self.first_seen_unix = fold_min_ts(self.first_seen_unix, now_unix);
         self.last_seen_unix = fold_max_ts(self.last_seen_unix, now_unix);
@@ -581,6 +693,9 @@ impl HostBaseline {
                 params.max_recent_points,
             ),
             flows_recent: merge_recent(&a.flows_recent, &b.flows_recent, params.max_recent_points),
+            bytes_out_seasonal: merge_seasonal(&a.bytes_out_seasonal, &b.bytes_out_seasonal),
+            bytes_in_seasonal: merge_seasonal(&a.bytes_in_seasonal, &b.bytes_in_seasonal),
+            flows_seasonal: merge_seasonal(&a.flows_seasonal, &b.flows_seasonal),
             first_seen_unix: fold_min_ts(a.first_seen_unix, b.first_seen_unix),
             last_seen_unix: fold_max_ts(a.last_seen_unix, b.last_seen_unix),
         }
@@ -809,6 +924,12 @@ pub fn update_baseline(
         None => return base,
     };
 
+    // The capture's own wall-clock second (from its timestamp window) — the seasonal phase source.
+    // Falls back to the analysis time when the capture carried no timestamps.
+    let capture_unix = match out.summary.first_ts_ns {
+        Some(ns) if ns != 0 => ns.div_euclid(1_000_000_000),
+        _ => now_unix,
+    };
     let mut hosts: BTreeMap<String, HostBaseline> = std::mem::take(&mut base.hosts)
         .into_iter()
         .map(|h| (h.host.clone(), h))
@@ -817,7 +938,7 @@ pub fn update_baseline(
         hosts
             .entry(obs.host.clone())
             .or_insert_with(|| HostBaseline::new(obs.host.clone()))
-            .observe(obs, now_unix, params);
+            .observe(obs, now_unix, capture_unix, params);
     }
 
     // Provenance.
@@ -961,15 +1082,96 @@ impl DeviationReport {
 /// off-trend jump, or a collapse below the trend, fires — and otherwise falls back to the static
 /// `mean + volume_k·σ` gate (older sidecars with no series). Returns a `(evidence, points)` deviation
 /// dimension, or `None` when the value is expected (or the host is still in volume warm-up).
+/// Season-aware (Holt-Winters additive) one-step forecast for the value at seasonal phase `phase`,
+/// or `None` when the per-phase profile is too sparse to carry seasonal information (caller then uses
+/// the plain trend forecast). Learns an additive seasonal factor per phase (`slot.mean − overall
+/// level`), deseasonalises the recency ring, runs Holt (level+trend) on it, then re-adds this phase's
+/// factor. Falls back to the phase's own distribution when the ring is too short for a trend.
+fn seasonal_forecast(
+    recent: &[RecentPoint],
+    seasonal: &[RunningStat],
+    phase: usize,
+    params: &BaselineParams,
+) -> Option<crate::forecast::ForecastNext> {
+    if !params.seasonal_enabled || seasonal.is_empty() {
+        return None;
+    }
+    let populated: Vec<usize> = (0..seasonal.len())
+        .filter(|&p| seasonal[p].count >= params.min_seasonal_samples)
+        .collect();
+    if (populated.len() as u32) < params.min_seasonal_phases {
+        return None; // too few distinct phases to carry a rhythm
+    }
+    let target = seasonal.get(phase)?;
+    if target.count < params.min_seasonal_samples {
+        return None; // no trusted expectation for this phase
+    }
+    let global = populated.iter().map(|&p| seasonal[p].mean).sum::<f64>() / populated.len() as f64;
+    let factor = |p: usize| -> f64 {
+        seasonal
+            .get(p)
+            .filter(|s| s.count >= params.min_seasonal_samples)
+            .map(|s| s.mean - global)
+            .unwrap_or(0.0)
+    };
+    let deseason: Vec<f64> = recent
+        .iter()
+        .map(|pt| pt.value - factor(seasonal_phase(pt.unix, params)))
+        .collect();
+    match crate::forecast::forecast_next(&deseason, &crate::forecast::ForecastParams::default()) {
+        Some(fc) => Some(crate::forecast::ForecastNext {
+            forecast: (fc.forecast + factor(phase)).max(0.0),
+            sigma: fc.sigma,
+            points: fc.points,
+        }),
+        None => {
+            // Ring too short for a trend: fall back to this phase's own distribution (seasonal-naive).
+            let sigma = target.stddev().max(0.15 * target.mean.max(1.0)).max(1.0);
+            Some(crate::forecast::ForecastNext {
+                forecast: target.mean,
+                sigma,
+                points: target.count as usize,
+            })
+        }
+    }
+}
+
 fn volume_forecast_dim(
     obs_desc: &str,
     observed: f64,
     recent: &[RecentPoint],
     stat: &RunningStat,
+    seasonal: &[RunningStat],
+    phase: usize,
     params: &BaselineParams,
 ) -> Option<(String, i32)> {
     if stat.count < params.min_captures {
         return None; // too little history to trust this metric
+    }
+    // Seasonal (Holt-Winters additive) supersedes the plain trend when the per-phase profile is rich
+    // enough — a value inside its own rhythm's band is expected even if it's high (or low) overall.
+    if let Some(fc) = seasonal_forecast(recent, seasonal, phase, params) {
+        let hi = fc.forecast + params.forecast_z * fc.sigma;
+        let lo = (fc.forecast - params.forecast_z * fc.sigma).max(0.0);
+        if observed > hi {
+            let z = (observed - fc.forecast) / fc.sigma.max(1.0);
+            return Some((
+                format!(
+                    "baseline: {obs_desc} broke its {} seasonal forecast — predicted {:.0} ± {:.0} for this slot (Holt-Winters over {} captures, {:.1}σ off rhythm)",
+                    params.seasonal_label(), fc.forecast, fc.sigma, fc.points, z
+                ),
+                PTS_DEV_VOLUME_FORECAST,
+            ));
+        } else if observed < lo && fc.forecast > fc.sigma {
+            return Some((
+                format!(
+                    "baseline: {obs_desc} fell below its {} seasonal forecast — predicted {:.0} ± {:.0} for this slot (Holt-Winters over {} captures)",
+                    params.seasonal_label(), fc.forecast, fc.sigma, fc.points
+                ),
+                PTS_DEV_VOLUME_FORECAST,
+            ));
+        }
+        return None; // within the seasonal band — expected for this rhythm
     }
     let series: Vec<f64> = recent.iter().map(|p| p.value).collect();
     let forecast =
@@ -1026,15 +1228,31 @@ fn volume_forecast_dim(
 /// Compare a capture's [`CaptureProfile`] snapshot against a learned baseline, returning the hosts
 /// that deviated. Pure and offline. A host with no baseline, or whose baseline is still in warm-up
 /// (`captures_seen < params.min_captures`), is skipped. Deviations sort worst-first.
+///
+/// The capture time is unknown here, so seasonality is not phased (phase 0). Prefer
+/// [`compare_to_baseline_at`] when the capture's wall-clock second is available (the analyze/CLI/wasm
+/// paths do), so day-of-week / hour-of-day rhythm phasing engages.
 pub fn compare_to_baseline(
     base: &BaselineProfile,
     prof: &CaptureProfile,
+    params: &BaselineParams,
+) -> DeviationReport {
+    compare_to_baseline_at(base, prof, 0, params)
+}
+
+/// Seasonality-aware [`compare_to_baseline`]: `capture_unix` is this capture's wall-clock second (its
+/// timestamp-window start), the source of the seasonal phase for the Holt-Winters seasonal forecast.
+pub fn compare_to_baseline_at(
+    base: &BaselineProfile,
+    prof: &CaptureProfile,
+    capture_unix: i64,
     params: &BaselineParams,
 ) -> DeviationReport {
     let mut report = DeviationReport::default();
     if !params.enabled {
         return report;
     }
+    let phase = seasonal_phase(capture_unix, params);
     for obs in &prof.hosts {
         let hb = match base.host(&obs.host) {
             Some(h) => h,
@@ -1104,6 +1322,8 @@ pub fn compare_to_baseline(
                     obs.bytes_out as f64,
                     &hb.bytes_out_recent,
                     &hb.bytes_out,
+                    &hb.bytes_out_seasonal,
+                    phase,
                     params,
                 ),
                 volume_forecast_dim(
@@ -1111,6 +1331,8 @@ pub fn compare_to_baseline(
                     obs.bytes_in as f64,
                     &hb.bytes_in_recent,
                     &hb.bytes_in,
+                    &hb.bytes_in_seasonal,
+                    phase,
                     params,
                 ),
                 volume_forecast_dim(
@@ -1118,6 +1340,8 @@ pub fn compare_to_baseline(
                     obs.flows as f64,
                     &hb.flows_recent,
                     &hb.flows,
+                    &hb.flows_seasonal,
+                    phase,
                     params,
                 ),
             ]
@@ -2065,6 +2289,106 @@ mod tests {
                 .any(|e| e.contains("connections") && e.contains("cross-capture forecast")),
             "{:?}",
             report.deviations[0].evidence
+        );
+    }
+
+    /// A host with a weekday/weekend outbound rhythm (~10 MB weekdays, ~1 MB weekends) over two
+    /// weeks; inbound + connections flat so only outbound carries a season. `day 12 → phase 5` is a
+    /// "weekend" slot.
+    fn seasonal_weekly_baseline(host: &str) -> BaselineProfile {
+        let params = BaselineParams::default();
+        let mut base = BaselineProfile::new();
+        for day in 0i64..14 {
+            let out = if (day % 7) < 5 { 10_000_000 } else { 1_000_000 };
+            let prof = CaptureProfile {
+                hosts: vec![obs_metrics(host, out, 500_000, 5)],
+            };
+            let ts = day * 86_400 * 1_000_000_000;
+            base = update_baseline(
+                base,
+                &output_with(prof, &format!("d{day}"), ts, ts + 1_000_000_000),
+                1_000 + day,
+                &params,
+            );
+        }
+        base
+    }
+
+    #[test]
+    fn seasonality_flags_off_rhythm_value_a_flat_forecast_misses() {
+        let params = BaselineParams::default();
+        let base = seasonal_weekly_baseline("10.0.0.5");
+        // Two weeks => all 7 day-of-week slots learned.
+        assert_eq!(base.host("10.0.0.5").unwrap().bytes_out_seasonal.len(), 7);
+        let weekend_unix = 12 * 86_400; // phase 5 — a "weekend" slot (expects ~1 MB)
+
+        // A weekend capture carrying a weekday-high 10 MB — off-rhythm.
+        let prof = CaptureProfile {
+            hosts: vec![obs_metrics("10.0.0.5", 10_000_000, 500_000, 5)],
+        };
+
+        // Seasonality ON: the value breaks the weekend seasonal band.
+        let seasonal = compare_to_baseline_at(&base, &prof, weekend_unix, &params);
+        assert_eq!(seasonal.deviations.len(), 1);
+        assert!(
+            seasonal.deviations[0]
+                .evidence
+                .iter()
+                .any(|e| e.contains("seasonal") && e.contains("outbound")),
+            "off-rhythm value must fire a seasonal deviation: {:?}",
+            seasonal.deviations[0].evidence
+        );
+
+        // Seasonality OFF: 10 MB is unremarkable against the flat trend — no deviation. This is the
+        // value seasonality adds.
+        let flat_params = BaselineParams {
+            seasonal_enabled: false,
+            ..params.clone()
+        };
+        let flat = compare_to_baseline_at(&base, &prof, weekend_unix, &flat_params);
+        assert!(
+            flat.deviations.is_empty(),
+            "a flat (non-seasonal) forecast should not flag this value: {:?}",
+            flat.deviations
+        );
+    }
+
+    #[test]
+    fn seasonal_phase_maps_day_of_week_and_hour_of_day() {
+        let dow = BaselineParams::default(); // slot 86400, period 7
+        assert_eq!(seasonal_phase(0, &dow), 0);
+        assert_eq!(seasonal_phase(86_400, &dow), 1);
+        assert_eq!(seasonal_phase(12 * 86_400, &dow), 5); // 12 % 7
+        assert_eq!(seasonal_phase(7 * 86_400, &dow), 0); // wraps
+        let hod = BaselineParams {
+            seasonal_slot_secs: 3_600,
+            seasonal_period: 24,
+            ..Default::default()
+        };
+        assert_eq!(seasonal_phase(3_600 * 5, &hod), 5);
+        assert_eq!(seasonal_phase(3_600 * 25, &hod), 1); // 25 % 24
+                                                         // Misconfigured (period 0) degrades to phase 0.
+        let bad = BaselineParams {
+            seasonal_period: 0,
+            ..Default::default()
+        };
+        assert_eq!(seasonal_phase(999_999, &bad), 0);
+    }
+
+    #[test]
+    fn seasonality_stays_quiet_in_rhythm() {
+        let params = BaselineParams::default();
+        let base = seasonal_weekly_baseline("10.0.0.5");
+        // A weekend capture with the weekend-normal ~1 MB — in-rhythm, must not fire, even though
+        // 1 MB is far below the host's overall (weekday-dominated) mean.
+        let prof = CaptureProfile {
+            hosts: vec![obs_metrics("10.0.0.5", 1_000_000, 500_000, 5)],
+        };
+        let report = compare_to_baseline_at(&base, &prof, 12 * 86_400, &params);
+        assert!(
+            report.deviations.is_empty(),
+            "in-rhythm value must not deviate: {:?}",
+            report.deviations
         );
     }
 

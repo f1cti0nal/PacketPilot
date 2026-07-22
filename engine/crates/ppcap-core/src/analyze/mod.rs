@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use crate::baseline::{compare_to_baseline, BaselineParams, BaselineProfile};
+use crate::baseline::{compare_to_baseline_at, BaselineParams, BaselineProfile};
 use crate::classify::{Classifier, ClassifyConfig};
 use crate::columnar::{FlowParquetWriter, WriterConfig};
 use crate::detect::{
@@ -542,7 +542,14 @@ pub fn run_source_visiting<'a>(
         None
     };
     if let (Some(base), Some(prof)) = (baseline_ref.as_ref(), baseline_snapshot.as_ref()) {
-        findings.extend(compare_to_baseline(base, prof, &cfg.baseline).into_findings());
+        // Phase the seasonal forecast on the capture's own wall-clock start (not the analysis time).
+        let capture_unix = stats
+            .first_ts_ns()
+            .map(|ns| ns.div_euclid(1_000_000_000))
+            .unwrap_or(0);
+        findings.extend(
+            compare_to_baseline_at(base, prof, capture_unix, &cfg.baseline).into_findings(),
+        );
     }
 
     // Predictive Anomaly Detection. `stats` is still live (not consumed until `finish()` below), so
