@@ -207,6 +207,48 @@ pub fn detect_traffic_anomalies(input: &ForecastInput, p: &ForecastParams) -> Fo
     report
 }
 
+/// A one-step-ahead forecast of the value *after* a series, with the residual σ that sizes its
+/// prediction band. The caller decides the band width (`forecast ± z·σ`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ForecastNext {
+    /// Predicted next value (clamped to ≥ 0).
+    pub forecast: f64,
+    /// Residual standard deviation (EWMA of forecast residuals, floored to the series scale).
+    pub sigma: f64,
+    /// Number of points the forecast was fit on.
+    pub points: usize,
+}
+
+/// Forecast the value one step *beyond* `values` (index `n`) using the same Holt level+trend
+/// recurrence as [`detect_traffic_anomalies`], returning the forecast and its residual σ. This is the
+/// reusable core behind both intra-capture bin forecasting and the baseline module's *cross-capture*
+/// predictive mode (Holt over a host's per-capture volume history). Returns `None` for fewer than 3
+/// points (too few to seed a trend and a residual). Pure, deterministic, `O(n)` / `O(1)` state.
+pub fn forecast_next(values: &[f64], p: &ForecastParams) -> Option<ForecastNext> {
+    let n = values.len();
+    if n < 3 {
+        return None;
+    }
+    let mean = values.iter().sum::<f64>() / n as f64;
+    let sigma_floor = (p.sigma_floor_frac * mean).max(1.0);
+    let mut level = values[0];
+    let mut trend = values[1] - values[0];
+    let mut variance = 0.0f64;
+    for &y in &values[1..] {
+        let f = level + trend;
+        let resid = y - f;
+        let prev = level;
+        level = p.level_alpha * y + (1.0 - p.level_alpha) * (level + trend);
+        trend = p.trend_beta * (level - prev) + (1.0 - p.trend_beta) * trend;
+        variance = p.var_gamma * resid * resid + (1.0 - p.var_gamma) * variance;
+    }
+    Some(ForecastNext {
+        forecast: (level + trend).max(0.0),
+        sigma: variance.sqrt().max(sigma_floor),
+        points: n,
+    })
+}
+
 /// Run the online Holt forecaster + residual-band + CUSUM over one host's series. Returns the flagged
 /// bins (may be empty). O(n) time, O(1) state.
 fn forecast_host(s: &HostSeries, p: &ForecastParams) -> Vec<Hit> {
@@ -610,6 +652,44 @@ mod tests {
         assert!(f.dst_ip.is_none());
         assert!(f.first_seen_ns.is_some());
         assert!(!f.evidence.is_empty());
+    }
+
+    #[test]
+    fn forecast_next_needs_three_points() {
+        assert!(forecast_next(&[], &params()).is_none());
+        assert!(forecast_next(&[1.0], &params()).is_none());
+        assert!(forecast_next(&[1.0, 2.0], &params()).is_none());
+        assert!(forecast_next(&[1.0, 2.0, 3.0], &params()).is_some());
+    }
+
+    #[test]
+    fn forecast_next_projects_a_rising_trend() {
+        // A steady linear ramp: the one-step-ahead forecast should extrapolate the trend, landing
+        // near the next value (well within a few σ) rather than at the lagging mean.
+        let values: Vec<f64> = (0..12)
+            .map(|i| 1_000_000.0 + i as f64 * 100_000.0)
+            .collect();
+        let fc = forecast_next(&values, &params()).unwrap();
+        let next_on_trend = 12.0 * 100_000.0 + 1_000_000.0; // 2.2M
+        assert!(
+            (fc.forecast - next_on_trend).abs() < 5.0 * fc.sigma.max(1.0),
+            "forecast {} should track the trend toward {next_on_trend} (σ={})",
+            fc.forecast,
+            fc.sigma
+        );
+        // The trend forecast must sit far above the series mean (which a static gate would use).
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        assert!(
+            fc.forecast > mean,
+            "trend forecast {} > mean {mean}",
+            fc.forecast
+        );
+    }
+
+    #[test]
+    fn forecast_next_is_deterministic() {
+        let v = [1.0, 3.0, 2.0, 5.0, 4.0, 6.0, 8.0, 7.0];
+        assert_eq!(forecast_next(&v, &params()), forecast_next(&v, &params()));
     }
 
     #[test]

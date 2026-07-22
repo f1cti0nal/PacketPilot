@@ -64,6 +64,9 @@ pub const PTS_DEV_NEW_EXTERNAL_PEER: i32 = 15;
 pub const PTS_DEV_NEW_PORT: i32 = 10;
 /// Outbound volume well beyond the host's baseline distribution (mean + k·σ).
 pub const PTS_DEV_VOLUME_SPIKE: i32 = 10;
+/// Outbound volume broke the host's *cross-capture* Holt trend forecast (`forecast ± z·σ`) — an
+/// off-trend jump/collapse, distinct from a static spike (a legitimate rising trend is not flagged).
+pub const PTS_DEV_VOLUME_FORECAST: i32 = 15;
 /// First-seen TLS JA3 client fingerprint for the host (new client stack / tool).
 pub const PTS_DEV_NEW_JA3: i32 = 10;
 /// First-ever use of a traffic category the host never exhibited.

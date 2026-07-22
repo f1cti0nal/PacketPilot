@@ -83,7 +83,8 @@ pub use error::{PpError, Result};
 pub use export::{cef_records, findings_csv, misp_event, sigma_rules, stix_bundle};
 pub use fingerprint::{fingerprint_tls_client_hello, Ja4Transport, TlsFingerprints};
 pub use forecast::{
-    detect_traffic_anomalies, Anomaly, ForecastInput, ForecastParams, ForecastReport, HostSeries,
+    detect_traffic_anomalies, forecast_next, Anomaly, ForecastInput, ForecastNext, ForecastParams,
+    ForecastReport, HostSeries,
 };
 pub use model::attack_chain::{
     AttackChain, ChainEdge, ChainStep, EdgeKind, TacticStep, TechniqueRef,
