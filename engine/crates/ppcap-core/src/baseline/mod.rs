@@ -365,11 +365,16 @@ pub struct HostBaseline {
     /// Learned beacon-shaped channels, sorted by (dst, port) (bounded).
     #[serde(default)]
     pub beacons: Vec<BeaconStat>,
-    /// Cross-capture outbound-volume history — a bounded, time-ordered recency ring the Holt trend
-    /// forecast (predictive mode) fits on. `#[serde(default)]` keeps older sidecars readable (they
-    /// fall back to the static `mean + k·σ` gate until enough captures rebuild the series).
+    /// Cross-capture per-metric history — bounded, time-ordered recency rings the Holt trend forecast
+    /// (predictive mode) fits on, for outbound bytes, inbound bytes, and egress connection count.
+    /// `#[serde(default)]` keeps older sidecars readable (they fall back to the static `mean + k·σ`
+    /// gate until enough captures rebuild the series).
     #[serde(default)]
     pub bytes_out_recent: Vec<RecentPoint>,
+    #[serde(default)]
+    pub bytes_in_recent: Vec<RecentPoint>,
+    #[serde(default)]
+    pub flows_recent: Vec<RecentPoint>,
     pub first_seen_unix: i64,
     pub last_seen_unix: i64,
 }
@@ -389,6 +394,8 @@ impl HostBaseline {
             categories: [0u64; 13],
             beacons: Vec::new(),
             bytes_out_recent: Vec::new(),
+            bytes_in_recent: Vec::new(),
+            flows_recent: Vec::new(),
             first_seen_unix: 0,
             last_seen_unix: 0,
         }
@@ -401,13 +408,29 @@ impl HostBaseline {
         self.bytes_in
             .observe(obs.bytes_in as f64, params.ewma_alpha);
         self.flows.observe(obs.flows as f64, params.ewma_alpha);
-        // Cross-capture predictive mode: retain this capture's outbound volume as a time-stamped
-        // sample for the Holt trend forecast (bounded recency ring).
+        // Cross-capture predictive mode: retain this capture's outbound/inbound volume and connection
+        // count as time-stamped samples for the Holt trend forecast (bounded recency rings).
         push_recent(
             &mut self.bytes_out_recent,
             RecentPoint {
                 unix: now_unix,
                 value: obs.bytes_out as f64,
+            },
+            params.max_recent_points,
+        );
+        push_recent(
+            &mut self.bytes_in_recent,
+            RecentPoint {
+                unix: now_unix,
+                value: obs.bytes_in as f64,
+            },
+            params.max_recent_points,
+        );
+        push_recent(
+            &mut self.flows_recent,
+            RecentPoint {
+                unix: now_unix,
+                value: obs.flows as f64,
             },
             params.max_recent_points,
         );
@@ -552,6 +575,12 @@ impl HostBaseline {
                 &b.bytes_out_recent,
                 params.max_recent_points,
             ),
+            bytes_in_recent: merge_recent(
+                &a.bytes_in_recent,
+                &b.bytes_in_recent,
+                params.max_recent_points,
+            ),
+            flows_recent: merge_recent(&a.flows_recent, &b.flows_recent, params.max_recent_points),
             first_seen_unix: fold_min_ts(a.first_seen_unix, b.first_seen_unix),
             last_seen_unix: fold_max_ts(a.last_seen_unix, b.last_seen_unix),
         }
@@ -925,6 +954,75 @@ impl DeviationReport {
     }
 }
 
+/// Judge one per-capture volume metric (`obs_desc` describes the observed value, e.g.
+/// `"outbound 50000000 bytes"`) against the host's cross-capture history. Prefers the **Holt trend
+/// forecast** (`forecast ± forecast_z·σ` via [`crate::forecast::forecast_next`]) when there are at
+/// least `min_forecast_points` samples — so a legitimate rising trend is not flagged, but an
+/// off-trend jump, or a collapse below the trend, fires — and otherwise falls back to the static
+/// `mean + volume_k·σ` gate (older sidecars with no series). Returns a `(evidence, points)` deviation
+/// dimension, or `None` when the value is expected (or the host is still in volume warm-up).
+fn volume_forecast_dim(
+    obs_desc: &str,
+    observed: f64,
+    recent: &[RecentPoint],
+    stat: &RunningStat,
+    params: &BaselineParams,
+) -> Option<(String, i32)> {
+    if stat.count < params.min_captures {
+        return None; // too little history to trust this metric
+    }
+    let series: Vec<f64> = recent.iter().map(|p| p.value).collect();
+    let forecast =
+        if params.forecast_enabled && series.len() as u64 >= params.min_forecast_points.max(3) {
+            crate::forecast::forecast_next(&series, &crate::forecast::ForecastParams::default())
+        } else {
+            None
+        };
+    match forecast {
+        Some(fc) => {
+            let hi = fc.forecast + params.forecast_z * fc.sigma;
+            let lo = (fc.forecast - params.forecast_z * fc.sigma).max(0.0);
+            if observed > hi {
+                let z = (observed - fc.forecast) / fc.sigma.max(1.0);
+                Some((
+                    format!(
+                        "baseline: {obs_desc} broke its cross-capture forecast — predicted {:.0} ± {:.0} from {} prior captures ({:.1}σ off trend)",
+                        fc.forecast, fc.sigma, fc.points, z
+                    ),
+                    PTS_DEV_VOLUME_FORECAST,
+                ))
+            } else if observed < lo && fc.forecast > fc.sigma {
+                // Fell well below what the trend predicted (metric quieter than its history).
+                Some((
+                    format!(
+                        "baseline: {obs_desc} fell below its cross-capture forecast — predicted {:.0} ± {:.0} from {} prior captures",
+                        fc.forecast, fc.sigma, fc.points
+                    ),
+                    PTS_DEV_VOLUME_FORECAST,
+                ))
+            } else {
+                None
+            }
+        }
+        None => {
+            let mean = stat.mean;
+            let sd = stat.stddev();
+            if sd > 0.0 && observed > mean + params.volume_k * sd {
+                let z = (observed - mean) / sd;
+                Some((
+                    format!(
+                        "baseline: {obs_desc} vs mean {:.0} ± {:.0} ({:.1}σ over {} captures)",
+                        mean, sd, z, stat.count
+                    ),
+                    PTS_DEV_VOLUME_SPIKE,
+                ))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 /// Compare a capture's [`CaptureProfile`] snapshot against a learned baseline, returning the hosts
 /// that deviated. Pure and offline. A host with no baseline, or whose baseline is still in warm-up
 /// (`captures_seen < params.min_captures`), is skipped. Deviations sort worst-first.
@@ -994,64 +1092,38 @@ pub fn compare_to_baseline(
             ));
         }
 
-        // --- Outbound volume: cross-capture predictive (trend-aware) when the host has enough
-        //     per-capture history, else the static mean + k·σ gate. The forecast supersedes the
-        //     static gate so a host on a legitimate rising trend is not flagged (the mean lags a
-        //     trend and would false-positive), while an off-*trend* jump — or a collapse below the
-        //     trend — still fires. ---
-        if hb.bytes_out.count >= params.min_captures {
-            let observed = obs.bytes_out as f64;
-            let recent: Vec<f64> = hb.bytes_out_recent.iter().map(|p| p.value).collect();
-            let forecast = if params.forecast_enabled
-                && recent.len() as u64 >= params.min_forecast_points.max(3)
-            {
-                crate::forecast::forecast_next(&recent, &crate::forecast::ForecastParams::default())
-            } else {
-                None
-            };
-            match forecast {
-                Some(fc) => {
-                    let hi = fc.forecast + params.forecast_z * fc.sigma;
-                    let lo = (fc.forecast - params.forecast_z * fc.sigma).max(0.0);
-                    if observed > hi {
-                        let z = (observed - fc.forecast) / fc.sigma.max(1.0);
-                        dims.push((
-                            format!(
-                                "baseline: outbound {} bytes broke its cross-capture forecast — predicted {:.0} ± {:.0} from {} prior captures ({:.1}σ off trend)",
-                                obs.bytes_out, fc.forecast, fc.sigma, fc.points, z
-                            ),
-                            PTS_DEV_VOLUME_FORECAST,
-                        ));
-                    } else if observed < lo && fc.forecast > fc.sigma {
-                        // Fell well below what the trend predicted (host went quieter than its history).
-                        dims.push((
-                            format!(
-                                "baseline: outbound {} bytes fell below its cross-capture forecast — predicted {:.0} ± {:.0} from {} prior captures",
-                                obs.bytes_out, fc.forecast, fc.sigma, fc.points
-                            ),
-                            PTS_DEV_VOLUME_FORECAST,
-                        ));
-                    }
-                }
-                None => {
-                    let mean = hb.bytes_out.mean;
-                    let sd = hb.bytes_out.stddev();
-                    if sd > 0.0 {
-                        let threshold = mean + params.volume_k * sd;
-                        if observed > threshold {
-                            let z = (observed - mean) / sd;
-                            dims.push((
-                                format!(
-                                    "baseline: outbound {} bytes vs mean {:.0} ± {:.0} ({:.1}σ over {} captures)",
-                                    obs.bytes_out, mean, sd, z, hb.bytes_out.count
-                                ),
-                                PTS_DEV_VOLUME_SPIKE,
-                            ));
-                        }
-                    }
-                }
-            }
-        }
+        // --- Volume metrics (outbound / inbound bytes, connection count): cross-capture predictive
+        //     (trend-aware) when the host has enough per-capture history, else the static mean + k·σ
+        //     gate. The forecast supersedes the static gate so a host on a legitimate rising trend is
+        //     not flagged (the mean lags a trend and would false-positive), while an off-*trend* jump
+        //     — or a collapse below the trend — still fires. ---
+        dims.extend(
+            [
+                volume_forecast_dim(
+                    &format!("outbound {} bytes", obs.bytes_out),
+                    obs.bytes_out as f64,
+                    &hb.bytes_out_recent,
+                    &hb.bytes_out,
+                    params,
+                ),
+                volume_forecast_dim(
+                    &format!("inbound {} bytes", obs.bytes_in),
+                    obs.bytes_in as f64,
+                    &hb.bytes_in_recent,
+                    &hb.bytes_in,
+                    params,
+                ),
+                volume_forecast_dim(
+                    &format!("{} connections", obs.flows),
+                    obs.flows as f64,
+                    &hb.flows_recent,
+                    &hb.flows,
+                    params,
+                ),
+            ]
+            .into_iter()
+            .flatten(),
+        );
 
         // --- New TLS JA3 fingerprint ---
         let known_ja3: std::collections::HashSet<&str> =
@@ -1204,6 +1276,38 @@ mod tests {
             services: services.to_vec(),
             ..Default::default()
         }
+    }
+
+    /// An observation with each volume metric set independently, over a fixed known peer/service (so
+    /// only the volume dimensions can deviate, not new-peer/new-port).
+    fn obs_metrics(host: &str, bytes_out: u64, bytes_in: u64, flows: u64) -> HostObservation {
+        HostObservation {
+            host: host.to_string(),
+            bytes_out,
+            bytes_in,
+            flows,
+            peers: vec!["203.0.113.7".to_string()],
+            services: vec![443],
+            ..Default::default()
+        }
+    }
+
+    /// Build a baseline for one host by folding `obs` observations at distinct wall-clock seconds.
+    fn fold_all(host: &str, samples: &[(u64, u64, u64)]) -> BaselineProfile {
+        let params = BaselineParams::default();
+        let mut base = BaselineProfile::new();
+        for (i, &(out, in_, flows)) in samples.iter().enumerate() {
+            let prof = CaptureProfile {
+                hosts: vec![obs_metrics(host, out, in_, flows)],
+            };
+            base = update_baseline(
+                base,
+                &output_with(prof, &format!("m{i}"), 10, 20),
+                1_000 + i as i64,
+                &params,
+            );
+        }
+        base
     }
 
     fn output_with(prof: CaptureProfile, sha: &str, f: i64, l: i64) -> AnalysisOutput {
@@ -1896,7 +2000,10 @@ mod tests {
             );
         }
         for h in base.hosts.iter_mut() {
-            h.bytes_out_recent.clear(); // simulate an old sidecar
+            // Simulate an old sidecar: no per-metric recency rings at all.
+            h.bytes_out_recent.clear();
+            h.bytes_in_recent.clear();
+            h.flows_recent.clear();
         }
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443])],
@@ -1909,6 +2016,54 @@ mod tests {
                 .iter()
                 .any(|e| e.contains("vs mean")),
             "fallback uses the static-gate evidence: {:?}",
+            report.deviations[0].evidence
+        );
+    }
+
+    #[test]
+    fn predictive_mode_flags_inbound_off_trend() {
+        let params = BaselineParams::default();
+        // Outbound + connection count steady; inbound rises 1 → 8 MB over 8 captures.
+        let samples: Vec<(u64, u64, u64)> = (0u64..8)
+            .map(|i| (1000, 1_000_000 + i * 1_000_000, 1))
+            .collect();
+        let base = fold_all("10.0.0.5", &samples);
+        // Inbound jumps far off its trend (which predicts ~9 MB); outbound/flows unchanged.
+        let prof = CaptureProfile {
+            hosts: vec![obs_metrics("10.0.0.5", 1000, 40_000_000, 1)],
+        };
+        let report = compare_to_baseline(&base, &prof, &params);
+        assert_eq!(report.deviations.len(), 1);
+        let ev = &report.deviations[0].evidence;
+        assert!(
+            ev.iter()
+                .any(|e| e.contains("inbound") && e.contains("cross-capture forecast")),
+            "inbound off-trend must fire: {ev:?}"
+        );
+        assert!(
+            !ev.iter().any(|e| e.contains("outbound")),
+            "outbound was on-baseline and must not deviate: {ev:?}"
+        );
+    }
+
+    #[test]
+    fn predictive_mode_flags_connection_count_off_trend() {
+        let params = BaselineParams::default();
+        // Bytes steady; connection count rises 10, 20, … 80 over 8 captures.
+        let samples: Vec<(u64, u64, u64)> = (0u64..8).map(|i| (1000, 1000, 10 + i * 10)).collect();
+        let base = fold_all("10.0.0.5", &samples);
+        // A burst of connections far off the trend (which predicts ~90).
+        let prof = CaptureProfile {
+            hosts: vec![obs_metrics("10.0.0.5", 1000, 1000, 400)],
+        };
+        let report = compare_to_baseline(&base, &prof, &params);
+        assert_eq!(report.deviations.len(), 1);
+        assert!(
+            report.deviations[0]
+                .evidence
+                .iter()
+                .any(|e| e.contains("connections") && e.contains("cross-capture forecast")),
+            "{:?}",
             report.deviations[0].evidence
         );
     }
