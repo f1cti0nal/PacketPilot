@@ -35,7 +35,8 @@ use crate::model::output::AnalysisOutput;
 use crate::model::severity::Severity;
 use crate::score::{
     score_baseline_deviation, PTS_DEV_NEW_BEACON, PTS_DEV_NEW_CATEGORY, PTS_DEV_NEW_EXTERNAL_PEER,
-    PTS_DEV_NEW_JA3, PTS_DEV_NEW_PORT, PTS_DEV_OFF_HOURS, PTS_DEV_VOLUME_SPIKE,
+    PTS_DEV_NEW_JA3, PTS_DEV_NEW_PORT, PTS_DEV_OFF_HOURS, PTS_DEV_VOLUME_FORECAST,
+    PTS_DEV_VOLUME_SPIKE,
 };
 
 /// On-disk schema version for the baseline sidecar.
@@ -75,6 +76,20 @@ pub struct BaselineParams {
     /// EWMA smoothing factor for the recency-weighted mean (hint only; the deviation gate uses
     /// `mean + k·stddev`, which merges exactly).
     pub ewma_alpha: f64,
+
+    // ---- Cross-capture predictive mode (trend-aware volume) ----
+    /// When `true`, and a host has at least `min_forecast_points` per-capture volume samples, the
+    /// outbound-volume deviation is judged against a **Holt trend forecast** of the next capture
+    /// (`forecast ± forecast_z·σ`) instead of the static `mean + volume_k·σ` gate — so a host on a
+    /// legitimate rising trend does not false-positive, but an *off-trend* jump still fires.
+    pub forecast_enabled: bool,
+    /// Prediction-band half-width (in residual σ) for the cross-capture volume forecast.
+    pub forecast_z: f64,
+    /// Minimum per-capture volume samples before the trend forecast is trusted (else fall back to the
+    /// static gate). Must be ≥ 3 for a trend + residual to exist.
+    pub min_forecast_points: u64,
+    /// Cap on retained per-capture volume samples per host (a bounded recency ring for the forecast).
+    pub max_recent_points: usize,
 }
 
 impl Default for BaselineParams {
@@ -93,6 +108,10 @@ impl Default for BaselineParams {
             min_active_hours: 3,
             max_source_shas: 256,
             ewma_alpha: 0.30,
+            forecast_enabled: true,
+            forecast_z: 3.0,
+            min_forecast_points: 4,
+            max_recent_points: 24,
         }
     }
 }
@@ -200,6 +219,37 @@ impl SeenCount {
             last_seen_unix: fold_max_ts(a.last_seen_unix, b.last_seen_unix),
         }
     }
+}
+
+/// One per-capture volume sample in a host's cross-capture history: the capture's wall-clock second
+/// and the observed value. The series is kept sorted by `unix` and capped, so a Holt trend forecast
+/// (cross-capture predictive mode) sees the samples in chronological order deterministically.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RecentPoint {
+    pub unix: i64,
+    pub value: f64,
+}
+
+/// Append `point`, then keep the series sorted by `unix` (stable) and truncated to the most-recent
+/// `cap` samples. Deterministic and order-independent under merge (samples carry their own time).
+fn push_recent(series: &mut Vec<RecentPoint>, point: RecentPoint, cap: usize) {
+    series.push(point);
+    series.sort_by_key(|p| p.unix);
+    if series.len() > cap {
+        let drop = series.len() - cap;
+        series.drain(0..drop); // drop the oldest
+    }
+}
+
+/// Merge two per-capture volume histories: concatenate, sort by time, keep the most-recent `cap`.
+fn merge_recent(a: &[RecentPoint], b: &[RecentPoint], cap: usize) -> Vec<RecentPoint> {
+    let mut out: Vec<RecentPoint> = a.iter().chain(b.iter()).copied().collect();
+    out.sort_by_key(|p| p.unix);
+    if out.len() > cap {
+        let drop = out.len() - cap;
+        out.drain(0..drop);
+    }
+    out
 }
 
 /// A tracked external peer for a host.
@@ -315,6 +365,11 @@ pub struct HostBaseline {
     /// Learned beacon-shaped channels, sorted by (dst, port) (bounded).
     #[serde(default)]
     pub beacons: Vec<BeaconStat>,
+    /// Cross-capture outbound-volume history — a bounded, time-ordered recency ring the Holt trend
+    /// forecast (predictive mode) fits on. `#[serde(default)]` keeps older sidecars readable (they
+    /// fall back to the static `mean + k·σ` gate until enough captures rebuild the series).
+    #[serde(default)]
+    pub bytes_out_recent: Vec<RecentPoint>,
     pub first_seen_unix: i64,
     pub last_seen_unix: i64,
 }
@@ -333,6 +388,7 @@ impl HostBaseline {
             hour_of_day: [0u64; 24],
             categories: [0u64; 13],
             beacons: Vec::new(),
+            bytes_out_recent: Vec::new(),
             first_seen_unix: 0,
             last_seen_unix: 0,
         }
@@ -345,6 +401,16 @@ impl HostBaseline {
         self.bytes_in
             .observe(obs.bytes_in as f64, params.ewma_alpha);
         self.flows.observe(obs.flows as f64, params.ewma_alpha);
+        // Cross-capture predictive mode: retain this capture's outbound volume as a time-stamped
+        // sample for the Holt trend forecast (bounded recency ring).
+        push_recent(
+            &mut self.bytes_out_recent,
+            RecentPoint {
+                unix: now_unix,
+                value: obs.bytes_out as f64,
+            },
+            params.max_recent_points,
+        );
         self.first_seen_unix = fold_min_ts(self.first_seen_unix, now_unix);
         self.last_seen_unix = fold_max_ts(self.last_seen_unix, now_unix);
 
@@ -481,6 +547,11 @@ impl HostBaseline {
             hour_of_day,
             categories,
             beacons: cap_beacons(beacons, params.top_k_beacons),
+            bytes_out_recent: merge_recent(
+                &a.bytes_out_recent,
+                &b.bytes_out_recent,
+                params.max_recent_points,
+            ),
             first_seen_unix: fold_min_ts(a.first_seen_unix, b.first_seen_unix),
             last_seen_unix: fold_max_ts(a.last_seen_unix, b.last_seen_unix),
         }
@@ -923,22 +994,61 @@ pub fn compare_to_baseline(
             ));
         }
 
-        // --- Outbound volume spike ---
+        // --- Outbound volume: cross-capture predictive (trend-aware) when the host has enough
+        //     per-capture history, else the static mean + k·σ gate. The forecast supersedes the
+        //     static gate so a host on a legitimate rising trend is not flagged (the mean lags a
+        //     trend and would false-positive), while an off-*trend* jump — or a collapse below the
+        //     trend — still fires. ---
         if hb.bytes_out.count >= params.min_captures {
-            let mean = hb.bytes_out.mean;
-            let sd = hb.bytes_out.stddev();
-            if sd > 0.0 {
-                let threshold = mean + params.volume_k * sd;
-                let observed = obs.bytes_out as f64;
-                if observed > threshold {
-                    let z = (observed - mean) / sd;
-                    dims.push((
-                        format!(
-                            "baseline: outbound {} bytes vs mean {:.0} ± {:.0} ({:.1}σ over {} captures)",
-                            obs.bytes_out, mean, sd, z, hb.bytes_out.count
-                        ),
-                        PTS_DEV_VOLUME_SPIKE,
-                    ));
+            let observed = obs.bytes_out as f64;
+            let recent: Vec<f64> = hb.bytes_out_recent.iter().map(|p| p.value).collect();
+            let forecast = if params.forecast_enabled
+                && recent.len() as u64 >= params.min_forecast_points.max(3)
+            {
+                crate::forecast::forecast_next(&recent, &crate::forecast::ForecastParams::default())
+            } else {
+                None
+            };
+            match forecast {
+                Some(fc) => {
+                    let hi = fc.forecast + params.forecast_z * fc.sigma;
+                    let lo = (fc.forecast - params.forecast_z * fc.sigma).max(0.0);
+                    if observed > hi {
+                        let z = (observed - fc.forecast) / fc.sigma.max(1.0);
+                        dims.push((
+                            format!(
+                                "baseline: outbound {} bytes broke its cross-capture forecast — predicted {:.0} ± {:.0} from {} prior captures ({:.1}σ off trend)",
+                                obs.bytes_out, fc.forecast, fc.sigma, fc.points, z
+                            ),
+                            PTS_DEV_VOLUME_FORECAST,
+                        ));
+                    } else if observed < lo && fc.forecast > fc.sigma {
+                        // Fell well below what the trend predicted (host went quieter than its history).
+                        dims.push((
+                            format!(
+                                "baseline: outbound {} bytes fell below its cross-capture forecast — predicted {:.0} ± {:.0} from {} prior captures",
+                                obs.bytes_out, fc.forecast, fc.sigma, fc.points
+                            ),
+                            PTS_DEV_VOLUME_FORECAST,
+                        ));
+                    }
+                }
+                None => {
+                    let mean = hb.bytes_out.mean;
+                    let sd = hb.bytes_out.stddev();
+                    if sd > 0.0 {
+                        let threshold = mean + params.volume_k * sd;
+                        if observed > threshold {
+                            let z = (observed - mean) / sd;
+                            dims.push((
+                                format!(
+                                    "baseline: outbound {} bytes vs mean {:.0} ± {:.0} ({:.1}σ over {} captures)",
+                                    obs.bytes_out, mean, sd, z, hb.bytes_out.count
+                                ),
+                                PTS_DEV_VOLUME_SPIKE,
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -1524,9 +1634,11 @@ mod tests {
     }
 
     #[test]
-    fn volume_spike_constant_baseline_is_quiet() {
+    fn constant_baseline_uses_a_scale_relative_band() {
+        // A perfectly constant baseline has sd == 0. The old static gate skipped it entirely — a
+        // blind spot where a huge spike went unflagged. Predictive mode uses a scale-relative σ
+        // floor, so a modest value near the constant baseline stays quiet, but a large jump is caught.
         let params = BaselineParams::default();
-        // Constant bytes_out across captures -> sd == 0 -> a spike must NOT fire (avoids div noise).
         let base = warm_baseline(
             "10.0.0.5",
             params.min_captures,
@@ -1534,13 +1646,22 @@ mod tests {
             &["203.0.113.7"],
             &[443],
         );
-        let dev = obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443]);
-        let report = compare_to_baseline(&base, &CaptureProfile { hosts: vec![dev] }, &params);
+        // A small bump stays within the scale-relative band.
+        let near = obs("10.0.0.5", 1050, &["203.0.113.7"], &[443]);
+        let quiet = compare_to_baseline(&base, &CaptureProfile { hosts: vec![near] }, &params);
         assert!(
-            report.deviations.is_empty(),
-            "sd==0 baseline must not raise a volume spike: {:?}",
-            report.deviations
+            quiet.deviations.is_empty(),
+            "a small bump on a constant baseline stays quiet: {:?}",
+            quiet.deviations
         );
+        // A large spike is now caught (the sd==0 blind spot is closed).
+        let spike = obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443]);
+        let report = compare_to_baseline(&base, &CaptureProfile { hosts: vec![spike] }, &params);
+        assert_eq!(report.deviations.len(), 1);
+        assert!(report.deviations[0]
+            .evidence
+            .iter()
+            .any(|e| e.contains("cross-capture forecast")));
     }
 
     /// Build a warmed-up baseline (N identical captures) for a host, then compare.
@@ -1635,6 +1756,161 @@ mod tests {
             .evidence
             .iter()
             .any(|e| e.contains("outbound") && e.contains("σ")));
+    }
+
+    /// Build a baseline for one host from a rising per-capture volume trend (`start`, `start+step`,
+    /// … over `n` captures), each with a distinct wall-clock second.
+    fn rising_baseline(host: &str, n: u64, start: u64, step: u64) -> BaselineProfile {
+        let params = BaselineParams::default();
+        let mut base = BaselineProfile::new();
+        for i in 0..n {
+            let bytes = start + i * step;
+            let prof = CaptureProfile {
+                hosts: vec![obs(host, bytes, &["203.0.113.7"], &[443])],
+            };
+            base = update_baseline(
+                base,
+                &output_with(prof, &format!("t{i}"), 10, 20),
+                1_000 + i as i64,
+                &params,
+            );
+        }
+        base
+    }
+
+    #[test]
+    fn recent_series_is_bounded_and_time_ordered() {
+        let mut s: Vec<RecentPoint> = Vec::new();
+        for (u, v) in [(5, 5.0), (1, 1.0), (3, 3.0), (2, 2.0), (4, 4.0)] {
+            push_recent(&mut s, RecentPoint { unix: u, value: v }, 3);
+        }
+        // Kept the 3 most-recent by time, in ascending order (oldest dropped).
+        assert_eq!(s.iter().map(|p| p.unix).collect::<Vec<_>>(), vec![3, 4, 5]);
+        let a = vec![
+            RecentPoint {
+                unix: 1,
+                value: 1.0,
+            },
+            RecentPoint {
+                unix: 4,
+                value: 4.0,
+            },
+        ];
+        let b = vec![
+            RecentPoint {
+                unix: 2,
+                value: 2.0,
+            },
+            RecentPoint {
+                unix: 3,
+                value: 3.0,
+            },
+        ];
+        assert_eq!(
+            merge_recent(&a, &b, 3)
+                .iter()
+                .map(|p| p.unix)
+                .collect::<Vec<_>>(),
+            vec![2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn predictive_mode_stays_quiet_on_trend_growth() {
+        let params = BaselineParams::default();
+        // A host whose egress steadily rises: 1, 2, … 8 MB across 8 captures.
+        let base = rising_baseline("10.0.0.5", 8, 1_000_000, 1_000_000);
+        assert_eq!(base.host("10.0.0.5").unwrap().bytes_out_recent.len(), 8);
+        // The next capture continues the trend (~9 MB) — predictive mode must NOT flag it.
+        let prof = CaptureProfile {
+            hosts: vec![obs("10.0.0.5", 9_000_000, &["203.0.113.7"], &[443])],
+        };
+        let report = compare_to_baseline(&base, &prof, &params);
+        assert!(
+            report.deviations.is_empty(),
+            "legitimate on-trend growth must not deviate: {:?}",
+            report.deviations
+        );
+    }
+
+    #[test]
+    fn predictive_mode_catches_off_trend_jump_the_static_gate_misses() {
+        let params = BaselineParams::default();
+        let base = rising_baseline("10.0.0.5", 8, 1_000_000, 1_000_000);
+        let hb = base.host("10.0.0.5").unwrap();
+
+        // The trend forecast's upper band and the *static* mean+k·σ threshold — a genuine gap must
+        // exist between them (that gap is exactly what predictive mode adds).
+        let recent: Vec<f64> = hb.bytes_out_recent.iter().map(|p| p.value).collect();
+        let fc =
+            crate::forecast::forecast_next(&recent, &crate::forecast::ForecastParams::default())
+                .expect("enough points to forecast");
+        let band_hi = fc.forecast + params.forecast_z * fc.sigma;
+        let static_threshold = hb.bytes_out.mean + params.volume_k * hb.bytes_out.stddev();
+        assert!(
+            band_hi < static_threshold,
+            "predictive band ({band_hi:.0}) should be tighter than the static gate ({static_threshold:.0})"
+        );
+
+        // A value in that gap: below the static gate (the old detector is silent) but above the
+        // trend forecast — predictive mode catches it.
+        let observed = ((band_hi + static_threshold) / 2.0) as u64;
+        assert!((observed as f64) < static_threshold && (observed as f64) > band_hi);
+        let prof = CaptureProfile {
+            hosts: vec![obs("10.0.0.5", observed, &["203.0.113.7"], &[443])],
+        };
+        let report = compare_to_baseline(&base, &prof, &params);
+        assert_eq!(
+            report.deviations.len(),
+            1,
+            "the off-trend jump must deviate"
+        );
+        assert!(
+            report.deviations[0]
+                .evidence
+                .iter()
+                .any(|e| e.contains("cross-capture forecast")),
+            "{:?}",
+            report.deviations[0].evidence
+        );
+    }
+
+    #[test]
+    fn predictive_falls_back_to_static_without_a_series() {
+        // An older sidecar has the `bytes_out` distribution but no per-capture recency ring; the
+        // static mean+k·σ gate must still run (serde(default) back-compat).
+        let params = BaselineParams::default();
+        let mut base = BaselineProfile::new();
+        for (i, b) in [900u64, 1000, 1100, 950, 1050, 1000]
+            .into_iter()
+            .enumerate()
+        {
+            let prof = CaptureProfile {
+                hosts: vec![obs("10.0.0.5", b, &["203.0.113.7"], &[443])],
+            };
+            base = update_baseline(
+                base,
+                &output_with(prof, &format!("s{i}"), 10, 20),
+                1_000 + i as i64,
+                &params,
+            );
+        }
+        for h in base.hosts.iter_mut() {
+            h.bytes_out_recent.clear(); // simulate an old sidecar
+        }
+        let prof = CaptureProfile {
+            hosts: vec![obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443])],
+        };
+        let report = compare_to_baseline(&base, &prof, &params);
+        assert_eq!(report.deviations.len(), 1);
+        assert!(
+            report.deviations[0]
+                .evidence
+                .iter()
+                .any(|e| e.contains("vs mean")),
+            "fallback uses the static-gate evidence: {:?}",
+            report.deviations[0].evidence
+        );
     }
 
     #[test]
