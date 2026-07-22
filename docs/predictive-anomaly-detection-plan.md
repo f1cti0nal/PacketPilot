@@ -375,23 +375,24 @@ findings UI). A forecast-band overlay on the existing timeline chart is a docume
 
 - **Forecast-band overlay** on the UI timeline (`ui/src/lib/forecast.ts` + `ActivityHeatmap`) — draws
   `forecast ± z·σ` and the actual line over `time_histogram`, marking `traffic_anomaly` bins (PR #140).
-- **Cross-capture predictive mode** (this change) — extends the **BBL** sidecar with a bounded,
-  time-ordered per-host outbound-volume history (`HostBaseline.bytes_out_recent: Vec<RecentPoint>`,
-  `#[serde(default)]`), and in `compare_to_baseline` **supersedes** the static `mean + volume_k·σ`
-  volume gate with a **Holt trend forecast** of the next capture (`forecast_next` reused from the
-  `forecast` module; band `forecast ± forecast_z·σ`) whenever the host has ≥ `min_forecast_points`
-  samples — so a host on a legitimate rising trend no longer false-positives (the mean lags a trend),
-  while an *off-trend* jump (or a collapse below the trend) still fires as a `baseline_deviation`
-  (`PTS_DEV_VOLUME_FORECAST`). Older sidecars (no series) fall back to the static gate. A side benefit:
-  the scale-relative σ floor closes the old `sd == 0` blind spot (a huge spike over a perfectly
-  constant baseline was previously unflagged). Engine-only; rides the existing `--baseline` path and
-  the `baseline_deviation` UI surface (no CLI/UI/wasm change). New `BaselineParams`:
-  `forecast_enabled`, `forecast_z` (3.0), `min_forecast_points` (4), `max_recent_points` (24).
+- **Cross-capture predictive mode** — extends the **BBL** sidecar with bounded, time-ordered per-host
+  history rings for **outbound bytes, inbound bytes, and connection count**
+  (`HostBaseline.{bytes_out,bytes_in,flows}_recent: Vec<RecentPoint>`, `#[serde(default)]`), and in
+  `compare_to_baseline` **supersedes** the static `mean + volume_k·σ` gate on each metric with a **Holt
+  trend forecast** of the next capture (a shared `volume_forecast_dim` helper over `forecast_next`;
+  band `forecast ± forecast_z·σ`) whenever the host has ≥ `min_forecast_points` samples — so a host on
+  a legitimate rising trend no longer false-positives (the mean lags a trend), while an *off-trend*
+  jump (or a collapse below the trend) still fires as a `baseline_deviation` (`PTS_DEV_VOLUME_FORECAST`).
+  Older sidecars (no series) fall back to the static gate per metric. A side benefit: the scale-relative
+  σ floor closes the old `sd == 0` blind spot (a huge spike over a perfectly constant baseline was
+  previously unflagged). Engine-only; rides the existing `--baseline` path and the `baseline_deviation`
+  UI surface (no CLI/UI/wasm change). `BaselineParams`: `forecast_enabled`, `forecast_z` (3.0),
+  `min_forecast_points` (4), `max_recent_points` (24).
 
 **Still deferred:** **seasonality** (Holt-Winters / hour-of-day profiles); **per-peer / per-port
-sub-series**; **ingress forecasting** for inbound-flood victims; and extending the cross-capture
-forecast to `bytes_in`/`flows` (currently outbound volume only). Each is additive and does not disturb
-the shipped core.
+sub-series**; and **ingress forecasting** at the intra-capture (single-pcap) level for inbound-flood
+victims (the cross-capture forecast now covers inbound *volume* per capture, but the intra-capture PAD
+detector remains egress-only). Each is additive and does not disturb the shipped core.
 
 ---
 
