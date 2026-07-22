@@ -680,7 +680,14 @@ pub fn compare_to_baseline(output_json: &str, baseline_json: &str) -> Result<Str
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     let params = ppcap_core::BaselineParams::default();
     if let Some(prof) = out.baseline.clone() {
-        let devs = ppcap_core::compare_to_baseline(&base, &prof, &params).into_findings();
+        // Phase the seasonal forecast on the capture's own wall-clock start when available.
+        let capture_unix = out
+            .summary
+            .first_ts_ns
+            .map(|ns| ns.div_euclid(1_000_000_000))
+            .unwrap_or(0);
+        let devs =
+            ppcap_core::compare_to_baseline_at(&base, &prof, capture_unix, &params).into_findings();
         ppcap_core::fold_rule_findings(&mut out.summary, &devs);
     }
     serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))

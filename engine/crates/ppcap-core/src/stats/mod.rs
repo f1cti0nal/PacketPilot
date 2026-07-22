@@ -680,6 +680,13 @@ impl StatsAccumulator {
         }
     }
 
+    /// The earliest real frame timestamp seen so far (ns since the Unix epoch), or `None` if no
+    /// timestamped frame has been observed. Available before [`finish`](Self::finish) — used to phase
+    /// the seasonal baseline forecast on the capture's own wall-clock time.
+    pub fn first_ts_ns(&self) -> Option<i64> {
+        self.first_ts
+    }
+
     /// Project the per-host egress cells into a [`ForecastInput`] for Predictive Anomaly Detection:
     /// per internal host, outbound bytes re-bucketed to the same adaptive width the time histogram
     /// uses (so forecast bins line up with the UI timeline), zero-gap-filled across each host's own

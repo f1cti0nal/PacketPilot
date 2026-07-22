@@ -389,10 +389,23 @@ findings UI). A forecast-band overlay on the existing timeline chart is a docume
   UI surface (no CLI/UI/wasm change). `BaselineParams`: `forecast_enabled`, `forecast_z` (3.0),
   `min_forecast_points` (4), `max_recent_points` (24).
 
-**Still deferred:** **seasonality** (Holt-Winters / hour-of-day profiles); **per-peer / per-port
-sub-series**; and **ingress forecasting** at the intra-capture (single-pcap) level for inbound-flood
-victims (the cross-capture forecast now covers inbound *volume* per capture, but the intra-capture PAD
-detector remains egress-only). Each is additive and does not disturb the shipped core.
+- **Seasonality (Holt-Winters additive)** — makes the cross-capture volume forecast **rhythm-aware**.
+  Each host/metric keeps a bounded per-**phase** seasonal profile (`{metric}_seasonal: Vec<RunningStat>`,
+  one slot per phase — day-of-week by default, hour-of-day configurable), folded from each capture's
+  *own* wall-clock phase (via a new `CaptureProfile.capture_unix` threaded through
+  `compare_to_baseline_at`). When the profile is populated across ≥ `min_seasonal_phases` slots, the
+  forecast becomes **level + trend + seasonal factor** (`seasonal_forecast` deseasonalises the recency
+  ring, runs Holt via `forecast_next`, then re-adds the phase's factor), superseding the plain trend —
+  so a value that is normal *for its rhythm* is not flagged even if it is high overall, and an
+  *off-rhythm* value fires even if it is unremarkable against the flat mean. Falls back to the plain
+  trend/static gate when a phase profile is too sparse. Engine-only; rides `--baseline` +
+  `baseline_deviation` (no CLI/UI/wasm change). `BaselineParams`: `seasonal_enabled`, `seasonal_period`
+  (7), `seasonal_slot_secs` (86 400), `min_seasonal_samples` (2), `min_seasonal_phases` (3).
+
+**Still deferred:** **per-peer / per-port sub-series**; and **ingress forecasting** at the
+intra-capture (single-pcap) level for inbound-flood victims (the cross-capture forecast covers inbound
+*volume* per capture, but the intra-capture PAD detector remains egress-only). Each is additive and
+does not disturb the shipped core.
 
 ---
 

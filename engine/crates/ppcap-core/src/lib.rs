@@ -62,9 +62,9 @@ pub mod tls;
 
 pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
 pub use baseline::{
-    build_baseline, compare_to_baseline, merge as merge_baselines, update_baseline, BaselineParams,
-    BaselineProfile, CaptureProfile, Deviation, DeviationReport, HostBaseline, HostObservation,
-    RunningStat, BASELINE_SCHEMA_VERSION,
+    build_baseline, compare_to_baseline, compare_to_baseline_at, merge as merge_baselines,
+    update_baseline, BaselineParams, BaselineProfile, CaptureProfile, Deviation, DeviationReport,
+    HostBaseline, HostObservation, RunningStat, BASELINE_SCHEMA_VERSION,
 };
 pub use case::{run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator};
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
