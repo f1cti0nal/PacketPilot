@@ -553,12 +553,14 @@ pub fn run_source_visiting<'a>(
     }
 
     // Predictive Anomaly Detection. `stats` is still live (not consumed until `finish()` below), so
-    // we project its per-host egress series and forecast each host — emitting traffic-anomaly
-    // findings BEFORE `stats.apply_findings` so they uplift the per-IP threat cards and flow into
-    // incidents/chains exactly like every other detector. Single-capture; no sidecar, no history.
+    // we project its per-host egress AND ingress series and forecast each host — emitting
+    // traffic-anomaly findings BEFORE `stats.apply_findings` so they uplift the per-IP threat cards
+    // and flow into incidents/chains exactly like every other detector. Single-capture; no sidecar.
     if cfg.forecast.enabled {
-        let fc_input = stats.forecast_input(&cfg.forecast);
-        findings.extend(detect_traffic_anomalies(&fc_input, &cfg.forecast).into_findings());
+        let egress = stats.forecast_input(&cfg.forecast);
+        findings.extend(detect_traffic_anomalies(&egress, &cfg.forecast).into_findings());
+        let ingress = stats.forecast_input_ingress(&cfg.forecast);
+        findings.extend(detect_traffic_anomalies(&ingress, &cfg.forecast).into_findings());
     }
 
     stats.apply_findings(&findings);

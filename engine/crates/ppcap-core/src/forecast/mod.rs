@@ -97,12 +97,43 @@ pub struct HostSeries {
     pub bins: Vec<u64>,
 }
 
+/// Which direction of a host's traffic a series measures — its **egress** (bytes it sent) or its
+/// **ingress** (bytes it received). Drives the evidence wording and the ATT&CK context; a finding is
+/// attributed to the host either way (the sender for egress, the *receiving victim* for ingress).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FlowDir {
+    /// Bytes the host sent (exfil burst / outbound-flood participation).
+    #[default]
+    Out,
+    /// Bytes the host received (a volumetric inbound flood, or bulk inbound staging).
+    In,
+}
+
+impl FlowDir {
+    /// The direction word used in evidence strings.
+    pub fn word(self) -> &'static str {
+        match self {
+            FlowDir::Out => "outbound",
+            FlowDir::In => "inbound",
+        }
+    }
+    /// ATT&CK context id for an anomalous volume in this direction (Exfil vs Network DoS).
+    fn attack(self) -> &'static str {
+        match self {
+            FlowDir::Out => "T1048", // Exfiltration Over Alternative Protocol
+            FlowDir::In => "T1498",  // Network Denial of Service
+        }
+    }
+}
+
 /// The per-host series to forecast plus the shared bin width. Deterministically ordered (hosts
 /// sorted, bins ascending in time) by the builder.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ForecastInput {
     pub bin_secs: i64,
     pub series: Vec<HostSeries>,
+    /// Whether `series` measures egress or ingress (defaults to egress for back-compatible literals).
+    pub direction: FlowDir,
 }
 
 /// The three shapes a forecast departure can take.
@@ -192,7 +223,7 @@ pub fn detect_traffic_anomalies(input: &ForecastInput, p: &ForecastParams) -> Fo
         }
         report.hosts_analyzed += 1;
         let hits = forecast_host(s, p);
-        if let Some(anomaly) = aggregate(s, &hits) {
+        if let Some(anomaly) = aggregate(s, &hits, input.direction) {
             report.anomalies.push(anomaly);
         }
     }
@@ -330,10 +361,11 @@ fn forecast_host(s: &HostSeries, p: &ForecastParams) -> Vec<Hit> {
 
 /// Fold a host's hits into a single [`Anomaly`] (one finding per host, aggregating hit kinds — the
 /// same one-host-one-finding shape BBL uses). Returns `None` when there were no hits.
-fn aggregate(s: &HostSeries, hits: &[Hit]) -> Option<Anomaly> {
+fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
     if hits.is_empty() {
         return None;
     }
+    let word = dir.word();
     // The worst instance of each kind (largest |z|), for the evidence line.
     let worst = |k: HitKind| -> Option<Hit> {
         hits.iter().filter(|h| h.kind == k).copied().max_by(|a, b| {
@@ -352,7 +384,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit]) -> Option<Anomaly> {
     if let Some(h) = worst(HitKind::Spike) {
         dims.push((
             format!(
-                "forecast: outbound {} at {} — one-step forecast {} (±{}), {:.0}σ above expected",
+                "forecast: {word} {} at {} — one-step forecast {} (±{}), {:.0}σ above expected",
                 human_bytes(h.actual as u64),
                 hhmmss(s.start_epoch_sec + h.bin as i64 * s.bin_secs),
                 human_bytes(h.forecast.max(0.0) as u64),
@@ -361,25 +393,25 @@ fn aggregate(s: &HostSeries, hits: &[Hit]) -> Option<Anomaly> {
             ),
             PTS_FC_SPIKE,
         ));
-        // Anomalous outbound volume — Exfiltration Over Alternative Protocol (context).
-        push_unique(&mut attack, "T1048");
+        // Anomalous volume — Exfiltration (egress) / Network DoS (ingress) context.
+        push_unique(&mut attack, dir.attack());
     }
     if let Some(h) = worst(HitKind::LevelShift) {
         dims.push((
             format!(
-                "forecast: sustained level shift near {} — actual {}, forecast {} (CUSUM changepoint)",
+                "forecast: sustained {word} level shift near {} — actual {}, forecast {} (CUSUM changepoint)",
                 hhmmss(s.start_epoch_sec + h.bin as i64 * s.bin_secs),
                 human_bytes(h.actual as u64),
                 human_bytes(h.forecast.max(0.0) as u64),
             ),
             PTS_FC_LEVEL_SHIFT,
         ));
-        push_unique(&mut attack, "T1048");
+        push_unique(&mut attack, dir.attack());
     }
     if let Some(h) = worst(HitKind::Drop) {
         dims.push((
             format!(
-                "forecast: outbound dropped to {} at {} — forecast {} (±{}), {:.0}σ below expected",
+                "forecast: {word} dropped to {} at {} — forecast {} (±{}), {:.0}σ below expected",
                 human_bytes(h.actual as u64),
                 hhmmss(s.start_epoch_sec + h.bin as i64 * s.bin_secs),
                 human_bytes(h.forecast.max(0.0) as u64),
@@ -407,7 +439,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit]) -> Option<Anomaly> {
         HitKind::LevelShift => "sustained traffic shift",
     };
     let title = format!(
-        "{host}: predictive {verb} — actual {actual} vs forecast {fc} ({z:.0}σ)",
+        "{host}: predictive {word} {verb} — actual {actual} vs forecast {fc} ({z:.0}σ)",
         host = s.host,
         actual = human_bytes(head.actual as u64),
         fc = human_bytes(head.forecast.max(0.0) as u64),
@@ -488,6 +520,15 @@ mod tests {
         ForecastInput {
             bin_secs: 1,
             series,
+            direction: FlowDir::Out,
+        }
+    }
+
+    fn input_dir(series: Vec<HostSeries>, direction: FlowDir) -> ForecastInput {
+        ForecastInput {
+            bin_secs: 1,
+            series,
+            direction,
         }
     }
 
@@ -498,6 +539,32 @@ mod tests {
         let rep = detect_traffic_anomalies(&input(vec![s]), &params());
         assert_eq!(rep.hosts_analyzed, 1);
         assert!(rep.anomalies.is_empty(), "steady traffic must not flag");
+    }
+
+    #[test]
+    fn ingress_direction_labels_evidence_inbound() {
+        // The same spike series, tagged as ingress, must read "inbound" (never "outbound") and carry
+        // the Network-DoS ATT&CK context.
+        let mut bins = vec![1_000_000u64; 30];
+        bins[20] = 40_000_000;
+        let rep = detect_traffic_anomalies(
+            &input_dir(vec![series("10.0.0.3", &bins)], FlowDir::In),
+            &params(),
+        );
+        assert_eq!(rep.anomalies.len(), 1);
+        let a = &rep.anomalies[0];
+        assert!(
+            a.evidence.iter().any(|e| e.contains("inbound")),
+            "{:?}",
+            a.evidence
+        );
+        assert!(
+            !a.evidence.iter().any(|e| e.contains("outbound")),
+            "{:?}",
+            a.evidence
+        );
+        assert!(a.title.contains("inbound"), "{}", a.title);
+        assert!(a.attack.iter().any(|t| t == "T1498"), "{:?}", a.attack);
     }
 
     #[test]

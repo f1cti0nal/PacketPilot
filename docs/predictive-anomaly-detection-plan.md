@@ -102,12 +102,14 @@ follow-ups (§13), scoped out exactly as BBL scopes out its team-store and ML up
 Every current detector answers "is this value past a fixed line?" PAD answers "is this value far from
 what we *predicted*?" — which adapts to each host's own scale and trend, so it neither drowns a busy
 server in alerts nor misses a quiet host's small-but-off-trend burst. PAD forecasts **outbound egress
-keyed by the internal sender**, so it detects a host *emitting* volume, not a victim *receiving* it.
-The three shapes it catches:
+keyed by the internal sender** and, symmetrically, **inbound ingress keyed by the internal receiver**
+(§13) — detecting both a host *emitting* volume and a victim *receiving* it, each attributed to the
+internal host it concerns. The three shapes it catches (described for egress; ingress mirrors them on
+the receive series):
 
 - **Egress spike** — one bin far above the upper band: a host *launching* outbound volume (an exfil
-  burst, a C2 dump, or participation in an outbound flood). It is **not** an inbound-DDoS-victim
-  detector — a host *under* an inbound flood is inbound bytes and out of scope (that is `SynFlood`).
+  burst, a C2 dump, or participation in an outbound flood). The symmetric **ingress spike** flags a host
+  *under* an inbound byte-flood (`T1498`), complementing `SynFlood`'s half-open-connection view (§13).
 - **Transient drop** — one bin far below the lower band where the forecast expected real traffic: a
   collapse toward silence that then **recovers** (a stalled transfer, a paused process). A host that
   goes silent and never resumes has no trailing bins, so end-of-capture silence is out of scope (§12).
@@ -366,6 +368,8 @@ findings UI). A forecast-band overlay on the existing timeline chart is a docume
 **Open questions for review:** (1) default `z` — 4, or expose a UI sensitivity control? (2) should a
 *disappeared* baseline beacon (a drop of a previously-regular channel) escalate above a generic drop?
 (3) forecast **ingress** as well as egress for inbound-flood victims, or leave that to `SynFlood`?
+— **resolved:** ingress *is* forecast (a second per-host receive series, `T1498`), complementing rather
+than replacing `SynFlood` (§13, "Intra-capture ingress forecasting").
 
 ---
 
@@ -402,10 +406,20 @@ findings UI). A forecast-band overlay on the existing timeline chart is a docume
   `baseline_deviation` (no CLI/UI/wasm change). `BaselineParams`: `seasonal_enabled`, `seasonal_period`
   (7), `seasonal_slot_secs` (86 400), `min_seasonal_samples` (2), `min_seasonal_phases` (3).
 
-**Still deferred:** **per-peer / per-port sub-series**; and **ingress forecasting** at the
-intra-capture (single-pcap) level for inbound-flood victims (the cross-capture forecast covers inbound
-*volume* per capture, but the intra-capture PAD detector remains egress-only). Each is additive and
-does not disturb the shipped core.
+- **Intra-capture ingress forecasting** — the single-pcap PAD detector now forecasts each internal
+  host's **received** (inbound) byte series alongside its egress one, so an inbound-flood/spike victim
+  is flagged *within one capture* rather than only across captures. `stats` folds a second bounded
+  per-host/second grid keyed on the **internal destination** (`per_host_epoch_in`, a `fold_forecast_cell`
+  helper shared with the egress grid), and `forecast_input_ingress` projects it into the same
+  `ForecastInput` carrying a new `direction: FlowDir` (`Out`/`In`). The forecaster is direction-blind;
+  only `aggregate` reads the tag — labelling evidence/title **inbound** vs **outbound** and mapping the
+  MITRE technique to `T1498` (Network DoS) for ingress vs `T1048` (Exfiltration) for egress. `analyze`
+  runs both passes through the *same* `detect_traffic_anomalies`, so an inbound anomaly is attributed to
+  the internal **receiver** (the victim) and rides the identical finding → threat-card path. Complements
+  `SynFlood` (half-open connection floods) by catching high-**byte** inbound spikes it does not model.
+  Engine-only; no CLI/UI/wasm change, no new config (reuses `ForecastParams` and `max_forecast_cells`).
+
+**Still deferred:** **per-peer / per-port sub-series** — additive and does not disturb the shipped core.
 
 ---
 

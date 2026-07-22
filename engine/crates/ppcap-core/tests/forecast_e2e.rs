@@ -12,6 +12,9 @@ use ppcap_core::model::finding::FindingKind;
 
 /// The spiking host in [`Scenario::TrafficSpike`] is `host_ip(0)`.
 const SPIKE_HOST: &str = "10.0.0.10";
+/// The burst's internal receiver in [`Scenario::TrafficSpike`] is `host_ip(1)` — the same spike
+/// lands on its *ingress* series, so the inbound forecaster attributes an anomaly to it.
+const SPIKE_PEER: &str = "10.0.1.10";
 
 fn spike_capture(packets: u64) -> tempfile::TempPath {
     let cfg = GenConfig {
@@ -60,6 +63,38 @@ fn traffic_spike_scenario_raises_a_forecast_anomaly() {
     assert!(
         s.ip_threats.iter().any(|t| t.ip == SPIKE_HOST),
         "the spiking host has a threat card"
+    );
+}
+
+#[test]
+fn traffic_spike_scenario_raises_an_inbound_anomaly_on_the_receiver() {
+    let path = spike_capture(400);
+    let out = analyze::run(&path, &PipelineConfig::default(), |_, _, _| {}).expect("analyze");
+    let s = &out.summary;
+
+    // The same mid-capture burst that spikes the sender's egress lands on the receiver's ingress.
+    // The inbound forecaster tracks that host's receive baseline and flags the burst bin,
+    // attributing the anomaly to the internal victim (`host_ip(1)`), not the sender.
+    let inbound = s
+        .findings
+        .iter()
+        .filter(|f| f.kind == FindingKind::TrafficAnomaly && f.src_ip == SPIKE_PEER)
+        .find(|f| f.evidence.iter().any(|e| e.contains("inbound")));
+    let a = inbound.unwrap_or_else(|| {
+        panic!(
+            "the burst receiver {SPIKE_PEER} must get an inbound traffic_anomaly; \
+             anomalies seen: {:?}",
+            s.findings
+                .iter()
+                .filter(|f| f.kind == FindingKind::TrafficAnomaly)
+                .map(|f| f.src_ip.as_str())
+                .collect::<Vec<_>>()
+        )
+    });
+    assert!(a.first_seen_ns.is_some() && a.last_seen_ns.is_some());
+    assert!(
+        s.ip_threats.iter().any(|t| t.ip == SPIKE_PEER),
+        "the burst receiver has a threat card"
     );
 }
 

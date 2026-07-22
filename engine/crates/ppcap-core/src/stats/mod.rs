@@ -159,6 +159,10 @@ pub struct StatsAccumulator {
     /// existing cell always accumulates; a new cell past the cap is dropped) — O(1) per packet and
     /// non-distorting under saturation (see the fold site in `observe_packet`).
     per_host_epoch: HashMap<(IpAddr, i64), u64>,
+    /// The **ingress** mirror of `per_host_epoch`: per-`(internal host, epoch second)` bytes *received*.
+    /// Projected by [`Self::forecast_input_ingress`] so an inbound-flood / bulk-staging victim's own
+    /// spike is forecast too. Same insert-only bound.
+    per_host_epoch_in: HashMap<(IpAddr, i64), u64>,
 
     /// Fixed 13-slot category breakdown indexed by `Category::all()` position.
     per_category: [CatStat; 13],
@@ -246,6 +250,7 @@ impl StatsAccumulator {
             per_proto_path: HashMap::new(),
             per_second: HashMap::new(),
             per_host_epoch: HashMap::new(),
+            per_host_epoch_in: HashMap::new(),
             per_category: [CatStat::default(); 13],
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
@@ -334,13 +339,25 @@ impl StatsAccumulator {
         // scan that would scale with capture length) and, because eviction never removes an interior
         // cell, the per-host series the forecaster reads is never silently corrupted into a false
         // drop — a saturated capture simply stops extending the series rather than distorting it.
-        if p.ts_known && !classify_ip(src_ip).is_external() {
+        if p.ts_known {
             let epoch_sec = p.ts_ns.div_euclid(1_000_000_000);
-            let key = (src_ip, epoch_sec);
-            if let Some(cell) = self.per_host_epoch.get_mut(&key) {
-                *cell += wire;
-            } else if self.per_host_epoch.len() < self.cfg.max_forecast_cells {
-                self.per_host_epoch.insert(key, wire);
+            // Egress cell for an internal sender, ingress cell for an internal receiver — so a host's
+            // own inbound spike (a volumetric flood or bulk staging) is forecast as well as its egress.
+            if !classify_ip(src_ip).is_external() {
+                fold_forecast_cell(
+                    &mut self.per_host_epoch,
+                    (src_ip, epoch_sec),
+                    wire,
+                    self.cfg.max_forecast_cells,
+                );
+            }
+            if !classify_ip(dst_ip).is_external() {
+                fold_forecast_cell(
+                    &mut self.per_host_epoch_in,
+                    (dst_ip, epoch_sec),
+                    wire,
+                    self.cfg.max_forecast_cells,
+                );
             }
         }
 
@@ -698,10 +715,35 @@ impl StatsAccumulator {
     /// detector. Deterministic (`BTreeMap` ordering; host ranking by total egress with an `IpAddr`
     /// tie-break) and bounded (top-`max_hosts` hosts, ≤ `max_time_buckets` bins per host).
     pub fn forecast_input(&self, params: &ForecastParams) -> ForecastInput {
+        self.project_forecast(&self.per_host_epoch, crate::forecast::FlowDir::Out, params)
+    }
+
+    /// The **ingress** counterpart of [`forecast_input`](Self::forecast_input): per-internal-host
+    /// *received*-bytes bin series, tagged [`FlowDir::In`](crate::forecast::FlowDir::In) so the
+    /// forecaster's findings read "inbound" and are attributed to the receiving host (the victim of a
+    /// volumetric inbound flood or bulk inbound staging).
+    pub fn forecast_input_ingress(&self, params: &ForecastParams) -> ForecastInput {
+        self.project_forecast(
+            &self.per_host_epoch_in,
+            crate::forecast::FlowDir::In,
+            params,
+        )
+    }
+
+    /// Shared projector behind [`forecast_input`](Self::forecast_input) and
+    /// [`forecast_input_ingress`](Self::forecast_input_ingress): re-bucket one per-`(host, second)`
+    /// map to the time-histogram width, keep the top-`max_hosts` by total bytes, and materialise each
+    /// as a contiguous zero-gap-filled [`HostSeries`], tagged with `dir`.
+    fn project_forecast(
+        &self,
+        cells: &HashMap<(IpAddr, i64), u64>,
+        dir: crate::forecast::FlowDir,
+        params: &ForecastParams,
+    ) -> ForecastInput {
         let (Some(first_ns), Some(last_ns)) = (self.first_ts, self.last_ts) else {
             return ForecastInput::default();
         };
-        if self.per_host_epoch.is_empty() {
+        if cells.is_empty() {
             return ForecastInput::default();
         }
         let first_sec = first_ns.div_euclid(1_000_000_000);
@@ -711,7 +753,7 @@ impl StatsAccumulator {
         // Group cells by host -> (width-aligned bin start -> bytes), deterministically.
         let mut by_host: BTreeMap<IpAddr, BTreeMap<i64, u64>> = BTreeMap::new();
         let mut totals: BTreeMap<IpAddr, u64> = BTreeMap::new();
-        for (&(ip, sec), &bytes) in &self.per_host_epoch {
+        for (&(ip, sec), &bytes) in cells {
             let bin_start = sec.div_euclid(width) * width;
             *by_host.entry(ip).or_default().entry(bin_start).or_default() += bytes;
             *totals.entry(ip).or_default() += bytes;
@@ -753,6 +795,7 @@ impl StatsAccumulator {
         ForecastInput {
             bin_secs: width,
             series,
+            direction: dir,
         }
     }
 
@@ -1342,6 +1385,22 @@ fn choose_bucket_width(first_sec: i64, last_sec: i64, max_buckets: usize) -> i64
 fn aligned_bucket_count(first_sec: i64, last_sec: i64, width: i64) -> i64 {
     let width = width.max(1);
     last_sec.div_euclid(width) - first_sec.div_euclid(width) + 1
+}
+
+/// Insert-only bounded accumulate for a forecast `(host, second)` cell: an existing cell always
+/// accumulates `wire`; a brand-new cell is added only while under `cap` (else dropped). O(1), no
+/// eviction scan, and never removes an interior cell — see the fold site in `observe_packet`.
+fn fold_forecast_cell(
+    map: &mut HashMap<(IpAddr, i64), u64>,
+    key: (IpAddr, i64),
+    wire: u64,
+    cap: usize,
+) {
+    if let Some(cell) = map.get_mut(&key) {
+        *cell += wire;
+    } else if map.len() < cap {
+        map.insert(key, wire);
+    }
 }
 
 /// Insert-or-update a bounded map with a heavy-hitter-preserving eviction policy.
@@ -2271,6 +2330,22 @@ mod tests {
             input.series.iter().all(|s| s.host != "8.8.8.8"),
             "external senders are excluded from the forecast substrate"
         );
+        // ...but the internal *receiver* IS captured on the ingress side — an inbound spike victim.
+        use crate::forecast::{detect_traffic_anomalies, FlowDir};
+        let ing = acc.forecast_input_ingress(&ForecastParams::default());
+        assert_eq!(ing.direction, FlowDir::In);
+        assert!(ing.series.iter().any(|s| s.host == "10.0.0.9"));
+        let rep = detect_traffic_anomalies(&ing, &ForecastParams::default());
+        assert_eq!(
+            rep.anomalies.len(),
+            1,
+            "the received-bytes spike must raise one anomaly"
+        );
+        assert_eq!(rep.anomalies[0].host, "10.0.0.9");
+        assert!(rep.anomalies[0]
+            .evidence
+            .iter()
+            .any(|e| e.contains("inbound")));
     }
 
     #[test]
