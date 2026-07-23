@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed — ready to implement |
+| **Status** | **Implemented** on this branch — engine custody module + CLI (`--evidence`, `ppcap verify`) + docs; UI/WASM untouched by design |
 | **Feature branch** | `claude/smart-alerting-context-t78kzq` (stacked after Smart Alerting) |
 | **Date** | 2026-07-23 |
 | **Scope** | Engine (Rust: new `custody/` module — sealed manifest + verification) · CLI (`analyze --evidence` + `ppcap verify` subcommand) · Docs (user doc + README) · **No UI / no WASM changes in v1** (file-centric, local-first; Tauri hook is a follow-up) |
@@ -16,6 +16,14 @@
 > layer generalizes: `SanitizeManifest` (sanitize/mod.rs:140 — tool/version/options/hashes
 > sidecar) and the Time Machine sidecar discipline (schema_version, reject-newer, provenance).
 > Every cited path/line verified against the checked-out tree.
+
+> **Implementation status (what actually shipped).** Everything in §2–§7 landed: `custody/mod.rs`
+> (manifest + seal + verify, 6 unit tests incl. tamper/missing/size-mismatch outcomes and the
+> FIPS 180-4 vector), `analyze --evidence` assembling the manifest LAST after every artifact
+> write, `ppcap verify` with per-file outcomes and exit-code gating (2 CLI tests incl. a full
+> gen→analyze→verify→tamper roundtrip over relative paths), docs/evidence-custody.md, README.
+> Verified here: 836 engine tests, clippy, fmt; ppcap-wasm compiles untouched. Open question
+> §9(1) resolved as planned (v1: no summary-JSON change).
 
 ---
 
