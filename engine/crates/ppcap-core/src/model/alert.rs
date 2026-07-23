@@ -273,6 +273,50 @@ pub struct Alert {
     pub last_seen_ns: Option<i64>,
 }
 
+/// Compact projection of one alert for diff rows (no context bundle — the full alert lives
+/// in its own summary's queue).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AlertDiffEntry {
+    pub id: String,
+    pub source: AlertSource,
+    pub band: PriorityBand,
+    pub priority: u16,
+    pub severity: Severity,
+    pub title: String,
+    pub actor: String,
+}
+
+/// One story present in both queues whose rank moved (priority and/or band).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AlertDiffChange {
+    pub id: String,
+    /// The AFTER side's headline (the current story).
+    pub title: String,
+    pub actor: String,
+    pub before_priority: u16,
+    pub after_priority: u16,
+    /// `after - before` (signed) — positive means the story got worse.
+    pub delta: i32,
+    pub before_band: PriorityBand,
+    pub after_band: PriorityBand,
+}
+
+/// The pairwise diff of two alert queues (same network, two points in time), matched by the
+/// stable alert id — Time Machine's `newly_flagged` idea generalized from indicators to whole
+/// stories. Produced by [`crate::detect::alerts::diff_alerts`].
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AlertDiff {
+    /// Stories only in the newer queue, worst-first — the actionable delta.
+    pub new_alerts: Vec<AlertDiffEntry>,
+    /// Stories only in the older queue, worst-first — resolved (or no longer observed).
+    pub resolved: Vec<AlertDiffEntry>,
+    /// Stories in both whose rank moved, by |delta| desc — a climbing story is the early
+    /// warning.
+    pub changed: Vec<AlertDiffChange>,
+    /// Stories in both with an identical rank.
+    pub unchanged: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

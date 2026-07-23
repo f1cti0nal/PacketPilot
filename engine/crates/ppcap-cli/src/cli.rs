@@ -138,7 +138,12 @@ pub enum Command {
     Alerts {
         /// The analysis-output JSON (from `analyze --json`).
         summary: PathBuf,
-        /// Write the updated analysis JSON (with the re-derived queue) here; "-" => stdout.
+        /// Diff mode: an OLDER analysis of the same network to compare against — reports
+        /// new / resolved / changed stories matched by their stable alert ids.
+        #[arg(long)]
+        diff: Option<PathBuf>,
+        /// Write JSON here ("-" => stdout): the updated analysis, or with `--diff` the
+        /// AlertDiff report.
         #[arg(long)]
         json: Option<String>,
     },
@@ -938,13 +943,71 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 Ok(())
             }
         },
-        Command::Alerts { summary, json } => {
+        Command::Alerts {
+            summary,
+            diff,
+            json,
+        } => {
             let text = std::fs::read_to_string(&summary)
                 .with_context(|| format!("read analysis output {}", summary.display()))?;
             let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
                 .with_context(|| format!("parse analysis output {}", summary.display()))?;
             // Idempotent pure re-derive over the loaded summary (same fn as the analyze seam).
             out.summary.alerts = ppcap_core::derive_alerts(&out.summary);
+
+            // Diff mode: compare against an OLDER analysis, matched by stable alert ids.
+            if let Some(old_path) = diff.as_ref() {
+                let old_text = std::fs::read_to_string(old_path)
+                    .with_context(|| format!("read older analysis {}", old_path.display()))?;
+                let mut old: ppcap_core::AnalysisOutput = serde_json::from_str(&old_text)
+                    .with_context(|| format!("parse older analysis {}", old_path.display()))?;
+                // Re-derive on the old side too, so pre-alerting summaries diff correctly.
+                old.summary.alerts = ppcap_core::derive_alerts(&old.summary);
+                let d = ppcap_core::diff_alerts(&old.summary.alerts, &out.summary.alerts);
+                eprintln!(
+                    "alert diff: {} new, {} resolved, {} changed, {} unchanged (old: {} alerts, new: {})",
+                    d.new_alerts.len(),
+                    d.resolved.len(),
+                    d.changed.len(),
+                    d.unchanged,
+                    old.summary.alerts.len(),
+                    out.summary.alerts.len(),
+                );
+                for e in &d.new_alerts {
+                    eprintln!(
+                        "  NEW      [{:<11} {:>3}/100] {}",
+                        e.band.as_str(),
+                        e.priority,
+                        e.title
+                    );
+                }
+                for e in &d.resolved {
+                    eprintln!(
+                        "  RESOLVED [{:<11} {:>3}/100] {}",
+                        e.band.as_str(),
+                        e.priority,
+                        e.title
+                    );
+                }
+                for c in &d.changed {
+                    eprintln!(
+                        "  CHANGED  [{}→{} {:+}] {}",
+                        c.before_band.as_str(),
+                        c.after_band.as_str(),
+                        c.delta,
+                        c.title
+                    );
+                }
+                if let Some(path) = json.as_deref() {
+                    let s = serde_json::to_string_pretty(&d)?;
+                    match path {
+                        "-" => println!("{s}"),
+                        p => std::fs::write(p, &s)
+                            .with_context(|| format!("write alert diff to {p}"))?,
+                    }
+                }
+                return Ok(());
+            }
             if out.summary.alerts.is_empty() {
                 eprintln!("alerts: none — no findings rose above informational");
             } else {
@@ -1401,12 +1464,92 @@ mod reputation_cli_tests {
     fn alerts_subcommand_parses() {
         let cli = Cli::try_parse_from(["ppcap", "alerts", "out.json", "--json", "-"]).unwrap();
         match cli.command {
-            Command::Alerts { summary, json } => {
+            Command::Alerts {
+                summary,
+                diff,
+                json,
+            } => {
                 assert_eq!(summary, std::path::PathBuf::from("out.json"));
+                assert_eq!(diff, None);
                 assert_eq!(json.as_deref(), Some("-"));
             }
             _ => panic!("expected Alerts"),
         }
+    }
+
+    #[test]
+    fn alerts_diff_reports_new_and_changed() {
+        // Two hand-built analyses of the "same network": the old one has a Medium beacon on
+        // one host; the new one has that host climbing plus a brand-new story. The diff must
+        // report one CHANGED and one NEW, and --json must emit the AlertDiff report.
+        let mk = |hosts: &[(&str, u16)]| -> ppcap_core::AnalysisOutput {
+            let mut summary = ppcap_core::Summary::empty();
+            summary.findings = hosts
+                .iter()
+                .map(|(host, score)| ppcap_core::Finding {
+                    kind: ppcap_core::FindingKind::Beacon,
+                    severity: ppcap_core::Severity::from_score(*score),
+                    score: *score,
+                    title: format!("beacon: {host}"),
+                    src_ip: host.to_string(),
+                    dst_ip: Some("45.77.13.37".to_string()),
+                    dst_port: Some(443),
+                    attack: vec!["T1071".to_string()],
+                    evidence: vec!["periodic callbacks".to_string()],
+                    interval_ns: None,
+                    jitter_cv: None,
+                    contacts: None,
+                    first_seen_ns: Some(1_000_000_000),
+                    last_seen_ns: Some(2_000_000_000),
+                    victims: Vec::new(),
+                })
+                .collect();
+            ppcap_core::AnalysisOutput {
+                schema_version: 1,
+                engine_version: "0.0.0".to_string(),
+                source_path: "t.pcap".to_string(),
+                source_sha256: None,
+                source_bytes: 0,
+                link_type: "EN10MB".to_string(),
+                summary,
+                flows_parquet_path: None,
+                elapsed_ms: 0,
+                baseline: None,
+            }
+        };
+        let old_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            old_file.path(),
+            mk(&[("10.0.0.1", 45)]).to_json_pretty().unwrap(),
+        )
+        .unwrap();
+        let new_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            new_file.path(),
+            mk(&[("10.0.0.1", 70), ("10.0.0.2", 45)])
+                .to_json_pretty()
+                .unwrap(),
+        )
+        .unwrap();
+        let report_file = tempfile::NamedTempFile::new().unwrap();
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "alerts",
+            new_file.path().to_str().unwrap(),
+            "--diff",
+            old_file.path().to_str().unwrap(),
+            "--json",
+            report_file.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let d: ppcap_core::AlertDiff =
+            serde_json::from_str(&std::fs::read_to_string(report_file.path()).unwrap()).unwrap();
+        assert_eq!(d.new_alerts.len(), 1);
+        assert_eq!(d.new_alerts[0].actor, "10.0.0.2");
+        assert_eq!(d.changed.len(), 1);
+        assert!(d.changed[0].delta > 0);
+        assert_eq!(d.resolved.len(), 0);
     }
 
     #[test]

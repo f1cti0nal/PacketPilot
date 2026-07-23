@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed — ready to implement |
+| **Status** | **Implemented** on this branch — engine `diff_alerts` + CLI `--diff` + Compare-tab Alerts section |
 | **Feature branch** | `claude/smart-alerting-context-t78kzq` (stacked; PR #149) |
 | **Date** | 2026-07-23 |
 | **Scope** | Engine (Rust: pure `diff_alerts` + `AlertDiff` model) · CLI (`ppcap alerts <new> --diff <old>`) · UI (Compare tab gains an Alerts section via `lib/diff.ts`) · Docs |
@@ -15,6 +15,13 @@
 > captures: `host:<ip>` / `chain:<host-set-hash>` / `rollup:<kind>`). Grounded in firsthand
 > reads of `ui/src/lib/diff.ts` (`diffByKey` generic, `SummaryDiff`, per-entity delta fns) and
 > the `Alerts` CLI subcommand.
+
+> **Implementation status (what actually shipped).** Everything in §2–§5 landed: the
+> `AlertDiff` model + pure `diff_alerts` (4 unit tests: partition, ordering, identity, serde),
+> `ppcap alerts <new> --diff <old>` with the human table + `--json` AlertDiff report (parse +
+> dispatch tests incl. a two-summary new/changed roundtrip), and the Compare tab's Alerts
+> section via `lib/diff.ts` (`alertDeltas` + `SummaryDiff.alerts`, 4 new UI tests). Verified
+> here: 844 engine tests, 1028 UI tests, clippy, `tsc`, fmt.
 
 ---
 

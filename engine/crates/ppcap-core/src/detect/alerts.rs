@@ -32,8 +32,8 @@ use std::net::IpAddr;
 
 use crate::enrich::{classify_ip, cloud_provider, RepStatus};
 use crate::model::alert::{
-    Alert, AlertContext, AlertSource, ContextEntry, ContextKind, HostContext, PeerContext,
-    PriorityBand,
+    Alert, AlertContext, AlertDiff, AlertSource, ContextEntry, ContextKind, HostContext,
+    PeerContext, PriorityBand,
 };
 use crate::model::finding::{Finding, FindingKind};
 use crate::model::severity::Severity;
@@ -1238,6 +1238,79 @@ fn truncate_with_overflow(alerts: Vec<Alert>, summary: &Summary) -> Vec<Alert> {
     kept
 }
 
+/// Pairwise diff of two alert queues (same network, two points in time), matched by the
+/// stable alert id. Pure and deterministic: ids are unique within a queue by construction,
+/// every output vector carries a strict total order ending in `id asc`.
+pub fn diff_alerts(before: &[Alert], after: &[Alert]) -> AlertDiff {
+    use crate::model::alert::{AlertDiffChange, AlertDiffEntry};
+
+    let entry = |a: &Alert| AlertDiffEntry {
+        id: a.id.clone(),
+        source: a.source,
+        band: a.band,
+        priority: a.priority,
+        severity: a.severity,
+        title: a.title.clone(),
+        actor: a.actor.clone(),
+    };
+    let before_by_id: BTreeMap<&str, &Alert> = before.iter().map(|a| (a.id.as_str(), a)).collect();
+    let after_by_id: BTreeMap<&str, &Alert> = after.iter().map(|a| (a.id.as_str(), a)).collect();
+
+    let mut new_alerts: Vec<AlertDiffEntry> = after
+        .iter()
+        .filter(|a| !before_by_id.contains_key(a.id.as_str()))
+        .map(entry)
+        .collect();
+    let mut resolved: Vec<AlertDiffEntry> = before
+        .iter()
+        .filter(|a| !after_by_id.contains_key(a.id.as_str()))
+        .map(entry)
+        .collect();
+    let mut changed: Vec<AlertDiffChange> = Vec::new();
+    let mut unchanged: u64 = 0;
+    for (id, b) in &before_by_id {
+        let Some(a) = after_by_id.get(id) else {
+            continue;
+        };
+        if a.priority == b.priority && a.band == b.band {
+            unchanged += 1;
+        } else {
+            changed.push(AlertDiffChange {
+                id: (*id).to_string(),
+                title: a.title.clone(),
+                actor: a.actor.clone(),
+                before_priority: b.priority,
+                after_priority: a.priority,
+                delta: a.priority as i32 - b.priority as i32,
+                before_band: b.band,
+                after_band: a.band,
+            });
+        }
+    }
+
+    let worst_first = |x: &AlertDiffEntry, y: &AlertDiffEntry| {
+        y.priority
+            .cmp(&x.priority)
+            .then(y.severity.rank().cmp(&x.severity.rank()))
+            .then_with(|| x.id.cmp(&y.id))
+    };
+    new_alerts.sort_by(worst_first);
+    resolved.sort_by(worst_first);
+    changed.sort_by(|x, y| {
+        y.delta
+            .abs()
+            .cmp(&x.delta.abs())
+            .then_with(|| x.id.cmp(&y.id))
+    });
+
+    AlertDiff {
+        new_alerts,
+        resolved,
+        changed,
+        unchanged,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{correlate_incidents, fold_rule_findings, reconstruct_attack_chains};
@@ -1986,5 +2059,100 @@ mod tests {
         assert_eq!(a.finding_count, 9);
         assert!(a.title.contains("9 hosts"), "title: {}", a.title);
         assert!(a.band <= PriorityBand::Review, "hygiene stays below High");
+    }
+}
+
+#[cfg(test)]
+mod diff_tests {
+    use super::super::correlate_incidents;
+    use super::*;
+    use crate::model::alert::AlertDiff;
+
+    /// Build a queue from one beacon finding with the given score on the given host.
+    fn queue(host: &str, score: u16) -> Vec<Alert> {
+        let f = Finding {
+            kind: FindingKind::Beacon,
+            severity: Severity::from_score(score),
+            score,
+            title: format!("beacon: {host}"),
+            src_ip: host.to_string(),
+            dst_ip: Some("45.77.13.37".to_string()),
+            dst_port: Some(443),
+            attack: vec!["T1071".to_string()],
+            evidence: vec!["periodic callbacks".to_string()],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: Some(1_000_000_000),
+            last_seen_ns: Some(2_000_000_000),
+            victims: Vec::new(),
+        };
+        let mut s = Summary::empty();
+        s.incidents = correlate_incidents(std::slice::from_ref(&f));
+        s.findings = vec![f];
+        derive_alerts(&s)
+    }
+
+    #[test]
+    fn diff_partitions_new_resolved_changed_unchanged() {
+        let mut before = queue("10.0.0.1", 45);
+        before.extend(queue("10.0.0.2", 45)); // resolved (absent after)
+        before.extend(queue("10.0.0.3", 45)); // unchanged
+        let mut after = queue("10.0.0.1", 70); // changed (45-band -> 70-band)
+        after.extend(queue("10.0.0.3", 45)); // unchanged
+        after.extend(queue("10.0.0.4", 45)); // new
+
+        let d: AlertDiff = diff_alerts(&before, &after);
+        assert_eq!(d.new_alerts.len(), 1);
+        assert_eq!(d.new_alerts[0].actor, "10.0.0.4");
+        assert_eq!(d.resolved.len(), 1);
+        assert_eq!(d.resolved[0].actor, "10.0.0.2");
+        assert_eq!(d.changed.len(), 1);
+        assert_eq!(d.changed[0].actor, "10.0.0.1");
+        assert!(d.changed[0].delta > 0, "the story got worse");
+        assert_eq!(d.unchanged, 1);
+    }
+
+    #[test]
+    fn diff_of_identical_queues_is_all_unchanged() {
+        let q = queue("10.0.0.1", 45);
+        let d = diff_alerts(&q, &q.clone());
+        assert!(d.new_alerts.is_empty());
+        assert!(d.resolved.is_empty());
+        assert!(d.changed.is_empty());
+        assert_eq!(d.unchanged, q.len() as u64);
+    }
+
+    #[test]
+    fn diff_orders_worst_first_and_by_magnitude() {
+        let before: Vec<Alert> = Vec::new();
+        let mut after = queue("10.0.0.1", 70);
+        after.extend(queue("10.0.0.2", 45));
+        let d = diff_alerts(&before, &after);
+        assert_eq!(d.new_alerts.len(), 2);
+        assert!(
+            d.new_alerts[0].priority >= d.new_alerts[1].priority,
+            "new alerts are worst-first"
+        );
+
+        let mut b2 = queue("10.0.0.1", 45);
+        b2.extend(queue("10.0.0.2", 45));
+        let mut a2 = queue("10.0.0.1", 50); // small climb
+        a2.extend(queue("10.0.0.2", 70)); // big climb
+        let d2 = diff_alerts(&b2, &a2);
+        assert_eq!(d2.changed.len(), 2);
+        assert!(
+            d2.changed[0].delta.abs() >= d2.changed[1].delta.abs(),
+            "changed rows sort by |delta| desc"
+        );
+        assert_eq!(d2.changed[0].actor, "10.0.0.2");
+    }
+
+    #[test]
+    fn diff_serde_roundtrips() {
+        let d = diff_alerts(&queue("10.0.0.1", 45), &queue("10.0.0.1", 70));
+        let json = serde_json::to_string(&d).unwrap();
+        let back: AlertDiff = serde_json::from_str(&json).unwrap();
+        assert_eq!(d, back);
     }
 }
