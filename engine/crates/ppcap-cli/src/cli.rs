@@ -1262,6 +1262,18 @@ fn dispatch_batch(
             case.shared_indicators.len(),
             case_out.display()
         );
+        if !case.case_alerts.is_empty() {
+            use ppcap_core::PriorityBand;
+            let count = |b: PriorityBand| case.case_alerts.iter().filter(|a| a.band == b).count();
+            eprintln!(
+                "case alerts: {} across {} captures — {} act-now, {} investigate; top: \"{}\"",
+                case.total_case_alerts,
+                case.total_captures,
+                count(PriorityBand::ActNow),
+                count(PriorityBand::Investigate),
+                case.case_alerts[0].title,
+            );
+        }
     }
     Ok(())
 }

@@ -67,7 +67,9 @@ pub use baseline::{
     update_baseline, BaselineParams, BaselineProfile, CaptureProfile, Deviation, DeviationReport,
     HostBaseline, HostObservation, RunningStat, BASELINE_SCHEMA_VERSION,
 };
-pub use case::{run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator};
+pub use case::{
+    run_case, CaptureEntry, CaptureStatus, CaseAlert, CaseConfig, CaseSummary, SharedIndicator,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use custody::{hash_file, verify_manifest};
 pub use custody::{

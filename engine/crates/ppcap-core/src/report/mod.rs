@@ -1310,13 +1310,74 @@ pub fn case_html(cs: &CaseSummary, generated_unix_secs: i64) -> String {
            <div class=\"tile\"><div class=\"v\">{ok}</div><div class=\"k\">Analyzed</div></div>\
            <div class=\"tile\"><div class=\"v\">{err}</div><div class=\"k\">Errors</div></div>\
            <div class=\"tile\"><div class=\"v\">{shared}</div><div class=\"k\">Shared indicators</div></div>\
+           <div class=\"tile\"><div class=\"v\">{alerts}</div><div class=\"k\">Case alerts</div></div>\
          </div></div>",
         n = cs.total_captures,
         dir = esc(&cs.case_dir),
         ok = ok,
         err = cs.error_captures,
         shared = cs.shared_indicators.len(),
+        alerts = cs.total_case_alerts,
     );
+
+    // ---- case-wide alert queue (per-capture queues merged by stable alert id) --------
+    if !cs.case_alerts.is_empty() {
+        s.push_str("<div class=\"card\"><h2>Case alert queue</h2>");
+        let _ = write!(
+            s,
+            "<p class=\"muted\">Per-capture alert queues merged by story — the same host / \
+             chain / rollup recurring across captures is one row, recurrence-uplifted. \
+             Showing {shown} of {total}.</p>",
+            shown = cs.case_alerts.len(),
+            total = cs.total_case_alerts,
+        );
+        for a in &cs.case_alerts {
+            let color = band_color(a.band);
+            let _ = write!(
+                s,
+                "<div class=\"incident alert\" style=\"border-left-color:{color}\">\
+                 <div class=\"inc-head\">\
+                 <span class=\"chip\" style=\"background:{color}\">{band}</span>\
+                 <span class=\"mono inc-host\">{actor}</span>\
+                 <span class=\"inc-score\">{priority}/100 &middot; conf {conf}% &middot; \
+                 {caps} capture{cp}</span></div>",
+                band = band_label(a.band),
+                actor = esc(&a.actor),
+                priority = a.priority,
+                conf = a.confidence,
+                caps = a.capture_count,
+                cp = if a.capture_count == 1 { "" } else { "s" },
+            );
+            let _ = write!(
+                s,
+                "<p class=\"narr\"><strong>{}</strong></p>",
+                esc(&a.title)
+            );
+            let _ = write!(
+                s,
+                "<p class=\"narr\"><em>Do next:</em> {}</p>",
+                esc(&a.action)
+            );
+            s.push_str("<ul class=\"findings\">");
+            for t in &a.priority_terms {
+                let _ = write!(
+                    s,
+                    "<li><span class=\"mono\">{} ({:+})</span></li>",
+                    esc(&t.label),
+                    t.points,
+                );
+            }
+            s.push_str("</ul>");
+            let _ = write!(
+                s,
+                "<p class=\"muted\">covers {fc} finding{fp} across captures {ids}</p></div>",
+                fc = a.finding_count,
+                fp = if a.finding_count == 1 { "" } else { "s" },
+                ids = esc(&a.captures.join(", ")),
+            );
+        }
+        s.push_str("</div>\n");
+    }
 
     // ---- ranked capture table --------------------------------------------------------
     s.push_str("<div class=\"card\"><h2>Captures (worst severity first)</h2>\n<table>\n");
