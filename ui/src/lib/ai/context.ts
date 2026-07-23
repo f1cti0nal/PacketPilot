@@ -21,12 +21,15 @@ function incidentLineBrief(i: Incident, ref = "see attack chains above"): string
   return `- **${i.host}** — ${i.severity} ${i.score}/100 — ${i.title} (${ref})`;
 }
 
-/** Render one ranked alert as a single self-sufficient triage line (engine rollups only). */
+/** Render one ranked alert as a self-sufficient triage entry (engine rollups only). Mirrors
+ *  incidentLine's two-line shape: the story narrative rides an indented second line — it is the
+ *  only place a covered (demoted) host's multi-stage story survives in the brief. */
 function alertLine(a: Alert): string {
   const hostname = a.context?.actor?.hostname;
   const actor = hostname ? `${a.actor} (${hostname})` : a.actor;
   const why = a.priority_terms.map((t) => t.label).join(", ");
-  return `- [${bandLabel(a.band).toUpperCase()} p=${a.priority} conf ${a.confidence}%] ${a.title} — actor ${actor} — why: ${why} — do: ${a.action}`;
+  const head = `- [${bandLabel(a.band).toUpperCase()} p=${a.priority} conf ${a.confidence}%] ${a.title} — actor ${actor} — why: ${why} — do: ${a.action}`;
+  return a.narrative && a.narrative !== a.title ? `${head}\n  ${a.narrative}` : head;
 }
 
 /** Render one reconstructed attack chain as a compact, labeled block (engine rollups only). */

@@ -91,6 +91,9 @@ function AlertCard({
       >
         <div className="flex flex-wrap items-center gap-2">
           <BandChip band={alert.band} />
+          {/* Severity is the judgment axis (copied from the source story); the band chip is the
+              rank axis. The two can disagree — the card always shows both. */}
+          <SeverityChip severity={alert.severity} />
           <span className="font-mono-num text-sm font-medium tabular-nums" style={{ color }}>
             {alert.priority}/100
           </span>

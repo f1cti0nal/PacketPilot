@@ -183,8 +183,11 @@ pub fn derive_alerts(summary: &Summary) -> Vec<Alert> {
                 }
                 let f = &findings[i as usize];
                 // An unrelated strong story on a pivot host is NOT this chain's to tell —
-                // tier 2 extracts it. (Steps evicted by the per-host cap are the lowest
-                // scorers, hence never standalone-eligible: they stay covered here.)
+                // tier 2 extracts it. Steps evicted by the per-host cap are the host's
+                // LOWEST-ranked findings; weak evictees stay covered here, while strong
+                // evictees (possible when >64 High findings share a host) become tier-2
+                // standalone alerts and, at flood scale, fold into the bounded overflow
+                // rollup rather than voiding the queue cap.
                 if standalone_eligible(f) && !step_set.contains(&i) {
                     continue;
                 }
@@ -686,7 +689,12 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
         .expect("members is non-empty");
     let stage_ord = stage_ordinal(rep_stage.kind);
     let stage = stage_label(rep_stage.kind).to_string();
-    let next_stage = if (stage_ord as usize) < STAGE_LABELS.len() - 1 {
+    // "Next expected" only makes sense when the stage token sits on the canonical ladder:
+    // RuleMatch's label is "Signature Match" (ordinal 4 but not a ladder rung), and predicting
+    // "Exfiltration" after a mere imported-signature hit would overstate the evidence.
+    let next_stage = if stage == STAGE_LABELS[stage_ord as usize]
+        && (stage_ord as usize) < STAGE_LABELS.len() - 1
+    {
         Some(STAGE_LABELS[stage_ord as usize + 1].to_string())
     } else {
         None
@@ -702,9 +710,11 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
         }
     }
 
-    // Primary peer: the story names exactly one distinct destination.
-    let peer = if dst_ports.len() == 1 {
-        dst_ports.keys().next().map(|s| s.to_string())
+    // Primary peer: the story names exactly one distinct destination AND it is external —
+    // the field's contract is "C2 / drop", so an internal victim never publishes here
+    // (action_for falls back to the representative finding's dst for internal stories).
+    let peer = if dst_ports.len() == 1 && ext_peers.len() == 1 {
+        ext_peers.first().map(|s| s.to_string())
     } else {
         None
     };
@@ -712,14 +722,15 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
         .as_deref()
         .and_then(|ip| dst_ports.get(ip).copied().flatten());
 
-    // Action: keyed on the furthest-stage strongest member.
-    let action = action_for(rep_stage, peer.as_deref(), peer_port, &seed.actor);
+    // Action: keyed on the furthest-stage strongest member, and attributed to the host that
+    // PERFORMED that step — on a multi-host chain the machine to isolate is the pivot host
+    // doing the beacon/exfil, not the chain root the alert is filed under.
+    let action = action_for(rep_stage, peer.as_deref(), peer_port, &rep_stage.src_ip);
 
     let context = build_context(
         &seed,
         summary,
         &members,
-        has_dev,
         &dst_ports,
         &ext_peers,
         next_stage.as_deref(),
@@ -869,12 +880,17 @@ fn build_context(
     seed: &Seed,
     summary: &Summary,
     members: &[&Finding],
-    has_dev: bool,
     dst_ports: &BTreeMap<&str, Option<u16>>,
     ext_peers: &[&str],
     next_stage: Option<&str>,
 ) -> AlertContext {
     let findings = &summary.findings;
+    // The actor's flag is actor-scoped: on a multi-host chain a pivot host's deviation must
+    // not stamp the chain root (the alert-wide novelty term stays alert-level in the ledger;
+    // the BaselineNovelty entry carries the deviating host's own IP).
+    let actor_new_to_baseline = members
+        .iter()
+        .any(|f| f.kind == FindingKind::BaselineDeviation && f.src_ip == seed.actor);
 
     // Actor identity: arp_hosts (ip -> mac) ⋈ dhcp_hosts (mac -> hostname/vendor).
     let mac = summary
@@ -897,7 +913,7 @@ fn build_context(
         vendor: dhcp.and_then(|d| d.vendor_class.clone()),
         internal: actor_internal,
         cloud: cloud_of(summary, &seed.actor),
-        new_to_baseline: has_dev,
+        new_to_baseline: actor_new_to_baseline,
     };
 
     // Peers of interest: external member destinations, worst-first, capped.
@@ -1062,7 +1078,9 @@ fn build_context(
         })
         .take(2)
     {
-        let short = &c.sha256[..c.sha256.len().min(12)];
+        // Char-boundary-safe truncation: `sha256` is an arbitrary String after `ppcap alerts`
+        // deserializes a hand-crafted summary — a byte-index slice could panic mid-character.
+        let short: String = c.sha256.chars().take(12).collect();
         let verdict = if c.known_bad {
             "known-bad".to_string()
         } else if !c.signatures.is_empty() {
@@ -1103,17 +1121,20 @@ fn build_context(
     }
 }
 
-/// Enforce the emission bound without ever breaking coverage: rows that are actionable
-/// (`priority >= FLOOR_ALERT_IOC`) or [`never_dampen`]-protected always stay; the dropped
-/// tail collapses into ONE overflow rollup carrying every dropped finding index.
+/// Enforce the emission bound without ever breaking coverage. Only [`never_dampen`]-class
+/// rows (confirmed-bad / safety-relevant / multi-host-chain evidence — a set an adversary
+/// cannot inflate with plain high-scoring decoys) are exempt from the positional cap; every
+/// other dropped row folds into ONE overflow rollup that carries every dropped finding index
+/// AND inherits the worst dropped row's priority/severity, so folded actionable rows keep
+/// their rank visibility instead of sinking to the bottom. A bare `priority >= 60` is
+/// deliberately NOT an exemption: a broad High Suricata rule matching ordinary traffic can
+/// mint thousands of base-70 host alerts (`MAX_RULE_FINDINGS = 5000`), and an unbounded
+/// exemption would let that flood void the queue bound the feature exists to provide.
 fn truncate_with_overflow(alerts: Vec<Alert>, summary: &Summary) -> Vec<Alert> {
     if alerts.len() <= MAX_ALERTS {
         return alerts;
     }
     let protected = |a: &Alert| -> bool {
-        if a.priority >= FLOOR_ALERT_IOC || a.severity == Severity::Critical {
-            return true;
-        }
         let member_kinds: BTreeSet<FindingKind> = a
             .finding_indices
             .iter()
@@ -1165,7 +1186,7 @@ fn truncate_with_overflow(alerts: Vec<Alert>, summary: &Summary) -> Vec<Alert> {
         }
     }
     let title = format!(
-        "Lower-priority alerts: {} alert{} covering {} finding{}",
+        "Overflow: {} alert{} covering {} finding{} (queue capped at {MAX_ALERTS})",
         dropped.len(),
         if dropped.len() == 1 { "" } else { "s" },
         indices.len(),
@@ -1174,14 +1195,17 @@ fn truncate_with_overflow(alerts: Vec<Alert>, summary: &Summary) -> Vec<Alert> {
     let overflow = Alert {
         id: format!("alert:{:016x}", fnv1a64(b"rollup:overflow")),
         source: AlertSource::Rollup,
+        // Inherits the WORST dropped row's rank so folded actionable rows stay visible at
+        // their level instead of sinking below the hygiene tail.
         band: PriorityBand::from_priority(priority),
         priority,
         confidence: worst.confidence,
         severity: worst.severity,
         title,
         narrative: format!(
-            "{} lower-priority alerts were folded into this overflow group to keep the queue \
-             short; every member finding index is retained.",
+            "{} ranked-below-the-cap alerts were folded into this overflow group to keep the \
+             queue bounded; every member finding index is retained, and this row ranks at the \
+             worst folded alert's priority.",
             dropped.len()
         ),
         action: "Review after the alerts above".to_string(),
@@ -1690,9 +1714,168 @@ mod tests {
         assert!(alerts.len() <= MAX_ALERTS, "soft bound holds here");
         let overflow = alerts
             .iter()
-            .find(|a| a.title.starts_with("Lower-priority alerts:"))
+            .find(|a| a.title.starts_with("Overflow:"))
             .expect("overflow rollup exists");
         assert!(overflow.finding_count >= 9, "the dropped tail is absorbed");
+    }
+
+    #[test]
+    fn high_priority_decoy_flood_stays_bounded_with_visible_overflow() {
+        // A broad High Suricata rule matching ordinary traffic can mint one base-70 host
+        // alert per host (up to MAX_RULE_FINDINGS = 5000). None of them is never_dampen
+        // (no IOC / malware / ICS / multi-host chain), so the positional cap must hold and
+        // the folded actionable rows must keep their rank via the overflow's inherited
+        // priority — the decoy-flood resistance the noise layer exists for.
+        let findings: Vec<Finding> = (0..100u32)
+            .map(|i| {
+                f(
+                    FindingKind::RuleMatch,
+                    70,
+                    &format!("10.{}.{}.9", i / 250, i % 250),
+                    Some("45.77.13.40"),
+                    Some(8080),
+                    None,
+                )
+            })
+            .collect();
+        let summary = mk_summary(findings);
+        let alerts = derive_alerts(&summary);
+        assert_coverage(&summary, &alerts);
+        assert!(
+            alerts.len() <= MAX_ALERTS,
+            "the queue bound holds under a High-score flood; got {}",
+            alerts.len()
+        );
+        let overflow = alerts
+            .iter()
+            .find(|a| a.title.starts_with("Overflow:"))
+            .expect("overflow rollup exists");
+        assert!(
+            overflow.priority >= 60,
+            "the overflow inherits the worst folded row's actionable rank"
+        );
+    }
+
+    #[test]
+    fn non_ascii_sha256_in_carved_files_does_not_panic() {
+        // `ppcap alerts` feeds arbitrary user JSON into derive_alerts; a carved-file hash
+        // whose 12th byte falls mid-character must not panic the char-boundary slice.
+        let mut summary = mk_summary(vec![f(
+            FindingKind::Beacon,
+            45,
+            "10.0.0.9",
+            Some("45.77.13.37"),
+            Some(443),
+            None,
+        )]);
+        summary.carved_files = vec![crate::model::summary::CarvedFile {
+            client: "10.0.0.9".to_string(),
+            server: "45.77.13.37".to_string(),
+            sha256: "aaaaaaaaaaa\u{e9}".to_string(), // byte 12 is inside the 2-byte 'é'
+            size: 1,
+            known_bad: false,
+            signatures: Vec::new(),
+            extracted_path: None,
+        }];
+        let alerts = derive_alerts(&summary);
+        assert!(alerts.iter().any(|a| a
+            .context
+            .entries
+            .iter()
+            .any(|e| e.kind == ContextKind::CarvedFile)));
+    }
+
+    #[test]
+    fn chain_action_targets_the_representative_step_host() {
+        // On a multi-host chain the machine to isolate is the pivot host performing the
+        // furthest-stage step (10.0.0.7 doing the exfil), not the chain root (10.0.0.5).
+        let summary = mk_summary(chain_findings());
+        let alerts = derive_alerts(&summary);
+        assert_eq!(alerts[0].source, AlertSource::Chain);
+        assert_eq!(
+            alerts[0].actor, "10.0.0.5",
+            "the alert is filed under the root"
+        );
+        assert!(
+            alerts[0].action.contains("10.0.0.7"),
+            "the action names the acting host: {}",
+            alerts[0].action
+        );
+        assert!(!alerts[0].action.contains("Isolate 10.0.0.5"));
+    }
+
+    #[test]
+    fn rule_match_alert_publishes_no_next_stage() {
+        // "Signature Match" (RuleMatch's stage label) is not on the canonical ladder, so
+        // predicting "next expected: Exfiltration" from a mere signature hit is suppressed.
+        let summary = mk_summary(vec![f(
+            FindingKind::RuleMatch,
+            70,
+            "10.0.0.9",
+            Some("45.77.13.37"),
+            Some(8080),
+            None,
+        )]);
+        let alerts = derive_alerts(&summary);
+        assert_eq!(alerts[0].stage, "Signature Match");
+        assert_eq!(alerts[0].next_stage, None);
+        assert!(alerts[0]
+            .context
+            .entries
+            .iter()
+            .all(|e| !e.text.contains("next expected")));
+    }
+
+    #[test]
+    fn internal_only_story_publishes_no_peer() {
+        // `peer` is the "C2 / drop" contract — an internal victim must never publish there.
+        let summary = mk_summary(vec![f(
+            FindingKind::BruteForce,
+            64,
+            "10.0.0.5",
+            Some("10.0.0.7"),
+            Some(22),
+            None,
+        )]);
+        let alerts = derive_alerts(&summary);
+        assert_eq!(alerts[0].peer, None);
+        // The action still names the internal target via the finding's own dst fallback.
+        assert!(
+            alerts[0].action.contains("10.0.0.7"),
+            "{}",
+            alerts[0].action
+        );
+    }
+
+    #[test]
+    fn pivot_host_deviation_does_not_stamp_the_chain_root() {
+        // new_to_baseline is actor-scoped: a deviation on the pivot host (10.0.0.7) must not
+        // flag the chain root (10.0.0.5) as new-to-baseline.
+        let mut findings = chain_findings();
+        findings.push(f(
+            FindingKind::BaselineDeviation,
+            40,
+            "10.0.0.7",
+            Some("45.77.13.37"),
+            Some(443),
+            None,
+        ));
+        let summary = mk_summary(findings);
+        let alerts = derive_alerts(&summary);
+        let chain_alert = alerts
+            .iter()
+            .find(|a| a.source == AlertSource::Chain)
+            .expect("chain alert");
+        assert_eq!(chain_alert.actor, "10.0.0.5");
+        assert!(
+            !chain_alert.context.actor.new_to_baseline,
+            "the root did not deviate; the deviation belongs to 10.0.0.7"
+        );
+        // The alert-level novelty term still fires (it is legitimately alert-wide).
+        assert!(chain_alert
+            .priority_terms
+            .iter()
+            .any(|t| t.label.starts_with("novel: deviates")));
     }
 
     #[test]

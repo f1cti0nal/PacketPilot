@@ -16,6 +16,14 @@ describe("AlertsView", () => {
     expect(cards[1]).toHaveAccessibleName(`${alerts[1].title}, Review`);
   });
 
+  it("shows a severity chip on every card, band and severity disagreeing included", () => {
+    render(<AlertsView alerts={alerts} findings={findings} />);
+    // rollup: band review (rank) + severity medium (judgment) — both visible on one card
+    const rollup = screen.getByRole("button", { name: `${alerts[1].title}, Review` });
+    expect(within(rollup).getByText("Review")).toBeInTheDocument();
+    expect(within(rollup).getByText("Medium")).toBeInTheDocument();
+  });
+
   it("shows an empty state when there are no alerts", () => {
     render(<AlertsView alerts={[]} findings={[]} />);
     expect(screen.getByText("No alerts")).toBeInTheDocument();
@@ -27,10 +35,12 @@ describe("AlertsView", () => {
     expect(screen.getByText("2 alerts from 4 findings — 1 act now, 0 investigate")).toBeInTheDocument();
   });
 
-  it("collapsed card carries band, priority, confidence, actor identity, and the action line", () => {
+  it("collapsed card carries band, severity, priority, confidence, actor identity, and the action line", () => {
     render(<AlertsView alerts={alerts} findings={findings} />);
     const card = screen.getByRole("button", { name: `${alerts[0].title}, Act now` });
     expect(within(card).getByText("Act now")).toBeInTheDocument();
+    // severity (judgment axis) rides beside the band chip (rank axis) — the UI shows both
+    expect(within(card).getByText("Critical")).toBeInTheDocument();
     expect(within(card).getByText("92/100")).toBeInTheDocument();
     expect(within(card).getByText("conf 92%")).toBeInTheDocument();
     expect(within(card).getByText(/ACCT-LT-042/)).toBeInTheDocument();

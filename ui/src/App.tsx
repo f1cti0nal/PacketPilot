@@ -235,6 +235,8 @@ export function App() {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [activeIp, setActiveIp] = useState<string | null>(null);
+  // Alerts → Chains pivot: the chain to scroll to / highlight when the Chains tab opens.
+  const [focusChainId, setFocusChainId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   // Consent prompt state: set when a newly-loaded capture has public IPs but consent hasn't
@@ -826,7 +828,10 @@ export function App() {
         <AlertsView
           alerts={summary.status === "ready" ? summary.data?.summary.alerts ?? [] : []}
           findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}
-          onOpenChain={() => setTab("attackchain")}
+          onOpenChain={(id) => {
+            setFocusChainId(id);
+            setTab("attackchain");
+          }}
         />
       ) : tab === "flows" ? (
         <FlowsView
@@ -853,6 +858,7 @@ export function App() {
       ) : tab === "attackchain" ? (
         <AttackChainView
           chains={summary.status === "ready" ? summary.data?.summary.attack_chains ?? [] : []}
+          focusId={focusChainId}
           onOpenFinding={(idx) => {
             const f = summary.status === "ready" ? summary.data?.summary.findings?.[idx] : undefined;
             if (f) jumpToFlows({ ip: f.src_ip });

@@ -12,13 +12,13 @@
 > **Implementation status (what actually shipped).** Everything in §3–§11 landed: `model/alert.rs`
 > + `detect/alerts.rs` (four tiers, ledger, context bundle, action table, overflow rollup) + the
 > three re-derive seams + `ppcap alerts` + `alerts_html` + the Alerts tab/view/AI-brief section +
-> the regenerated bundled sample (12 findings → 6 alerts). Verified here: 822 engine tests
-> (17 new alert unit tests, 4 e2e, 2 report, 2 CLI, 1 reputation seam), 1018 UI tests, clippy,
+> the regenerated bundled sample (12 findings → 6 alerts). Verified here: 828 engine tests
+> (24 alert unit tests, 4 e2e, 2 report, 2 CLI, 1 reputation seam), 1024 UI tests, clippy,
 > `tsc`, Playwright (new alerts spec + updated digit-key spec; the two remaining local e2e
 > failures reproduce on the pre-change baseline in this sandbox — pre-existing). Not verifiable
 > in this sandbox: the Tauri desktop shell and a real `wasm32` build (the wasm crate typechecks
-> against the new core with zero source changes). One design correction found during
-> implementation is folded in as Appendix A #13 (chain tier is strictly cross-host).
+> against the new core with zero source changes). Corrections found during implementation and
+> in the post-implementation adversarial review are folded in as Appendix A #13–#16.
 
 > **How this plan was produced.** Six parallel subsystem readers mapped the engine pipeline,
 > findings/scoring/correlation machinery, baseline/forecast modules, model/report/CLI/wasm
@@ -94,8 +94,10 @@ host (detect/mod.rs:3699-3711). Coverage is **by host, not by step index**, beca
   is **not** one of that chain's steps and is standalone-eligible (kind in `NEVER_ROLLUP` =
   {`MalwareDownload`, `MalwareSignature`, `RuleMatch`, `IcsControlCommand`, `ArpSpoof`} or
   severity ≥ High) gets its **own** alert — a chain must never swallow an unrelated strong story
-  on a pivot host. (Steps evicted by the 64-step cap are the lowest-scoring ones, hence never
-  standalone-eligible — they stay safely inside the chain alert's host coverage.)
+  on a pivot host. (Steps evicted by the 64-step cap are the host's lowest-ranked findings;
+  weak evictees stay inside the chain alert's host coverage, while strong evictees become
+  tier-2 standalone alerts and, at flood scale, fold into the bounded overflow rollup —
+  Appendix A #14.)
 - **Tier 3 — Host alerts** (`source: host`). Every non-chain host whose remaining findings are
   *not* weak-only claims **all** its findings as one alert, with the host's existing
   `Incident` as the story (base score, title, narrative). A weak finding on an implicated host
@@ -140,8 +142,10 @@ by decoy flooding and semantically empty — rejected in review, Appendix A):
 2. **Hygiene rollups** — the weak-signal long tail compresses per kind, capped below High by the
    floor discipline, with every member index attached and auditable.
 3. **Bounded emission with an overflow rollup** — after ranking, the queue truncates to
-   `MAX_ALERTS = 32`, but (a) alerts with `priority >= 60` or matching `never_dampen` are
-   **never** dropped (soft bound, documented), and (b) the dropped tail collapses into **one**
+   `MAX_ALERTS = 32`, but (a) `never_dampen`-class rows (confirmed-bad / safety-relevant /
+   multi-host-chain evidence — a set an adversary cannot inflate with plain high-scoring
+   decoys) are **never** dropped (soft bound, documented), and (b) the dropped tail collapses
+   into **one**
    synthetic overflow rollup carrying all its finding indices and counts — the coverage
    invariant survives truncation absolutely.
 
@@ -347,7 +351,7 @@ tunable would fork native-vs-wasm output or break three public signatures). Like
 chains, alerts cannot be disabled.
 
 ```rust
-const MAX_ALERTS: usize = 32;            // soft bound: priority>=60 / never_dampen rows never drop
+const MAX_ALERTS: usize = 32;            // soft bound: only never_dampen-class rows are exempt
 const MAX_ALERT_HOSTS: usize = 16;       // mirrors MAX_CHAIN_VICTIMS
 const MAX_ALERT_PEERS: usize = 4;
 const MAX_CONTEXT_ENTRIES: usize = 12;
@@ -672,7 +676,7 @@ assertion (report_html.rs).
 | Weak findings buried in fleet rollups while their host is under attack | Host-claiming absorbs weak findings into the host's real alert (anti-burying); test-locked |
 | Double-counting structure bonuses (chain/incident scores already escalated) | base = existing story score, no re-derived structure terms; ledger test pins it |
 | Cloud dampen hides a real C2 behind a CDN | `never_dampen` skips dampen terms for IOC/rep/malware/ICS/Critical/multi-host-chain alerts; beacons are never cloud-*suppressed* (only dampened, and only when uncorroborated) |
-| Truncation silently breaks coverage | Overflow rollup absorbs the dropped tail; actionable rows never drop; invariant test runs on truncation-shaped fixtures |
+| Truncation silently breaks coverage | Overflow rollup absorbs the dropped tail and inherits the worst dropped row's priority/severity (folded actionable rows keep rank visibility); invariant test runs on truncation-shaped fixtures incl. a High-score decoy flood |
 | Decoy flooding games a relative rank cutoff | No relative suppression exists — rank is volume-independent |
 | Same-key finding alerts collide (repeated rule matches) | Per-key ordinal in the id (§5.4) |
 | Params divergence across native/wasm/fold derivations | No config surface at all; compile-time consts; three seams re-derive the same pure fn |
@@ -777,6 +781,26 @@ urgency.) (3) Should `ppcap alerts` also accept a case.json to build a cross-cap
     qualified as a "chain" — including two weak posture kinds, which would dodge the hygiene
     rollup. Tier 1 is now strictly cross-host (`host_count >= 2`); single-host stories are the
     host tier's, where the incident base already carries multi-stage escalation.
+14. **(engine — post-implementation review)** The truncation exemption for bare
+    `priority >= 60` rows voided `MAX_ALERTS`: one broad High Suricata rule matching ordinary
+    traffic mints up to `MAX_RULE_FINDINGS = 5000` base-70 host alerts, all exempt — a decoy
+    flood defeating the queue bound. Fixed: only `never_dampen`-class rows are exempt, and the
+    overflow rollup inherits the worst folded row's priority/severity so folded actionable
+    rows keep their rank visibility. Locked by
+    `high_priority_decoy_flood_stays_bounded_with_visible_overflow`.
+15. **(engine — post-implementation review)** Four attribution/robustness defects fixed with
+    regression tests: the chain alert's `action` named the chain root instead of the host
+    performing the representative step; `Alert.peer` could publish an internal victim as the
+    "C2/drop" peer (now gated on externality); `HostContext.new_to_baseline` stamped the chain
+    root for a pivot host's deviation (now actor-scoped); a byte-index slice of a hand-crafted
+    non-ASCII `sha256` could panic `ppcap alerts` (now char-boundary-safe). `next_stage` is
+    suppressed when the stage label is off the canonical ladder (RuleMatch's "Signature
+    Match").
+16. **(product — post-implementation review)** UI: the Compare tab's digit shortcut and the
+    shortcuts-overlay key label broke at 10 tabs (now `0` maps to the 10th tab); the "Open
+    chain" pivot now threads `chain_id` into a focused/highlighted chain card; the AI brief
+    renders the alert narrative so demoted incident stories aren't lost; `AlertsView` renders
+    the severity (judgment) axis beside the band (rank) axis per the model contract.
 
 ## Appendix B — Citation verification
 

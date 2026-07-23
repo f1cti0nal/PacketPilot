@@ -167,6 +167,28 @@ describe("AppShell", () => {
     expect(onTabChange).toHaveBeenCalledWith("flows");
   });
 
+  it("digit 0 reaches the 10th tab (Compare) when a comparison is active", () => {
+    const onTabChange = vi.fn();
+    render(<AppShell {...minimalProps({ onTabChange, compareActive: true })} />);
+    fireEvent.keyDown(window, { key: "0" });
+    expect(onTabChange).toHaveBeenCalledWith("compare");
+  });
+
+  it("digit 0 is inert when there is no 10th tab", () => {
+    const onTabChange = vi.fn();
+    render(<AppShell {...minimalProps({ onTabChange })} />);
+    fireEvent.keyDown(window, { key: "0" });
+    expect(onTabChange).not.toHaveBeenCalled();
+  });
+
+  it("the shortcuts overlay advertises the 10th tab as key 0, never 10", () => {
+    render(<AppShell {...minimalProps({ compareActive: true })} />);
+    fireEvent.keyDown(window, { key: "?" });
+    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(within(dialog).getByText("0")).toBeInTheDocument();
+    expect(within(dialog).queryByText("10")).toBeNull();
+  });
+
   it("shortcut keys are inert while the command palette is open", () => {
     const onTabChange = vi.fn();
     render(<AppShell {...minimalProps({ paletteOpen: true, onTabChange })} />);

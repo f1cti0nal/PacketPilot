@@ -33,6 +33,10 @@ describe("buildContext", () => {
     );
     // the rollup alert has no hostname → the actor renders bare
     expect(ctx).toContain("- [REVIEW p=38 conf 50%] Weak TLS posture: 1 host (1 finding) — actor 10.0.0.9 —");
+    // the alert's story narrative rides an indented second line (incidentLine's two-line shape)
+    expect(ctx).toContain(
+      "— do: Isolate 10.66.0.1; block 45.77.13.37:443 at the egress firewall\n  10.13.37.7 swept the network, then brute-forced credentials; then 10.66.0.1 beaconed to a C2, then exfiltrated data.",
+    );
     // privacy + bounds preserved
     expect(ctx).not.toContain("payload");
     expect(ctx.length).toBeLessThan(20000);
@@ -60,6 +64,13 @@ describe("buildContext", () => {
     const ctx = buildContext(out);
     expect(ctx).toContain("(see alert queue above)");
     expect(ctx).not.toContain("(see attack chains above)");
+    // The demotion never drops the story: the covering alert's narrative is still in the brief.
+    expect(ctx).toContain(
+      "10.13.37.7 swept the network, then brute-forced credentials; then 10.66.0.1 beaconed to a C2, then exfiltrated data.",
+    );
+    // privacy + bounds preserved
+    expect(ctx).not.toContain("payload");
+    expect(ctx.length).toBeLessThan(20000);
   });
 
   it("renders a reconstructed attack chains section and demotes covered incidents", () => {

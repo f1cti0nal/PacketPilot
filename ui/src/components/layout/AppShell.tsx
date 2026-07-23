@@ -207,7 +207,9 @@ export function AppShell({
         setShortcutsOpen(true);
         return;
       }
-      const idx = "123456789".indexOf(e.key);
+      // "0" reaches the 10th tab (Alerts made a 10-tab set possible with Compare active),
+      // matching the ShortcutsOverlay's (i + 1) % 10 key chips.
+      const idx = "1234567890".indexOf(e.key);
       if (idx >= 0 && idx < tabs.length) {
         e.preventDefault();
         onTabChange(tabs[idx].id);

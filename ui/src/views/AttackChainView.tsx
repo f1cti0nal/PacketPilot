@@ -1,5 +1,6 @@
 // Full-tab view: every reconstructed attack chain as a horizontal swimlane, worst-first, with the
 // tactic progression, ATT&CK techniques, and narrative. Empty state when nothing was reconstructed.
+import { useEffect, useRef } from "react";
 import type { AttackChain } from "../types";
 import { Card, SeverityChip, MitreTag } from "../cockpit/primitives";
 import { ChainSwimlane } from "../cockpit/ChainSwimlane";
@@ -9,10 +10,22 @@ import { EmptyState } from "../components/state/EmptyState";
 export function AttackChainView({
   chains,
   onOpenFinding,
+  focusId = null,
 }: {
   chains: AttackChain[];
   onOpenFinding?: (findingIndex: number) => void;
+  /** Chain id to scroll to and highlight on mount / change — the Alerts "Open chain" pivot. */
+  focusId?: string | null;
 }) {
+  const focusRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = focusRef.current;
+    // scrollIntoView is absent in jsdom — guard so tests (and odd embedders) never crash.
+    if (focusId && el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  }, [focusId, chains]);
+
   if (!chains.length) {
     return (
       <EmptyState
@@ -24,9 +37,16 @@ export function AttackChainView({
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
-      {chains.map((chain) => (
+      {chains.map((chain) => {
+        const focused = chain.id === focusId;
+        return (
+          <div
+            key={chain.id}
+            ref={focused ? focusRef : undefined}
+            data-focused={focused ? "true" : undefined}
+            className={focused ? "rounded-[var(--r-card)] ring-2 ring-[var(--color-accent)]" : undefined}
+          >
         <Card
-          key={chain.id}
           label="Attack chain"
           title={chain.title}
           right={<SeverityChip severity={chain.severity} />}
@@ -65,7 +85,9 @@ export function AttackChainView({
             ))}
           </div>
         </Card>
-      ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
