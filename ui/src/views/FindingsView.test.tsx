@@ -100,4 +100,31 @@ describe("FindingsView", () => {
     render(<FindingsView findings={[]} />);
     expect(screen.getByText("No behavioral findings")).toBeInTheDocument();
   });
+
+  it("renders the target as ip:port for a peer, and 'port N' for a port-only finding", () => {
+    render(
+      <FindingsView
+        findings={[
+          f({
+            kind: "beacon",
+            severity: "high",
+            src_ip: "10.0.0.9",
+            dst_ip: "45.77.13.37",
+            dst_port: 443,
+          }),
+          // A per-port traffic anomaly carries a service port but no peer IP — it must not
+          // collapse to "—" the way the old `dst_ip ? … : "—"` idiom did.
+          f({
+            kind: "traffic_anomaly",
+            severity: "medium",
+            src_ip: "10.0.0.5",
+            dst_ip: null,
+            dst_port: 4444,
+          }),
+        ]}
+      />,
+    );
+    expect(within(table()).getByText("45.77.13.37:443")).toBeInTheDocument();
+    expect(within(table()).getByText("port 4444")).toBeInTheDocument();
+  });
 });

@@ -1,6 +1,7 @@
 import { ShieldAlert } from "lucide-react";
 import type { Finding } from "../../types";
 import { humanNumber } from "../../lib/format";
+import { dstLabel } from "../../lib/findingTarget";
 import { SeverityChip, MitreTag, Panel } from "../../cockpit/primitives";
 
 /** Extract the rule sid from a finding's evidence (defensive; null if absent). */
@@ -14,7 +15,7 @@ function sidOf(f: Finding): string | null {
 
 function MatchCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) {
   const sid = sidOf(f);
-  const dst = f.dst_ip ? `${f.dst_ip}${f.dst_port != null ? `:${f.dst_port}` : ""}` : "—";
+  const dst = dstLabel(f);
   const pivot = f.dst_ip ?? f.src_ip;
 
   const content = (

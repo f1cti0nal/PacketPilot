@@ -7,6 +7,7 @@ import { sevColor } from "./viz";
 import { SeverityChip, SeverityDot, MitreTag, SectionLabel, OVERLAY_BACKDROP } from "./primitives";
 import { EvidenceList } from "../components/transparency/EvidenceList";
 import { FindingMetrics } from "../components/transparency/FindingMetrics";
+import { FindingTarget } from "../components/transparency/FindingTarget";
 import { ScoreWaterfall } from "../components/transparency/ScoreWaterfall";
 import { TriageAnnotation } from "./TriageAnnotation";
 import { vendorForMac } from "../lib/oui";
@@ -170,6 +171,7 @@ export function DetailFlyout({
                   <span className="text-[13px] font-medium text-[var(--color-text)]">{kindLabel(f.kind)}</span>
                 </div>
                 <div className="font-mono-num mt-1 text-xs text-[var(--color-text-dim)]">{f.title}</div>
+                <FindingTarget finding={f} className="mt-1.5" />
                 <div className="mt-2">
                   <FindingMetrics finding={f} />
                 </div>
