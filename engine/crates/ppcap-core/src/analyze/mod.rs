@@ -558,9 +558,26 @@ pub fn run_source_visiting<'a>(
     // and flow into incidents/chains exactly like every other detector. Single-capture; no sidecar.
     if cfg.forecast.enabled {
         let egress = stats.forecast_input(&cfg.forecast);
-        findings.extend(detect_traffic_anomalies(&egress, &cfg.forecast).into_findings());
+        let egress_findings = detect_traffic_anomalies(&egress, &cfg.forecast).into_findings();
+        // Hosts whose *whole-host* egress already fired — their per-peer sub-series would only
+        // restate that alarm, so we suppress those below (the peer pass exists to surface the
+        // *masked* case: a spike to one destination that the host's blended aggregate hid).
+        let egress_hosts: std::collections::HashSet<String> =
+            egress_findings.iter().map(|f| f.src_ip.clone()).collect();
+        findings.extend(egress_findings);
+
         let ingress = stats.forecast_input_ingress(&cfg.forecast);
         findings.extend(detect_traffic_anomalies(&ingress, &cfg.forecast).into_findings());
+
+        // Per-peer egress decomposition (the egress-proxy blind spot): forecast each host's exchange
+        // with its top external peers, keeping only anomalies for hosts the aggregate pass missed.
+        let peers = stats.forecast_input_peers(&cfg.forecast);
+        findings.extend(
+            detect_traffic_anomalies(&peers, &cfg.forecast)
+                .into_findings()
+                .into_iter()
+                .filter(|f| !egress_hosts.contains(&f.src_ip)),
+        );
     }
 
     stats.apply_findings(&findings);
