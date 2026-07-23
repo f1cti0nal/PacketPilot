@@ -448,8 +448,24 @@ than replacing `SynFlood` (§13, "Intra-capture ingress forecasting").
   reported as both a peer and a port anomaly. Engine-only; no CLI/UI/wasm change. `ForecastParams`:
   `max_ports_per_host` (8, `0` disables).
 
-**Still deferred:** **per-peer *ingress*** (which external source flooded a given internal victim) —
-additive, mirroring the per-peer egress pass, and it does not disturb the shipped core.
+- **Per-peer ingress sub-series** — the ingress mirror of the per-peer egress split: each internal
+  host's *received* bytes are decomposed **by external source**, so a flood/spike victim's culprit
+  source is named even when its aggregate inbound series masks it. `stats` folds a fifth bounded grid
+  keyed `(internal host, external source, second)` (`per_host_peer_epoch_in`, external-source-only, the
+  symmetric twin of `per_host_peer_epoch`; the fold is refactored to a flat form gating egress-peer on
+  `src_internal && !dst_internal` and ingress-peer on `dst_internal && !src_internal`), and a shared
+  `project_peer_forecast(cells, dir)` backs both `forecast_input_peers` (`Out`) and the new
+  `forecast_input_peers_ingress` (`In`). No forecast-module change was needed: the direction-aware
+  `FlowDir::peer_prep` already renders the infix as "from `<source>`" for inbound, and `into_findings`
+  carries the source into `dst_ip`, attributing the anomaly to the internal **victim** (`src_ip`).
+  `analyze` runs the ingress-peer pass with its **own** suppression set (independent of egress — a host
+  can be both a sender- and a receiver-anomaly), skipping hosts the ingress aggregate already flagged.
+  Engine-only; no CLI/UI/wasm change, no new config (reuses `max_peers_per_host` / `max_forecast_subcells`).
+
+**Follow-ups complete.** The intra-capture forecaster now covers both directions (egress/ingress) at
+three resolutions each — whole-host, per-peer, and (egress) per-port — plus cross-capture seasonality.
+Any further work (per-port ingress, per-protocol sub-series, a UI sensitivity control) would be net-new
+scope rather than a tracked deferral.
 
 ---
 

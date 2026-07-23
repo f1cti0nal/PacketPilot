@@ -181,6 +181,11 @@ pub struct StatsAccumulator {
     /// concentrated on one service — even one spread across many peers — is caught and attributed to
     /// the port. Low-cardinality key; insert-only, bounded by `max_forecast_subcells`.
     per_host_port_epoch: HashMap<(IpAddr, u16, i64), u64>,
+    /// The **ingress** mirror of `per_host_peer_epoch`: per-`(internal host, external source, epoch
+    /// second)` bytes *received*. Projected by [`Self::forecast_input_peers_ingress`] into
+    /// per-`(host, source)` sub-series so a flood/spike victim's culprit external source is named —
+    /// even when the aggregate inbound series masks it. Insert-only, bounded by `max_forecast_subcells`.
+    per_host_peer_epoch_in: HashMap<(IpAddr, IpAddr, i64), u64>,
 
     /// Fixed 13-slot category breakdown indexed by `Category::all()` position.
     per_category: [CatStat; 13],
@@ -271,6 +276,7 @@ impl StatsAccumulator {
             per_host_epoch_in: HashMap::new(),
             per_host_peer_epoch: HashMap::new(),
             per_host_port_epoch: HashMap::new(),
+            per_host_peer_epoch_in: HashMap::new(),
             per_category: [CatStat::default(); 13],
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
@@ -364,6 +370,7 @@ impl StatsAccumulator {
             // Egress cell for an internal sender, ingress cell for an internal receiver — so a host's
             // own inbound spike (a volumetric flood or bulk staging) is forecast as well as its egress.
             let src_internal = !classify_ip(src_ip).is_external();
+            let dst_internal = !classify_ip(dst_ip).is_external();
             if src_internal {
                 fold_forecast_cell(
                     &mut self.per_host_epoch,
@@ -372,21 +379,31 @@ impl StatsAccumulator {
                     self.cfg.max_forecast_cells,
                 );
             }
-            if !classify_ip(dst_ip).is_external() {
+            if dst_internal {
                 fold_forecast_cell(
                     &mut self.per_host_epoch_in,
                     (dst_ip, epoch_sec),
                     wire,
                     self.cfg.max_forecast_cells,
                 );
-            } else if src_internal {
-                // Peer-resolved egress: an internal host sending to an EXTERNAL peer. Keyed on the
-                // external destination so the per-peer decomposition can un-blend an egress proxy
-                // (`else if` because the peer dimension only matters when the counterparty is
-                // external — internal↔internal is already covered by both hosts' aggregate series).
+            }
+            // Peer-resolved egress: an internal host sending to an EXTERNAL peer, keyed on the
+            // external destination so the decomposition can un-blend an egress proxy. And its mirror,
+            // peer-resolved ingress: an internal host receiving from an EXTERNAL source, keyed on that
+            // source so a flood victim's culprit is named. Both external-only — internal↔internal is
+            // already covered by both hosts' aggregate series.
+            if src_internal && !dst_internal {
                 fold_forecast_cell(
                     &mut self.per_host_peer_epoch,
                     (src_ip, dst_ip, epoch_sec),
+                    wire,
+                    self.cfg.max_forecast_subcells,
+                );
+            }
+            if dst_internal && !src_internal {
+                fold_forecast_cell(
+                    &mut self.per_host_peer_epoch_in,
+                    (dst_ip, src_ip, epoch_sec),
                     wire,
                     self.cfg.max_forecast_subcells,
                 );
@@ -834,20 +851,50 @@ impl StatsAccumulator {
         }
     }
 
-    /// Project the peer-resolved egress substrate into per-`(host, peer)` sub-series: for each
+    /// Project the peer-resolved **egress** substrate into per-`(host, peer)` sub-series: for each
     /// internal host (heaviest `max_hosts` by peer-egress total), forecast its exchange with each of
     /// its top `max_peers_per_host` external peers as its own series (tagged with `peer`). Lets the
     /// forecaster un-blend an egress proxy — a spike to one destination that the host's aggregate
-    /// masks — and attribute it to that peer. Same width/gap-fill as
-    /// [`forecast_input`](Self::forecast_input); deterministic (`BTreeMap`/`BTreeSet` ordering).
+    /// masks — and attribute it to that peer.
     pub fn forecast_input_peers(&self, params: &ForecastParams) -> ForecastInput {
+        self.project_peer_forecast(
+            &self.per_host_peer_epoch,
+            crate::forecast::FlowDir::Out,
+            params,
+        )
+    }
+
+    /// The **ingress** counterpart of [`forecast_input_peers`](Self::forecast_input_peers): per
+    /// internal host, its *received*-bytes series split by external **source**, tagged
+    /// [`FlowDir::In`](crate::forecast::FlowDir::In) so a flood/spike victim's culprit source is
+    /// named ("from `<source>`", carried into the finding's `dst_ip`) even when the aggregate
+    /// inbound series masks it.
+    pub fn forecast_input_peers_ingress(&self, params: &ForecastParams) -> ForecastInput {
+        self.project_peer_forecast(
+            &self.per_host_peer_epoch_in,
+            crate::forecast::FlowDir::In,
+            params,
+        )
+    }
+
+    /// Shared projector behind [`forecast_input_peers`](Self::forecast_input_peers) and
+    /// [`forecast_input_peers_ingress`](Self::forecast_input_peers_ingress): re-bucket one
+    /// per-`(host, peer, second)` map to the histogram width, keep the top `max_peers_per_host`
+    /// peers of the top `max_hosts` hosts, and materialise each `(host, peer)` as its own
+    /// `peer`-tagged [`HostSeries`], tagged with `dir`. Deterministic (`BTreeMap`/`BTreeSet`).
+    fn project_peer_forecast(
+        &self,
+        cells: &HashMap<(IpAddr, IpAddr, i64), u64>,
+        dir: crate::forecast::FlowDir,
+        params: &ForecastParams,
+    ) -> ForecastInput {
         if params.max_peers_per_host == 0 {
             return ForecastInput::default();
         }
         let (Some(first_ns), Some(last_ns)) = (self.first_ts, self.last_ts) else {
             return ForecastInput::default();
         };
-        if self.per_host_peer_epoch.is_empty() {
+        if cells.is_empty() {
             return ForecastInput::default();
         }
         let first_sec = first_ns.div_euclid(1_000_000_000);
@@ -859,7 +906,7 @@ impl StatsAccumulator {
         let mut by_pair: BTreeMap<(IpAddr, IpAddr), BTreeMap<i64, u64>> = BTreeMap::new();
         let mut host_totals: BTreeMap<IpAddr, u64> = BTreeMap::new();
         let mut pair_totals: BTreeMap<(IpAddr, IpAddr), u64> = BTreeMap::new();
-        for (&(host, peer, sec), &bytes) in &self.per_host_peer_epoch {
+        for (&(host, peer, sec), &bytes) in cells {
             let bin_start = sec.div_euclid(width) * width;
             *by_pair
                 .entry((host, peer))
@@ -911,7 +958,7 @@ impl StatsAccumulator {
         ForecastInput {
             bin_secs: width,
             series,
-            direction: crate::forecast::FlowDir::Out,
+            direction: dir,
         }
     }
 
@@ -2733,6 +2780,83 @@ mod tests {
         assert!(
             rep.anomalies.iter().all(|a| a.port != Some(443)),
             "the flat heavy service port must not fire"
+        );
+    }
+
+    #[test]
+    fn per_peer_ingress_forecast_names_a_diluted_flood_source() {
+        use crate::forecast::{detect_traffic_anomalies, FlowDir, ForecastParams};
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let victim = ip4(10, 0, 0, 9); // internal receiver
+        let heavy = ip4(1, 1, 1, 1); // external source A: heavy steady inbound (dominates the total)
+        let culprit = ip4(8, 8, 8, 8); // external source B: tiny baseline + a burst — the culprit
+        let base = 1_700_000_000i64 * 1_000_000_000;
+        for i in 0..40i64 {
+            let ts = base + i * 1_000_000_000;
+            // Source A -> victim: 20 MB/s steady.
+            acc.observe_packet(&pkt(
+                i as u64,
+                ts,
+                20_000_000,
+                Transport::Tcp,
+                Some(heavy),
+                Some(victim),
+                443,
+                50_000,
+                0x18,
+            ));
+            // Source B -> victim: ~1 KB/s baseline with a 5 MB burst mid-capture.
+            let b_wire = if i == 20 { 5_000_000 } else { 1_000 };
+            acc.observe_packet(&pkt(
+                (100 + i) as u64,
+                ts,
+                b_wire,
+                Transport::Tcp,
+                Some(culprit),
+                Some(victim),
+                443,
+                50_000,
+                0x18,
+            ));
+        }
+        let p = ForecastParams::default();
+
+        // Aggregate inbound is dominated by source A, so B's burst is diluted -> silent.
+        assert!(
+            detect_traffic_anomalies(&acc.forecast_input_ingress(&p), &p)
+                .anomalies
+                .is_empty(),
+            "the flood is diluted in the victim's aggregate inbound series"
+        );
+
+        // The per-peer ingress split isolates source B's own inbound series -> fires, source named.
+        let peers = acc.forecast_input_peers_ingress(&p);
+        assert_eq!(peers.direction, FlowDir::In);
+        assert!(
+            peers
+                .series
+                .iter()
+                .any(|s| s.peer.as_deref() == Some("8.8.8.8")),
+            "source B has its own inbound sub-series"
+        );
+        let rep = detect_traffic_anomalies(&peers, &p);
+        let hit = rep
+            .anomalies
+            .iter()
+            .find(|a| a.peer.as_deref() == Some("8.8.8.8"))
+            .expect("the diluted flood source is named by the per-peer ingress pass");
+        assert_eq!(hit.host, "10.0.0.9");
+        assert!(
+            hit.evidence.iter().any(|e| e.contains("from 8.8.8.8")),
+            "{:?}",
+            hit.evidence
+        );
+        // The steady heavy source must not fire.
+        assert!(
+            rep.anomalies
+                .iter()
+                .all(|a| a.peer.as_deref() != Some("1.1.1.1")),
+            "the flat heavy source must not fire"
         );
     }
 
