@@ -38,6 +38,7 @@ pub(crate) mod carve;
 pub mod case;
 pub mod classify;
 pub mod columnar;
+pub mod custody;
 pub mod decode;
 pub mod detect;
 pub mod enrich;
@@ -67,6 +68,12 @@ pub use baseline::{
     HostBaseline, HostObservation, RunningStat, BASELINE_SCHEMA_VERSION,
 };
 pub use case::{run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator};
+#[cfg(not(target_arch = "wasm32"))]
+pub use custody::{hash_file, verify_manifest};
+pub use custody::{
+    ArtifactCheck, ArtifactRecord, EvidenceManifest, VerifyOutcome, VerifyReport,
+    EVIDENCE_SCHEMA_VERSION,
+};
 pub use detect::alerts::derive_alerts;
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::{
