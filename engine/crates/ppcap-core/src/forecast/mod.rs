@@ -670,6 +670,35 @@ mod tests {
     }
 
     #[test]
+    fn ingress_peer_series_says_from_the_source() {
+        // In + peer: the sub-series infix preposition flips to "from" (the flood *source*), not "to".
+        let mut bins = vec![1_000_000u64; 30];
+        bins[20] = 40_000_000;
+        let rep = detect_traffic_anomalies(
+            &input_dir(vec![peer_series("10.0.0.9", "8.8.8.8", &bins)], FlowDir::In),
+            &params(),
+        );
+        assert_eq!(rep.anomalies.len(), 1);
+        let a = &rep.anomalies[0];
+        assert_eq!(a.peer.as_deref(), Some("8.8.8.8"));
+        assert!(
+            a.evidence.iter().any(|e| e.contains("from 8.8.8.8")),
+            "{:?}",
+            a.evidence
+        );
+        assert!(
+            a.evidence.iter().any(|e| e.contains("inbound")),
+            "{:?}",
+            a.evidence
+        );
+        assert!(
+            !a.evidence.iter().any(|e| e.contains("to 8.8.8.8")),
+            "{:?}",
+            a.evidence
+        );
+    }
+
+    #[test]
     fn port_resolved_series_names_the_service_port() {
         // A per-port egress sub-series: the spike must name the port ("on port 4444") in the
         // evidence and title, and the anomaly must carry the port so `into_findings` sets `dst_port`

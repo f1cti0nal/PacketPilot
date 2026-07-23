@@ -567,8 +567,14 @@ pub fn run_source_visiting<'a>(
             egress_findings.iter().map(|f| f.src_ip.clone()).collect();
         findings.extend(egress_findings);
 
-        let ingress = stats.forecast_input_ingress(&cfg.forecast);
-        findings.extend(detect_traffic_anomalies(&ingress, &cfg.forecast).into_findings());
+        // Ingress mirrors egress with its own suppression set (a host can be both a sender-anomaly
+        // and a receiver-anomaly — those are distinct, so ingress dedups independently of egress).
+        let ingress_findings =
+            detect_traffic_anomalies(&stats.forecast_input_ingress(&cfg.forecast), &cfg.forecast)
+                .into_findings();
+        let ingress_hosts: std::collections::HashSet<String> =
+            ingress_findings.iter().map(|f| f.src_ip.clone()).collect();
+        findings.extend(ingress_findings);
 
         // Per-peer egress decomposition (the egress-proxy blind spot): forecast each host's exchange
         // with its top external peers, keeping only anomalies for hosts the aggregate pass missed.
@@ -589,6 +595,19 @@ pub fn run_source_visiting<'a>(
                 .into_findings()
                 .into_iter()
                 .filter(|f| !egress_hosts.contains(&f.src_ip)),
+        );
+
+        // Per-peer ingress decomposition (the ingress mirror): forecast each internal host's
+        // received bytes split by external source, naming the culprit source of a flood the
+        // aggregate inbound series masked. Suppress hosts the ingress aggregate already flagged.
+        findings.extend(
+            detect_traffic_anomalies(
+                &stats.forecast_input_peers_ingress(&cfg.forecast),
+                &cfg.forecast,
+            )
+            .into_findings()
+            .into_iter()
+            .filter(|f| !ingress_hosts.contains(&f.src_ip)),
         );
     }
 
