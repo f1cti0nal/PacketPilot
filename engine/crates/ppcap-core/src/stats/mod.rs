@@ -51,6 +51,12 @@ pub struct StatsConfig {
     /// (new cells past the cap are dropped, existing cells keep accumulating), so the fold stays O(1)
     /// and never distorts an interior bin of a host's series. ~50 B/cell (default ~6-8 MiB).
     pub max_forecast_cells: usize,
+    /// Upper bound on `(internal host, external peer, second)` **egress** cells retained for the
+    /// per-peer forecast decomposition (see [`StatsAccumulator::forecast_input_peers`]). Same
+    /// **insert-only** policy as `max_forecast_cells`; the key is finer (adds the peer dimension), so
+    /// it saturates sooner under load and simply stops extending peer series rather than distorting
+    /// them. ~64 B/cell (default ~8 MiB).
+    pub max_forecast_subcells: usize,
 }
 
 impl Default for StatsConfig {
@@ -64,6 +70,7 @@ impl Default for StatsConfig {
             max_evidence_per_ip: 6,
             max_time_buckets: 1_000,
             max_forecast_cells: 131_072,
+            max_forecast_subcells: 131_072,
         }
     }
 }
@@ -163,6 +170,11 @@ pub struct StatsAccumulator {
     /// Projected by [`Self::forecast_input_ingress`] so an inbound-flood / bulk-staging victim's own
     /// spike is forecast too. Same insert-only bound.
     per_host_epoch_in: HashMap<(IpAddr, i64), u64>,
+    /// Peer-resolved egress substrate: per-`(internal host, external peer, epoch second)` bytes
+    /// *sent*. Projected by [`Self::forecast_input_peers`] into per-`(host, peer)` sub-series so a
+    /// spike to one destination that the host's blended aggregate masks (the egress-proxy blind
+    /// spot) is caught and attributed to the peer. Insert-only, bounded by `max_forecast_subcells`.
+    per_host_peer_epoch: HashMap<(IpAddr, IpAddr, i64), u64>,
 
     /// Fixed 13-slot category breakdown indexed by `Category::all()` position.
     per_category: [CatStat; 13],
@@ -251,6 +263,7 @@ impl StatsAccumulator {
             per_second: HashMap::new(),
             per_host_epoch: HashMap::new(),
             per_host_epoch_in: HashMap::new(),
+            per_host_peer_epoch: HashMap::new(),
             per_category: [CatStat::default(); 13],
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
@@ -343,7 +356,8 @@ impl StatsAccumulator {
             let epoch_sec = p.ts_ns.div_euclid(1_000_000_000);
             // Egress cell for an internal sender, ingress cell for an internal receiver — so a host's
             // own inbound spike (a volumetric flood or bulk staging) is forecast as well as its egress.
-            if !classify_ip(src_ip).is_external() {
+            let src_internal = !classify_ip(src_ip).is_external();
+            if src_internal {
                 fold_forecast_cell(
                     &mut self.per_host_epoch,
                     (src_ip, epoch_sec),
@@ -357,6 +371,17 @@ impl StatsAccumulator {
                     (dst_ip, epoch_sec),
                     wire,
                     self.cfg.max_forecast_cells,
+                );
+            } else if src_internal {
+                // Peer-resolved egress: an internal host sending to an EXTERNAL peer. Keyed on the
+                // external destination so the per-peer decomposition can un-blend an egress proxy
+                // (`else if` because the peer dimension only matters when the counterparty is
+                // external — internal↔internal is already covered by both hosts' aggregate series).
+                fold_forecast_cell(
+                    &mut self.per_host_peer_epoch,
+                    (src_ip, dst_ip, epoch_sec),
+                    wire,
+                    self.cfg.max_forecast_subcells,
                 );
             }
         }
@@ -771,31 +796,100 @@ impl StatsAccumulator {
             if !kept.contains(ip) {
                 continue;
             }
-            let (Some(&first_bin), Some(&last_bin)) =
-                (binmap.keys().next(), binmap.keys().next_back())
-            else {
-                continue;
-            };
-            let span = ((last_bin - first_bin) / width) as usize + 1;
-            let n = span.min(self.cfg.max_time_buckets);
-            let mut bins = vec![0u64; n];
-            for (&bin_start, &bytes) in binmap {
-                let idx = ((bin_start - first_bin) / width) as usize;
-                if idx < n {
-                    bins[idx] = bytes;
-                }
+            if let Some(hs) = materialize_forecast_series(
+                binmap,
+                width,
+                self.cfg.max_time_buckets,
+                ip.to_string(),
+                None,
+            ) {
+                series.push(hs);
             }
-            series.push(HostSeries {
-                host: ip.to_string(),
-                start_epoch_sec: first_bin,
-                bin_secs: width,
-                bins,
-            });
         }
         ForecastInput {
             bin_secs: width,
             series,
             direction: dir,
+        }
+    }
+
+    /// Project the peer-resolved egress substrate into per-`(host, peer)` sub-series: for each
+    /// internal host (heaviest `max_hosts` by peer-egress total), forecast its exchange with each of
+    /// its top `max_peers_per_host` external peers as its own series (tagged with `peer`). Lets the
+    /// forecaster un-blend an egress proxy — a spike to one destination that the host's aggregate
+    /// masks — and attribute it to that peer. Same width/gap-fill as
+    /// [`forecast_input`](Self::forecast_input); deterministic (`BTreeMap`/`BTreeSet` ordering).
+    pub fn forecast_input_peers(&self, params: &ForecastParams) -> ForecastInput {
+        if params.max_peers_per_host == 0 {
+            return ForecastInput::default();
+        }
+        let (Some(first_ns), Some(last_ns)) = (self.first_ts, self.last_ts) else {
+            return ForecastInput::default();
+        };
+        if self.per_host_peer_epoch.is_empty() {
+            return ForecastInput::default();
+        }
+        let first_sec = first_ns.div_euclid(1_000_000_000);
+        let last_sec = last_ns.div_euclid(1_000_000_000);
+        let width = choose_bucket_width(first_sec, last_sec, self.cfg.max_time_buckets).max(1);
+
+        // Group cells by (host, peer) -> (bin_start -> bytes); tally per-host and per-pair totals for
+        // the two-level top-N ranking below.
+        let mut by_pair: BTreeMap<(IpAddr, IpAddr), BTreeMap<i64, u64>> = BTreeMap::new();
+        let mut host_totals: BTreeMap<IpAddr, u64> = BTreeMap::new();
+        let mut pair_totals: BTreeMap<(IpAddr, IpAddr), u64> = BTreeMap::new();
+        for (&(host, peer, sec), &bytes) in &self.per_host_peer_epoch {
+            let bin_start = sec.div_euclid(width) * width;
+            *by_pair
+                .entry((host, peer))
+                .or_default()
+                .entry(bin_start)
+                .or_default() += bytes;
+            *host_totals.entry(host).or_default() += bytes;
+            *pair_totals.entry((host, peer)).or_default() += bytes;
+        }
+
+        // Keep the heaviest `max_hosts` hosts, then within each the heaviest `max_peers_per_host`
+        // peers — so the series count is bounded by `max_hosts · max_peers_per_host`.
+        let mut ranked_hosts: Vec<(IpAddr, u64)> = host_totals.into_iter().collect();
+        ranked_hosts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        ranked_hosts.truncate(params.max_hosts);
+        let kept_hosts: BTreeSet<IpAddr> = ranked_hosts.into_iter().map(|(ip, _)| ip).collect();
+
+        let mut peers_by_host: BTreeMap<IpAddr, Vec<(IpAddr, u64)>> = BTreeMap::new();
+        for (&(host, peer), &total) in &pair_totals {
+            if kept_hosts.contains(&host) {
+                peers_by_host.entry(host).or_default().push((peer, total));
+            }
+        }
+        let mut kept_pairs: BTreeSet<(IpAddr, IpAddr)> = BTreeSet::new();
+        for (host, mut peers) in peers_by_host {
+            peers.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            peers.truncate(params.max_peers_per_host);
+            for (peer, _) in peers {
+                kept_pairs.insert((host, peer));
+            }
+        }
+
+        let mut series: Vec<HostSeries> = Vec::new();
+        for ((host, peer), binmap) in &by_pair {
+            if !kept_pairs.contains(&(*host, *peer)) {
+                continue;
+            }
+            if let Some(hs) = materialize_forecast_series(
+                binmap,
+                width,
+                self.cfg.max_time_buckets,
+                host.to_string(),
+                Some(peer.to_string()),
+            ) {
+                series.push(hs);
+            }
+        }
+        ForecastInput {
+            bin_secs: width,
+            series,
+            direction: crate::forecast::FlowDir::Out,
         }
     }
 
@@ -1387,12 +1481,13 @@ fn aligned_bucket_count(first_sec: i64, last_sec: i64, width: i64) -> i64 {
     last_sec.div_euclid(width) - first_sec.div_euclid(width) + 1
 }
 
-/// Insert-only bounded accumulate for a forecast `(host, second)` cell: an existing cell always
-/// accumulates `wire`; a brand-new cell is added only while under `cap` (else dropped). O(1), no
-/// eviction scan, and never removes an interior cell — see the fold site in `observe_packet`.
-fn fold_forecast_cell(
-    map: &mut HashMap<(IpAddr, i64), u64>,
-    key: (IpAddr, i64),
+/// Insert-only bounded accumulate for a forecast cell (`(host, second)` or the peer-resolved
+/// `(host, peer, second)`): an existing cell always accumulates `wire`; a brand-new cell is added
+/// only while under `cap` (else dropped). O(1), no eviction scan, and never removes an interior
+/// cell — see the fold sites in `observe_packet`.
+fn fold_forecast_cell<K: std::hash::Hash + Eq>(
+    map: &mut HashMap<K, u64>,
+    key: K,
     wire: u64,
     cap: usize,
 ) {
@@ -1401,6 +1496,37 @@ fn fold_forecast_cell(
     } else if map.len() < cap {
         map.insert(key, wire);
     }
+}
+
+/// Materialize one `(width-aligned bin start -> bytes)` map into a contiguous, zero-gap-filled
+/// [`HostSeries`] across its active window (`≤ max_buckets` bins; a silent interior bin becomes a
+/// visible zero so a drop is detectable). `None` for an empty map. Shared by the whole-host
+/// ([`StatsAccumulator::forecast_input`]) and per-peer
+/// ([`StatsAccumulator::forecast_input_peers`]) projectors.
+fn materialize_forecast_series(
+    binmap: &BTreeMap<i64, u64>,
+    width: i64,
+    max_buckets: usize,
+    host: String,
+    peer: Option<String>,
+) -> Option<HostSeries> {
+    let (&first_bin, &last_bin) = (binmap.keys().next()?, binmap.keys().next_back()?);
+    let span = ((last_bin - first_bin) / width) as usize + 1;
+    let n = span.min(max_buckets);
+    let mut bins = vec![0u64; n];
+    for (&bin_start, &bytes) in binmap {
+        let idx = ((bin_start - first_bin) / width) as usize;
+        if idx < n {
+            bins[idx] = bytes;
+        }
+    }
+    Some(HostSeries {
+        host,
+        start_epoch_sec: first_bin,
+        bin_secs: width,
+        bins,
+        peer,
+    })
 }
 
 /// Insert-or-update a bounded map with a heavy-hitter-preserving eviction policy.
@@ -2349,6 +2475,84 @@ mod tests {
     }
 
     #[test]
+    fn per_peer_forecast_unmasks_a_diluted_spike() {
+        use crate::forecast::{detect_traffic_anomalies, FlowDir, ForecastParams};
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let host = ip4(10, 0, 0, 5); // internal, proxy-like sender
+        let heavy = ip4(1, 1, 1, 1); // external peer B: heavy steady baseline (dominates the total)
+        let light = ip4(8, 8, 8, 8); // external peer A: tiny baseline with a concentrated burst
+        let base = 1_700_000_000i64 * 1_000_000_000;
+        for i in 0..40i64 {
+            let ts = base + i * 1_000_000_000;
+            // Peer B: 20 MB/s steady — the host's aggregate egress is essentially all B.
+            acc.observe_packet(&pkt(
+                i as u64,
+                ts,
+                20_000_000,
+                Transport::Tcp,
+                Some(host),
+                Some(heavy),
+                50_000,
+                443,
+                0x18,
+            ));
+            // Peer A: ~1 KB/s baseline, but a 5 MB burst in one mid-capture second.
+            let a_wire = if i == 20 { 5_000_000 } else { 1_000 };
+            acc.observe_packet(&pkt(
+                (100 + i) as u64,
+                ts,
+                a_wire,
+                Transport::Tcp,
+                Some(host),
+                Some(light),
+                50_001,
+                443,
+                0x18,
+            ));
+        }
+        let p = ForecastParams::default();
+
+        // Whole-host aggregate is dominated by peer B, so A's burst is < z·σ of the total and the
+        // aggregate pass stays SILENT — the egress-blend blind spot this feature closes.
+        let agg = acc.forecast_input(&p);
+        assert!(
+            detect_traffic_anomalies(&agg, &p).anomalies.is_empty(),
+            "the burst is diluted in the host's aggregate — no whole-host anomaly"
+        );
+
+        // The per-peer decomposition isolates peer A's own series, where the burst is hundreds of σ:
+        // it fires, attributed to the internal host with the external peer named.
+        let peers = acc.forecast_input_peers(&p);
+        assert_eq!(peers.direction, FlowDir::Out);
+        assert!(
+            peers
+                .series
+                .iter()
+                .any(|s| s.peer.as_deref() == Some("8.8.8.8")),
+            "peer A has its own sub-series"
+        );
+        let rep = detect_traffic_anomalies(&peers, &p);
+        let a = rep
+            .anomalies
+            .iter()
+            .find(|a| a.peer.as_deref() == Some("8.8.8.8"))
+            .expect("peer A's diluted spike is unmasked by the per-peer pass");
+        assert_eq!(a.host, "10.0.0.5");
+        assert!(
+            a.evidence.iter().any(|e| e.contains("to 8.8.8.8")),
+            "{:?}",
+            a.evidence
+        );
+        // Peer B is a flat heavy baseline — it must not fire.
+        assert!(
+            rep.anomalies
+                .iter()
+                .all(|a| a.peer.as_deref() != Some("1.1.1.1")),
+            "the flat heavy peer must not fire"
+        );
+    }
+
+    #[test]
     fn is_scanner_tracks_distinct_dst_ports_on_syn_only() {
         let mut acc = StatsAccumulator::new(StatsConfig::default());
         let src = ip4(10, 0, 0, 9);
@@ -2400,6 +2604,7 @@ mod tests {
             max_evidence_per_ip: 6,
             max_time_buckets: 1_000,
             max_forecast_cells: 131_072,
+            max_forecast_subcells: 131_072,
         };
         let mut acc = StatsAccumulator::new(cfg);
         // Talkers are tracked per IP endpoint, so a packet needs BOTH a src and dst IP

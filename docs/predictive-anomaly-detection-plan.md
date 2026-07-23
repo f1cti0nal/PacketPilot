@@ -360,7 +360,7 @@ findings UI). A forecast-band overlay on the existing timeline chart is a docume
 | **Very smooth series → tiny σ → phantom spikes** | σ **floor tied to the host's mean** (`sigma_floor_frac·mean`), so small wobbles never read as many σ; `z=4` band on top. |
 | **Bursty-but-benign hosts** | `min_bin_bytes` ignores trivial talkers; the residual-EWMA σ adapts to a naturally variable host so its normal bursts widen the band rather than alerting. |
 | **Attribution** | Egress-per-internal-sender keying makes every finding a real `src_ip`; `apply_findings` uplifts that host's card and incidents/chains stay clean (no synthetic "network" actor). |
-| **Internal egress proxy / gateway** | An internal proxy that funnels all egress becomes a permanent heavy-hitter whose aggregate shape is meaningless and can mis-attribute a spike to the proxy, not the culprit host — an acknowledged blind spot (the `is_external` gate only excludes *external* NAT). A per-flow or per-peer sub-series would resolve it; deferred (§13). |
+| **Internal egress proxy / gateway** | An internal proxy that funnels all egress is a permanent heavy-hitter whose *aggregate* shape is a meaningless blend. **Resolved** by the per-peer decomposition (§13): each `(host, external peer)` egress sub-series is forecast independently, so a spike to one destination that the blended aggregate masks is caught and named (`dst_ip = peer`). Peers of a host whose aggregate already fired are suppressed (the host-level finding subsumes them), so the pass only adds signal, not noise. |
 | **Long/wide captures → cell saturation** | `max_forecast_cells` bounds heap independently of `max_tracked_keys`; the **insert-only** bound keeps the fold O(1) and, by never evicting interior cells, avoids manufacturing false drops — a saturated capture simply stops extending each host's series (§7). |
 | **Spike inflates σ and masks a following drop** | Accepted and intended (one event → one finding); the σ floor and one-host-one-finding aggregation keep it from cascading. |
 | **Adaptive bin width dilutes a spike on huge captures** | Bins follow `choose_bucket_width` so the series stays ≤ `max_time_buckets`; the spike is measured against the same width the UI shows. Per-bin resolution on multi-day captures is a follow-up. |
@@ -419,7 +419,24 @@ than replacing `SynFlood` (§13, "Intra-capture ingress forecasting").
   `SynFlood` (half-open connection floods) by catching high-**byte** inbound spikes it does not model.
   Engine-only; no CLI/UI/wasm change, no new config (reuses `ForecastParams` and `max_forecast_cells`).
 
-**Still deferred:** **per-peer / per-port sub-series** — additive and does not disturb the shipped core.
+- **Per-peer egress sub-series** — closes the **egress-proxy blind spot** (§12). Alongside its
+  whole-host egress series, each internal host's egress is now decomposed **by external peer**: `stats`
+  folds a third bounded grid keyed `(internal host, external peer, second)` (`per_host_peer_epoch`,
+  external counterparty only — internal↔internal is already covered by both hosts' aggregates; the
+  generalised `fold_forecast_cell` and a shared `materialize_forecast_series` back all three grids),
+  and `forecast_input_peers` projects the top `max_peers_per_host` peers of the top `max_hosts` hosts
+  into per-`(host, peer)` sub-series. `HostSeries`/`Anomaly` gain an optional `peer`; the forecaster
+  stays peer-blind (only `aggregate` reads it, adding a "to `<peer>`" infix to the evidence/title), and
+  `into_findings` carries the peer into the finding's `dst_ip`. `analyze` runs the peer pass after the
+  aggregate egress pass and **suppresses peers of any host whose aggregate already fired** — so the
+  pass only surfaces the *masked* case (a spike to one destination diluted in a blended aggregate, e.g.
+  through a proxy) rather than restating host-level alarms. Engine-only; no CLI/UI/wasm change.
+  `ForecastParams`: `max_peers_per_host` (8, `0` disables); `StatsConfig`: `max_forecast_subcells`
+  (131 072, insert-only like `max_forecast_cells`).
+
+**Still deferred:** **per-port sub-series** (decompose by service port as well as peer) and **per-peer
+*ingress*** (which external source flooded a given internal victim) — each additive, mirroring the
+per-peer egress pass, and neither disturbs the shipped core.
 
 ---
 

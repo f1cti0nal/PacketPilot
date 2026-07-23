@@ -61,6 +61,10 @@ pub struct ForecastParams {
     pub max_hosts: usize,
     /// Cap on emitted anomalies (worst-first; the tail is dropped after sorting).
     pub max_findings: usize,
+    /// For the per-peer egress decomposition: the number of top peers (by bytes) to forecast as
+    /// sub-series for each decomposed host. Bounds the peer fan-out per host so a chatty host does
+    /// not explode the series count. `0` disables the peer pass.
+    pub max_peers_per_host: usize,
     /// σ floor as a fraction of the host's mean bin volume, so a host that means 1 MB/bin does not
     /// flag a few-KB wobble as "many σ". `σ = max(√var, sigma_floor_frac·mean, 1)`.
     pub sigma_floor_frac: f64,
@@ -80,6 +84,7 @@ impl Default for ForecastParams {
             min_bin_bytes: 8_192,
             max_hosts: 256,
             max_findings: 256,
+            max_peers_per_host: 8,
             sigma_floor_frac: 0.15,
         }
     }
@@ -95,6 +100,12 @@ pub struct HostSeries {
     pub start_epoch_sec: i64,
     pub bin_secs: i64,
     pub bins: Vec<u64>,
+    /// When `Some`, this series is a **sub-series**: not the host's whole traffic but only its
+    /// exchange with this one peer (an external destination for egress). A peer-resolved anomaly is
+    /// attributed to `host` with the peer carried into the finding's `dst_ip`, so a spike to one
+    /// destination that the host's blended aggregate masks (the egress-proxy blind spot) is caught
+    /// and named. `None` for a whole-host series. `#[serde]`-free; defaults to `None`.
+    pub peer: Option<String>,
 }
 
 /// Which direction of a host's traffic a series measures — its **egress** (bytes it sent) or its
@@ -122,6 +133,14 @@ impl FlowDir {
         match self {
             FlowDir::Out => "T1048", // Exfiltration Over Alternative Protocol
             FlowDir::In => "T1498",  // Network Denial of Service
+        }
+    }
+    /// Preposition tying a host to the peer of a sub-series: the host *sent to* a peer (egress) or
+    /// *received from* one (ingress). Used only when a series is peer-resolved.
+    fn peer_prep(self) -> &'static str {
+        match self {
+            FlowDir::Out => "to",
+            FlowDir::In => "from",
         }
     }
 }
@@ -171,6 +190,9 @@ pub struct Anomaly {
     pub last_seen_ns: Option<i64>,
     /// ATT&CK technique ids attached (context — anomalous egress volume).
     pub attack: Vec<String>,
+    /// The peer this anomaly is resolved to, for a per-peer sub-series (carried into the finding's
+    /// `dst_ip`); `None` for a whole-host anomaly.
+    pub peer: Option<String>,
 }
 
 /// The result of forecasting a capture's per-host traffic series.
@@ -183,8 +205,9 @@ pub struct ForecastReport {
 
 impl ForecastReport {
     /// Convert anomalies into [`Finding`]s (kind [`FindingKind::TrafficAnomaly`]) for folding into
-    /// the summary alongside the other detectors. `src_ip` is the deviating host; the anomaly is a
-    /// host-egress-shape signal, so `dst_ip`/`dst_port` are `None`.
+    /// the summary alongside the other detectors. `src_ip` is the deviating host; a whole-host
+    /// anomaly leaves `dst_ip` `None`, while a per-peer sub-series anomaly carries the peer into
+    /// `dst_ip`. `dst_port` is always `None` (the shape signal is not port-tied).
     pub fn into_findings(self) -> Vec<Finding> {
         self.anomalies
             .into_iter()
@@ -194,7 +217,7 @@ impl ForecastReport {
                 score: a.score,
                 title: a.title,
                 src_ip: a.host,
-                dst_ip: None,
+                dst_ip: a.peer,
                 dst_port: None,
                 attack: a.attack,
                 evidence: a.evidence,
@@ -227,12 +250,14 @@ pub fn detect_traffic_anomalies(input: &ForecastInput, p: &ForecastParams) -> Fo
             report.anomalies.push(anomaly);
         }
     }
-    // Worst-first, with a total-order tie-break so the emitted order is deterministic.
+    // Worst-first, with a total-order tie-break so the emitted order is deterministic. The peer
+    // tie-break keeps two sub-series of the same host from ordering non-deterministically.
     report.anomalies.sort_by(|a, b| {
         b.score
             .cmp(&a.score)
             .then_with(|| b.severity.cmp(&a.severity))
             .then_with(|| a.host.cmp(&b.host))
+            .then_with(|| a.peer.cmp(&b.peer))
     });
     report.anomalies.truncate(p.max_findings);
     report
@@ -366,6 +391,12 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
         return None;
     }
     let word = dir.word();
+    // For a peer-resolved sub-series, a "to <peer>" / "from <peer>" infix names the destination the
+    // anomaly is concentrated on; empty for a whole-host series (leaving the wording unchanged).
+    let dest = match &s.peer {
+        Some(peer) => format!(" {} {}", dir.peer_prep(), peer),
+        None => String::new(),
+    };
     // The worst instance of each kind (largest |z|), for the evidence line.
     let worst = |k: HitKind| -> Option<Hit> {
         hits.iter().filter(|h| h.kind == k).copied().max_by(|a, b| {
@@ -384,7 +415,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
     if let Some(h) = worst(HitKind::Spike) {
         dims.push((
             format!(
-                "forecast: {word} {} at {} — one-step forecast {} (±{}), {:.0}σ above expected",
+                "forecast: {word} {}{dest} at {} — one-step forecast {} (±{}), {:.0}σ above expected",
                 human_bytes(h.actual as u64),
                 hhmmss(s.start_epoch_sec + h.bin as i64 * s.bin_secs),
                 human_bytes(h.forecast.max(0.0) as u64),
@@ -399,7 +430,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
     if let Some(h) = worst(HitKind::LevelShift) {
         dims.push((
             format!(
-                "forecast: sustained {word} level shift near {} — actual {}, forecast {} (CUSUM changepoint)",
+                "forecast: sustained {word} level shift{dest} near {} — actual {}, forecast {} (CUSUM changepoint)",
                 hhmmss(s.start_epoch_sec + h.bin as i64 * s.bin_secs),
                 human_bytes(h.actual as u64),
                 human_bytes(h.forecast.max(0.0) as u64),
@@ -411,7 +442,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
     if let Some(h) = worst(HitKind::Drop) {
         dims.push((
             format!(
-                "forecast: {word} dropped to {} at {} — forecast {} (±{}), {:.0}σ below expected",
+                "forecast: {word}{dest} dropped to {} at {} — forecast {} (±{}), {:.0}σ below expected",
                 human_bytes(h.actual as u64),
                 hhmmss(s.start_epoch_sec + h.bin as i64 * s.bin_secs),
                 human_bytes(h.forecast.max(0.0) as u64),
@@ -439,7 +470,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
         HitKind::LevelShift => "sustained traffic shift",
     };
     let title = format!(
-        "{host}: predictive {word} {verb} — actual {actual} vs forecast {fc} ({z:.0}σ)",
+        "{host}: predictive {word} {verb}{dest} — actual {actual} vs forecast {fc} ({z:.0}σ)",
         host = s.host,
         actual = human_bytes(head.actual as u64),
         fc = human_bytes(head.forecast.max(0.0) as u64),
@@ -461,6 +492,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
         first_seen_ns: Some(bin_ns(first_bin)),
         last_seen_ns: Some(bin_ns(last_bin) + s.bin_secs * 1_000_000_000),
         attack,
+        peer: s.peer.clone(),
     })
 }
 
@@ -513,6 +545,15 @@ mod tests {
             start_epoch_sec: 1_700_000_000,
             bin_secs: 1,
             bins: bins.to_vec(),
+            peer: None,
+        }
+    }
+
+    /// A peer-resolved sub-series (host's exchange with one peer) for the given per-bin values.
+    fn peer_series(host: &str, peer: &str, bins: &[u64]) -> HostSeries {
+        HostSeries {
+            peer: Some(peer.to_string()),
+            ..series(host, bins)
         }
     }
 
@@ -565,6 +606,41 @@ mod tests {
         );
         assert!(a.title.contains("inbound"), "{}", a.title);
         assert!(a.attack.iter().any(|t| t == "T1498"), "{:?}", a.attack);
+    }
+
+    #[test]
+    fn peer_resolved_series_names_the_destination() {
+        // A per-peer egress sub-series: the spike must name the peer ("to <peer>") in the evidence
+        // and title, and the anomaly must carry the peer so `into_findings` sets `dst_ip`.
+        let mut bins = vec![1_000_000u64; 30];
+        bins[20] = 40_000_000;
+        let rep = detect_traffic_anomalies(
+            &input(vec![peer_series("10.0.0.5", "203.0.113.9", &bins)]),
+            &params(),
+        );
+        assert_eq!(rep.anomalies.len(), 1);
+        let a = &rep.anomalies[0];
+        assert_eq!(a.peer.as_deref(), Some("203.0.113.9"));
+        assert!(
+            a.evidence.iter().any(|e| e.contains("to 203.0.113.9")),
+            "evidence names the peer: {:?}",
+            a.evidence
+        );
+        assert!(
+            a.title.contains("to 203.0.113.9"),
+            "title names the peer: {}",
+            a.title
+        );
+        // The peer rides into the finding's dst_ip (host-shape signal → no dst_port).
+        let findings = ForecastReport {
+            anomalies: vec![a.clone()],
+            hosts_analyzed: 1,
+        }
+        .into_findings();
+        let f = &findings[0];
+        assert_eq!(f.src_ip, "10.0.0.5");
+        assert_eq!(f.dst_ip.as_deref(), Some("203.0.113.9"));
+        assert!(f.dst_port.is_none());
     }
 
     #[test]
