@@ -21,6 +21,37 @@ describe("DetailFlyout finding score", () => {
   });
 });
 
+describe("DetailFlyout finding target", () => {
+  it("shows the src → dst:port attribution when a finding names a peer", () => {
+    render(<DetailFlyout incident={incident} onClose={() => {}} />);
+    expect(screen.getByText("2.2.2.2:443")).toBeInTheDocument();
+  });
+
+  it("names the service port for a port-only finding (per-port traffic anomaly)", () => {
+    const inc: Incident = {
+      ...incident,
+      findings: [
+        {
+          kind: "traffic_anomaly",
+          severity: "medium",
+          score: 40,
+          title: "predictive outbound traffic spike",
+          src_ip: "10.0.0.5",
+          dst_ip: null,
+          dst_port: 4444,
+          attack: ["T1048"],
+          evidence: ["forecast: an outbound spike, 5 MB"],
+          interval_ns: null,
+          jitter_cv: null,
+          contacts: null,
+        },
+      ],
+    };
+    render(<DetailFlyout incident={inc} onClose={() => {}} />);
+    expect(screen.getByText("port 4444")).toBeInTheDocument();
+  });
+});
+
 describe("DetailFlyout score waterfall", () => {
   it("renders the score waterfall when scoreEvidence is provided", () => {
     const inc = makeOutput().summary.incidents![0];

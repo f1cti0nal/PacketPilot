@@ -474,11 +474,21 @@ than replacing `SynFlood` (§13, "Intra-capture ingress forecasting").
   (mirroring egress), so a service-flood victim yields one ingress finding. Engine-only; no CLI/UI/wasm
   change, no new config.
 
-**Follow-ups complete.** The intra-capture forecaster now covers **both directions** (egress/ingress) at
-**three resolutions each** — whole-host, per-peer, and per-port — plus the cross-capture seasonal
-baseline. The full direction × resolution matrix is shipped; any further work (per-protocol sub-series,
-a UI sensitivity control for `z`/thresholds, surfacing the peer/port attribution in the UI finding
-cards) would be net-new scope rather than a tracked deferral.
+**Detection matrix complete.** The intra-capture forecaster now covers **both directions**
+(egress/ingress) at **three resolutions each** — whole-host, per-peer, and per-port — plus the
+cross-capture seasonal baseline. The full direction × resolution matrix is shipped.
+
+- **Peer/port attribution in the UI** (first surfacing follow-up) — the per-peer / per-port passes above
+  attribute a `traffic_anomaly` to a `dst_ip` (peer) or `dst_port` (service), but the UI dropped the
+  port-only case. A shared `dstLabel()` helper (`ui/src/lib/findingTarget.ts`) now renders a finding's
+  destination as `ip:port` / `ip` / **`port N`** / `—`, closing the gap where a per-port anomaly showed
+  "—" (the old `dst_ip ? … : "—"` idiom hid it). A `FindingTarget` row (`src → dst`, hidden when a
+  finding names nothing) is added to the incident **flyout** — the detailed triage surface that
+  previously showed no target — and the findings table and the signature/TLS triage panels route their
+  destination string through `dstLabel`. UI-only; no engine/wasm change.
+
+Remaining ideas (net-new scope, not tracked deferrals): per-protocol sub-series, and a UI sensitivity
+control for the forecaster's `z`/thresholds.
 
 ---
 
