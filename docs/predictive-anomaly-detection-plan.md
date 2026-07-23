@@ -462,10 +462,23 @@ than replacing `SynFlood` (§13, "Intra-capture ingress forecasting").
   can be both a sender- and a receiver-anomaly), skipping hosts the ingress aggregate already flagged.
   Engine-only; no CLI/UI/wasm change, no new config (reuses `max_peers_per_host` / `max_forecast_subcells`).
 
-**Follow-ups complete.** The intra-capture forecaster now covers both directions (egress/ingress) at
-three resolutions each — whole-host, per-peer, and (egress) per-port — plus cross-capture seasonality.
-Any further work (per-port ingress, per-protocol sub-series, a UI sensitivity control) would be net-new
-scope rather than a tracked deferral.
+- **Per-port ingress sub-series** — the ingress mirror of the per-port egress split, and the last cell
+  of the direction × resolution matrix: each internal host's *received* bytes are decomposed **by
+  service port**, catching a **service-targeted inbound flood** — even one *spread across many sources*,
+  which the per-peer ingress split divides away. `stats` folds a sixth bounded grid keyed `(internal
+  host, service port, second)` (`per_host_port_epoch_in`, the twin of `per_host_port_epoch`; the port
+  fold now handles egress and ingress in one block), and a shared `project_port_forecast(cells, dir)`
+  backs both `forecast_input_ports` (`Out`) and the new `forecast_input_ports_ingress` (`In`). No
+  forecast-module change (the "on port `<p>`" infix is direction-agnostic; `word` supplies inbound vs
+  outbound). `analyze` extends the ingress suppression to a strict **whole-host > peer > port** priority
+  (mirroring egress), so a service-flood victim yields one ingress finding. Engine-only; no CLI/UI/wasm
+  change, no new config.
+
+**Follow-ups complete.** The intra-capture forecaster now covers **both directions** (egress/ingress) at
+**three resolutions each** — whole-host, per-peer, and per-port — plus the cross-capture seasonal
+baseline. The full direction × resolution matrix is shipped; any further work (per-protocol sub-series,
+a UI sensitivity control for `z`/thresholds, surfacing the peer/port attribution in the UI finding
+cards) would be net-new scope rather than a tracked deferral.
 
 ---
 

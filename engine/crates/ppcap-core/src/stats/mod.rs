@@ -186,6 +186,11 @@ pub struct StatsAccumulator {
     /// per-`(host, source)` sub-series so a flood/spike victim's culprit external source is named —
     /// even when the aggregate inbound series masks it. Insert-only, bounded by `max_forecast_subcells`.
     per_host_peer_epoch_in: HashMap<(IpAddr, IpAddr, i64), u64>,
+    /// The **ingress** mirror of `per_host_port_epoch`: per-`(internal host, service port, epoch
+    /// second)` bytes *received*. Projected by [`Self::forecast_input_ports_ingress`] into
+    /// per-`(host, port)` sub-series so a service-targeted inbound flood — even one spread across many
+    /// sources — is caught and attributed to the port. Insert-only, bounded by `max_forecast_subcells`.
+    per_host_port_epoch_in: HashMap<(IpAddr, u16, i64), u64>,
 
     /// Fixed 13-slot category breakdown indexed by `Category::all()` position.
     per_category: [CatStat; 13],
@@ -277,6 +282,7 @@ impl StatsAccumulator {
             per_host_peer_epoch: HashMap::new(),
             per_host_port_epoch: HashMap::new(),
             per_host_peer_epoch_in: HashMap::new(),
+            per_host_port_epoch_in: HashMap::new(),
             per_category: [CatStat::default(); 13],
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
@@ -408,18 +414,29 @@ impl StatsAccumulator {
                     self.cfg.max_forecast_subcells,
                 );
             }
-            // Port-resolved egress: bytes an internal host sent on a service port (the well-known
-            // side, `min(src,dst)`), for any destination locality (a port-concentrated spike matters
-            // whether the peer is internal or external — unlike the peer split, which is external-
-            // only). Port-bearing transports only. The key is low-cardinality, so it stays well
-            // under the shared sub-cell cap.
-            if src_internal && p.transport.has_ports() {
-                fold_forecast_cell(
-                    &mut self.per_host_port_epoch,
-                    (src_ip, src_port.min(dst_port), epoch_sec),
-                    wire,
-                    self.cfg.max_forecast_subcells,
-                );
+            // Port-resolved egress AND ingress: bytes an internal host sent / received on a service
+            // port (the well-known side, `min(src,dst)`), for any counterparty locality — a port-
+            // concentrated spike matters whether the peer is internal or external (unlike the peer
+            // split, which is external-only). Port-bearing transports only. Low-cardinality key, so
+            // both stay well under the shared sub-cell cap.
+            let svc_port = src_port.min(dst_port);
+            if p.transport.has_ports() {
+                if src_internal {
+                    fold_forecast_cell(
+                        &mut self.per_host_port_epoch,
+                        (src_ip, svc_port, epoch_sec),
+                        wire,
+                        self.cfg.max_forecast_subcells,
+                    );
+                }
+                if dst_internal {
+                    fold_forecast_cell(
+                        &mut self.per_host_port_epoch_in,
+                        (dst_ip, svc_port, epoch_sec),
+                        wire,
+                        self.cfg.max_forecast_subcells,
+                    );
+                }
             }
         }
 
@@ -962,20 +979,50 @@ impl StatsAccumulator {
         }
     }
 
-    /// Project the port-resolved egress substrate into per-`(host, port)` sub-series: for each
+    /// Project the port-resolved **egress** substrate into per-`(host, port)` sub-series: for each
     /// internal host (heaviest `max_hosts` by port-egress total), forecast its egress on each of its
     /// top `max_ports_per_host` service ports as its own series (tagged with `port`). Catches a spike
     /// concentrated on one service — including one spread across many peers, which
-    /// [`forecast_input_peers`](Self::forecast_input_peers) would divide away. Same width/gap-fill as
-    /// [`forecast_input`](Self::forecast_input); deterministic (`BTreeMap`/`BTreeSet` ordering).
+    /// [`forecast_input_peers`](Self::forecast_input_peers) would divide away.
     pub fn forecast_input_ports(&self, params: &ForecastParams) -> ForecastInput {
+        self.project_port_forecast(
+            &self.per_host_port_epoch,
+            crate::forecast::FlowDir::Out,
+            params,
+        )
+    }
+
+    /// The **ingress** counterpart of [`forecast_input_ports`](Self::forecast_input_ports): per
+    /// internal host, its *received*-bytes series split by service **port**, tagged
+    /// [`FlowDir::In`](crate::forecast::FlowDir::In) so a service-targeted inbound flood — even one
+    /// spread across many sources, which the per-peer ingress split would divide away — is caught and
+    /// attributed to the port ("on port `<p>`", carried into the finding's `dst_port`).
+    pub fn forecast_input_ports_ingress(&self, params: &ForecastParams) -> ForecastInput {
+        self.project_port_forecast(
+            &self.per_host_port_epoch_in,
+            crate::forecast::FlowDir::In,
+            params,
+        )
+    }
+
+    /// Shared projector behind [`forecast_input_ports`](Self::forecast_input_ports) and
+    /// [`forecast_input_ports_ingress`](Self::forecast_input_ports_ingress): re-bucket one
+    /// per-`(host, port, second)` map to the histogram width, keep the top `max_ports_per_host`
+    /// ports of the top `max_hosts` hosts, and materialise each `(host, port)` as its own
+    /// `port`-tagged [`HostSeries`], tagged with `dir`. Deterministic (`BTreeMap`/`BTreeSet`).
+    fn project_port_forecast(
+        &self,
+        cells: &HashMap<(IpAddr, u16, i64), u64>,
+        dir: crate::forecast::FlowDir,
+        params: &ForecastParams,
+    ) -> ForecastInput {
         if params.max_ports_per_host == 0 {
             return ForecastInput::default();
         }
         let (Some(first_ns), Some(last_ns)) = (self.first_ts, self.last_ts) else {
             return ForecastInput::default();
         };
-        if self.per_host_port_epoch.is_empty() {
+        if cells.is_empty() {
             return ForecastInput::default();
         }
         let first_sec = first_ns.div_euclid(1_000_000_000);
@@ -987,7 +1034,7 @@ impl StatsAccumulator {
         let mut by_pair: BTreeMap<(IpAddr, u16), BTreeMap<i64, u64>> = BTreeMap::new();
         let mut host_totals: BTreeMap<IpAddr, u64> = BTreeMap::new();
         let mut pair_totals: BTreeMap<(IpAddr, u16), u64> = BTreeMap::new();
-        for (&(host, port, sec), &bytes) in &self.per_host_port_epoch {
+        for (&(host, port, sec), &bytes) in cells {
             let bin_start = sec.div_euclid(width) * width;
             *by_pair
                 .entry((host, port))
@@ -1039,7 +1086,7 @@ impl StatsAccumulator {
         ForecastInput {
             bin_secs: width,
             series,
-            direction: crate::forecast::FlowDir::Out,
+            direction: dir,
         }
     }
 
@@ -2857,6 +2904,88 @@ mod tests {
                 .iter()
                 .all(|a| a.peer.as_deref() != Some("1.1.1.1")),
             "the flat heavy source must not fire"
+        );
+    }
+
+    #[test]
+    fn per_port_ingress_forecast_catches_a_service_targeted_flood() {
+        use crate::forecast::{detect_traffic_anomalies, FlowDir, ForecastParams};
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let victim = ip4(10, 0, 0, 9); // internal receiver
+        let a = ip4(1, 1, 1, 1); // steady source: heavy 443 baseline + a tiny 4444 baseline
+        let base = 1_700_000_000i64 * 1_000_000_000;
+        let mut idx = 0u64;
+        // one inbound packet (src -> victim on the victim's service port `svc`, wire bytes)
+        let mut recv = |acc: &mut StatsAccumulator, ts: i64, wire: u32, src: IpAddr, svc: u16| {
+            acc.observe_packet(&pkt(
+                idx,
+                ts,
+                wire,
+                Transport::Tcp,
+                Some(src),
+                Some(victim),
+                50_000,
+                svc,
+                0x18,
+            ));
+            idx += 1;
+        };
+        for i in 0..40i64 {
+            let ts = base + i * 1_000_000_000;
+            recv(&mut acc, ts, 20_000_000, a, 443); // heavy steady 443 inbound (dominates the victim)
+            recv(&mut acc, ts, 1_000, a, 4444); // tiny steady 4444 inbound (warm-up for its series)
+            if i == 20 {
+                // A 5 MB inbound burst on port 4444 SPREAD across four fresh sources: no single
+                // source's series fires, but port 4444's own inbound series concentrates it all.
+                for src in [
+                    ip4(2, 2, 2, 2),
+                    ip4(3, 3, 3, 3),
+                    ip4(4, 4, 4, 4),
+                    ip4(5, 5, 5, 5),
+                ] {
+                    recv(&mut acc, ts, 1_250_000, src, 4444);
+                }
+            }
+        }
+        let p = ForecastParams::default();
+
+        // Aggregate inbound: the 5 MB burst is < z·σ of the ~20 MB/s total -> silent.
+        assert!(
+            detect_traffic_anomalies(&acc.forecast_input_ingress(&p), &p)
+                .anomalies
+                .is_empty(),
+            "the service-targeted flood is diluted in the victim's aggregate inbound series"
+        );
+        // Per-peer ingress: source A is flat; sources B-E each have a single mid-capture bin (below
+        // warm-up) -> the per-peer ingress split MISSES the flood.
+        assert!(
+            detect_traffic_anomalies(&acc.forecast_input_peers_ingress(&p), &p)
+                .anomalies
+                .is_empty(),
+            "the flood is spread thin across sources — the per-peer ingress split can't see it"
+        );
+        // Per-port ingress: port 4444's own inbound series concentrates the whole flood -> it fires.
+        let ports = acc.forecast_input_ports_ingress(&p);
+        assert_eq!(ports.direction, FlowDir::In);
+        let rep = detect_traffic_anomalies(&ports, &p);
+        let hit = rep.anomalies.iter().find(|a| a.port == Some(4444)).expect(
+            "the service-targeted flood on port 4444 is caught by the per-port ingress pass",
+        );
+        assert_eq!(hit.host, "10.0.0.9");
+        assert!(
+            hit.evidence.iter().any(|e| e.contains("inbound")),
+            "{:?}",
+            hit.evidence
+        );
+        assert!(
+            hit.evidence.iter().any(|e| e.contains("on port 4444")),
+            "{:?}",
+            hit.evidence
+        );
+        // The flat heavy 443 baseline must not fire.
+        assert!(
+            rep.anomalies.iter().all(|a| a.port != Some(443)),
+            "the flat heavy service port must not fire"
         );
     }
 

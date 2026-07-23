@@ -572,7 +572,7 @@ pub fn run_source_visiting<'a>(
         let ingress_findings =
             detect_traffic_anomalies(&stats.forecast_input_ingress(&cfg.forecast), &cfg.forecast)
                 .into_findings();
-        let ingress_hosts: std::collections::HashSet<String> =
+        let mut ingress_hosts: std::collections::HashSet<String> =
             ingress_findings.iter().map(|f| f.src_ip.clone()).collect();
         findings.extend(ingress_findings);
 
@@ -600,9 +600,23 @@ pub fn run_source_visiting<'a>(
         // Per-peer ingress decomposition (the ingress mirror): forecast each internal host's
         // received bytes split by external source, naming the culprit source of a flood the
         // aggregate inbound series masked. Suppress hosts the ingress aggregate already flagged.
+        let ingress_peer_findings: Vec<_> = detect_traffic_anomalies(
+            &stats.forecast_input_peers_ingress(&cfg.forecast),
+            &cfg.forecast,
+        )
+        .into_findings()
+        .into_iter()
+        .filter(|f| !ingress_hosts.contains(&f.src_ip))
+        .collect();
+        ingress_hosts.extend(ingress_peer_findings.iter().map(|f| f.src_ip.clone()));
+        findings.extend(ingress_peer_findings);
+
+        // Per-port ingress decomposition: forecast each internal host's received bytes on its top
+        // service ports, catching a service-targeted inbound flood (even one spread across many
+        // sources). Same ingress suppression — skip hosts the ingress aggregate or peer pass flagged.
         findings.extend(
             detect_traffic_anomalies(
-                &stats.forecast_input_peers_ingress(&cfg.forecast),
+                &stats.forecast_input_ports_ingress(&cfg.forecast),
                 &cfg.forecast,
             )
             .into_findings()
