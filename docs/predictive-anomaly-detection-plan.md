@@ -434,9 +434,22 @@ than replacing `SynFlood` (§13, "Intra-capture ingress forecasting").
   `ForecastParams`: `max_peers_per_host` (8, `0` disables); `StatsConfig`: `max_forecast_subcells`
   (131 072, insert-only like `max_forecast_cells`).
 
-**Still deferred:** **per-port sub-series** (decompose by service port as well as peer) and **per-peer
-*ingress*** (which external source flooded a given internal victim) — each additive, mirroring the
-per-peer egress pass, and neither disturbs the shipped core.
+- **Per-port egress sub-series** — the complement of the per-peer split: each internal host's egress is
+  also decomposed **by service port** (the well-known side, `min(src,dst)`), so a spike concentrated on
+  one service — *including one spread across many peers*, which the per-peer split divides away — is
+  caught and attributed to the port. `stats` folds a fourth bounded grid keyed `(internal host, service
+  port, second)` (`per_host_port_epoch`, port-bearing egress of any destination locality since a
+  port-concentrated spike matters whether the peer is internal or external; low-cardinality key, shares
+  the `max_forecast_subcells` cap), and `forecast_input_ports` projects the top `max_ports_per_host`
+  ports of the top `max_hosts` hosts. `HostSeries`/`Anomaly` gain an optional `port` (mutually exclusive
+  with `peer`); `aggregate`'s infix becomes "on port `<p>`" and `into_findings` carries it into the
+  finding's `dst_port`. `analyze` runs the port pass last with a strict **whole-host > peer > port**
+  suppression (each pass adds its fired hosts to the skip set), so a single spike is never double-
+  reported as both a peer and a port anomaly. Engine-only; no CLI/UI/wasm change. `ForecastParams`:
+  `max_ports_per_host` (8, `0` disables).
+
+**Still deferred:** **per-peer *ingress*** (which external source flooded a given internal victim) —
+additive, mirroring the per-peer egress pass, and it does not disturb the shipped core.
 
 ---
 

@@ -559,10 +559,11 @@ pub fn run_source_visiting<'a>(
     if cfg.forecast.enabled {
         let egress = stats.forecast_input(&cfg.forecast);
         let egress_findings = detect_traffic_anomalies(&egress, &cfg.forecast).into_findings();
-        // Hosts whose *whole-host* egress already fired — their per-peer sub-series would only
-        // restate that alarm, so we suppress those below (the peer pass exists to surface the
-        // *masked* case: a spike to one destination that the host's blended aggregate hid).
-        let egress_hosts: std::collections::HashSet<String> =
+        // Hosts that already have an egress finding. The two decomposition passes (peer, then port)
+        // add their hosts to this set as they fire, giving a strict priority — whole-host > peer >
+        // port — so each host yields at most ONE egress-shape finding and one spike is never double-
+        // reported (e.g. as both a "to <peer>" and an "on port <p>" anomaly for the same event).
+        let mut egress_hosts: std::collections::HashSet<String> =
             egress_findings.iter().map(|f| f.src_ip.clone()).collect();
         findings.extend(egress_findings);
 
@@ -571,9 +572,20 @@ pub fn run_source_visiting<'a>(
 
         // Per-peer egress decomposition (the egress-proxy blind spot): forecast each host's exchange
         // with its top external peers, keeping only anomalies for hosts the aggregate pass missed.
-        let peers = stats.forecast_input_peers(&cfg.forecast);
+        let peer_findings: Vec<_> =
+            detect_traffic_anomalies(&stats.forecast_input_peers(&cfg.forecast), &cfg.forecast)
+                .into_findings()
+                .into_iter()
+                .filter(|f| !egress_hosts.contains(&f.src_ip))
+                .collect();
+        egress_hosts.extend(peer_findings.iter().map(|f| f.src_ip.clone()));
+        findings.extend(peer_findings);
+
+        // Per-port egress decomposition: forecast each host's egress on its top service ports,
+        // catching a spike concentrated on one service (even one spread across many peers). Same
+        // suppression — skip hosts already flagged by the aggregate or peer pass.
         findings.extend(
-            detect_traffic_anomalies(&peers, &cfg.forecast)
+            detect_traffic_anomalies(&stats.forecast_input_ports(&cfg.forecast), &cfg.forecast)
                 .into_findings()
                 .into_iter()
                 .filter(|f| !egress_hosts.contains(&f.src_ip)),

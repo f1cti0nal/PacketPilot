@@ -65,6 +65,10 @@ pub struct ForecastParams {
     /// sub-series for each decomposed host. Bounds the peer fan-out per host so a chatty host does
     /// not explode the series count. `0` disables the peer pass.
     pub max_peers_per_host: usize,
+    /// For the per-**port** egress decomposition: the number of top service ports (by bytes) to
+    /// forecast as sub-series for each decomposed host. Bounds the port fan-out per host. `0`
+    /// disables the port pass.
+    pub max_ports_per_host: usize,
     /// σ floor as a fraction of the host's mean bin volume, so a host that means 1 MB/bin does not
     /// flag a few-KB wobble as "many σ". `σ = max(√var, sigma_floor_frac·mean, 1)`.
     pub sigma_floor_frac: f64,
@@ -85,6 +89,7 @@ impl Default for ForecastParams {
             max_hosts: 256,
             max_findings: 256,
             max_peers_per_host: 8,
+            max_ports_per_host: 8,
             sigma_floor_frac: 0.15,
         }
     }
@@ -106,6 +111,11 @@ pub struct HostSeries {
     /// destination that the host's blended aggregate masks (the egress-proxy blind spot) is caught
     /// and named. `None` for a whole-host series. `#[serde]`-free; defaults to `None`.
     pub peer: Option<String>,
+    /// When `Some`, this series is a **per-port sub-series**: only the host's egress on this service
+    /// port (the well-known side). A port-resolved anomaly carries the port into the finding's
+    /// `dst_port`, catching a spike concentrated on one service — even one spread across many peers,
+    /// which the per-peer split would divide away. Mutually exclusive with `peer`; `None` otherwise.
+    pub port: Option<u16>,
 }
 
 /// Which direction of a host's traffic a series measures — its **egress** (bytes it sent) or its
@@ -193,6 +203,9 @@ pub struct Anomaly {
     /// The peer this anomaly is resolved to, for a per-peer sub-series (carried into the finding's
     /// `dst_ip`); `None` for a whole-host anomaly.
     pub peer: Option<String>,
+    /// The service port this anomaly is resolved to, for a per-port sub-series (carried into the
+    /// finding's `dst_port`); `None` otherwise. Mutually exclusive with `peer`.
+    pub port: Option<u16>,
 }
 
 /// The result of forecasting a capture's per-host traffic series.
@@ -206,8 +219,8 @@ pub struct ForecastReport {
 impl ForecastReport {
     /// Convert anomalies into [`Finding`]s (kind [`FindingKind::TrafficAnomaly`]) for folding into
     /// the summary alongside the other detectors. `src_ip` is the deviating host; a whole-host
-    /// anomaly leaves `dst_ip` `None`, while a per-peer sub-series anomaly carries the peer into
-    /// `dst_ip`. `dst_port` is always `None` (the shape signal is not port-tied).
+    /// anomaly leaves `dst_ip`/`dst_port` `None`, a per-peer sub-series carries the peer into
+    /// `dst_ip`, and a per-port sub-series carries the port into `dst_port`.
     pub fn into_findings(self) -> Vec<Finding> {
         self.anomalies
             .into_iter()
@@ -218,7 +231,7 @@ impl ForecastReport {
                 title: a.title,
                 src_ip: a.host,
                 dst_ip: a.peer,
-                dst_port: None,
+                dst_port: a.port,
                 attack: a.attack,
                 evidence: a.evidence,
                 interval_ns: None,
@@ -258,6 +271,7 @@ pub fn detect_traffic_anomalies(input: &ForecastInput, p: &ForecastParams) -> Fo
             .then_with(|| b.severity.cmp(&a.severity))
             .then_with(|| a.host.cmp(&b.host))
             .then_with(|| a.peer.cmp(&b.peer))
+            .then_with(|| a.port.cmp(&b.port))
     });
     report.anomalies.truncate(p.max_findings);
     report
@@ -391,11 +405,13 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
         return None;
     }
     let word = dir.word();
-    // For a peer-resolved sub-series, a "to <peer>" / "from <peer>" infix names the destination the
-    // anomaly is concentrated on; empty for a whole-host series (leaving the wording unchanged).
-    let dest = match &s.peer {
-        Some(peer) => format!(" {} {}", dir.peer_prep(), peer),
-        None => String::new(),
+    // For a sub-series, an infix names what the anomaly is concentrated on: a peer ("to <peer>" /
+    // "from <peer>") or a service port ("on port <p>"). Empty for a whole-host series (leaving the
+    // wording unchanged). `peer` and `port` are mutually exclusive by construction.
+    let dest = match (&s.peer, s.port) {
+        (Some(peer), _) => format!(" {} {}", dir.peer_prep(), peer),
+        (_, Some(port)) => format!(" on port {port}"),
+        _ => String::new(),
     };
     // The worst instance of each kind (largest |z|), for the evidence line.
     let worst = |k: HitKind| -> Option<Hit> {
@@ -493,6 +509,7 @@ fn aggregate(s: &HostSeries, hits: &[Hit], dir: FlowDir) -> Option<Anomaly> {
         last_seen_ns: Some(bin_ns(last_bin) + s.bin_secs * 1_000_000_000),
         attack,
         peer: s.peer.clone(),
+        port: s.port,
     })
 }
 
@@ -546,6 +563,7 @@ mod tests {
             bin_secs: 1,
             bins: bins.to_vec(),
             peer: None,
+            port: None,
         }
     }
 
@@ -553,6 +571,14 @@ mod tests {
     fn peer_series(host: &str, peer: &str, bins: &[u64]) -> HostSeries {
         HostSeries {
             peer: Some(peer.to_string()),
+            ..series(host, bins)
+        }
+    }
+
+    /// A port-resolved sub-series (host's egress on one service port) for the given per-bin values.
+    fn port_series(host: &str, port: u16, bins: &[u64]) -> HostSeries {
+        HostSeries {
+            port: Some(port),
             ..series(host, bins)
         }
     }
@@ -641,6 +667,41 @@ mod tests {
         assert_eq!(f.src_ip, "10.0.0.5");
         assert_eq!(f.dst_ip.as_deref(), Some("203.0.113.9"));
         assert!(f.dst_port.is_none());
+    }
+
+    #[test]
+    fn port_resolved_series_names_the_service_port() {
+        // A per-port egress sub-series: the spike must name the port ("on port 4444") in the
+        // evidence and title, and the anomaly must carry the port so `into_findings` sets `dst_port`
+        // (and leaves `dst_ip` unset — the signal is port-tied, not peer-tied).
+        let mut bins = vec![1_000_000u64; 30];
+        bins[20] = 40_000_000;
+        let rep = detect_traffic_anomalies(
+            &input(vec![port_series("10.0.0.5", 4444, &bins)]),
+            &params(),
+        );
+        assert_eq!(rep.anomalies.len(), 1);
+        let a = &rep.anomalies[0];
+        assert_eq!(a.port, Some(4444));
+        assert!(
+            a.evidence.iter().any(|e| e.contains("on port 4444")),
+            "evidence names the port: {:?}",
+            a.evidence
+        );
+        assert!(
+            a.title.contains("on port 4444"),
+            "title names the port: {}",
+            a.title
+        );
+        let findings = ForecastReport {
+            anomalies: vec![a.clone()],
+            hosts_analyzed: 1,
+        }
+        .into_findings();
+        let f = &findings[0];
+        assert_eq!(f.src_ip, "10.0.0.5");
+        assert_eq!(f.dst_port, Some(4444));
+        assert!(f.dst_ip.is_none());
     }
 
     #[test]
