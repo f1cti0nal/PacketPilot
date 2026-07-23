@@ -27,6 +27,7 @@ use crate::model::finding::{Finding, FindingKind};
 use crate::model::incident::Incident;
 use crate::model::output::AnalysisOutput;
 use crate::model::severity::Severity;
+use crate::model::summary::Summary;
 
 // ---------------------------------------------------------------------------------------
 // Public API
@@ -153,6 +154,9 @@ pub fn render_html(
         s.push_str("<div class=\"callout\">No critical or high-severity activity detected.</div>");
     }
     s.push_str("</section>\n");
+
+    // ---- Section 2b: the alert queue (Smart Alerting with Context) --------------------
+    s.push_str(&alerts_html(sum));
 
     // ---- Section 3: active incidents (the headline triage unit) ----------------------
     s.push_str(&incidents_html(&sum.incidents));
@@ -594,7 +598,7 @@ fn sev_color(s: Severity) -> &'static str {
 }
 
 /// Short human label for a behavioral finding kind (the report badge text).
-fn kind_label(k: FindingKind) -> &'static str {
+pub(crate) fn kind_label(k: FindingKind) -> &'static str {
     match k {
         FindingKind::Beacon => "C2 Beacon",
         FindingKind::HostSweep => "Host Sweep",
@@ -714,6 +718,144 @@ fn signature_matches_html(findings: &[Finding]) -> String {
 /// The "Active incidents" section: behavioral findings correlated into per-host stories, ordered
 /// along the kill chain (worst-first, as `correlate_incidents` already sorted them). Mirrors the
 /// app's IncidentsPanel in static, dependency-free HTML. Every capture-derived string is escaped.
+/// Human band label for the alert queue chips.
+fn band_label(band: crate::model::alert::PriorityBand) -> &'static str {
+    use crate::model::alert::PriorityBand;
+    match band {
+        PriorityBand::ActNow => "act now",
+        PriorityBand::Investigate => "investigate",
+        PriorityBand::Review => "review",
+        PriorityBand::Log => "log",
+        PriorityBand::Info => "info",
+    }
+}
+
+/// Chip color for a band — the band cutoffs are `Severity::from_score`'s, so the severity
+/// palette maps one-to-one (act-now = critical … info = info).
+fn band_color(band: crate::model::alert::PriorityBand) -> &'static str {
+    use crate::model::alert::PriorityBand;
+    sev_color(match band {
+        PriorityBand::ActNow => Severity::Critical,
+        PriorityBand::Investigate => Severity::High,
+        PriorityBand::Review => Severity::Medium,
+        PriorityBand::Log => Severity::Low,
+        PriorityBand::Info => Severity::Info,
+    })
+}
+
+/// The "Alert queue" section: the ranked, deduplicated, context-bundled triage queue (worst
+/// first, as `derive_alerts` sorted it), rendered above incidents/chains as the first triage
+/// section. Returns `""` when the queue is empty so pre-alert summaries keep their exact
+/// section list. Static, dependency-free HTML; every capture-derived string is escaped. Reuses
+/// the `.incident` block styles (incl. the print `break-inside` rule).
+fn alerts_html(sum: &Summary) -> String {
+    use crate::model::alert::PriorityBand;
+    let alerts = &sum.alerts;
+    if alerts.is_empty() {
+        return String::new();
+    }
+    let mut s = String::with_capacity(2048);
+    s.push_str("<section class=\"card\"><h2>Alert queue</h2>");
+    let act = alerts
+        .iter()
+        .filter(|a| a.band == PriorityBand::ActNow)
+        .count();
+    let inv = alerts
+        .iter()
+        .filter(|a| a.band == PriorityBand::Investigate)
+        .count();
+    let covered: u64 = alerts.iter().map(|a| a.finding_count as u64).sum();
+    let _ = write!(
+        s,
+        "<p class=\"muted\">{n} alert{np} from {covered} finding{fp} — {act} act-now, \
+         {inv} investigate. Every finding belongs to exactly one alert; grouping is the noise \
+         mechanism, nothing is dropped.</p>",
+        n = alerts.len(),
+        np = if alerts.len() == 1 { "" } else { "s" },
+        fp = if covered == 1 { "" } else { "s" },
+    );
+    for a in alerts {
+        let color = band_color(a.band);
+        let _ = write!(
+            s,
+            "<div class=\"incident alert\" style=\"border-left-color:{color}\">\
+             <div class=\"inc-head\">\
+             <span class=\"chip\" style=\"background:{color}\">{band}</span>\
+             <span class=\"mono inc-host\">{actor}</span>\
+             <span class=\"inc-score\">{priority}/100 &middot; conf {conf}%</span></div>",
+            band = band_label(a.band),
+            actor = esc(&a.actor),
+            priority = a.priority,
+            conf = a.confidence,
+        );
+        let _ = write!(
+            s,
+            "<p class=\"narr\"><strong>{}</strong></p>",
+            esc(&a.title)
+        );
+        // Actor identity, when the ARP/DHCP join found one.
+        if a.context.actor.hostname.is_some() || a.context.actor.mac.is_some() {
+            let name = a
+                .context
+                .actor
+                .hostname
+                .as_deref()
+                .unwrap_or("unknown-host");
+            let mac = a.context.actor.mac.as_deref().unwrap_or("");
+            let _ = write!(
+                s,
+                "<p class=\"narr\">{} = {} <span class=\"mono\">{}</span></p>",
+                esc(&a.context.actor.ip),
+                esc(name),
+                esc(mac),
+            );
+        }
+        // ATT&CK technique chips (story order).
+        if !a.attack.is_empty() {
+            s.push_str("<div class=\"techs\">");
+            for t in &a.attack {
+                let _ = write!(s, "<span class=\"tech\">{}</span>", esc(t));
+            }
+            s.push_str("</div>");
+        }
+        let _ = write!(s, "<p class=\"narr\">{}</p>", esc(&a.narrative));
+        let _ = write!(
+            s,
+            "<p class=\"narr\"><em>Do next:</em> {}</p>",
+            esc(&a.action)
+        );
+        // Context facts.
+        if !a.context.entries.is_empty() {
+            s.push_str("<ul class=\"findings\">");
+            for e in &a.context.entries {
+                let _ = write!(s, "<li>{}</li>", esc(&e.text));
+            }
+            s.push_str("</ul>");
+        }
+        // The transparent priority ledger.
+        s.push_str("<ul class=\"findings\">");
+        for t in &a.priority_terms {
+            let _ = write!(
+                s,
+                "<li><span class=\"mono\">{} ({:+})</span></li>",
+                esc(&t.label),
+                t.points,
+            );
+        }
+        s.push_str("</ul>");
+        let _ = write!(
+            s,
+            "<p class=\"muted\">covers {fc} finding{fp} on {hc} host{hp}</p></div>",
+            fc = a.finding_count,
+            fp = if a.finding_count == 1 { "" } else { "s" },
+            hc = a.host_count,
+            hp = if a.host_count == 1 { "" } else { "s" },
+        );
+    }
+    s.push_str("</section>\n");
+    s
+}
+
 fn incidents_html(incidents: &[Incident]) -> String {
     let mut s = String::with_capacity(2048);
     s.push_str("<section class=\"card\"><h2>Active incidents</h2>");

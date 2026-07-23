@@ -18,6 +18,7 @@
       "dns": 30531,
       "http": 30525,
       "tls": 38860,
+      "quic": 0,
       "other_tcp": 84,
       "other_udp": 0,
       "truncated": 0,
@@ -5605,7 +5606,10 @@
         ],
         "interval_ns": 29999995606,
         "jitter_cv": 0.01368876067440051,
-        "contacts": 7613
+        "contacts": 7613,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "data_exfil",
@@ -5625,7 +5629,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": null
+        "contacts": null,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "data_exfil",
@@ -5645,7 +5652,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": null
+        "contacts": null,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "host_sweep",
@@ -5664,7 +5674,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": null
+        "contacts": null,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "brute_force",
@@ -5683,7 +5696,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 30
+        "contacts": 30,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "cleartext_creds",
@@ -5702,7 +5718,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 5
+        "contacts": 5,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "cleartext_creds",
@@ -5721,7 +5740,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 2
+        "contacts": 2,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "pii_exposure",
@@ -5740,7 +5762,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 4
+        "contacts": 4,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "lateral_movement",
@@ -5760,7 +5785,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 6
+        "contacts": 6,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "exposed_remote_access",
@@ -5780,7 +5808,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 1
+        "contacts": 1,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "dns_tunnel",
@@ -5800,7 +5831,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 40
+        "contacts": 40,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       },
       {
         "kind": "syn_flood",
@@ -5819,7 +5853,10 @@
         ],
         "interval_ns": null,
         "jitter_cv": null,
-        "contacts": 7613
+        "contacts": 7613,
+        "first_seen_ns": null,
+        "last_seen_ns": null,
+        "victims": []
       }
     ],
     "incidents": [
@@ -5862,7 +5899,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": null
+            "contacts": null,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           },
           {
             "kind": "brute_force",
@@ -5881,7 +5921,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 30
+            "contacts": 30,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           },
           {
             "kind": "lateral_movement",
@@ -5901,7 +5944,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 6
+            "contacts": 6,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           },
           {
             "kind": "beacon",
@@ -5921,7 +5967,10 @@
             ],
             "interval_ns": 29999995606,
             "jitter_cv": 0.01368876067440051,
-            "contacts": 7613
+            "contacts": 7613,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           },
           {
             "kind": "dns_tunnel",
@@ -5941,7 +5990,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 40
+            "contacts": 40,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           },
           {
             "kind": "data_exfil",
@@ -5961,7 +6013,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": null
+            "contacts": null,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           },
           {
             "kind": "data_exfil",
@@ -5981,7 +6036,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": null
+            "contacts": null,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           }
         ]
       },
@@ -6015,7 +6073,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 7613
+            "contacts": 7613,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           }
         ]
       },
@@ -6049,7 +6110,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 5
+            "contacts": 5,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           }
         ]
       },
@@ -6083,7 +6147,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 2
+            "contacts": 2,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           }
         ]
       },
@@ -6118,7 +6185,10 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 1
+            "contacts": 1,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           }
         ]
       },
@@ -6152,9 +6222,433 @@
             ],
             "interval_ns": null,
             "jitter_cv": null,
-            "contacts": 4
+            "contacts": 4,
+            "first_seen_ns": null,
+            "last_seen_ns": null,
+            "victims": []
           }
         ]
+      }
+    ],
+    "attack_chains": [],
+    "alerts": [
+      {
+        "id": "alert:e5fa8ea732ccb74b",
+        "source": "host",
+        "band": "act_now",
+        "priority": 91,
+        "confidence": 70,
+        "severity": "critical",
+        "title": "Multi-stage incident on 10.13.37.7",
+        "narrative": "10.13.37.7 swept the network, then brute-forced credentials, then moved laterally, then beaconed to a C2, then tunneled data over DNS, then exfiltrated data.",
+        "action": "Block the resolver path and capture DNS logs from 10.13.37.7",
+        "actor": "10.13.37.7",
+        "hosts": [
+          "10.13.37.7"
+        ],
+        "host_count": 1,
+        "peer": null,
+        "attack": [
+          "T1071",
+          "T1048",
+          "T1046",
+          "T1110",
+          "T1021",
+          "T1071.004"
+        ],
+        "stage": "Exfiltration",
+        "stage_ordinal": 5,
+        "next_stage": "Impact",
+        "priority_terms": [
+          {
+            "label": "base: incident score",
+            "points": 89
+          },
+          {
+            "label": "confidence: 70%",
+            "points": 2
+          }
+        ],
+        "context": {
+          "actor": {
+            "ip": "10.13.37.7",
+            "hostname": null,
+            "mac": null,
+            "vendor": null,
+            "internal": true,
+            "cloud": null,
+            "new_to_baseline": false
+          },
+          "peers": [
+            {
+              "ip": "185.220.101.5",
+              "domain": null,
+              "cloud": null,
+              "ioc": false,
+              "reputation_malicious": 0,
+              "dst_port": 443
+            },
+            {
+              "ip": "45.77.13.37",
+              "domain": null,
+              "cloud": null,
+              "ioc": false,
+              "reputation_malicious": 0,
+              "dst_port": 443
+            }
+          ],
+          "entries": [
+            {
+              "kind": "kill_chain",
+              "text": "kill chain: Discovery → Credential Access → Lateral Movement → Command & Control → Exfiltration; next expected: Impact",
+              "finding_index": null,
+              "ip": null
+            }
+          ]
+        },
+        "finding_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          8,
+          10
+        ],
+        "finding_count": 7,
+        "chain_id": null,
+        "incident_hosts": [
+          "10.13.37.7"
+        ],
+        "first_seen_ns": null,
+        "last_seen_ns": null
+      },
+      {
+        "id": "alert:afb86cd875e07816",
+        "source": "host",
+        "band": "investigate",
+        "priority": 63,
+        "confidence": 60,
+        "severity": "high",
+        "title": "SYN flood: 45.77.13.37:443 hit by 7613 half-open connections",
+        "narrative": "SYN flood: 45.77.13.37:443 hit by 7613 half-open connections",
+        "action": "Rate-limit or filter the flood source toward the destination",
+        "actor": "45.77.13.37",
+        "hosts": [
+          "45.77.13.37"
+        ],
+        "host_count": 1,
+        "peer": null,
+        "attack": [
+          "T1499.001"
+        ],
+        "stage": "Impact",
+        "stage_ordinal": 6,
+        "next_stage": null,
+        "priority_terms": [
+          {
+            "label": "base: incident score",
+            "points": 68
+          },
+          {
+            "label": "context: no timestamps on any member",
+            "points": -5
+          }
+        ],
+        "context": {
+          "actor": {
+            "ip": "45.77.13.37",
+            "hostname": null,
+            "mac": null,
+            "vendor": null,
+            "internal": false,
+            "cloud": null,
+            "new_to_baseline": false
+          },
+          "peers": [],
+          "entries": [
+            {
+              "kind": "kill_chain",
+              "text": "kill chain: Impact",
+              "finding_index": null,
+              "ip": null
+            }
+          ]
+        },
+        "finding_indices": [
+          11
+        ],
+        "finding_count": 1,
+        "chain_id": null,
+        "incident_hosts": [
+          "45.77.13.37"
+        ],
+        "first_seen_ns": null,
+        "last_seen_ns": null
+      },
+      {
+        "id": "alert:afb877d875e08ac7",
+        "source": "host",
+        "band": "investigate",
+        "priority": 61,
+        "confidence": 60,
+        "severity": "high",
+        "title": "Exposed remote access: 45.77.13.38 reached RDP on 10.0.0.42:3389",
+        "narrative": "Exposed remote access: 45.77.13.38 reached RDP on 10.0.0.42:3389",
+        "action": "Close the exposed remote-access path or gate it behind a VPN",
+        "actor": "45.77.13.38",
+        "hosts": [
+          "45.77.13.38"
+        ],
+        "host_count": 1,
+        "peer": "10.0.0.42",
+        "attack": [
+          "T1133"
+        ],
+        "stage": "Lateral Movement",
+        "stage_ordinal": 2,
+        "next_stage": "Collection",
+        "priority_terms": [
+          {
+            "label": "base: incident score",
+            "points": 66
+          },
+          {
+            "label": "context: no timestamps on any member",
+            "points": -5
+          }
+        ],
+        "context": {
+          "actor": {
+            "ip": "45.77.13.38",
+            "hostname": null,
+            "mac": null,
+            "vendor": null,
+            "internal": false,
+            "cloud": null,
+            "new_to_baseline": false
+          },
+          "peers": [],
+          "entries": [
+            {
+              "kind": "kill_chain",
+              "text": "kill chain: Lateral Movement; next expected: Collection",
+              "finding_index": null,
+              "ip": null
+            }
+          ]
+        },
+        "finding_indices": [
+          9
+        ],
+        "finding_count": 1,
+        "chain_id": null,
+        "incident_hosts": [
+          "45.77.13.38"
+        ],
+        "first_seen_ns": null,
+        "last_seen_ns": null
+      },
+      {
+        "id": "alert:eab38e491517f51a",
+        "source": "host",
+        "band": "review",
+        "priority": 56,
+        "confidence": 40,
+        "severity": "high",
+        "title": "Cleartext credentials: 10.0.0.51 -> 10.0.0.91:21 (FTP login)",
+        "narrative": "Cleartext credentials: 10.0.0.51 -> 10.0.0.91:21 (FTP login)",
+        "action": "Rotate the exposed credentials; move the service to TLS",
+        "actor": "10.0.0.51",
+        "hosts": [
+          "10.0.0.51"
+        ],
+        "host_count": 1,
+        "peer": "10.0.0.91",
+        "attack": [
+          "T1552"
+        ],
+        "stage": "Credential Access",
+        "stage_ordinal": 1,
+        "next_stage": "Lateral Movement",
+        "priority_terms": [
+          {
+            "label": "base: incident score",
+            "points": 66
+          },
+          {
+            "label": "confidence: 40%",
+            "points": -5
+          },
+          {
+            "label": "context: no timestamps on any member",
+            "points": -5
+          }
+        ],
+        "context": {
+          "actor": {
+            "ip": "10.0.0.51",
+            "hostname": null,
+            "mac": null,
+            "vendor": null,
+            "internal": true,
+            "cloud": null,
+            "new_to_baseline": false
+          },
+          "peers": [],
+          "entries": [
+            {
+              "kind": "kill_chain",
+              "text": "kill chain: Credential Access; next expected: Lateral Movement",
+              "finding_index": null,
+              "ip": null
+            }
+          ]
+        },
+        "finding_indices": [
+          6
+        ],
+        "finding_count": 1,
+        "chain_id": null,
+        "incident_hosts": [
+          "10.0.0.51"
+        ],
+        "first_seen_ns": null,
+        "last_seen_ns": null
+      },
+      {
+        "id": "alert:eab38f491517f6cd",
+        "source": "host",
+        "band": "review",
+        "priority": 56,
+        "confidence": 40,
+        "severity": "high",
+        "title": "Cleartext credentials: 10.0.0.50 -> 10.0.0.80:80 (HTTP Basic auth)",
+        "narrative": "Cleartext credentials: 10.0.0.50 -> 10.0.0.80:80 (HTTP Basic auth)",
+        "action": "Rotate the exposed credentials; move the service to TLS",
+        "actor": "10.0.0.50",
+        "hosts": [
+          "10.0.0.50"
+        ],
+        "host_count": 1,
+        "peer": "10.0.0.80",
+        "attack": [
+          "T1552"
+        ],
+        "stage": "Credential Access",
+        "stage_ordinal": 1,
+        "next_stage": "Lateral Movement",
+        "priority_terms": [
+          {
+            "label": "base: incident score",
+            "points": 66
+          },
+          {
+            "label": "confidence: 40%",
+            "points": -5
+          },
+          {
+            "label": "context: no timestamps on any member",
+            "points": -5
+          }
+        ],
+        "context": {
+          "actor": {
+            "ip": "10.0.0.50",
+            "hostname": null,
+            "mac": null,
+            "vendor": null,
+            "internal": true,
+            "cloud": null,
+            "new_to_baseline": false
+          },
+          "peers": [],
+          "entries": [
+            {
+              "kind": "kill_chain",
+              "text": "kill chain: Credential Access; next expected: Lateral Movement",
+              "finding_index": null,
+              "ip": null
+            }
+          ]
+        },
+        "finding_indices": [
+          5
+        ],
+        "finding_count": 1,
+        "chain_id": null,
+        "incident_hosts": [
+          "10.0.0.50"
+        ],
+        "first_seen_ns": null,
+        "last_seen_ns": null
+      },
+      {
+        "id": "alert:eab38d491517f367",
+        "source": "host",
+        "band": "review",
+        "priority": 54,
+        "confidence": 40,
+        "severity": "high",
+        "title": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
+        "narrative": "Plaintext PII: 10.0.0.52 -> 10.0.0.80:80 (credit card number)",
+        "action": "Identify the PII flow and move it to an encrypted channel",
+        "actor": "10.0.0.52",
+        "hosts": [
+          "10.0.0.52"
+        ],
+        "host_count": 1,
+        "peer": "10.0.0.80",
+        "attack": [
+          "T1040"
+        ],
+        "stage": "Collection",
+        "stage_ordinal": 3,
+        "next_stage": "Command & Control",
+        "priority_terms": [
+          {
+            "label": "base: incident score",
+            "points": 64
+          },
+          {
+            "label": "confidence: 40%",
+            "points": -5
+          },
+          {
+            "label": "context: no timestamps on any member",
+            "points": -5
+          }
+        ],
+        "context": {
+          "actor": {
+            "ip": "10.0.0.52",
+            "hostname": null,
+            "mac": null,
+            "vendor": null,
+            "internal": true,
+            "cloud": null,
+            "new_to_baseline": false
+          },
+          "peers": [],
+          "entries": [
+            {
+              "kind": "kill_chain",
+              "text": "kill chain: Collection; next expected: Command & Control",
+              "finding_index": null,
+              "ip": null
+            }
+          ]
+        },
+        "finding_indices": [
+          7
+        ],
+        "finding_count": 1,
+        "chain_id": null,
+        "incident_hosts": [
+          "10.0.0.52"
+        ],
+        "first_seen_ns": null,
+        "last_seen_ns": null
       }
     ]
   },

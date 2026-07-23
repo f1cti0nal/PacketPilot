@@ -127,6 +127,15 @@ pub enum Command {
         #[command(subcommand)]
         action: BaselineAction,
     },
+    /// Smart Alerting: re-derive and print the ranked alert queue of an analyzed capture
+    /// (a pure, re-analysis-free transform over an `analyze --json` output).
+    Alerts {
+        /// The analysis-output JSON (from `analyze --json`).
+        summary: PathBuf,
+        /// Write the updated analysis JSON (with the re-derived queue) here; "-" => stdout.
+        #[arg(long)]
+        json: Option<String>,
+    },
     /// Generate a synthetic capture for testing.
     Gen {
         /// Output capture path.
@@ -241,6 +250,26 @@ pub enum BaselineAction {
 
 /// Embedded DuckDB DDL (shipped so the sidecar/Wasm can create the schema without the repo).
 const DUCKDB_SCHEMA: &str = include_str!("../../ppcap-core/sql/schema.sql");
+
+/// The Smart Alerting stderr one-liner: `alerts: 6 from 41 findings — 1 act-now, 2 investigate,
+/// 3 review; top: "…"`. Shared by `analyze` (after all post-hoc passes) and `ppcap alerts`.
+fn alerts_summary_line(summary: &ppcap_core::Summary) -> String {
+    use ppcap_core::PriorityBand;
+    let count = |b: PriorityBand| summary.alerts.iter().filter(|a| a.band == b).count();
+    format!(
+        "alerts: {} from {} findings — {} act-now, {} investigate, {} review; top: \"{}\"",
+        summary.alerts.len(),
+        summary.findings.len(),
+        count(PriorityBand::ActNow),
+        count(PriorityBand::Investigate),
+        count(PriorityBand::Review),
+        summary
+            .alerts
+            .first()
+            .map(|a| a.title.as_str())
+            .unwrap_or(""),
+    )
+}
 
 /// Parse args, dispatch, and map errors to a process exit code.
 ///
@@ -466,6 +495,12 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     parsed.skipped.len(),
                     rf.len()
                 );
+            }
+
+            // Smart Alerting one-liner — printed after ALL summary-mutating passes (reputation,
+            // rules) so the counts match the JSON that follows.
+            if !quiet && !out.summary.alerts.is_empty() {
+                eprintln!("{}", alerts_summary_line(&out.summary));
             }
 
             let s = out.to_json_pretty()?;
@@ -774,6 +809,39 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 Ok(())
             }
         },
+        Command::Alerts { summary, json } => {
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            // Idempotent pure re-derive over the loaded summary (same fn as the analyze seam).
+            out.summary.alerts = ppcap_core::derive_alerts(&out.summary);
+            if out.summary.alerts.is_empty() {
+                eprintln!("alerts: none — no findings rose above informational");
+            } else {
+                eprintln!("{}", alerts_summary_line(&out.summary));
+                for (i, a) in out.summary.alerts.iter().enumerate() {
+                    eprintln!(
+                        "  {:>2}. [{:<11} {:>3}/100 conf {:>3}%] {}",
+                        i + 1,
+                        a.band.as_str(),
+                        a.priority,
+                        a.confidence,
+                        a.title,
+                    );
+                    eprintln!("      do: {}", a.action);
+                }
+            }
+            if let Some(path) = json.as_deref() {
+                let s = out.to_json_pretty()?;
+                match path {
+                    "-" => println!("{s}"),
+                    p => std::fs::write(p, &s)
+                        .with_context(|| format!("write updated analysis JSON to {p}"))?,
+                }
+            }
+            Ok(())
+        }
         Command::Gen {
             output,
             scenario,
@@ -1114,6 +1182,70 @@ mod reputation_cli_tests {
             }
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn alerts_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ppcap", "alerts", "out.json", "--json", "-"]).unwrap();
+        match cli.command {
+            Command::Alerts { summary, json } => {
+                assert_eq!(summary, std::path::PathBuf::from("out.json"));
+                assert_eq!(json.as_deref(), Some("-"));
+            }
+            _ => panic!("expected Alerts"),
+        }
+    }
+
+    #[test]
+    fn alerts_subcommand_rederives_and_writes_json() {
+        // A minimal analysis output with one High beacon finding: the pure transform must
+        // derive a non-empty queue and write the updated JSON.
+        let mut summary = ppcap_core::Summary::empty();
+        summary.findings = vec![ppcap_core::Finding {
+            kind: ppcap_core::FindingKind::Beacon,
+            severity: ppcap_core::Severity::High,
+            score: 70,
+            title: "beacon".to_string(),
+            src_ip: "10.0.0.9".to_string(),
+            dst_ip: Some("45.77.13.37".to_string()),
+            dst_port: Some(443),
+            attack: vec!["T1071".to_string()],
+            evidence: vec!["periodic callbacks".to_string()],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        }];
+        let out = ppcap_core::AnalysisOutput {
+            schema_version: 1,
+            engine_version: "0.0.0".to_string(),
+            source_path: "t.pcap".to_string(),
+            source_sha256: None,
+            source_bytes: 0,
+            link_type: "EN10MB".to_string(),
+            summary,
+            flows_parquet_path: None,
+            elapsed_ms: 0,
+            baseline: None,
+        };
+        let input = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(input.path(), out.to_json_pretty().unwrap()).unwrap();
+        let output = tempfile::NamedTempFile::new().unwrap();
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "alerts",
+            input.path().to_str().unwrap(),
+            "--json",
+            output.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let updated: ppcap_core::AnalysisOutput =
+            serde_json::from_str(&std::fs::read_to_string(output.path()).unwrap()).unwrap();
+        assert!(!updated.summary.alerts.is_empty());
+        assert_eq!(updated.summary.alerts[0].actor, "10.0.0.9");
     }
 
     #[test]

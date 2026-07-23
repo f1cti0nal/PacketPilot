@@ -31,6 +31,7 @@ import { LoadingState } from "./components/state/LoadingState";
 import { ErrorState } from "./components/state/ErrorState";
 import { ErrorBoundary } from "./components/state/ErrorBoundary";
 import { Dashboard } from "./components/Dashboard";
+import { AlertsView } from "./views/AlertsView";
 import { FlowsView } from "./views/FlowsView";
 import { QueryView } from "./views/QueryView";
 import { FindingsView } from "./views/FindingsView";
@@ -821,6 +822,12 @@ export function App() {
           const after = compareSwapped ? older : newer;
           return <CompareView before={before} after={after} onSwap={() => setCompareSwapped((s) => !s)} />;
         })()
+      ) : tab === "alerts" ? (
+        <AlertsView
+          alerts={summary.status === "ready" ? summary.data?.summary.alerts ?? [] : []}
+          findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}
+          onOpenChain={() => setTab("attackchain")}
+        />
       ) : tab === "flows" ? (
         <FlowsView
           state={flows}

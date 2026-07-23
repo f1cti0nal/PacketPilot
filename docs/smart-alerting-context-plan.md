@@ -4,10 +4,21 @@
 
 | | |
 |---|---|
-| **Status** | Proposed — ready to implement |
+| **Status** | **Implemented** on this branch — engine + CLI + HTML report + browser UI + WASM ride-through + AI brief, adversarially reviewed |
 | **Feature branch** | `claude/smart-alerting-context-t78kzq` |
 | **Date** | 2026-07-23 |
 | **Scope** | Engine (Rust: new `detect/alerts.rs` pass + `model/alert.rs` contract type + three re-derive seams) · CLI (`ppcap alerts` subcommand + stderr one-liner) · HTML report (queue section) · UI (React/TS: Alerts tab + view + types) · WASM (rides through, zero new exports) · AI brief section |
+
+> **Implementation status (what actually shipped).** Everything in §3–§11 landed: `model/alert.rs`
+> + `detect/alerts.rs` (four tiers, ledger, context bundle, action table, overflow rollup) + the
+> three re-derive seams + `ppcap alerts` + `alerts_html` + the Alerts tab/view/AI-brief section +
+> the regenerated bundled sample (12 findings → 6 alerts). Verified here: 822 engine tests
+> (17 new alert unit tests, 4 e2e, 2 report, 2 CLI, 1 reputation seam), 1018 UI tests, clippy,
+> `tsc`, Playwright (new alerts spec + updated digit-key spec; the two remaining local e2e
+> failures reproduce on the pre-change baseline in this sandbox — pre-existing). Not verifiable
+> in this sandbox: the Tauri desktop shell and a real `wasm32` build (the wasm crate typechecks
+> against the new core with zero source changes). One design correction found during
+> implementation is folded in as Appendix A #13 (chain tier is strictly cross-host).
 
 > **How this plan was produced.** Six parallel subsystem readers mapped the engine pipeline,
 > findings/scoring/correlation machinery, baseline/forecast modules, model/report/CLI/wasm
@@ -72,9 +83,13 @@ forest, detect/mod.rs:4132), and `correlate_incidents` emits exactly one `Incide
 host (detect/mod.rs:3699-3711). Coverage is **by host, not by step index**, because
 `MAX_STEPS_PER_HOST=64` can evict step references — covering by `chain.hosts` is cap-proof.
 
-- **Tier 1 — Chain alerts** (`source: chain`). Each *qualifying* chain (`host_count >= 2 ||
-  tactic_count >= 2 || severity >= High`) claims the findings of all its hosts. A non-qualifying
-  chain (single-host, single-tactic, sub-High) is a re-wrapped weak incident and falls through.
+- **Tier 1 — Chain alerts** (`source: chain`). Each *cross-host* chain (`host_count >= 2`)
+  claims the findings of all its hosts. Single-host chains — even multi-tactic — do not
+  qualify: reconstruction emits a chain for every actor host, so a single-host chain is that
+  host's incident re-wrapped (the incident already carries the multi-stage escalation and
+  narrative), and a `tactic_count`-based gate would let two weak posture kinds on one host
+  masquerade as a "chain" and dodge the hygiene rollup (implementation correction; Appendix
+  A #13).
 - **Tier 2 — Standalone strong findings** (`source: finding`). A finding on a *chain host* that
   is **not** one of that chain's steps and is standalone-eligible (kind in `NEVER_ROLLUP` =
   {`MalwareDownload`, `MalwareSignature`, `RuleMatch`, `IcsControlCommand`, `ArpSpoof`} or
@@ -756,6 +771,12 @@ urgency.) (3) Should `ppcap alerts` also accept a case.json to build a cross-cap
     in the rollup is the audit trail.
 12. **(product)** Alert.severity rewritten from priority (engine-reuse) conflated the judgment
     and rank axes; severity is copied from the source story, band carries the rank.
+13. **(engine — found during implementation)** The planned chain-qualification gate
+    (`tactic_count >= 2 || severity >= High`) was wrong in practice: `reconstruct_attack_chains`
+    emits a chain for *every* actor host, so any host with two finding kinds spanning stages
+    qualified as a "chain" — including two weak posture kinds, which would dodge the hygiene
+    rollup. Tier 1 is now strictly cross-host (`host_count >= 2`); single-host stories are the
+    host tier's, where the incident base already carries multi-stage escalation.
 
 ## Appendix B — Citation verification
 

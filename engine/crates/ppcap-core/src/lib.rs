@@ -67,6 +67,7 @@ pub use baseline::{
     HostBaseline, HostObservation, RunningStat, BASELINE_SCHEMA_VERSION,
 };
 pub use case::{run_case, CaptureEntry, CaptureStatus, CaseConfig, CaseSummary, SharedIndicator};
+pub use detect::alerts::derive_alerts;
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::{
     fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
@@ -85,6 +86,10 @@ pub use fingerprint::{fingerprint_tls_client_hello, Ja4Transport, TlsFingerprint
 pub use forecast::{
     detect_traffic_anomalies, forecast_next, Anomaly, FlowDir, ForecastInput, ForecastNext,
     ForecastParams, ForecastReport, HostSeries,
+};
+pub use model::alert::{
+    Alert, AlertContext, AlertSource, ContextEntry, ContextKind, HostContext, PeerContext,
+    PriorityBand,
 };
 pub use model::attack_chain::{
     AttackChain, ChainEdge, ChainStep, EdgeKind, TacticStep, TechniqueRef,

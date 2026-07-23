@@ -21,6 +21,47 @@ describe("buildContext", () => {
     expect(ctx.length).toBeLessThan(20000);
   });
 
+  it("renders the alert queue as the FIRST section, before chains and severity", () => {
+    const out = makeOutput();
+    const ctx = buildContext(out);
+    expect(ctx).toContain("## Alert queue");
+    expect(ctx.indexOf("## Alert queue")).toBeLessThan(ctx.indexOf("## Severity"));
+    expect(ctx.indexOf("## Alert queue")).toBeLessThan(ctx.indexOf("## Reconstructed attack chains"));
+    // one self-sufficient triage line per alert: band, priority, confidence, actor, why, do
+    expect(ctx).toContain(
+      "- [ACT NOW p=92 conf 92%] Cross-host attack chain: 10.13.37.7 → 10.66.0.1 — actor 10.13.37.7 (ACCT-LT-042) — why: base: attack-chain score, novel: deviates from learned baseline — do: Isolate 10.66.0.1; block 45.77.13.37:443 at the egress firewall",
+    );
+    // the rollup alert has no hostname → the actor renders bare
+    expect(ctx).toContain("- [REVIEW p=38 conf 50%] Weak TLS posture: 1 host (1 finding) — actor 10.0.0.9 —");
+    // privacy + bounds preserved
+    expect(ctx).not.toContain("payload");
+    expect(ctx.length).toBeLessThan(20000);
+  });
+
+  it("respects TOP_ALERTS with the overflow idiom", () => {
+    const out = makeOutput();
+    const base = out.summary.alerts![0];
+    out.summary.alerts = Array.from({ length: 7 }, (_, i) => ({ ...base, id: `alert:${i}` }));
+    const ctx = buildContext(out);
+    expect(ctx).toContain("…and 2 more.");
+    expect(ctx.length).toBeLessThan(20000);
+  });
+
+  it("omits the alert queue section when there are none", () => {
+    const out = makeOutput();
+    out.summary.alerts = [];
+    expect(buildContext(out)).not.toContain("## Alert queue");
+  });
+
+  it("demotes an alert-covered host's incident when no chain covers it", () => {
+    const out = makeOutput();
+    // Remove the chains: the incident host 10.13.37.7 remains covered by alert.incident_hosts.
+    out.summary.attack_chains = [];
+    const ctx = buildContext(out);
+    expect(ctx).toContain("(see alert queue above)");
+    expect(ctx).not.toContain("(see attack chains above)");
+  });
+
   it("renders a reconstructed attack chains section and demotes covered incidents", () => {
     const out = makeOutput();
     const ctx = buildContext(out);

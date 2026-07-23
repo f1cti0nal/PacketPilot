@@ -315,3 +315,51 @@ fn renders_active_incidents_with_kill_chain() {
         "raw '<b>' leaked from narrative"
     );
 }
+
+/// The alert queue renders above incidents, with the ledger, and escapes hostile titles.
+#[test]
+fn renders_alert_queue_section_with_escaping() {
+    let mut out = sample();
+    out.summary.findings = vec![Finding {
+        kind: FindingKind::Beacon,
+        severity: Severity::High,
+        score: 70,
+        title: "beacon <script>alert(2)</script> to C2".into(),
+        src_ip: "10.0.0.9".into(),
+        dst_ip: Some("203.0.113.7".into()),
+        dst_port: Some(443),
+        attack: vec!["T1071".into()],
+        evidence: vec!["periodic callbacks".into()],
+        interval_ns: None,
+        jitter_cv: None,
+        contacts: None,
+        first_seen_ns: Some(1_000_000_000),
+        last_seen_ns: Some(2_000_000_000),
+        victims: Vec::new(),
+    }];
+    // Correlate like the analyze pipeline does so the alert's base is the incident score.
+    out.summary.incidents = ppcap_core::detect::correlate_incidents(&out.summary.findings);
+    out.summary.alerts = ppcap_core::derive_alerts(&out.summary);
+    assert!(!out.summary.alerts.is_empty(), "the beacon must alert");
+    let html = render_html(&out, 1_700_000_000, None);
+    assert!(html.contains("<h2>Alert queue</h2>"));
+    let alerts_at = html.find("<h2>Alert queue</h2>").unwrap();
+    let incidents_at = html.find("<h2>Active incidents</h2>").unwrap();
+    assert!(
+        alerts_at < incidents_at,
+        "the queue is the first triage section"
+    );
+    assert!(
+        !html.contains("<script>alert(2)"),
+        "alert titles must be escaped"
+    );
+    // The transparent ledger renders with its house `(±N)` shape.
+    assert!(html.contains("base: incident score"));
+}
+
+/// No alerts => no section (older summaries keep their exact section list).
+#[test]
+fn omits_alert_queue_when_none() {
+    let html = render_html(&sample(), 1_700_000_000, None);
+    assert!(!html.contains("Alert queue"));
+}

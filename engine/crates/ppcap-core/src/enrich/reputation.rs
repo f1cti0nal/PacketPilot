@@ -137,6 +137,10 @@ pub fn apply_reputation(
             .then(b.flows.cmp(&a.flows))
             .then(a.ip.cmp(&b.ip))
     });
+    // Reputation mutates the very cards the alert corroboration terms read (malicious floors
+    // can un-cap an alert past Medium), so the alert queue re-derives here — the wasm
+    // `apply_reputation` export calls this same fn, keeping browser parity for free.
+    summary.alerts = crate::detect::alerts::derive_alerts(summary);
 }
 
 /// Attach VirusTotal domain reputation verdicts to `summary.domain_threats`, keyed by host.
@@ -338,6 +342,7 @@ mod apply_tests {
             findings,
             incidents: vec![],
             attack_chains: vec![],
+            alerts: vec![],
         }
     }
 
@@ -439,6 +444,52 @@ mod apply_tests {
             last_seen_ns: None,
             victims: Vec::new(),
         }
+    }
+
+    #[test]
+    fn apply_reputation_rederives_alerts_with_corroboration() {
+        // The seam contract: reputation mutates the cards the alert corroboration terms read,
+        // so `apply_reputation` re-derives `summary.alerts` (same pure fn as the analyze seam).
+        let mut fdg = finding("10.0.0.9");
+        fdg.severity = Severity::Medium;
+        fdg.score = 45;
+        fdg.dst_ip = Some("45.77.13.37".to_string());
+        let mut s = summary_with(
+            vec![card(
+                "45.77.13.37",
+                IpClass::Public,
+                Severity::Medium,
+                40,
+                false,
+            )],
+            vec![fdg],
+        );
+        s.alerts = crate::detect::alerts::derive_alerts(&s);
+        let before = s.alerts.clone();
+        assert!(!before.is_empty());
+        assert!(before[0].priority < 60, "uncorroborated stays below High");
+        apply_reputation(
+            &mut s,
+            &map(vec![(
+                "45.77.13.37",
+                vec![
+                    verdict("abuseipdb", RepStatus::Malicious, Some(96)),
+                    verdict("virustotal", RepStatus::Malicious, Some(80)),
+                ],
+            )]),
+        );
+        assert_ne!(s.alerts, before, "the queue re-derived");
+        let a = &s.alerts[0];
+        assert!(
+            a.priority >= 90,
+            "reputation consensus floors act-now: {:?}",
+            a.priority_terms
+        );
+        assert!(a
+            .priority_terms
+            .iter()
+            .any(|t| t.label.starts_with("corroborated: reputation malicious")));
+        assert!(a.context.peers.iter().any(|p| p.reputation_malicious >= 2));
     }
 
     #[test]

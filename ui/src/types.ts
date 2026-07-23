@@ -135,6 +135,9 @@ export interface Summary {
   incidents?: Incident[];
   /** Findings reconstructed into multi-host, temporally-ordered attack chains; absent in older summaries. */
   attack_chains?: AttackChain[];
+  /** Ranked, deduplicated, context-bundled triage queue derived from findings / incidents /
+   *  attack chains / threat cards; absent in older summaries. */
+  alerts?: Alert[];
 }
 
 export interface SeverityCounts {
@@ -407,6 +410,128 @@ export interface AttackChain {
   last_ts_ns: number | null;
   host_count: number;
   tactic_count: number;
+}
+
+// ---------- Smart Alerting with Context ----------
+// Mirrors engine/crates/ppcap-core/src/model/alert.rs (snake_case wire tokens).
+
+/** Which layer of the correlation hierarchy an alert is told from (engine `AlertSource`). */
+export type AlertSource = "chain" | "host" | "finding" | "rollup";
+
+/**
+ * Priority band (engine `PriorityBand`). Cutoffs reuse the Severity::from_score thresholds
+ * verbatim: act_now 85-100, investigate 60-84, review 35-59, log 15-34, info 0-14.
+ */
+export type PriorityBand = "info" | "log" | "review" | "investigate" | "act_now";
+
+/** Typed context-entry kind (engine `ContextKind`); fixed render order, append-last. */
+export type ContextKind =
+  | "identity"
+  | "threat_intel"
+  | "reputation"
+  | "baseline_novelty"
+  | "forecast_anomaly"
+  | "kill_chain"
+  | "passive_dns"
+  | "cloud_provider"
+  | "carved_file"
+  | "encrypted_dns";
+
+/** One deterministic context fact, with an optional back-ref to its source finding. */
+export interface ContextEntry {
+  kind: ContextKind;
+  text: string;
+  /** Back-reference into `summary.findings` when the fact came from a member finding. */
+  finding_index?: number | null;
+  /** The IP the fact is about (peer joins), when applicable. */
+  ip?: string | null;
+}
+
+/** Actor identity, joined from arp_hosts (ip→mac) + dhcp_hosts (mac→hostname/vendor). */
+export interface HostContext {
+  ip: string;
+  hostname?: string | null;
+  mac?: string | null;
+  vendor?: string | null;
+  /** Whether the host classifies as internal (not an external/public address). */
+  internal: boolean;
+  /** Offline cloud/hosting attribution, when the IP maps to a known provider. */
+  cloud?: string | null;
+  /** The actor has a BaselineDeviation member finding in this capture. */
+  new_to_baseline?: boolean;
+}
+
+/** One external peer of interest (C2/drop candidates), worst-first, engine-capped. */
+export interface PeerContext {
+  ip: string;
+  /** Passive-DNS domain the peer resolved from, when observed. */
+  domain?: string | null;
+  /** Offline cloud/hosting attribution, when the IP maps to a known provider. */
+  cloud?: string | null;
+  /** The peer is on a known indicator-of-compromise feed. */
+  ioc: boolean;
+  /** Count of Malicious reputation verdicts on the peer's card (0 when the pass never ran). */
+  reputation_malicious?: number;
+  dst_port?: number | null;
+}
+
+/** The joined context bundle an alert carries: actor identity + peers + typed facts. */
+export interface AlertContext {
+  actor: HostContext;
+  peers?: PeerContext[];
+  entries?: ContextEntry[];
+}
+
+/**
+ * One row of the ranked triage queue (engine `Alert`): a self-sufficient triage card derived
+ * from findings / incidents / attack chains / threat cards. Alerts hold back-references only —
+ * findings are never cloned — and the queue arrives ranked (do not re-sort).
+ */
+export interface Alert {
+  /** "alert:{16-hex}" — stable across re-derivations; unique by construction. */
+  id: string;
+  source: AlertSource;
+  band: PriorityBand;
+  /** 0..=100 fused rank; Σ priority_terms == priority (engine-enforced). */
+  priority: number;
+  /** 0..=100. Chain alerts copy AttackChain.confidence verbatim. */
+  confidence: number;
+  /** Copied from the source story (worst member) — the judgment axis, never rewritten from
+   *  priority (the rank axis). The two can disagree; the UI shows both. */
+  severity: Severity;
+  title: string;
+  /** Reuses chain.narrative / incident.narrative / finding.title; rollups from the kind phrase. */
+  narrative: string;
+  /** Deterministic recommended next step ("Isolate X; block Y:443 at the egress firewall"). */
+  action: string;
+  /** Primary actor host (chain root / incident host / finding src_ip / first rollup host). */
+  actor: string;
+  /** Implicated actor hosts, first-seen order then IP asc; engine-capped listing. */
+  hosts: string[];
+  /** Total distinct actor hosts (>= hosts.length; rollups can exceed the listing cap). */
+  host_count: number;
+  /** Primary external peer (C2/drop) when the story names exactly one distinct dst. */
+  peer?: string | null;
+  /** ATT&CK technique ids in story order, deduped preserving first occurrence. */
+  attack: string[];
+  /** Furthest kill-chain stage reached over the member findings. */
+  stage: string;
+  stage_ordinal: number;
+  /** "What to watch for next": the label one stage past stage_ordinal; null at Impact. */
+  next_stage?: string | null;
+  /** The transparent priority ledger — every point (including caps/floors/clamps) is a term. */
+  priority_terms: ScoreTerm[];
+  context: AlertContext;
+  /** ALL member indices into `summary.findings`, ascending, uncapped — complete receipts. */
+  finding_indices: number[];
+  /** == finding_indices.length; the coverage invariant sums this. */
+  finding_count: number;
+  /** AttackChain.id back-ref for chain-tier alerts; null otherwise. */
+  chain_id?: string | null;
+  /** Hosts whose per-host Incident this alert subsumes. */
+  incident_hosts?: string[];
+  first_seen_ns: number | null;
+  last_seen_ns: number | null;
 }
 
 export interface AnalysisOutput {
@@ -705,7 +830,7 @@ export interface FlowRow {
 }
 
 // ---------- load state ----------
-export const TAB_IDS = ["dashboard", "flows", "query", "findings", "threats", "attackchain", "baseline", "recent", "compare"] as const;
+export const TAB_IDS = ["dashboard", "alerts", "flows", "query", "findings", "threats", "attackchain", "baseline", "recent", "compare"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
 /** How a capture entered the app — drives whether it can be re-analyzed in place. */

@@ -7,6 +7,7 @@ import {
 } from "react";
 import type { AnalysisOutput, FlowRow, IpThreat, SummaryState, TabId } from "../../types";
 import type { ExportResult } from "../../lib/platform";
+import { actionableCount } from "../../lib/alerts";
 import { basename } from "../../lib/format";
 import { LoadCaptureDialog } from "./LoadCaptureDialog";
 import { CommandBar } from "../../cockpit/CommandBar";
@@ -135,6 +136,10 @@ export function AppShell({
   const isMobile = useIsMobile();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+  // The Alerts badge counts actionable bands (act_now / investigate) only — deliberately
+  // anti-noise: a queue of review/log hygiene rollups never lights the nav.
+  const alertCount =
+    summary.status === "ready" ? actionableCount(summary.data?.summary.alerts ?? []) : 0;
   const chainCount =
     summary.status === "ready" ? summary.data?.summary.attack_chains?.length ?? 0 : 0;
   const deviationCount =
@@ -145,6 +150,7 @@ export function AppShell({
   const tabs = useMemo(
     () => [
       { id: "dashboard" as const, label: "Dashboard" },
+      { id: "alerts" as const, label: "Alerts", badge: alertCount || undefined },
       { id: "flows" as const, label: "Flows" },
       { id: "query" as const, label: "Query" },
       { id: "findings" as const, label: "Findings" },
@@ -154,7 +160,7 @@ export function AppShell({
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
       ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),
     ],
-    [recentCount, compareActive, threats.length, chainCount, deviationCount],
+    [recentCount, compareActive, threats.length, alertCount, chainCount, deviationCount],
   );
 
   const canExport = summary.status === "ready" && !!summary.data;
@@ -262,6 +268,7 @@ export function AppShell({
   const paletteActions = useMemo<PaletteAction[]>(() => [
     ...(onGoHome ? [{ id: "go-home", label: "Go to overview", hint: "view", run: onGoHome }] : []),
     { id: "go-dashboard", label: "Go to Dashboard", hint: "view", run: () => onTabChange("dashboard") },
+    { id: "go-alerts", label: "Go to Alerts", hint: "view", run: () => onTabChange("alerts") },
     { id: "go-flows", label: "Go to Flows", hint: "view", run: () => onTabChange("flows") },
     { id: "go-query", label: "Go to Query", hint: "view", run: () => onTabChange("query") },
     { id: "go-findings", label: "Go to Findings", hint: "view", run: () => onTabChange("findings") },

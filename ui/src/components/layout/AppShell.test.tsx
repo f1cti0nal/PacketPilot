@@ -39,9 +39,16 @@ describe("AppShell", () => {
   it("renders the sidebar view navigation", () => {
     render(<AppShell {...minimalProps()} />);
     const nav = screen.getByRole("navigation", { name: "Views" });
-    for (const label of ["Dashboard", "Flows", "Findings", "Threats", "Recent"]) {
+    for (const label of ["Dashboard", "Alerts", "Flows", "Findings", "Threats", "Recent"]) {
       expect(within(nav).getByRole("button", { name: label })).toBeInTheDocument();
     }
+  });
+
+  it("badges the Alerts tab with the actionable count only", () => {
+    render(<AppShell {...minimalProps()} />);
+    // Fixture queue: one act_now chain alert + one review rollup → badge counts actionable only.
+    const alertsTab = screen.getByRole("button", { name: "Alerts" });
+    expect(within(alertsTab).getByText("1")).toBeInTheDocument();
   });
 
   it("clicking a sidebar nav item switches tabs", async () => {
@@ -155,6 +162,8 @@ describe("AppShell", () => {
     const onTabChange = vi.fn();
     render(<AppShell {...minimalProps({ onTabChange })} />);
     fireEvent.keyDown(window, { key: "2" });
+    expect(onTabChange).toHaveBeenCalledWith("alerts");
+    fireEvent.keyDown(window, { key: "3" });
     expect(onTabChange).toHaveBeenCalledWith("flows");
   });
 

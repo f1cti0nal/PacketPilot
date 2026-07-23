@@ -1,6 +1,7 @@
-import type { AnalysisOutput, AttackChain, DomainThreat, Incident, IpThreat } from "../../types";
+import type { Alert, AnalysisOutput, AttackChain, DomainThreat, Incident, IpThreat } from "../../types";
+import { bandLabel } from "../alerts";
 
-const TOP_INCIDENTS = 10, TOP_THREATS = 20, TOP_N = 10, TOP_CHAINS = 3;
+const TOP_INCIDENTS = 10, TOP_THREATS = 20, TOP_N = 10, TOP_CHAINS = 3, TOP_ALERTS = 5;
 
 function fmtBytes(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
@@ -15,9 +16,17 @@ function incidentLine(i: Incident): string {
   return `- **${i.host}** — ${i.severity} ${i.score}/100 — ${i.title}${stages}${atk}\n  ${i.narrative}`;
 }
 
-/** One-line incident reference for a host already detailed in an attack chain above. */
-function incidentLineBrief(i: Incident): string {
-  return `- **${i.host}** — ${i.severity} ${i.score}/100 — ${i.title} (see attack chains above)`;
+/** One-line incident reference for a host already detailed in a section above. */
+function incidentLineBrief(i: Incident, ref = "see attack chains above"): string {
+  return `- **${i.host}** — ${i.severity} ${i.score}/100 — ${i.title} (${ref})`;
+}
+
+/** Render one ranked alert as a single self-sufficient triage line (engine rollups only). */
+function alertLine(a: Alert): string {
+  const hostname = a.context?.actor?.hostname;
+  const actor = hostname ? `${a.actor} (${hostname})` : a.actor;
+  const why = a.priority_terms.map((t) => t.label).join(", ");
+  return `- [${bandLabel(a.band).toUpperCase()} p=${a.priority} conf ${a.confidence}%] ${a.title} — actor ${actor} — why: ${why} — do: ${a.action}`;
 }
 
 /** Render one reconstructed attack chain as a compact, labeled block (engine rollups only). */
@@ -87,6 +96,20 @@ export function buildContext(output: AnalysisOutput): string {
     "",
   );
 
+  // The ranked queue leads the brief — it is the engine's own triage order, so the model
+  // narrates from the same priorities the analyst sees.
+  const alerts = s.alerts ?? [];
+  const alertCovered = new Set<string>();
+  if (alerts.length) {
+    lines.push("## Alert queue (ranked, deduplicated — triage in this order)");
+    for (const a of alerts.slice(0, TOP_ALERTS)) {
+      lines.push(alertLine(a));
+      (a.incident_hosts ?? []).forEach((h) => alertCovered.add(h));
+    }
+    if (alerts.length > TOP_ALERTS) lines.push(`…and ${alerts.length - TOP_ALERTS} more.`);
+    lines.push("");
+  }
+
   const sc = s.severity_counts;
   if (sc) {
     lines.push(
@@ -111,9 +134,15 @@ export function buildContext(output: AnalysisOutput): string {
   if (incidents.length) {
     lines.push("## Incidents (correlated, kill-chain ordered)");
     for (const i of incidents.slice(0, TOP_INCIDENTS)) {
-      // A host already detailed in a chain above is demoted to a one-liner so the narrative
-      // budget is not double-spent.
-      lines.push(coveredHosts.has(i.host) ? incidentLineBrief(i) : incidentLine(i));
+      // A host already detailed in a chain or covered by an alert above is demoted to a
+      // one-liner so the narrative budget is not double-spent.
+      lines.push(
+        coveredHosts.has(i.host)
+          ? incidentLineBrief(i)
+          : alertCovered.has(i.host)
+            ? incidentLineBrief(i, "see alert queue above")
+            : incidentLine(i),
+      );
     }
     if (incidents.length > TOP_INCIDENTS) lines.push(`…and ${incidents.length - TOP_INCIDENTS} more.`);
     lines.push("");
