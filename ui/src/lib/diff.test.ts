@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { diffByKey, diffSummaries } from "./diff";
-import type { IpThreat, Incident, Finding, Summary, SeverityCounts, ReputationVerdict } from "../types";
+import type { Alert, IpThreat, Incident, Finding, Summary, SeverityCounts, ReputationVerdict } from "../types";
 
 const sev = (o: Partial<SeverityCounts> = {}): SeverityCounts => ({ critical: 0, high: 0, medium: 0, low: 0, info: 0, ...o });
 const summary = (over: Partial<Summary>): Summary =>
@@ -15,6 +15,13 @@ const finding = (o: Partial<Finding>): Finding =>
   ({ kind: "port_scan", severity: "low", score: 10, title: "t", src_ip: "10.0.0.1",
      dst_ip: null, dst_port: null, attack: [], evidence: [],
      interval_ns: null, jitter_cv: null, contacts: null, ...o } as Finding);
+const alert = (o: Partial<Alert>): Alert =>
+  ({ id: "alert:0000000000000000", source: "rollup", band: "review", priority: 40, confidence: 50,
+     severity: "medium", title: "t", narrative: "n", action: "a", actor: "10.0.0.1",
+     hosts: ["10.0.0.1"], host_count: 1, peer: null, attack: [], stage: "Collection", stage_ordinal: 2,
+     next_stage: null, priority_terms: [], context: { actor: { ip: "10.0.0.1", internal: true } },
+     finding_indices: [0], finding_count: 1, chain_id: null, incident_hosts: [],
+     first_seen_ns: null, last_seen_ns: null, ...o } as Alert);
 const verdict = (status: ReputationVerdict["status"]): ReputationVerdict =>
   ({ source: "abuseipdb", status, malicious: status === "malicious", score: 0,
      tags: [], link: null, fetched_at: 0 } as ReputationVerdict);
@@ -131,6 +138,65 @@ describe("diffSummaries", () => {
     });
     const d = diffSummaries(before, after);
     expect(d.shared).toBe(1); // only ip 1.1.1.1 is shared; h1/h2 are different; 2.2.2.2 removed
+  });
+
+  it("diffs alerts by stable id into new / resolved / changed", () => {
+    const before = summary({
+      alerts: [
+        alert({ id: "alert:aaaaaaaaaaaaaaaa", title: "Cleartext credentials: 10.0.0.51" }),
+        alert({ id: "alert:bbbbbbbbbbbbbbbb", priority: 56, band: "review" }),
+      ],
+    });
+    const after = summary({
+      alerts: [
+        alert({ id: "alert:bbbbbbbbbbbbbbbb", priority: 90, band: "act_now" }),
+        alert({ id: "alert:cccccccccccccccc", title: "SYN flood: 45.77.13.37:443" }),
+      ],
+    });
+    const d = diffSummaries(before, after);
+    expect(d.alerts.added.map((a) => a.id)).toEqual(["alert:cccccccccccccccc"]);
+    expect(d.alerts.removed.map((a) => a.id)).toEqual(["alert:aaaaaaaaaaaaaaaa"]);
+    expect(d.alerts.changed).toHaveLength(1);
+    expect(d.alerts.changed[0].key).toBe("alert:bbbbbbbbbbbbbbbb");
+    expect(d.alerts.changed[0].deltas).toEqual(expect.arrayContaining([
+      { field: "priority", before: 56, after: 90 },
+      { field: "band", before: "review", after: "act_now" },
+    ]));
+  });
+
+  it("detects alert severity / finding_count / action moves and skips identical alerts", () => {
+    const before = summary({
+      alerts: [
+        alert({ id: "alert:1111111111111111", severity: "medium", finding_count: 2, action: "watch the host" }),
+        alert({ id: "alert:2222222222222222" }),
+      ],
+    });
+    const after = summary({
+      alerts: [
+        alert({ id: "alert:1111111111111111", severity: "high", finding_count: 5, action: "isolate the host" }),
+        alert({ id: "alert:2222222222222222" }),
+      ],
+    });
+    const d = diffSummaries(before, after);
+    expect(d.alerts.changed).toHaveLength(1);
+    expect(d.alerts.changed[0].deltas).toEqual(expect.arrayContaining([
+      { field: "severity", before: "medium", after: "high" },
+      { field: "finding_count", before: 2, after: 5 },
+      { field: "action", before: "watch the host", after: "isolate the host" },
+    ]));
+  });
+
+  it("treats summaries without alerts arrays (pre-SAC) as empty queues", () => {
+    const without = summary({}); // helper never sets `alerts`
+    const withAlerts = summary({ alerts: [alert({ id: "alert:ffffffffffffffff" })] });
+    const d1 = diffSummaries(without, withAlerts);
+    expect(d1.alerts.added.map((a) => a.id)).toEqual(["alert:ffffffffffffffff"]);
+    expect(d1.alerts.removed).toHaveLength(0);
+    expect(d1.alerts.changed).toHaveLength(0);
+    const d2 = diffSummaries(without, without);
+    expect(d2.alerts.added).toHaveLength(0);
+    expect(d2.alerts.removed).toHaveLength(0);
+    expect(d2.alerts.changed).toHaveLength(0);
   });
 
   it("handles summaries with missing optional fields (nullish fallbacks)", () => {

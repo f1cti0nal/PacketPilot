@@ -105,6 +105,11 @@ cargo run -p ppcap-cli --release -- rescan sample.index.json --threat-feed updat
 # Safe Share: write a sanitized copy + chain-of-custody manifest (scrubs payloads,
 # pseudonymizes IP/MAC, redacts DNS/HTTP/SNI/credentials, recomputes checksums)
 cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.pcap
+
+# Evidence mode: seal a chain-of-custody manifest over the run's artifacts, verify any time
+cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --html report.html \
+  --evidence case.evidence.json
+cargo run -p ppcap-cli --release -- verify case.evidence.json
 ```
 
 OT/ICS captures (Modbus / DNP3 / S7comm / BACnet / EtherNet-IP) are identified from packet
@@ -164,6 +169,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
   AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
   bare public IP strings leave the device, never packets or internal IPs). See [docs/reputation.md](docs/reputation.md).
+- **Evidence Integrity & Chain of Custody** — `analyze --evidence` seals a tamper-evident
+  manifest over the run (input + every artifact SHA-256, tool version, exact settings, capture
+  window); `ppcap verify` re-checks the whole bundle offline with per-file intact/missing/
+  modified verdicts — court-ready custody for the analysis itself, generalizing Safe Share's
+  manifest. See [docs/evidence-custody.md](docs/evidence-custody.md).
 - **Natural Language Querying** — a **Query** tab running read-only DuckDB SQL over the flow
   table *entirely in-browser* (lazy DuckDB-Wasm; nothing leaves the device), with bundled +
   saved queries, CSV export, and a flow_id cross-filter into the Flows view. With AI enabled,

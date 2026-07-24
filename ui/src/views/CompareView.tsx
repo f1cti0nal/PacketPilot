@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { ArrowLeftRight, X } from "lucide-react";
-import type { RecentEntry, IpThreat, Incident, Finding, Severity } from "../types";
+import type { RecentEntry, Alert, IpThreat, Incident, Finding, PriorityBand, Severity } from "../types";
 import { diffSummaries } from "../lib/diff";
 import type { Changed, DiffResult, FieldDelta } from "../lib/diff";
+import { bandLabel, bandSeverity } from "../lib/alerts";
 import { severityColor } from "../lib/palette";
 import { kindLabel } from "../lib/findingKinds";
 import { humanBytes, humanNumber } from "../lib/format";
@@ -71,6 +72,77 @@ function DeltaStat({
   );
 }
 
+/** Band pill colored via the band→severity mapping — the Alerts-tab chip idiom, palette-free. */
+function BandChip({ band }: { band: PriorityBand }) {
+  const color = severityColor(bandSeverity(band));
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--r-chip)] border px-2 py-0.5 t-tag font-medium uppercase"
+      style={{ color, borderColor: color, backgroundColor: "var(--color-surface-2)" }}
+    >
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+      {bandLabel(band)}
+    </span>
+  );
+}
+
+/** One alert-diff row: partition marker + band chip + story headline. */
+function AlertRow({ alert, kind }: { alert: Alert; kind: "+" | "−" | "~" }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span aria-hidden className="w-3 select-none text-center font-mono-num text-[var(--color-text-faint)]">{kind}</span>
+      <BandChip band={alert.band} />
+      <span className="min-w-0 truncate text-[var(--color-text)]">{alert.title}</span>
+    </div>
+  );
+}
+
+/** The Alerts diff — new / resolved / rank-moved stories, matched by stable alert id. */
+function AlertDiffSection({ result }: { result: DiffResult<Alert> }) {
+  const total = result.added.length + result.removed.length + result.changed.length;
+  if (total === 0) return null;
+  return (
+    <Card>
+      <SectionHeader title="Alerts" count={total} />
+      <div className="flex flex-col gap-3">
+        {result.added.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="t-label" style={{ color: "var(--color-sev-high)" }}>New alerts · {result.added.length}</div>
+            {result.added.map((a) => <AlertRow key={a.id} alert={a} kind="+" />)}
+          </div>
+        )}
+        {result.removed.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="t-label" style={{ color: "var(--color-sev-low)" }}>Resolved alerts · {result.removed.length}</div>
+            {result.removed.map((a) => <AlertRow key={a.id} alert={a} kind="−" />)}
+          </div>
+        )}
+        {result.changed.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <div className="t-label" style={{ color: "var(--color-text-dim)" }}>Changed · {result.changed.length}</div>
+            {result.changed.map((c) => {
+              const rest = c.deltas.filter((d) => d.field !== "priority");
+              return (
+                <div key={c.key} className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span aria-hidden className="w-3 select-none text-center font-mono-num text-[var(--color-text-faint)]">~</span>
+                    <BandChip band={c.after.band} />
+                    <span className="min-w-0 truncate text-[var(--color-text)]">{c.after.title}</span>
+                    <span className="ml-auto shrink-0 font-mono-num text-[11px] text-[var(--color-text-dim)]">
+                      {c.before.priority} → {c.after.priority} (<Signed n={c.after.priority - c.before.priority} />)
+                    </span>
+                  </div>
+                  {rest.length > 0 && <div className="pl-5"><DeltaRow deltas={rest} /></div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function DiffSection<T extends IpThreat | Incident | Finding>({
   title, result, label, addedLabel = "New", removedLabel = "Resolved",
 }: {
@@ -132,11 +204,12 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
   const bSum = before.summary.summary;
   const aSum = after.summary.summary;
   const diff = diffSummaries(bSum, aSum);
+  const alertTotal = diff.alerts.added.length + diff.alerts.removed.length + diff.alerts.changed.length;
   const threatTotal = diff.threats.added.length + diff.threats.removed.length + diff.threats.changed.length;
   const incidentTotal = diff.incidents.added.length + diff.incidents.removed.length + diff.incidents.changed.length;
   const findingTotal = diff.findings.added.length + diff.findings.removed.length + diff.findings.changed.length;
   const severityChanged = diff.severity.some((b) => b.delta !== 0);
-  const noDiff = threatTotal === 0 && incidentTotal === 0 && findingTotal === 0 && !severityChanged;
+  const noDiff = alertTotal === 0 && threatTotal === 0 && incidentTotal === 0 && findingTotal === 0 && !severityChanged;
   const bothNonEmpty =
     ((before.summary.summary.ip_threats?.length ?? 0) + (before.summary.summary.incidents?.length ?? 0)) > 0 &&
     ((after.summary.summary.ip_threats?.length ?? 0) + (after.summary.summary.incidents?.length ?? 0)) > 0;
@@ -205,11 +278,12 @@ export function CompareView({ before, after, onSwap }: { before?: RecentEntry; a
         <Panel className="flex-1">
           <EmptyState
             title="No differences between these captures"
-            hint="Both captures report the same threats, incidents, and findings."
+            hint="Both captures report the same alerts, threats, incidents, and findings."
           />
         </Panel>
       ) : (
         <div className="flex flex-col gap-4">
+          <AlertDiffSection result={diff.alerts} />
           <DiffSection
             title="Findings"
             result={diff.findings}

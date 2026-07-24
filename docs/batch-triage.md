@@ -62,6 +62,28 @@ ppcap init-db --case-dir ./mycase > case.sql
 duckdb -init case.sql   # the `flow` view now spans all captures in the case
 ```
 
+## Case alert queue
+
+Each capture in the batch already gets its own Smart Alerting queue (`summary.alerts` in
+`captures/<id>.json` — see `docs/smart-alerting-context-plan.md`). The case fuses them into
+**one ranked, case-wide queue** — `case.json`'s `case_alerts` and the "Case alert queue" card
+at the top of `case.html`. The merge key is the alert id itself, which is stable across
+captures by construction (`host:<ip>`, `chain:<host-set>`, `rollup:<kind>`): the same story
+recurring in several captures collapses into one row carrying its capture list, a summed
+finding count, and a **bounded recurrence uplift** (`+5` per extra capture, capped `+15`) —
+cross-capture persistence is corroboration, the same doctrine as `shared_indicators`'
+≥2-captures gate, and the uplift appears as a visible ledger term
+(`"recurring: seen in 4 captures (+15)"`; the terms always sum to the fused priority).
+
+```
+case alerts: 7 across 30 captures — 1 act-now, 2 investigate; top: "Multi-stage incident on 10.13.37.7"
+```
+
+The queue is capped at 64 rows; `total_case_alerts` records the pre-truncation count, so
+truncation is never silent, and the untouched per-capture queues remain the full receipts.
+`shared_indicators` stays as-is — indicators correlate *values* across captures, the queue
+correlates *stories*.
+
 ## Guarantees
 
 - **Bounded memory** — captures are processed *sequentially* in sorted order, so peak heap stays

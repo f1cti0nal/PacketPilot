@@ -116,6 +116,12 @@ pub enum Command {
         /// captures at the cost of a colder, noisier band.
         #[arg(long = "forecast-min-bins")]
         forecast_min_bins: Option<usize>,
+        /// Evidence mode: write a sealed chain-of-custody manifest here after the run — the
+        /// input's SHA-256, every produced artifact's SHA-256 + size, the tool version and
+        /// effective settings, all made tamper-evident by a seal. Verify later with
+        /// `ppcap verify <manifest>`.
+        #[arg(long)]
+        evidence: Option<PathBuf>,
     },
     /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
     /// reporting indicators that were clean at capture time but are dirty now.
@@ -136,6 +142,30 @@ pub enum Command {
     Baseline {
         #[command(subcommand)]
         action: BaselineAction,
+    },
+    /// Smart Alerting: re-derive and print the ranked alert queue of an analyzed capture
+    /// (a pure, re-analysis-free transform over an `analyze --json` output).
+    Alerts {
+        /// The analysis-output JSON (from `analyze --json`).
+        summary: PathBuf,
+        /// Diff mode: an OLDER analysis of the same network to compare against — reports
+        /// new / resolved / changed stories matched by their stable alert ids.
+        #[arg(long)]
+        diff: Option<PathBuf>,
+        /// Write JSON here ("-" => stdout): the updated analysis, or with `--diff` the
+        /// AlertDiff report.
+        #[arg(long)]
+        json: Option<String>,
+    },
+    /// Evidence: verify a sealed chain-of-custody manifest — recompute the seal, then re-hash
+    /// the source capture and every recorded artifact, reporting intact / missing / modified.
+    Verify {
+        /// The evidence manifest JSON (from `analyze --evidence`). Relative artifact paths
+        /// resolve against this file's directory, so a bundle moved whole stays verifiable.
+        manifest: PathBuf,
+        /// Write the machine-readable verification report here; "-" => stdout.
+        #[arg(long)]
+        json: Option<String>,
     },
     /// Generate a synthetic capture for testing.
     Gen {
@@ -252,6 +282,26 @@ pub enum BaselineAction {
 /// Embedded DuckDB DDL (shipped so the sidecar/Wasm can create the schema without the repo).
 const DUCKDB_SCHEMA: &str = include_str!("../../ppcap-core/sql/schema.sql");
 
+/// The Smart Alerting stderr one-liner: `alerts: 6 from 41 findings — 1 act-now, 2 investigate,
+/// 3 review; top: "…"`. Shared by `analyze` (after all post-hoc passes) and `ppcap alerts`.
+fn alerts_summary_line(summary: &ppcap_core::Summary) -> String {
+    use ppcap_core::PriorityBand;
+    let count = |b: PriorityBand| summary.alerts.iter().filter(|a| a.band == b).count();
+    format!(
+        "alerts: {} from {} findings — {} act-now, {} investigate, {} review; top: \"{}\"",
+        summary.alerts.len(),
+        summary.findings.len(),
+        count(PriorityBand::ActNow),
+        count(PriorityBand::Investigate),
+        count(PriorityBand::Review),
+        summary
+            .alerts
+            .first()
+            .map(|a| a.title.as_str())
+            .unwrap_or(""),
+    )
+}
+
 /// Parse args, dispatch, and map errors to a process exit code.
 ///
 /// Exit codes: `0` ok, `1` fatal engine error, `2` usage error (clap handles `2` itself by
@@ -295,6 +345,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             no_forecast,
             forecast_z,
             forecast_min_bins,
+            evidence,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
             // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
@@ -464,8 +515,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 }
             }
 
-            if let Some(rules_path) = rules {
-                let text = std::fs::read_to_string(&rules_path)
+            if let Some(rules_path) = rules.as_ref() {
+                let text = std::fs::read_to_string(rules_path)
                     .with_context(|| format!("reading rules file {}", rules_path.display()))?;
                 let parsed = ppcap_core::parse_rules(&text);
                 let rf = match std::fs::File::open(&input) {
@@ -482,6 +533,12 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     parsed.skipped.len(),
                     rf.len()
                 );
+            }
+
+            // Smart Alerting one-liner — printed after ALL summary-mutating passes (reputation,
+            // rules) so the counts match the JSON that follows.
+            if !quiet && !out.summary.alerts.is_empty() {
+                eprintln!("{}", alerts_summary_line(&out.summary));
             }
 
             let s = out.to_json_pretty()?;
@@ -572,6 +629,124 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         updated.hosts.len(),
                         updated.captures_merged,
                         bpath.display()
+                    );
+                }
+            }
+
+            // Evidence mode: the sealed chain-of-custody manifest is assembled LAST — every
+            // artifact-writing block above must precede this one so the manifest can hash the
+            // final bytes of everything the run produced.
+            if let Some(evidence_path) = evidence.as_ref() {
+                // The reproducibility recipe: every settings flag that shapes the artifacts'
+                // bytes, in CLI declaration order. Artifact PATHS live in the artifact records;
+                // --reputation is recorded honestly even though its network verdicts make that
+                // one pass non-reproducible offline (documented in docs/evidence-custody.md).
+                let mut settings: Vec<String> = Vec::new();
+                if strict {
+                    settings.push("--strict".to_string());
+                }
+                if hash {
+                    settings.push("--hash".to_string());
+                }
+                if let Some(p) = threat_feed.as_ref() {
+                    settings.push(format!("--threat-feed {}", p.display()));
+                }
+                if let Some(p) = carve_dir.as_ref() {
+                    settings.push(format!("--carve-dir {}", p.display()));
+                }
+                if reputation {
+                    settings.push("--reputation".to_string());
+                }
+                if let Some(p) = rules.as_ref() {
+                    settings.push(format!("--rules {}", p.display()));
+                }
+                if let Some(p) = baseline.as_ref() {
+                    settings.push(format!("--baseline {}", p.display()));
+                }
+                if let Some(p) = update_baseline.as_ref() {
+                    settings.push(format!("--update-baseline {}", p.display()));
+                }
+                if no_forecast {
+                    settings.push("--no-forecast".to_string());
+                }
+                if let Some(z) = forecast_z {
+                    settings.push(format!("--forecast-z {z}"));
+                }
+                if let Some(n) = forecast_min_bins {
+                    settings.push(format!("--forecast-min-bins {n}"));
+                }
+
+                // Input hash: reuse the --hash pass's result when present, else hash now —
+                // an unhashed input is not evidence.
+                let (src_sha, src_bytes) = match out.source_sha256.as_ref() {
+                    Some(sha) => (sha.clone(), out.source_bytes),
+                    None => ppcap_core::hash_file(&input)
+                        .with_context(|| format!("hash source {}", input.display()))?,
+                };
+
+                // Hash every file artifact this run wrote (stdout streams are unverifiable
+                // and deliberately unrecorded).
+                let mut artifacts: Vec<ppcap_core::ArtifactRecord> = Vec::new();
+                let mut record = |role: &str, path: &std::path::Path| -> anyhow::Result<()> {
+                    let (sha256, bytes) = ppcap_core::hash_file(path)
+                        .with_context(|| format!("hash artifact {}", path.display()))?;
+                    artifacts.push(ppcap_core::ArtifactRecord {
+                        role: role.to_string(),
+                        path: path.display().to_string(),
+                        sha256,
+                        bytes,
+                    });
+                    Ok(())
+                };
+                if let Some(p) = json.as_deref() {
+                    if p != "-" {
+                        record("summary_json", std::path::Path::new(p))?;
+                    }
+                }
+                if let Some(p) = parquet.as_ref() {
+                    record("flows_parquet", p)?;
+                }
+                if let Some(p) = html.as_ref() {
+                    record("html_report", p)?;
+                }
+                if let Some(p) = csv.as_ref() {
+                    record("findings_csv", p)?;
+                }
+                if let Some(p) = stix.as_ref() {
+                    record("stix_bundle", p)?;
+                }
+                if let Some(p) = index.as_ref() {
+                    record("capture_index", p)?;
+                }
+                if let Some(p) = update_baseline.as_ref() {
+                    record("baseline_profile", p)?;
+                }
+
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let mut manifest = ppcap_core::EvidenceManifest::new(
+                    &out.engine_version,
+                    now,
+                    settings,
+                    &input.display().to_string(),
+                    &src_sha,
+                    src_bytes,
+                    &out.summary,
+                    artifacts,
+                );
+                manifest.seal().context("seal evidence manifest")?;
+                let n = manifest.artifacts.len();
+                std::fs::write(evidence_path, manifest.to_json_pretty()?).with_context(|| {
+                    format!("write evidence manifest to {}", evidence_path.display())
+                })?;
+                if !quiet {
+                    let short: String = src_sha.chars().take(12).collect();
+                    eprintln!(
+                        "evidence: sealed manifest ({n} artifact{}, input {short}…) -> {}",
+                        if n == 1 { "" } else { "s" },
+                        evidence_path.display()
                     );
                 }
             }
@@ -790,6 +965,169 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 Ok(())
             }
         },
+        Command::Alerts {
+            summary,
+            diff,
+            json,
+        } => {
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            // Idempotent pure re-derive over the loaded summary (same fn as the analyze seam).
+            out.summary.alerts = ppcap_core::derive_alerts(&out.summary);
+
+            // Diff mode: compare against an OLDER analysis, matched by stable alert ids.
+            if let Some(old_path) = diff.as_ref() {
+                let old_text = std::fs::read_to_string(old_path)
+                    .with_context(|| format!("read older analysis {}", old_path.display()))?;
+                let mut old: ppcap_core::AnalysisOutput = serde_json::from_str(&old_text)
+                    .with_context(|| format!("parse older analysis {}", old_path.display()))?;
+                // Re-derive on the old side too, so pre-alerting summaries diff correctly.
+                old.summary.alerts = ppcap_core::derive_alerts(&old.summary);
+                let d = ppcap_core::diff_alerts(&old.summary.alerts, &out.summary.alerts);
+                eprintln!(
+                    "alert diff: {} new, {} resolved, {} changed, {} unchanged (old: {} alerts, new: {})",
+                    d.new_alerts.len(),
+                    d.resolved.len(),
+                    d.changed.len(),
+                    d.unchanged,
+                    old.summary.alerts.len(),
+                    out.summary.alerts.len(),
+                );
+                for e in &d.new_alerts {
+                    eprintln!(
+                        "  NEW      [{:<11} {:>3}/100] {}",
+                        e.band.as_str(),
+                        e.priority,
+                        e.title
+                    );
+                }
+                for e in &d.resolved {
+                    eprintln!(
+                        "  RESOLVED [{:<11} {:>3}/100] {}",
+                        e.band.as_str(),
+                        e.priority,
+                        e.title
+                    );
+                }
+                for c in &d.changed {
+                    eprintln!(
+                        "  CHANGED  [{}→{} {:+}] {}",
+                        c.before_band.as_str(),
+                        c.after_band.as_str(),
+                        c.delta,
+                        c.title
+                    );
+                }
+                if let Some(path) = json.as_deref() {
+                    let s = serde_json::to_string_pretty(&d)?;
+                    match path {
+                        "-" => println!("{s}"),
+                        p => std::fs::write(p, &s)
+                            .with_context(|| format!("write alert diff to {p}"))?,
+                    }
+                }
+                return Ok(());
+            }
+            if out.summary.alerts.is_empty() {
+                eprintln!("alerts: none — no findings rose above informational");
+            } else {
+                eprintln!("{}", alerts_summary_line(&out.summary));
+                for (i, a) in out.summary.alerts.iter().enumerate() {
+                    eprintln!(
+                        "  {:>2}. [{:<11} {:>3}/100 conf {:>3}%] {}",
+                        i + 1,
+                        a.band.as_str(),
+                        a.priority,
+                        a.confidence,
+                        a.title,
+                    );
+                    eprintln!("      do: {}", a.action);
+                }
+            }
+            if let Some(path) = json.as_deref() {
+                let s = out.to_json_pretty()?;
+                match path {
+                    "-" => println!("{s}"),
+                    p => std::fs::write(p, &s)
+                        .with_context(|| format!("write updated analysis JSON to {p}"))?,
+                }
+            }
+            Ok(())
+        }
+        Command::Verify { manifest, json } => {
+            let text = std::fs::read_to_string(&manifest)
+                .with_context(|| format!("read evidence manifest {}", manifest.display()))?;
+            let m = ppcap_core::EvidenceManifest::from_json_str(&text)
+                .with_context(|| format!("parse evidence manifest {}", manifest.display()))?;
+            // Relative recorded paths resolve against the manifest's own directory.
+            let dir = manifest
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let report = ppcap_core::verify_manifest(&m, &dir);
+
+            let outcome_word = |o: &ppcap_core::VerifyOutcome| match o {
+                ppcap_core::VerifyOutcome::Ok => "OK",
+                ppcap_core::VerifyOutcome::Missing => "MISSING",
+                ppcap_core::VerifyOutcome::HashMismatch => "MODIFIED (hash mismatch)",
+                ppcap_core::VerifyOutcome::SizeMismatch => "MODIFIED (size mismatch)",
+            };
+            eprintln!(
+                "seal: {} (schema v{}, {} {}, created @{})",
+                if report.seal_ok {
+                    "OK"
+                } else {
+                    "BROKEN — the manifest itself was edited after sealing"
+                },
+                m.schema_version,
+                m.tool,
+                m.engine_version,
+                m.created_unix_secs,
+            );
+            let short: String = report.source.record.sha256.chars().take(12).collect();
+            eprintln!(
+                "source: {:<24} {} ({} bytes, sha256 {short}…)",
+                outcome_word(&report.source.outcome),
+                report.source.record.path,
+                report.source.record.bytes,
+            );
+            for a in &report.artifacts {
+                eprintln!(
+                    "{}: {:<24} {}",
+                    a.record.role,
+                    outcome_word(&a.outcome),
+                    a.record.path,
+                );
+            }
+
+            if let Some(path) = json.as_deref() {
+                let s = serde_json::to_string_pretty(&report)?;
+                match path {
+                    "-" => println!("{s}"),
+                    p => std::fs::write(p, &s)
+                        .with_context(|| format!("write verification report to {p}"))?,
+                }
+            }
+
+            let total = report.artifacts.len() + 1; // + source
+            if report.all_ok() {
+                eprintln!("verify: all {total} files intact");
+                Ok(())
+            } else {
+                Err(anyhow!(
+                    "verify: {} of {total} files failed{}",
+                    report.failed_count(),
+                    if report.seal_ok {
+                        ""
+                    } else {
+                        " (and the seal is broken)"
+                    }
+                ))
+            }
+        }
         Command::Gen {
             output,
             scenario,
@@ -1009,6 +1347,18 @@ fn dispatch_batch(
             case.shared_indicators.len(),
             case_out.display()
         );
+        if !case.case_alerts.is_empty() {
+            use ppcap_core::PriorityBand;
+            let count = |b: PriorityBand| case.case_alerts.iter().filter(|a| a.band == b).count();
+            eprintln!(
+                "case alerts: {} across {} captures — {} act-now, {} investigate; top: \"{}\"",
+                case.total_case_alerts,
+                case.total_captures,
+                count(PriorityBand::ActNow),
+                count(PriorityBand::Investigate),
+                case.case_alerts[0].title,
+            );
+        }
     }
     Ok(())
 }
@@ -1191,6 +1541,241 @@ mod reputation_cli_tests {
             }
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn alerts_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ppcap", "alerts", "out.json", "--json", "-"]).unwrap();
+        match cli.command {
+            Command::Alerts {
+                summary,
+                diff,
+                json,
+            } => {
+                assert_eq!(summary, std::path::PathBuf::from("out.json"));
+                assert_eq!(diff, None);
+                assert_eq!(json.as_deref(), Some("-"));
+            }
+            _ => panic!("expected Alerts"),
+        }
+    }
+
+    #[test]
+    fn alerts_diff_reports_new_and_changed() {
+        // Two hand-built analyses of the "same network": the old one has a Medium beacon on
+        // one host; the new one has that host climbing plus a brand-new story. The diff must
+        // report one CHANGED and one NEW, and --json must emit the AlertDiff report.
+        let mk = |hosts: &[(&str, u16)]| -> ppcap_core::AnalysisOutput {
+            let mut summary = ppcap_core::Summary::empty();
+            summary.findings = hosts
+                .iter()
+                .map(|(host, score)| ppcap_core::Finding {
+                    kind: ppcap_core::FindingKind::Beacon,
+                    severity: ppcap_core::Severity::from_score(*score),
+                    score: *score,
+                    title: format!("beacon: {host}"),
+                    src_ip: host.to_string(),
+                    dst_ip: Some("45.77.13.37".to_string()),
+                    dst_port: Some(443),
+                    attack: vec!["T1071".to_string()],
+                    evidence: vec!["periodic callbacks".to_string()],
+                    interval_ns: None,
+                    jitter_cv: None,
+                    contacts: None,
+                    first_seen_ns: Some(1_000_000_000),
+                    last_seen_ns: Some(2_000_000_000),
+                    victims: Vec::new(),
+                })
+                .collect();
+            ppcap_core::AnalysisOutput {
+                schema_version: 1,
+                engine_version: "0.0.0".to_string(),
+                source_path: "t.pcap".to_string(),
+                source_sha256: None,
+                source_bytes: 0,
+                link_type: "EN10MB".to_string(),
+                summary,
+                flows_parquet_path: None,
+                elapsed_ms: 0,
+                baseline: None,
+            }
+        };
+        let old_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            old_file.path(),
+            mk(&[("10.0.0.1", 45)]).to_json_pretty().unwrap(),
+        )
+        .unwrap();
+        let new_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            new_file.path(),
+            mk(&[("10.0.0.1", 70), ("10.0.0.2", 45)])
+                .to_json_pretty()
+                .unwrap(),
+        )
+        .unwrap();
+        let report_file = tempfile::NamedTempFile::new().unwrap();
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "alerts",
+            new_file.path().to_str().unwrap(),
+            "--diff",
+            old_file.path().to_str().unwrap(),
+            "--json",
+            report_file.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let d: ppcap_core::AlertDiff =
+            serde_json::from_str(&std::fs::read_to_string(report_file.path()).unwrap()).unwrap();
+        assert_eq!(d.new_alerts.len(), 1);
+        assert_eq!(d.new_alerts[0].actor, "10.0.0.2");
+        assert_eq!(d.changed.len(), 1);
+        assert!(d.changed[0].delta > 0);
+        assert_eq!(d.resolved.len(), 0);
+    }
+
+    #[test]
+    fn alerts_subcommand_rederives_and_writes_json() {
+        // A minimal analysis output with one High beacon finding: the pure transform must
+        // derive a non-empty queue and write the updated JSON.
+        let mut summary = ppcap_core::Summary::empty();
+        summary.findings = vec![ppcap_core::Finding {
+            kind: ppcap_core::FindingKind::Beacon,
+            severity: ppcap_core::Severity::High,
+            score: 70,
+            title: "beacon".to_string(),
+            src_ip: "10.0.0.9".to_string(),
+            dst_ip: Some("45.77.13.37".to_string()),
+            dst_port: Some(443),
+            attack: vec!["T1071".to_string()],
+            evidence: vec!["periodic callbacks".to_string()],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        }];
+        let out = ppcap_core::AnalysisOutput {
+            schema_version: 1,
+            engine_version: "0.0.0".to_string(),
+            source_path: "t.pcap".to_string(),
+            source_sha256: None,
+            source_bytes: 0,
+            link_type: "EN10MB".to_string(),
+            summary,
+            flows_parquet_path: None,
+            elapsed_ms: 0,
+            baseline: None,
+        };
+        let input = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(input.path(), out.to_json_pretty().unwrap()).unwrap();
+        let output = tempfile::NamedTempFile::new().unwrap();
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "alerts",
+            input.path().to_str().unwrap(),
+            "--json",
+            output.path().to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let updated: ppcap_core::AnalysisOutput =
+            serde_json::from_str(&std::fs::read_to_string(output.path()).unwrap()).unwrap();
+        assert!(!updated.summary.alerts.is_empty());
+        assert_eq!(updated.summary.alerts[0].actor, "10.0.0.9");
+    }
+
+    #[test]
+    fn evidence_flag_and_verify_subcommand_parse() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "analyze",
+            "x.pcap",
+            "--evidence",
+            "case.evidence.json",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Analyze { evidence, .. } => {
+                assert_eq!(
+                    evidence.as_deref(),
+                    Some(std::path::Path::new("case.evidence.json"))
+                );
+            }
+            _ => panic!("expected Analyze"),
+        }
+        let cli =
+            Cli::try_parse_from(["ppcap", "verify", "case.evidence.json", "--json", "-"]).unwrap();
+        match cli.command {
+            Command::Verify { manifest, json } => {
+                assert_eq!(manifest, std::path::PathBuf::from("case.evidence.json"));
+                assert_eq!(json.as_deref(), Some("-"));
+            }
+            _ => panic!("expected Verify"),
+        }
+    }
+
+    #[test]
+    fn analyze_evidence_then_verify_roundtrip_and_tamper_detection() {
+        // gen a small capture -> analyze with --json/--html/--evidence -> verify OK ->
+        // tamper the HTML -> verify fails. All inside one tempdir with RELATIVE artifact
+        // paths, proving the moved-bundle resolution too.
+        let dir = tempfile::tempdir().unwrap();
+        let old_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let run = (|| -> anyhow::Result<()> {
+            let gen = Cli::try_parse_from([
+                "ppcap",
+                "gen",
+                "in.pcap",
+                "--scenario",
+                "beacon",
+                "--packets",
+                "2000",
+            ])
+            .unwrap();
+            dispatch(gen)?;
+            let analyze = Cli::try_parse_from([
+                "ppcap",
+                "analyze",
+                "in.pcap",
+                "--json",
+                "out.json",
+                "--html",
+                "report.html",
+                "--evidence",
+                "case.evidence.json",
+                "--quiet",
+            ])
+            .unwrap();
+            dispatch(analyze)?;
+
+            // The manifest exists, is sealed, and records the two file artifacts.
+            let text = std::fs::read_to_string("case.evidence.json")?;
+            let m = ppcap_core::EvidenceManifest::from_json_str(&text)?;
+            assert!(m.verify_seal());
+            assert_eq!(m.source_sha256.len(), 64);
+            let roles: Vec<&str> = m.artifacts.iter().map(|a| a.role.as_str()).collect();
+            assert_eq!(roles, ["html_report", "summary_json"], "sorted by role");
+
+            // Verify passes on the intact bundle.
+            let verify = Cli::try_parse_from(["ppcap", "verify", "case.evidence.json"]).unwrap();
+            dispatch(verify)?;
+
+            // Tamper one artifact: verify must fail with a nonzero outcome.
+            let mut html = std::fs::read("report.html")?;
+            let last = html.len() - 1;
+            html[last] ^= 0x01;
+            std::fs::write("report.html", &html)?;
+            let verify = Cli::try_parse_from(["ppcap", "verify", "case.evidence.json"]).unwrap();
+            let err = dispatch(verify).unwrap_err();
+            assert!(err.to_string().contains("files failed"), "{err}");
+            Ok(())
+        })();
+        std::env::set_current_dir(old_cwd).unwrap();
+        run.unwrap();
     }
 
     #[test]

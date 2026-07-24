@@ -1,4 +1,4 @@
-import type { AnalysisOutput, Finding, FlowPackets, FlowRow, IpThreat, PacketRow } from "../types";
+import type { Alert, AnalysisOutput, Finding, FlowPackets, FlowRow, IpThreat, PacketRow } from "../types";
 
 const f = (p: Partial<Finding> & Pick<Finding, "kind" | "severity" | "score" | "title" | "src_ip">): Finding => ({
   dst_ip: null, dst_port: null, attack: [], evidence: [],
@@ -13,6 +13,60 @@ const incident1Findings: Finding[] = [
       interval_ns: 30_000_000_000, jitter_cv: 0.013, contacts: 2999 }),
   f({ kind: "data_exfil", severity: "high", score: 72, src_ip: "10.13.37.7", dst_ip: "185.220.101.5", dst_port: 443,
       title: "Data exfiltration: 10.13.37.7 -> 185.220.101.5:443 (1.2 MB out)", attack: ["T1048"] }),
+];
+
+/** Weak-only hygiene finding (index 3) — covered by the fixture rollup alert. */
+const weakTlsFinding: Finding = f({
+  kind: "weak_tls", severity: "medium", score: 38, src_ip: "10.0.0.9", dst_ip: "10.0.0.42", dst_port: 8443,
+  title: "Weak TLS: 10.0.0.9 negotiated TLS 1.0 with 10.0.0.42:8443",
+});
+
+/** Ranked alert queue: one act_now chain alert covering findings 0-2 + one review rollup
+ *  covering the weak-TLS finding (index 3). Already sorted worst-first, like the engine's. */
+const alerts: Alert[] = [
+  {
+    id: "alert:9f2c41a07be3d512", source: "chain", band: "act_now",
+    priority: 92, confidence: 92, severity: "critical",
+    title: "Cross-host attack chain: 10.13.37.7 → 10.66.0.1",
+    narrative: "10.13.37.7 swept the network, then brute-forced credentials; then 10.66.0.1 beaconed to a C2, then exfiltrated data.",
+    action: "Isolate 10.66.0.1; block 45.77.13.37:443 at the egress firewall",
+    actor: "10.13.37.7", hosts: ["10.13.37.7", "10.66.0.1"], host_count: 2,
+    peer: "45.77.13.37", attack: ["T1046", "T1110", "T1071", "T1048"],
+    stage: "Exfiltration", stage_ordinal: 5, next_stage: "Impact",
+    priority_terms: [
+      { label: "base: attack-chain score", points: 87 },
+      { label: "novel: deviates from learned baseline", points: 5 },
+    ],
+    context: {
+      actor: { ip: "10.13.37.7", hostname: "ACCT-LT-042", mac: "aa:bb:cc:dd:ee:ff",
+               vendor: "Dell Inc", internal: true, cloud: null, new_to_baseline: true },
+      peers: [{ ip: "45.77.13.37", domain: "update.evil-cdn.net", cloud: null,
+                ioc: true, reputation_malicious: 2, dst_port: 443 }],
+      entries: [
+        { kind: "identity", text: "identity: 10.13.37.7 = ACCT-LT-042 (Dell Inc) [aa:bb:cc:dd:ee:ff]" },
+        { kind: "threat_intel", text: "threat intel: 45.77.13.37 matches the offline IOC feed", ip: "45.77.13.37" },
+        { kind: "kill_chain", text: "kill chain: Discovery → Credential Access → C2 → Exfiltration; next expected: Impact" },
+      ],
+    },
+    finding_indices: [0, 1, 2], finding_count: 3,
+    chain_id: "chain:00ff", incident_hosts: ["10.13.37.7", "10.66.0.1"],
+    first_seen_ns: 0, last_seen_ns: 90_000_000_000,
+  },
+  {
+    id: "alert:00c0ffee00c0ffee", source: "rollup", band: "review",
+    priority: 38, confidence: 50, severity: "medium",
+    title: "Weak TLS posture: 1 host (1 finding)",
+    narrative: "Hygiene rollup: weak TLS configurations observed across the fleet.",
+    action: "Schedule TLS configuration remediation on the listed hosts",
+    actor: "10.0.0.9", hosts: ["10.0.0.9"], host_count: 1,
+    peer: null, attack: [],
+    stage: "Collection", stage_ordinal: 2, next_stage: null,
+    priority_terms: [{ label: "base: worst member score", points: 38 }],
+    context: { actor: { ip: "10.0.0.9", internal: true }, peers: [], entries: [] },
+    finding_indices: [3], finding_count: 1,
+    chain_id: null, incident_hosts: [],
+    first_seen_ns: null, last_seen_ns: null,
+  },
 ];
 
 const ip_threats: IpThreat[] = [
@@ -53,7 +107,7 @@ export function makeOutput(overrides: Partial<AnalysisOutput> = {}): AnalysisOut
       ],
       severity_counts: { critical: 0, high: 12, medium: 280, low: 3000, info: 35_708 },
       ip_threats,
-      findings: incident1Findings,
+      findings: [...incident1Findings, weakTlsFinding],
       incidents: [
         { host: "10.13.37.7", severity: "critical", score: 89,
           title: "Multi-stage incident on 10.13.37.7",
@@ -107,6 +161,7 @@ export function makeOutput(overrides: Partial<AnalysisOutput> = {}): AnalysisOut
           tactic_count: 4,
         },
       ],
+      alerts,
     },
     ...overrides,
   };
