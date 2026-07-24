@@ -487,8 +487,16 @@ cross-capture seasonal baseline. The full direction × resolution matrix is ship
   previously showed no target — and the findings table and the signature/TLS triage panels route their
   destination string through `dstLabel`. UI-only; no engine/wasm change.
 
-Remaining ideas (net-new scope, not tracked deferrals): per-protocol sub-series, and a UI sensitivity
-control for the forecaster's `z`/thresholds.
+- **CLI forecaster sensitivity flags** — the first slice of open question #1 (tunable sensitivity). The
+  forecaster's knobs already live in `ForecastParams`; `ppcap analyze` now exposes the two an analyst
+  reaches for as `--forecast-z <σ>` (prediction-band half-width — *lower* is more sensitive; parse-time
+  validated finite and `> 0`) and `--forecast-min-bins <n>` (warm-up length), each overriding only its
+  own default and leaving the rest untouched (like the existing `--no-forecast`). Lets automation and
+  power users tune the false-positive rate without recompiling; the full UI control can build on the
+  same params. Engine/CLI-only; no wasm/UI change.
+
+Remaining ideas (net-new scope, not tracked deferrals): per-protocol sub-series, and lifting the
+`--forecast-z` sensitivity dial into a UI control.
 
 ---
 

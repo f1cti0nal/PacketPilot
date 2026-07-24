@@ -768,6 +768,34 @@ mod tests {
     }
 
     #[test]
+    fn z_threshold_tunes_sensitivity() {
+        // A modest ~3.3σ bump: inside the default z=4 band (silent) but outside a tighter z=2 band,
+        // so the `z` knob (exposed on the CLI as `--forecast-z`) demonstrably changes what fires.
+        let mut bins = vec![1_000_000u64; 40];
+        bins[20] = 1_500_000;
+        let s = series("10.0.0.2", &bins);
+
+        assert!(
+            detect_traffic_anomalies(&input(vec![s.clone()]), &ForecastParams::default())
+                .anomalies
+                .is_empty(),
+            "the bump stays inside the default z=4 band",
+        );
+
+        let sensitive = ForecastParams {
+            z: 2.0,
+            ..ForecastParams::default()
+        };
+        assert_eq!(
+            detect_traffic_anomalies(&input(vec![s]), &sensitive)
+                .anomalies
+                .len(),
+            1,
+            "the same bump flags once the band is tightened to z=2",
+        );
+    }
+
+    #[test]
     fn drop_to_silence_is_flagged() {
         // Steady traffic then the host goes dark for several bins.
         let mut bins = vec![2_000_000u64; 30];
