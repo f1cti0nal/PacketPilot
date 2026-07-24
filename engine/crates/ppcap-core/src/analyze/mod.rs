@@ -558,9 +558,71 @@ pub fn run_source_visiting<'a>(
     // and flow into incidents/chains exactly like every other detector. Single-capture; no sidecar.
     if cfg.forecast.enabled {
         let egress = stats.forecast_input(&cfg.forecast);
-        findings.extend(detect_traffic_anomalies(&egress, &cfg.forecast).into_findings());
-        let ingress = stats.forecast_input_ingress(&cfg.forecast);
-        findings.extend(detect_traffic_anomalies(&ingress, &cfg.forecast).into_findings());
+        let egress_findings = detect_traffic_anomalies(&egress, &cfg.forecast).into_findings();
+        // Hosts that already have an egress finding. The two decomposition passes (peer, then port)
+        // add their hosts to this set as they fire, giving a strict priority — whole-host > peer >
+        // port — so each host yields at most ONE egress-shape finding and one spike is never double-
+        // reported (e.g. as both a "to <peer>" and an "on port <p>" anomaly for the same event).
+        let mut egress_hosts: std::collections::HashSet<String> =
+            egress_findings.iter().map(|f| f.src_ip.clone()).collect();
+        findings.extend(egress_findings);
+
+        // Ingress mirrors egress with its own suppression set (a host can be both a sender-anomaly
+        // and a receiver-anomaly — those are distinct, so ingress dedups independently of egress).
+        let ingress_findings =
+            detect_traffic_anomalies(&stats.forecast_input_ingress(&cfg.forecast), &cfg.forecast)
+                .into_findings();
+        let mut ingress_hosts: std::collections::HashSet<String> =
+            ingress_findings.iter().map(|f| f.src_ip.clone()).collect();
+        findings.extend(ingress_findings);
+
+        // Per-peer egress decomposition (the egress-proxy blind spot): forecast each host's exchange
+        // with its top external peers, keeping only anomalies for hosts the aggregate pass missed.
+        let peer_findings: Vec<_> =
+            detect_traffic_anomalies(&stats.forecast_input_peers(&cfg.forecast), &cfg.forecast)
+                .into_findings()
+                .into_iter()
+                .filter(|f| !egress_hosts.contains(&f.src_ip))
+                .collect();
+        egress_hosts.extend(peer_findings.iter().map(|f| f.src_ip.clone()));
+        findings.extend(peer_findings);
+
+        // Per-port egress decomposition: forecast each host's egress on its top service ports,
+        // catching a spike concentrated on one service (even one spread across many peers). Same
+        // suppression — skip hosts already flagged by the aggregate or peer pass.
+        findings.extend(
+            detect_traffic_anomalies(&stats.forecast_input_ports(&cfg.forecast), &cfg.forecast)
+                .into_findings()
+                .into_iter()
+                .filter(|f| !egress_hosts.contains(&f.src_ip)),
+        );
+
+        // Per-peer ingress decomposition (the ingress mirror): forecast each internal host's
+        // received bytes split by external source, naming the culprit source of a flood the
+        // aggregate inbound series masked. Suppress hosts the ingress aggregate already flagged.
+        let ingress_peer_findings: Vec<_> = detect_traffic_anomalies(
+            &stats.forecast_input_peers_ingress(&cfg.forecast),
+            &cfg.forecast,
+        )
+        .into_findings()
+        .into_iter()
+        .filter(|f| !ingress_hosts.contains(&f.src_ip))
+        .collect();
+        ingress_hosts.extend(ingress_peer_findings.iter().map(|f| f.src_ip.clone()));
+        findings.extend(ingress_peer_findings);
+
+        // Per-port ingress decomposition: forecast each internal host's received bytes on its top
+        // service ports, catching a service-targeted inbound flood (even one spread across many
+        // sources). Same ingress suppression — skip hosts the ingress aggregate or peer pass flagged.
+        findings.extend(
+            detect_traffic_anomalies(
+                &stats.forecast_input_ports_ingress(&cfg.forecast),
+                &cfg.forecast,
+            )
+            .into_findings()
+            .into_iter()
+            .filter(|f| !ingress_hosts.contains(&f.src_ip)),
+        );
     }
 
     stats.apply_findings(&findings);

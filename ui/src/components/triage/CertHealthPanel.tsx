@@ -1,11 +1,12 @@
 import { ShieldAlert } from "lucide-react";
 import type { Finding } from "../../types";
 import { humanNumber } from "../../lib/format";
+import { dstLabel } from "../../lib/findingTarget";
 import { SeverityChip, MitreTag, Panel } from "../../cockpit/primitives";
 import { EvidenceList } from "../transparency/EvidenceList";
 
 function CertCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) {
-  const dst = f.dst_ip ? `${f.dst_ip}${f.dst_port != null ? `:${f.dst_port}` : ""}` : "—";
+  const dst = dstLabel(f);
   const pivot = f.dst_ip ?? f.src_ip;
 
   const content = (

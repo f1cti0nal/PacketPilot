@@ -106,6 +106,16 @@ pub enum Command {
         /// volume departed from their own one-step forecast; pass this to skip that stage.
         #[arg(long = "no-forecast")]
         no_forecast: bool,
+        /// Predictive Anomaly Detection: forecaster sensitivity — the prediction-band half-width in
+        /// residual σ (default 4.0). A bin flags when it lands more than this many σ off its
+        /// one-step forecast, so a *lower* value is more sensitive (more findings). Must be > 0.
+        #[arg(long = "forecast-z", value_parser = parse_forecast_z)]
+        forecast_z: Option<f64>,
+        /// Predictive Anomaly Detection: warm-up length — leading bins folded into the forecaster
+        /// before its band is trusted (default 8). Lower surfaces anomalies earlier in short
+        /// captures at the cost of a colder, noisier band.
+        #[arg(long = "forecast-min-bins")]
+        forecast_min_bins: Option<usize>,
         /// Evidence mode: write a sealed chain-of-custody manifest here after the run — the
         /// input's SHA-256, every produced artifact's SHA-256 + size, the tool version and
         /// effective settings, all made tamper-evident by a seal. Verify later with
@@ -333,6 +343,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             baseline,
             update_baseline,
             no_forecast,
+            forecast_z,
+            forecast_min_bins,
             evidence,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
@@ -382,9 +394,13 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 baseline_in: baseline.clone(),
                 update_baseline: update_baseline.is_some(),
                 // Predictive Anomaly Detection: on by default (single-capture, no sidecar); the
-                // `--no-forecast` flag opts out. Only `enabled` is overridden; thresholds stay default.
+                // `--no-forecast` flag opts out. `--forecast-z` / `--forecast-min-bins` optionally
+                // override the sensitivity knobs; every other threshold stays default.
                 forecast: ppcap_core::ForecastParams {
                     enabled: !no_forecast,
+                    z: forecast_z.unwrap_or(ppcap_core::ForecastParams::default().z),
+                    min_bins: forecast_min_bins
+                        .unwrap_or(ppcap_core::ForecastParams::default().min_bins),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -652,6 +668,12 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 }
                 if no_forecast {
                     settings.push("--no-forecast".to_string());
+                }
+                if let Some(z) = forecast_z {
+                    settings.push(format!("--forecast-z {z}"));
+                }
+                if let Some(n) = forecast_min_bins {
+                    settings.push(format!("--forecast-min-bins {n}"));
                 }
 
                 // Input hash: reuse the --hash pass's result when present, else hash now —
@@ -1352,6 +1374,16 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     h
 }
 
+/// Parse+validate `--forecast-z`: the prediction-band half-width must be a finite, strictly
+/// positive number (a `z <= 0` band would flag every bin; `NaN`/`inf` never would).
+fn parse_forecast_z(s: &str) -> Result<f64, String> {
+    let z: f64 = s.parse().map_err(|_| format!("`{s}` is not a number"))?;
+    if !z.is_finite() || z <= 0.0 {
+        return Err(format!("forecast-z must be a positive number, got `{s}`"));
+    }
+    Ok(z)
+}
+
 #[cfg(test)]
 mod reputation_cli_tests {
     use super::*;
@@ -1443,6 +1475,57 @@ mod reputation_cli_tests {
             Command::Analyze { no_forecast, .. } => assert!(no_forecast),
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn analyze_forecast_sensitivity_flags_parse() {
+        // Absent → None (defaults are applied downstream).
+        let bare = Cli::try_parse_from(["ppcap", "analyze", "x.pcap"]).unwrap();
+        match bare.command {
+            Command::Analyze {
+                forecast_z,
+                forecast_min_bins,
+                ..
+            } => {
+                assert_eq!(forecast_z, None);
+                assert_eq!(forecast_min_bins, None);
+            }
+            _ => panic!("expected Analyze"),
+        }
+        // Provided → parsed through.
+        let tuned = Cli::try_parse_from([
+            "ppcap",
+            "analyze",
+            "x.pcap",
+            "--forecast-z",
+            "2.5",
+            "--forecast-min-bins",
+            "4",
+        ])
+        .unwrap();
+        match tuned.command {
+            Command::Analyze {
+                forecast_z,
+                forecast_min_bins,
+                ..
+            } => {
+                assert_eq!(forecast_z, Some(2.5));
+                assert_eq!(forecast_min_bins, Some(4));
+            }
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn analyze_forecast_z_rejects_non_positive_and_nonfinite() {
+        for bad in ["0", "-1", "-0.5", "nan", "inf", "abc"] {
+            assert!(
+                Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--forecast-z", bad]).is_err(),
+                "forecast-z `{bad}` must be rejected",
+            );
+        }
+        // A sane positive value is accepted.
+        assert!(Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--forecast-z", "3.5"]).is_ok(),);
     }
 
     #[test]

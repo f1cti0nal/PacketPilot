@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Search, X, ArrowRight } from "lucide-react";
 import type { Finding, FindingKind, Severity } from "../types";
 import { kindLabel, kindMeta } from "../lib/findingKinds";
+import { dstLabel } from "../lib/findingTarget";
 import { SEVERITY_META, SEVERITY_ORDER } from "../lib/severity";
 import { humanNumber } from "../lib/format";
 import { sevColor } from "../cockpit/viz";
@@ -229,7 +230,7 @@ export function FindingsView({ findings, onJumpToFlows }: FindingsViewProps) {
               {filtered.map((f, i) => {
                 const color = sevColor(f.severity);
                 const { Icon } = kindMeta(f.kind);
-                const target = f.dst_ip ? `${f.dst_ip}${f.dst_port ? `:${f.dst_port}` : ""}` : "—";
+                const target = dstLabel(f);
                 const clickable = !!onJumpToFlows && !!f.src_ip; // no pivot when there's no source IP (e.g. a domain IOC)
                 const pivot = clickable ? () => onJumpToFlows!({ ip: f.src_ip }) : undefined;
                 return (

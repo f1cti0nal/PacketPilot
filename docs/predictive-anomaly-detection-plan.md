@@ -360,7 +360,7 @@ findings UI). A forecast-band overlay on the existing timeline chart is a docume
 | **Very smooth series → tiny σ → phantom spikes** | σ **floor tied to the host's mean** (`sigma_floor_frac·mean`), so small wobbles never read as many σ; `z=4` band on top. |
 | **Bursty-but-benign hosts** | `min_bin_bytes` ignores trivial talkers; the residual-EWMA σ adapts to a naturally variable host so its normal bursts widen the band rather than alerting. |
 | **Attribution** | Egress-per-internal-sender keying makes every finding a real `src_ip`; `apply_findings` uplifts that host's card and incidents/chains stay clean (no synthetic "network" actor). |
-| **Internal egress proxy / gateway** | An internal proxy that funnels all egress becomes a permanent heavy-hitter whose aggregate shape is meaningless and can mis-attribute a spike to the proxy, not the culprit host — an acknowledged blind spot (the `is_external` gate only excludes *external* NAT). A per-flow or per-peer sub-series would resolve it; deferred (§13). |
+| **Internal egress proxy / gateway** | An internal proxy that funnels all egress is a permanent heavy-hitter whose *aggregate* shape is a meaningless blend. **Resolved** by the per-peer decomposition (§13): each `(host, external peer)` egress sub-series is forecast independently, so a spike to one destination that the blended aggregate masks is caught and named (`dst_ip = peer`). Peers of a host whose aggregate already fired are suppressed (the host-level finding subsumes them), so the pass only adds signal, not noise. |
 | **Long/wide captures → cell saturation** | `max_forecast_cells` bounds heap independently of `max_tracked_keys`; the **insert-only** bound keeps the fold O(1) and, by never evicting interior cells, avoids manufacturing false drops — a saturated capture simply stops extending each host's series (§7). |
 | **Spike inflates σ and masks a following drop** | Accepted and intended (one event → one finding); the σ floor and one-host-one-finding aggregation keep it from cascading. |
 | **Adaptive bin width dilutes a spike on huge captures** | Bins follow `choose_bucket_width` so the series stays ≤ `max_time_buckets`; the spike is measured against the same width the UI shows. Per-bin resolution on multi-day captures is a follow-up. |
@@ -419,7 +419,84 @@ than replacing `SynFlood` (§13, "Intra-capture ingress forecasting").
   `SynFlood` (half-open connection floods) by catching high-**byte** inbound spikes it does not model.
   Engine-only; no CLI/UI/wasm change, no new config (reuses `ForecastParams` and `max_forecast_cells`).
 
-**Still deferred:** **per-peer / per-port sub-series** — additive and does not disturb the shipped core.
+- **Per-peer egress sub-series** — closes the **egress-proxy blind spot** (§12). Alongside its
+  whole-host egress series, each internal host's egress is now decomposed **by external peer**: `stats`
+  folds a third bounded grid keyed `(internal host, external peer, second)` (`per_host_peer_epoch`,
+  external counterparty only — internal↔internal is already covered by both hosts' aggregates; the
+  generalised `fold_forecast_cell` and a shared `materialize_forecast_series` back all three grids),
+  and `forecast_input_peers` projects the top `max_peers_per_host` peers of the top `max_hosts` hosts
+  into per-`(host, peer)` sub-series. `HostSeries`/`Anomaly` gain an optional `peer`; the forecaster
+  stays peer-blind (only `aggregate` reads it, adding a "to `<peer>`" infix to the evidence/title), and
+  `into_findings` carries the peer into the finding's `dst_ip`. `analyze` runs the peer pass after the
+  aggregate egress pass and **suppresses peers of any host whose aggregate already fired** — so the
+  pass only surfaces the *masked* case (a spike to one destination diluted in a blended aggregate, e.g.
+  through a proxy) rather than restating host-level alarms. Engine-only; no CLI/UI/wasm change.
+  `ForecastParams`: `max_peers_per_host` (8, `0` disables); `StatsConfig`: `max_forecast_subcells`
+  (131 072, insert-only like `max_forecast_cells`).
+
+- **Per-port egress sub-series** — the complement of the per-peer split: each internal host's egress is
+  also decomposed **by service port** (the well-known side, `min(src,dst)`), so a spike concentrated on
+  one service — *including one spread across many peers*, which the per-peer split divides away — is
+  caught and attributed to the port. `stats` folds a fourth bounded grid keyed `(internal host, service
+  port, second)` (`per_host_port_epoch`, port-bearing egress of any destination locality since a
+  port-concentrated spike matters whether the peer is internal or external; low-cardinality key, shares
+  the `max_forecast_subcells` cap), and `forecast_input_ports` projects the top `max_ports_per_host`
+  ports of the top `max_hosts` hosts. `HostSeries`/`Anomaly` gain an optional `port` (mutually exclusive
+  with `peer`); `aggregate`'s infix becomes "on port `<p>`" and `into_findings` carries it into the
+  finding's `dst_port`. `analyze` runs the port pass last with a strict **whole-host > peer > port**
+  suppression (each pass adds its fired hosts to the skip set), so a single spike is never double-
+  reported as both a peer and a port anomaly. Engine-only; no CLI/UI/wasm change. `ForecastParams`:
+  `max_ports_per_host` (8, `0` disables).
+
+- **Per-peer ingress sub-series** — the ingress mirror of the per-peer egress split: each internal
+  host's *received* bytes are decomposed **by external source**, so a flood/spike victim's culprit
+  source is named even when its aggregate inbound series masks it. `stats` folds a fifth bounded grid
+  keyed `(internal host, external source, second)` (`per_host_peer_epoch_in`, external-source-only, the
+  symmetric twin of `per_host_peer_epoch`; the fold is refactored to a flat form gating egress-peer on
+  `src_internal && !dst_internal` and ingress-peer on `dst_internal && !src_internal`), and a shared
+  `project_peer_forecast(cells, dir)` backs both `forecast_input_peers` (`Out`) and the new
+  `forecast_input_peers_ingress` (`In`). No forecast-module change was needed: the direction-aware
+  `FlowDir::peer_prep` already renders the infix as "from `<source>`" for inbound, and `into_findings`
+  carries the source into `dst_ip`, attributing the anomaly to the internal **victim** (`src_ip`).
+  `analyze` runs the ingress-peer pass with its **own** suppression set (independent of egress — a host
+  can be both a sender- and a receiver-anomaly), skipping hosts the ingress aggregate already flagged.
+  Engine-only; no CLI/UI/wasm change, no new config (reuses `max_peers_per_host` / `max_forecast_subcells`).
+
+- **Per-port ingress sub-series** — the ingress mirror of the per-port egress split, and the last cell
+  of the direction × resolution matrix: each internal host's *received* bytes are decomposed **by
+  service port**, catching a **service-targeted inbound flood** — even one *spread across many sources*,
+  which the per-peer ingress split divides away. `stats` folds a sixth bounded grid keyed `(internal
+  host, service port, second)` (`per_host_port_epoch_in`, the twin of `per_host_port_epoch`; the port
+  fold now handles egress and ingress in one block), and a shared `project_port_forecast(cells, dir)`
+  backs both `forecast_input_ports` (`Out`) and the new `forecast_input_ports_ingress` (`In`). No
+  forecast-module change (the "on port `<p>`" infix is direction-agnostic; `word` supplies inbound vs
+  outbound). `analyze` extends the ingress suppression to a strict **whole-host > peer > port** priority
+  (mirroring egress), so a service-flood victim yields one ingress finding. Engine-only; no CLI/UI/wasm
+  change, no new config.
+
+**Detection matrix complete.** The intra-capture forecaster now covers **both directions**
+(egress/ingress) at **three resolutions each** — whole-host, per-peer, and per-port — plus the
+cross-capture seasonal baseline. The full direction × resolution matrix is shipped.
+
+- **Peer/port attribution in the UI** (first surfacing follow-up) — the per-peer / per-port passes above
+  attribute a `traffic_anomaly` to a `dst_ip` (peer) or `dst_port` (service), but the UI dropped the
+  port-only case. A shared `dstLabel()` helper (`ui/src/lib/findingTarget.ts`) now renders a finding's
+  destination as `ip:port` / `ip` / **`port N`** / `—`, closing the gap where a per-port anomaly showed
+  "—" (the old `dst_ip ? … : "—"` idiom hid it). A `FindingTarget` row (`src → dst`, hidden when a
+  finding names nothing) is added to the incident **flyout** — the detailed triage surface that
+  previously showed no target — and the findings table and the signature/TLS triage panels route their
+  destination string through `dstLabel`. UI-only; no engine/wasm change.
+
+- **CLI forecaster sensitivity flags** — the first slice of open question #1 (tunable sensitivity). The
+  forecaster's knobs already live in `ForecastParams`; `ppcap analyze` now exposes the two an analyst
+  reaches for as `--forecast-z <σ>` (prediction-band half-width — *lower* is more sensitive; parse-time
+  validated finite and `> 0`) and `--forecast-min-bins <n>` (warm-up length), each overriding only its
+  own default and leaving the rest untouched (like the existing `--no-forecast`). Lets automation and
+  power users tune the false-positive rate without recompiling; the full UI control can build on the
+  same params. Engine/CLI-only; no wasm/UI change.
+
+Remaining ideas (net-new scope, not tracked deferrals): per-protocol sub-series, and lifting the
+`--forecast-z` sensitivity dial into a UI control.
 
 ---
 
