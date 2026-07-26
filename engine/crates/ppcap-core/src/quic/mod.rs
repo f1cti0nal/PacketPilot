@@ -25,6 +25,9 @@ pub(crate) mod crypto;
 
 use crypto::{aes128_gcm_open, hkdf_expand_label, hkdf_extract, Aes128};
 
+use crate::model::flow::{Direction, FlowKey};
+use crate::model::packet::{PacketMeta, Transport};
+
 /// A recognized QUIC version, parsed from the 4-byte long-header version field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuicVersion {
@@ -157,9 +160,28 @@ const V2_SALT: [u8; 20] = [
     0xf9, 0xbd, 0x2e, 0xd9,
 ];
 
-/// Per-version derivation parameters: (initial salt, client-secret label,
-/// key label, iv label). The client-secret label (`"client in"`) is unchanged
-/// in v2; only the salt and the packet-protection labels differ (RFC 9369 §3.3).
+/// Which endpoint's Initial keys to derive. Both roles use the same salt and
+/// packet-protection labels; only the secret label differs (RFC 9001 §5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InitialRole {
+    Client,
+    Server,
+}
+
+impl InitialRole {
+    /// The HKDF-Expand-Label secret label for this role. Version-independent:
+    /// RFC 9369 changes the salt and the packet-protection labels for v2, not these.
+    fn secret_label(self) -> &'static str {
+        match self {
+            InitialRole::Client => "client in",
+            InitialRole::Server => "server in",
+        }
+    }
+}
+
+/// Per-version derivation parameters: (initial salt, key label, iv label). The per-role secret
+/// labels (`"client in"` / `"server in"`, [`InitialRole::secret_label`]) are version-independent;
+/// only the salt and the packet-protection labels differ in v2 (RFC 9369 §3.3).
 ///
 /// v1 (`0x00000001`, RFC 9001) and v2 (`0x6b3343cf`, RFC 9369) are supported.
 /// NOTE: the v2 constants are transcribed from RFC 9369 §3.3 and verified by a
@@ -167,12 +189,10 @@ const V2_SALT: [u8; 20] = [
 /// golden vector because this build environment's network policy blocks
 /// rfc-editor.org. Any mismatch degrades gracefully to `None` (no SNI), never a
 /// panic — see `extract_initial_client_hello`.
-fn version_params(
-    version: u32,
-) -> Option<(&'static [u8], &'static str, &'static str, &'static str)> {
+fn version_params(version: u32) -> Option<(&'static [u8], &'static str, &'static str)> {
     match version {
-        VERSION_1 => Some((&V1_SALT, "client in", "quic key", "quic iv")),
-        VERSION_2 => Some((&V2_SALT, "client in", "quicv2 key", "quicv2 iv")),
+        VERSION_1 => Some((&V1_SALT, "quic key", "quic iv")),
+        VERSION_2 => Some((&V2_SALT, "quicv2 key", "quicv2 iv")),
         _ => None,
     }
 }
@@ -207,25 +227,33 @@ fn read_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
     Some(value)
 }
 
-/// Derive the client Initial `(key, iv, hp)` from the Destination Connection
-/// ID, per RFC 9001 §5.2.
+/// Derive one endpoint's Initial `(key, iv, hp)` from the **client's original**
+/// Destination Connection ID, per RFC 9001 §5.2.
 ///
-/// `initial_secret = HKDF-Extract(salt, DCID)`,
-/// `client_initial_secret = HKDF-Expand-Label(initial_secret, "client in", "", 32)`,
+/// `initial_secret = HKDF-Extract(salt, client_dcid)`,
+/// `<role>_initial_secret = HKDF-Expand-Label(initial_secret, "client in"|"server in", "", 32)`,
 /// then the AEAD `key` (16), `iv` (12), and header-protection `hp` (16) keys.
 ///
+/// Both endpoints' keys come from the *same* client DCID — the server's own header DCID field
+/// is the client's SCID and must NOT be used here. Version-public throughout: the only inputs
+/// are the RFC-published salt and wire-visible bytes; no session secrets are involved.
+///
 /// Returns `None` for unsupported versions.
-fn derive_client_initial_keys(version: u32, dcid: &[u8]) -> Option<([u8; 16], [u8; 12], [u8; 16])> {
-    let (salt, client_label, key_label, iv_label) = version_params(version)?;
+fn derive_initial_keys(
+    version: u32,
+    client_dcid: &[u8],
+    role: InitialRole,
+) -> Option<([u8; 16], [u8; 12], [u8; 16])> {
+    let (salt, key_label, iv_label) = version_params(version)?;
     let hp_lbl = hp_label(version)?;
 
-    let initial_secret = hkdf_extract(salt, dcid);
-    let client_secret_vec = hkdf_expand_label(&initial_secret, client_label, 32);
-    let client_secret: [u8; 32] = client_secret_vec.as_slice().try_into().ok()?;
+    let initial_secret = hkdf_extract(salt, client_dcid);
+    let secret_vec = hkdf_expand_label(&initial_secret, role.secret_label(), 32);
+    let secret: [u8; 32] = secret_vec.as_slice().try_into().ok()?;
 
-    let key_vec = hkdf_expand_label(&client_secret, key_label, 16);
-    let iv_vec = hkdf_expand_label(&client_secret, iv_label, 12);
-    let hp_vec = hkdf_expand_label(&client_secret, hp_lbl, 16);
+    let key_vec = hkdf_expand_label(&secret, key_label, 16);
+    let iv_vec = hkdf_expand_label(&secret, iv_label, 12);
+    let hp_vec = hkdf_expand_label(&secret, hp_lbl, 16);
 
     let key: [u8; 16] = key_vec.as_slice().try_into().ok()?;
     let iv: [u8; 12] = iv_vec.as_slice().try_into().ok()?;
@@ -314,6 +342,46 @@ fn reassemble_crypto(plaintext: &[u8]) -> Option<Vec<u8>> {
 ///
 /// Pure and wasm-safe; never panics.
 pub(crate) fn extract_initial_client_hello(udp_payload: &[u8]) -> Option<Vec<u8>> {
+    extract_initial_crypto(udp_payload, InitialRole::Client, None)
+}
+
+/// Parse just the Initial header far enough to recover `(version, dcid)` — no decryption.
+///
+/// The connection's *first* Initial carries the client's original DCID, which is the key
+/// material for BOTH endpoints' Initial keys (RFC 9001 §5.2), so the server-side path needs it
+/// recorded from the client packet. Returns `None` for non-Initial / unsupported-version /
+/// truncated packets.
+pub(crate) fn initial_dcid(udp_payload: &[u8]) -> Option<(u32, Vec<u8>)> {
+    let first = *udp_payload.first()?;
+    if first & 0x80 == 0 || first & 0x40 == 0 {
+        return None;
+    }
+    let vb = udp_payload.get(1..5)?;
+    let version = u32::from_be_bytes([vb[0], vb[1], vb[2], vb[3]]);
+    let initial_type = match version {
+        VERSION_1 => 0b00,
+        VERSION_2 => 0b01,
+        _ => return None,
+    };
+    if (first >> 4) & 0x03 != initial_type {
+        return None;
+    }
+    let dcid_len = *udp_payload.get(5)? as usize;
+    let dcid = udp_payload.get(6..6usize.checked_add(dcid_len)?)?.to_vec();
+    Some((version, dcid))
+}
+
+/// Recover the CRYPTO-frame handshake bytes from one Initial packet, for either endpoint.
+///
+/// `role` selects whose Initial keys to derive. `client_dcid` supplies the client's original
+/// DCID: `None` means "use this packet's own DCID" (correct only for the client's Initial);
+/// the server path must pass the DCID recorded from the client packet, because a server
+/// Initial's own DCID field is the client's SCID.
+fn extract_initial_crypto(
+    udp_payload: &[u8],
+    role: InitialRole,
+    client_dcid: Option<&[u8]>,
+) -> Option<Vec<u8>> {
     let first = *udp_payload.first()?;
 
     // Long header (0x80) with fixed bit set (0x40). RFC 9000 §17.2.
@@ -371,8 +439,10 @@ pub(crate) fn extract_initial_client_hello(udp_payload: &[u8]) -> Option<Vec<u8>
         return None;
     }
 
-    // Derive keys (rejects unsupported versions).
-    let (key, iv, hp) = derive_client_initial_keys(version, &dcid)?;
+    // Derive keys (rejects unsupported versions). Both roles key off the CLIENT's original
+    // DCID; for a server Initial that value comes from the caller, not this packet's header.
+    let secret_dcid: &[u8] = client_dcid.unwrap_or(&dcid);
+    let (key, iv, hp) = derive_initial_keys(version, secret_dcid, role)?;
 
     // Header protection (RFC 9001 §5.4): sample 16 bytes starting 4 bytes into
     // where the packet number would be (the largest possible PN is 4 bytes).
@@ -415,6 +485,118 @@ pub(crate) fn extract_initial_client_hello(udp_payload: &[u8]) -> Option<Vec<u8>
 
     // Reassemble CRYPTO frames into the handshake (ClientHello) bytes.
     reassemble_crypto(&plaintext)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Keyless server-side handshake recovery
+// ---------------------------------------------------------------------------------------------
+
+/// Maximum concurrent QUIC connections awaiting their server Initial. Bounded like every other
+/// streaming map: a brand-new connection past the cap is dropped (no eviction scan).
+const MAX_QUIC_TRACKED: usize = 4096;
+
+/// What a client Initial told us, kept until the matching server Initial arrives.
+struct PendingInitial {
+    /// The client's original DCID — the key material for both endpoints (RFC 9001 §5.2).
+    dcid: Vec<u8>,
+    version: u32,
+    /// Which canonical direction the CLIENT sent from. The flow key is direction-symmetric, so
+    /// without this "the reverse direction" is undecidable and every client retransmit would
+    /// burn a derive + AEAD attempt.
+    client_dir: Direction,
+}
+
+/// Recovers the **server's** TLS handshake from a QUIC Initial, keylessly.
+///
+/// QUIC Initial packets are protected with keys derived from the RFC-published salt and the
+/// client's wire-visible DCID — public values, not session secrets — so the ServerHello is
+/// recoverable with no key log, exactly as the ClientHello already is. Because the server's keys
+/// derive from the *client's* original DCID (which appears only on the client packet), this needs
+/// one bounded piece of per-connection state; everything else is stateless.
+///
+/// Results are applied to `PacketMeta` **inline** (rather than drained at EOF like the TLS
+/// certificate reassembler) so the values ride the normal `PacketMeta -> FlowRecord` sticky fold
+/// and reach Parquet/UI even for flows evicted mid-capture.
+pub(crate) struct QuicServerHelloTracker {
+    pending: std::collections::HashMap<FlowKey, PendingInitial>,
+}
+
+impl QuicServerHelloTracker {
+    pub(crate) fn new() -> QuicServerHelloTracker {
+        QuicServerHelloTracker {
+            pending: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Observe one decoded packet alongside its raw frame, setting the server-side TLS fields on
+    /// `meta` when this packet is a recoverable server Initial.
+    ///
+    /// Deliberately does NOT touch `meta.app_proto`: the flow stays `Quic`/`Http3` (the
+    /// specificity lattice is undisturbed, and the TCP-only certificate reassembler cannot be
+    /// confused by a Quic-tagged packet carrying `tls_version`).
+    pub(crate) fn observe(&mut self, meta: &mut PacketMeta, frame: &crate::reader::RawFrame<'_>) {
+        if meta.transport != Transport::Udp {
+            return;
+        }
+        let Some(info) = crate::decode::l4_payload(frame) else {
+            return;
+        };
+        let payload = info.payload;
+        // Only long-header Initial packets carry handshake CRYPTO frames.
+        if crate::quic::identify_quic(payload).and_then(|i| i.kind) != Some(QuicLongKind::Initial) {
+            return;
+        }
+        let Some((key, dir)) = FlowKey::from_packet(meta) else {
+            return;
+        };
+
+        match self.pending.get(&key) {
+            // A packet opposite the client's direction is the server's Initial: recover it.
+            Some(p) if p.client_dir != dir => {
+                let recovered = extract_initial_crypto(payload, InitialRole::Server, Some(&p.dcid))
+                    .filter(|_| p.version != 0);
+                if let Some(handshake) = recovered {
+                    if let Some(posture) = server_posture_from_handshake(&handshake) {
+                        meta.tls_version = Some(posture.version.to_string());
+                        meta.tls_cipher = Some(posture.cipher);
+                        meta.ja3s = Some(posture.ja3s);
+                        meta.ja4s = Some(posture.ja4s);
+                    }
+                    // One ServerHello per connection either way — stop tracking.
+                    self.pending.remove(&key);
+                }
+            }
+            // Any other Initial on this tuple is the client's. Last write wins, which is what a
+            // Retry requires: the client's post-Retry Initial carries a NEW DCID and the server's
+            // keys then derive from that one (RFC 9001 §5.2).
+            _ => {
+                if let Some((version, dcid)) = initial_dcid(payload) {
+                    if self.pending.contains_key(&key) || self.pending.len() < MAX_QUIC_TRACKED {
+                        self.pending.insert(
+                            key,
+                            PendingInitial {
+                                dcid,
+                                version,
+                                client_dir: dir,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Parse recovered server handshake bytes (raw, starting at the ServerHello message) into the
+/// server TLS posture. The handshake is wrapped in a synthetic TLS record because the record-
+/// oriented parser expects one — the same dance the client path uses in `decode`.
+fn server_posture_from_handshake(handshake: &[u8]) -> Option<crate::tls::ServerPosture> {
+    let mut record = Vec::with_capacity(5 + handshake.len());
+    record.push(22u8); // content_type = handshake
+    record.extend_from_slice(&[0x03, 0x03]); // record version TLS 1.2
+    record.extend_from_slice(&(u16::try_from(handshake.len()).ok()?).to_be_bytes());
+    record.extend_from_slice(handshake);
+    crate::tls::sniff_server_hello(&record, crate::fingerprint::Ja4Transport::Quic)
 }
 
 /// Test-only builders for synthetic QUIC Initial packets, shared by the QUIC and
@@ -480,8 +662,21 @@ pub(crate) mod testkit {
     /// keyed from `dcid`. This is the exact inverse of `extract_initial_client_hello`:
     /// derive keys → CRYPTO-frame + PADDING → seal → apply header protection.
     pub(crate) fn protected_initial(version: u32, dcid: &[u8], handshake: &[u8]) -> Vec<u8> {
+        protected_initial_role(version, dcid, handshake, InitialRole::Client)
+    }
+
+    /// A protected Initial from either endpoint. `client_dcid` is always the CLIENT's original
+    /// DCID (both roles' keys derive from it); for a server Initial the emitted header still
+    /// carries it as the DCID field here, which is fine because extraction takes the client
+    /// DCID from tracked state rather than the server packet's header.
+    pub(crate) fn protected_initial_role(
+        version: u32,
+        dcid: &[u8],
+        handshake: &[u8],
+        role: InitialRole,
+    ) -> Vec<u8> {
         let (key, iv, hp) =
-            derive_client_initial_keys(version, dcid).expect("keys for supported version");
+            derive_initial_keys(version, dcid, role).expect("keys for supported version");
 
         // Plaintext: one CRYPTO frame (type 0x06, offset 0, len varint, data) then
         // PADDING (zero bytes) so the packet is comfortably longer than the sample.
@@ -551,10 +746,180 @@ mod tests {
     fn derive_client_initial_keys_rfc9001_a1() {
         let dcid = hex("8394c8f03e515708");
         let (key, iv, hp) =
-            derive_client_initial_keys(VERSION_1, &dcid).expect("v1 derivation must succeed");
+            derive_initial_keys(VERSION_1, &dcid, InitialRole::Client).expect("v1 derivation");
         assert_eq!(to_hex(&key), "1f369613dd76d5467730efcbe3b1a22d", "key");
         assert_eq!(to_hex(&iv), "fa044b2f42a3fd3b46fb255c", "iv");
         assert_eq!(to_hex(&hp), "9f50449e04a0e810283a1e9933adedd2", "hp");
+    }
+
+    /// RFC 9001 §A.3: the SERVER Initial key/iv/hp for the same connection — derived from the
+    /// client's original DCID with the `"server in"` label. This is the vector that pins the
+    /// keyless server-side path; the client (§A.1) and server keys share every input but the label.
+    #[test]
+    fn derive_server_initial_keys_rfc9001_a3() {
+        let dcid = hex("8394c8f03e515708");
+        let (key, iv, hp) = derive_initial_keys(VERSION_1, &dcid, InitialRole::Server)
+            .expect("v1 server derivation must succeed");
+        assert_eq!(to_hex(&key), "cf3a5331653c364c88f0f379b6067e37", "key");
+        assert_eq!(to_hex(&iv), "0ac1493ca1905853b0bba03e", "iv");
+        assert_eq!(to_hex(&hp), "c206b8d9b9f0f37644430b490eeaa314", "hp");
+    }
+
+    // ── Keyless server-side recovery (QuicServerHelloTracker) ────────────────
+
+    /// Build a RawIpv4 frame carrying `payload` as UDP `src_port -> dst_port`, decode it, and
+    /// return `(meta, frame_bytes)` so the caller can re-borrow the bytes for the tracker.
+    #[cfg(test)]
+    fn udp_frame_bytes(src: [u8; 4], dst: [u8; 4], sp: u16, dp: u16, payload: &[u8]) -> Vec<u8> {
+        use crate::gen::frames::{build_ipv4, build_udp, IP_PROTO_UDP};
+        let s = std::net::Ipv4Addr::from(src);
+        let d = std::net::Ipv4Addr::from(dst);
+        let udp = build_udp(s, d, sp, dp, payload);
+        let mut pkt = build_ipv4(s, d, IP_PROTO_UDP, 64, udp.len());
+        pkt.extend_from_slice(&udp);
+        pkt
+    }
+
+    #[cfg(test)]
+    fn decode_and_track(
+        tracker: &mut QuicServerHelloTracker,
+        bytes: &[u8],
+    ) -> crate::model::packet::PacketMeta {
+        let frame = crate::reader::RawFrame {
+            index: 0,
+            ts_ns: 1,
+            ts_known: true,
+            iface_id: 0,
+            wire_len: bytes.len() as u32,
+            cap_len: bytes.len() as u32,
+            link_type: crate::reader::LinkType::RawIpv4,
+            data: bytes,
+        };
+        let mut meta = crate::decode::decode_frame(&frame).expect("decode");
+        tracker.observe(&mut meta, &frame);
+        meta
+    }
+
+    /// End-to-end keyless server recovery: a client Initial establishes the DCID, then the
+    /// server's Initial in the reverse direction yields the negotiated version, cipher, JA3S,
+    /// and a `q`-marked JA4S — with no key log anywhere.
+    #[test]
+    fn tracker_recovers_server_hello_keylessly() {
+        let dcid = hex("8394c8f03e515708");
+        let client = [10, 0, 0, 5];
+        let server = [93, 184, 216, 34];
+
+        let ch = testkit::client_hello("quic.example", &["h3"]);
+        let client_pkt = testkit::protected_initial(VERSION_1, &dcid, &ch);
+        let sh = crate::tls::testcert::server_hello(0x0303, 0x1301, Some(0x0304));
+        // The ServerHello arrives as a raw handshake message inside CRYPTO — strip the TLS
+        // record header the test builder adds.
+        let sh_handshake = &sh[5..];
+        let server_pkt =
+            testkit::protected_initial_role(VERSION_1, &dcid, sh_handshake, InitialRole::Server);
+
+        let mut tracker = QuicServerHelloTracker::new();
+
+        // Client Initial: no server-side fields yet, but the DCID is now tracked.
+        let cm = decode_and_track(
+            &mut tracker,
+            &udp_frame_bytes(client, server, 50000, 443, &client_pkt),
+        );
+        assert_eq!(cm.sni.as_deref(), Some("quic.example"));
+        assert!(cm.ja3s.is_none() && cm.ja4s.is_none());
+
+        // Server Initial (reverse direction): the handshake opens keylessly.
+        let sm = decode_and_track(
+            &mut tracker,
+            &udp_frame_bytes(server, client, 443, 50000, &server_pkt),
+        );
+        assert_eq!(sm.tls_version.as_deref(), Some("TLS 1.3"));
+        assert_eq!(sm.tls_cipher.as_deref(), Some("TLS_AES_128_GCM_SHA256"));
+        assert!(sm.ja3s.is_some(), "JA3S recovered from the server Initial");
+        let ja4s = sm.ja4s.expect("JA4S recovered");
+        assert!(ja4s.starts_with('q'), "QUIC JA4S marker, got {ja4s}");
+        // The flow stays QUIC — recovering server TLS metadata must not relabel the protocol.
+        assert!(matches!(
+            sm.app_proto,
+            crate::model::packet::AppProto::Quic | crate::model::packet::AppProto::Http3
+        ));
+    }
+
+    /// Without the client's Initial there is no DCID to key from, so a lone server Initial
+    /// yields nothing (and must not panic).
+    #[test]
+    fn server_initial_without_client_context_is_ignored() {
+        let dcid = hex("8394c8f03e515708");
+        let sh = crate::tls::testcert::server_hello(0x0303, 0x1301, Some(0x0304));
+        let server_pkt =
+            testkit::protected_initial_role(VERSION_1, &dcid, &sh[5..], InitialRole::Server);
+        let mut tracker = QuicServerHelloTracker::new();
+        let m = decode_and_track(
+            &mut tracker,
+            &udp_frame_bytes([93, 184, 216, 34], [10, 0, 0, 5], 443, 50000, &server_pkt),
+        );
+        assert!(m.ja4s.is_none() && m.tls_version.is_none());
+    }
+
+    /// A Retry forces the client to re-send its Initial under a NEW DCID; the server's keys then
+    /// derive from that one, so the tracker must keep the LAST client DCID, not the first.
+    #[test]
+    fn retry_rekeys_to_the_latest_client_dcid() {
+        let old_dcid = hex("8394c8f03e515708");
+        let new_dcid = hex("0102030405060708");
+        let client = [10, 0, 0, 5];
+        let server = [93, 184, 216, 34];
+        let ch = testkit::client_hello("retry.example", &["h3"]);
+
+        let mut tracker = QuicServerHelloTracker::new();
+        for dcid in [&old_dcid, &new_dcid] {
+            let pkt = testkit::protected_initial(VERSION_1, dcid, &ch);
+            decode_and_track(
+                &mut tracker,
+                &udp_frame_bytes(client, server, 50000, 443, &pkt),
+            );
+        }
+
+        let sh = crate::tls::testcert::server_hello(0x0303, 0x1301, Some(0x0304));
+        let server_pkt =
+            testkit::protected_initial_role(VERSION_1, &new_dcid, &sh[5..], InitialRole::Server);
+        let sm = decode_and_track(
+            &mut tracker,
+            &udp_frame_bytes(server, client, 443, 50000, &server_pkt),
+        );
+        assert!(
+            sm.ja4s.is_some(),
+            "server keys must follow the post-Retry DCID"
+        );
+    }
+
+    /// The tracker map is bounded: brand-new connections past the cap are dropped rather than
+    /// growing without limit (the repo's standard new-key-drop policy).
+    #[test]
+    fn tracker_map_is_bounded() {
+        let mut tracker = QuicServerHelloTracker::new();
+        let ch = testkit::client_hello("bound.example", &["h3"]);
+        for i in 0..(MAX_QUIC_TRACKED + 32) {
+            let dcid = (i as u64).to_be_bytes();
+            let pkt = testkit::protected_initial(VERSION_1, &dcid, &ch);
+            let src = [10, 0, (i >> 8) as u8, (i & 0xff) as u8];
+            decode_and_track(
+                &mut tracker,
+                &udp_frame_bytes(src, [93, 184, 216, 34], 50000, 443, &pkt),
+            );
+        }
+        assert!(tracker.pending.len() <= MAX_QUIC_TRACKED);
+    }
+
+    /// The two roles must never collide: same salt, same DCID, different label.
+    #[test]
+    fn client_and_server_initial_keys_differ() {
+        let dcid = hex("8394c8f03e515708");
+        let c = derive_initial_keys(VERSION_1, &dcid, InitialRole::Client).unwrap();
+        let s = derive_initial_keys(VERSION_1, &dcid, InitialRole::Server).unwrap();
+        assert_ne!(c.0, s.0);
+        assert_ne!(c.1, s.1);
+        assert_ne!(c.2, s.2);
     }
 
     /// Unsupported versions (Version Negotiation, a draft, an experimental value)
@@ -562,11 +927,20 @@ mod tests {
     #[test]
     fn derive_client_initial_keys_rejects_unknown_version() {
         let dcid = hex("8394c8f03e515708");
-        assert_eq!(derive_client_initial_keys(0x0000_0000, &dcid), None);
-        assert_eq!(derive_client_initial_keys(0xff00_001d, &dcid), None);
-        assert_eq!(derive_client_initial_keys(0xdead_beef, &dcid), None);
+        assert_eq!(
+            derive_initial_keys(0x0000_0000, &dcid, InitialRole::Client),
+            None
+        );
+        assert_eq!(
+            derive_initial_keys(0xff00_001d, &dcid, InitialRole::Client),
+            None
+        );
+        assert_eq!(
+            derive_initial_keys(0xdead_beef, &dcid, InitialRole::Client),
+            None
+        );
         // v2 is now supported (derivation succeeds).
-        assert!(derive_client_initial_keys(VERSION_2, &dcid).is_some());
+        assert!(derive_initial_keys(VERSION_2, &dcid, InitialRole::Client).is_some());
     }
 
     /// QUIC varint decoding across all four length prefixes (RFC 9000 §16).
@@ -896,8 +1270,8 @@ mod tests {
     #[test]
     fn v2_keys_differ_from_v1() {
         let dcid = hex("8394c8f03e515708");
-        let v1 = derive_client_initial_keys(VERSION_1, &dcid).unwrap();
-        let v2 = derive_client_initial_keys(VERSION_2, &dcid).unwrap();
+        let v1 = derive_initial_keys(VERSION_1, &dcid, InitialRole::Client).unwrap();
+        let v2 = derive_initial_keys(VERSION_2, &dcid, InitialRole::Client).unwrap();
         assert_ne!(v1.0, v2.0, "v2 key must differ from v1");
         assert_ne!(v1.1, v2.1, "v2 iv must differ from v1");
         assert_ne!(v1.2, v2.2, "v2 hp must differ from v1");

@@ -255,6 +255,10 @@ pub fn run_source_visiting<'a>(
     // Bounded server-TLS-handshake reassembler: reads the cleartext server Certificate (TLS ≤ 1.2)
     // out of band from the same packets, for the certificate-health detector. Drained at EOF.
     let mut cert_reasm = TlsCertReassembler::new();
+    // Bounded QUIC server-Initial tracker: remembers each connection's client DCID (a public,
+    // wire-visible value) so the server's Initial can be opened keylessly, giving QUIC flows the
+    // same server-side TLS metadata TCP flows get. Applies its results to `PacketMeta` inline.
+    let mut quic_server = crate::quic::QuicServerHelloTracker::new();
     // Bounded HTTP file carver: reassembles cleartext download bodies in TCP order and streams them
     // through SHA-256 (no body buffering), for file-hash IOC surfacing + known-bad detection. With
     // `carve_dir` set (opt-in) it also writes each decoded body to disk (`<sha256>.<ext>`).
@@ -294,10 +298,13 @@ pub fn run_source_visiting<'a>(
                 // FAILURE below can still count the frame in the headline totals — the header is
                 // valid even when dissection isn't (this is why Wireshark still shows the frame).
                 let hdr = (frame.wire_len, frame.cap_len, frame.ts_ns, frame.ts_known);
-                let decode_result = crate::decode::decode_frame(&frame);
-                // Feed the TLS cert reassembler while the frame is still borrowed (it needs the
-                // raw server payload bytes, which `PacketMeta` does not retain).
-                if let Ok(ref meta) = decode_result {
+                let mut decode_result = crate::decode::decode_frame(&frame);
+                // Feed the raw-frame observers while the frame is still borrowed (they need the
+                // payload bytes, which `PacketMeta` does not retain).
+                if let Ok(ref mut meta) = decode_result {
+                    // Runs FIRST because it *writes* the server-side TLS fields onto `meta`, and
+                    // every later stage (stats, flow fold, Parquet) must see them.
+                    quic_server.observe(meta, &frame);
                     cert_reasm.observe(meta, &frame);
                     body_carver.observe(meta, &frame);
                 }
