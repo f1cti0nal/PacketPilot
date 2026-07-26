@@ -1,5 +1,6 @@
 import {
   Activity,
+  EyeOff,
   Lock,
   ArrowUpFromLine,
   Bug,
@@ -67,6 +68,8 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   baseline_deviation: { label: "Baseline Deviation", Icon: Gauge },
   traffic_anomaly: { label: "Traffic Forecast Anomaly", Icon: TrendingUp },
   encrypted_unknown_protocol: { label: "Encrypted Unknown Protocol", Icon: Lock },
+  missing_sni: { label: "TLS Without SNI", Icon: EyeOff },
+  port_protocol_mismatch: { label: "Port / Protocol Mismatch", Icon: Shuffle },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 

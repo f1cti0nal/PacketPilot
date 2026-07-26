@@ -120,6 +120,10 @@ pub struct PipelineConfig {
     pub entropy: crate::entropy::EntropyConfig,
     /// Encrypted-traffic analysis: the unidentified high-entropy channel detector.
     pub encrypted_unknown: crate::detect::EncryptedUnknownParams,
+    /// Encrypted-traffic analysis: TLS clients that name no server.
+    pub missing_sni: crate::detect::MissingSniParams,
+    /// Encrypted-traffic analysis: protocol/port disagreements.
+    pub port_mismatch: crate::detect::PortMismatchParams,
 }
 
 impl Default for PipelineConfig {
@@ -166,6 +170,8 @@ impl Default for PipelineConfig {
             forecast: ForecastParams::default(),
             entropy: crate::entropy::EntropyConfig::default(),
             encrypted_unknown: crate::detect::EncryptedUnknownParams::default(),
+            missing_sni: crate::detect::MissingSniParams::default(),
+            port_mismatch: crate::detect::PortMismatchParams::default(),
         }
     }
 }
@@ -513,6 +519,14 @@ pub fn run_source_visiting<'a>(
         &tracker,
         &cfg.encrypted_unknown,
     ));
+    findings.extend(crate::detect::detect_missing_sni(
+        &tracker,
+        &cfg.missing_sni,
+    ));
+    findings.extend(crate::detect::detect_port_mismatch(
+        &tracker,
+        &cfg.port_mismatch,
+    ));
     findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
     findings.extend(detect_dga(&tracker, &cfg.dga));
     findings.extend(detect_port_scan(&tracker, &cfg.port_scan));
@@ -760,6 +774,48 @@ fn process_flow(
             tracker.observe_ja3(c.client, j);
         }
         tracker.observe_category(c.client, record.category);
+
+        // Encrypted-traffic analysis: a TLS client that named no server. ECH flows are excluded —
+        // their outer SNI is absent by design — and only completely-parsed hellos set the flag,
+        // so a segment-split hello is never mistaken for an SNI-less one.
+        if record.tls_sni_absent && !record.tls_ech {
+            tracker.observe_missing_sni(c.client, c.server, c.server_port);
+        }
+
+        // Encrypted-traffic analysis: protocol/port disagreement, in both directions.
+        {
+            use crate::model::packet::{AppProto, Transport};
+            let service_port = record.key.lo_port.min(record.key.hi_port);
+            let named =
+                crate::classify::Classifier::category_for_port(record.key.transport, service_port);
+            if record.observed_app_proto == AppProto::Tls && named.1.is_empty() {
+                // TLS where the service table names nothing: unremarkable-but-worth-noting.
+                tracker.observe_port_mismatch(
+                    c.client,
+                    c.server,
+                    c.server_port,
+                    crate::detect::MismatchKind::TlsOnUncommonPort,
+                    record.total_bytes(),
+                    record.tls_sni_absent,
+                );
+            } else if record.key.transport == Transport::Tcp
+                && service_port == 443
+                && record.observed_app_proto == AppProto::Unknown
+                && record.tcp_established()
+                && record.total_bytes() > 0
+            {
+                // Established, carried payload, yet never looked like TLS. The handshake gate is
+                // what keeps mid-capture TLS flows (whose handshake predates the capture) out.
+                tracker.observe_port_mismatch(
+                    c.client,
+                    c.server,
+                    c.server_port,
+                    crate::detect::MismatchKind::NonTlsOn443,
+                    record.total_bytes(),
+                    false,
+                );
+            }
+        }
 
         // Encrypted-traffic analysis: fold an unidentified, high-entropy channel. Endpoints come
         // from `contact_from_flow`, which resolves client/server from the flow's initiator.

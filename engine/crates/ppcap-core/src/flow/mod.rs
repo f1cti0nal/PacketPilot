@@ -452,6 +452,8 @@ mod tests {
             arp: None,
             ja3s: None,
             ja4s: None,
+            tls_sni_absent: false,
+            tls_ech: false,
             http_host: None,
             http_ua: None,
             download: None,

@@ -78,6 +78,8 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         arp: None,
         ja3s: None,
         ja4s: None,
+        tls_sni_absent: false,
+        tls_ech: false,
         http_host: None,
         http_ua: None,
         download: None,
@@ -234,8 +236,18 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
                     meta.http_host = host;
                     meta.http_ua = user_agent;
                 }
-                L7Hint::Tls { sni, ja3, ja4 } => {
+                L7Hint::Tls {
+                    sni,
+                    ja3,
+                    ja4,
+                    sni_parsed,
+                    ech,
+                } => {
                     meta.app_proto = AppProto::Tls;
+                    // A completely-parsed hello with no server_name is the only case that can
+                    // testify to SNI absence.
+                    meta.tls_sni_absent = sni_parsed && sni.is_none();
+                    meta.tls_ech = ech;
                     meta.sni = sni; // Some only when ClientHello carried server_name
                     meta.ja3 = ja3;
                     meta.ja4 = ja4;
@@ -475,6 +487,13 @@ pub enum L7Hint {
         sni: Option<String>,
         ja3: Option<String>,
         ja4: Option<String>,
+        /// True only when the hello parsed COMPLETELY, so `sni: None` genuinely means the client
+        /// sent no server name — as opposed to a truncated/segment-split hello whose SNI lies
+        /// beyond the captured bytes. All three sniff tiers otherwise collapse into this same
+        /// variant, so without this flag the two cases are indistinguishable downstream.
+        sni_parsed: bool,
+        /// The hello carried Encrypted Client Hello (its outer SNI is absent by design).
+        ech: bool,
     },
     /// A QUIC packet identified structurally (any recognized long-header type).
     /// `http3` is true when a decryptable Initial ClientHello advertised the `h3`
@@ -676,13 +695,19 @@ pub fn l7_hint(
                 sni: fp.sni,
                 ja3: Some(fp.ja3),
                 ja4: Some(fp.ja4),
+                sni_parsed: fp.exts_complete,
+                ech: fp.ech,
             });
         }
+        // Lower-fidelity tiers: these parse far enough to recognize a ClientHello but cannot
+        // testify that an absent SNI is genuinely absent, so they never set `sni_parsed`.
         if let Some(sni) = sniff_tls_client_hello(payload) {
             return Some(L7Hint::Tls {
                 sni,
                 ja3: None,
                 ja4: None,
+                sni_parsed: false,
+                ech: false,
             });
         }
         if looks_like_tls_client_hello(payload) {
@@ -690,6 +715,8 @@ pub fn l7_hint(
                 sni: None,
                 ja3: None,
                 ja4: None,
+                sni_parsed: false,
+                ech: false,
             });
         }
         if sniff_http_method(payload).is_some() {
@@ -1613,6 +1640,8 @@ mod tests {
             arp: None,
             ja3s: None,
             ja4s: None,
+            tls_sni_absent: false,
+            tls_ech: false,
             http_host: None,
             http_ua: None,
             download: None,

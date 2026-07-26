@@ -36,6 +36,8 @@ const KIND_STAGE: Record<FindingKind, string> = {
   baseline_deviation: "Command & Control",
   traffic_anomaly: "Exfiltration",
   encrypted_unknown_protocol: "Command & Control",
+  missing_sni: "Command & Control",
+  port_protocol_mismatch: "Command & Control",
   ioc_match: "Detection",
 };
 

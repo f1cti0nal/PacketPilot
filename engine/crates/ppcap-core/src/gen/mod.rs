@@ -1470,7 +1470,7 @@ fn beacon_rdp_victim() -> Ipv4Addr {
 
 /// Deterministic per-host IPv4 in 10.0.0.0/8: 10.<hi>.<mid>.<lo+1>.
 /// External peer of the Encrypted Traffic Analysis fixture's opaque channel.
-pub(crate) const ENCRYPTED_ANOMALY_PEER: Ipv4Addr = Ipv4Addr::new(198, 51, 100, 77);
+pub(crate) const ENCRYPTED_ANOMALY_PEER: Ipv4Addr = Ipv4Addr::new(185, 220, 101, 77);
 /// Service port of that channel — deliberately one `category_for_port` does not name, so the
 /// flow is genuinely unidentified rather than explained by its port.
 pub(crate) const ENCRYPTED_ANOMALY_PORT: u16 = 41337;

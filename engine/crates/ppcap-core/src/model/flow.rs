@@ -191,6 +191,13 @@ pub struct FlowRecord {
     /// `serde(default)` for back-compat with summaries written before ETA.
     #[serde(default)]
     pub ja4s: Option<String>,
+    /// True when any COMPLETELY-parsed ClientHello on this flow named no server (sticky-true).
+    /// See [`crate::model::packet::PacketMeta::tls_sni_absent`] for why this is not `sni.is_none()`.
+    #[serde(default)]
+    pub tls_sni_absent: bool,
+    /// True when any ClientHello on this flow used Encrypted Client Hello (sticky-true).
+    #[serde(default)]
+    pub tls_ech: bool,
     /// Shannon entropy (bits/byte) of the sampled lo->hi (forward) payload for a flow whose
     /// protocol no payload sniffer identified; `None` for identified flows and for flows the
     /// bounded sampler did not track. Written at flow close by the entropy substrate.
@@ -258,6 +265,8 @@ impl FlowRecord {
             ja4: None,
             ja3s: None,
             ja4s: None,
+            tls_sni_absent: false,
+            tls_ech: false,
             entropy_fwd: None,
             entropy_rev: None,
             http_host: None,
@@ -351,6 +360,9 @@ impl FlowRecord {
                 }
             }
         }
+        // TLS posture flags: sticky-true (one hello on the flow is enough to establish either).
+        self.tls_sni_absent |= p.tls_sni_absent;
+        self.tls_ech |= p.tls_ech;
         // http_host / http_ua: HTTP request metadata. First non-empty value wins (sticky, like sni).
         if self.http_host.is_none() {
             if let Some(v) = &p.http_host {
@@ -530,6 +542,8 @@ mod tests {
             arp: None,
             ja3s: None,
             ja4s: None,
+            tls_sni_absent: false,
+            tls_ech: false,
             http_host: None,
             http_ua: None,
             download: None,
@@ -599,6 +613,8 @@ mod tests {
             arp: None,
             ja3s: None,
             ja4s: None,
+            tls_sni_absent: false,
+            tls_ech: false,
             http_host: None,
             http_ua: None,
             download: None,

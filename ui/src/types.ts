@@ -285,6 +285,8 @@ export type FindingKind =
   | "baseline_deviation"
   | "traffic_anomaly"
   | "encrypted_unknown_protocol"
+  | "missing_sni"
+  | "port_protocol_mismatch"
   | "ioc_match";
 
 /**

@@ -103,6 +103,16 @@ pub struct TlsFingerprints {
     /// ALPN protocol IDs offered by the client, in wire order (e.g. `["h3"]` for
     /// HTTP/3 over QUIC, `["h2","http/1.1"]` for TLS-over-TCP). Empty when absent.
     pub alpn: Vec<String>,
+    /// True when the ClientHello carried the Encrypted Client Hello extension (0xfe0d). Such a
+    /// hello legitimately omits or fakes its outer SNI, so "no SNI" is not a finding for it.
+    pub ech: bool,
+    /// True when the record AND its whole extension block were present in the parsed bytes.
+    ///
+    /// Load-bearing for the missing-SNI signal: the extension walk is clamped to the captured
+    /// bytes, so a ClientHello split across TCP segments (routine once post-quantum key_shares
+    /// push it past ~1700 B, and Chrome randomizes extension order) reports "no SNI" merely
+    /// because the walk ran out. Only a COMPLETE parse can testify that SNI is truly absent.
+    pub exts_complete: bool,
 }
 
 // ── GREASE filter ─────────────────────────────────────────────────────────────
@@ -170,8 +180,16 @@ pub fn fingerprint_tls_client_hello(
     // extensions: len(2) + extension list.
     let ext_total = u16::from_be_bytes([*body.get(pos)?, *body.get(pos.checked_add(1)?)?]) as usize;
     pos = pos.checked_add(2)?;
-    let ext_end = pos.checked_add(ext_total)?.min(body.len());
+    let ext_span_end = pos.checked_add(ext_total)?;
+    let ext_end = ext_span_end.min(body.len());
     let extensions = body.get(pos..ext_end)?;
+    // Was every advertised byte actually captured — the record itself AND the extension block?
+    // A clamped walk cannot testify that an extension (SNI) is absent rather than beyond the
+    // captured bytes.
+    let record_complete = 5usize
+        .checked_add(rec_len)
+        .is_some_and(|e| e <= payload.len());
+    let mut exts_complete = record_complete && ext_span_end <= body.len();
 
     // Walk extension list — collect what we need for JA3 and JA4.
     let mut ext_types: Vec<u16> = Vec::new(); // wire order, GREASE removed
@@ -182,6 +200,7 @@ pub fn fingerprint_tls_client_hello(
     let mut alpn_list: Vec<String> = Vec::new();
     let mut sig_algs: Vec<u16> = Vec::new();
     let mut supported_versions: Vec<u16> = Vec::new();
+    let mut ech = false;
 
     let mut i = 0usize;
     while i + 4 <= extensions.len() {
@@ -219,9 +238,17 @@ pub fn fingerprint_tls_client_hello(
             // This differs from 0x000a/0x000d which use a 2-byte prefix; use the dedicated
             // 1-byte-prefix parser so real TLS 1.3 ClientHellos parse correctly.
             0x002b => supported_versions = parse_u8_prefixed_u16_list(data),
+            // encrypted_client_hello (RFC 9180 / draft-ietf-tls-esni): the real SNI is inside the
+            // encrypted inner hello, so the outer one carries no usable server name by design.
+            0xfe0d => ech = true,
             _ => {}
         }
         i = de;
+    }
+    // An extension whose declared length overran the captured bytes broke the walk above, so the
+    // remaining extensions were never seen.
+    if i < extensions.len() {
+        exts_complete = false;
     }
 
     let ja3 = compute_ja3(legacy_ver, &ciphers, &ext_types, &curves, &ec_point_formats);
@@ -240,6 +267,8 @@ pub fn fingerprint_tls_client_hello(
         ja4,
         sni,
         alpn: alpn_list,
+        ech,
+        exts_complete,
     })
 }
 
@@ -748,6 +777,68 @@ mod ch_tests {
         );
         // Also sanity-check it is NOT the zero constant.
         assert_ne!(parts[2], "000000000000");
+    }
+
+    // ── Parse-quality signals (missing-SNI / ECH) ────────────────────────────
+
+    #[test]
+    fn complete_hello_without_sni_reports_absence_confidently() {
+        // No server_name extension at all, but everything advertised was captured.
+        let ch = client_hello(
+            0x0303,
+            &[0xc02b],
+            &[supported_versions_ext(&[0x0304]), alpn_ext("h2")],
+        );
+        let fp = fingerprint_tls_client_hello(&ch, Ja4Transport::Tcp).expect("client hello");
+        assert!(fp.sni.is_none());
+        assert!(
+            fp.exts_complete,
+            "a fully-captured hello can testify that SNI is absent"
+        );
+        assert!(!fp.ech);
+    }
+
+    /// The false positive the review caught: a ClientHello whose extension block is cut short by
+    /// TCP segmentation reports "no SNI" only because the walk ran out of bytes. Routine now that
+    /// post-quantum key_shares push hellos past one segment.
+    #[test]
+    fn segment_split_hello_does_not_claim_sni_is_absent() {
+        let ch = client_hello(
+            0x0303,
+            &[0xc02b, 0xc030],
+            &[
+                supported_versions_ext(&[0x0304]),
+                // A bulky extension standing in for a post-quantum key_share, with the SNI after
+                // it — exactly the layout that pushes server_name beyond the first segment.
+                (0x0033, vec![0xAB; 1200]),
+                sni_ext("cut.example"),
+            ],
+        );
+        // Deliver only the first segment.
+        let truncated = &ch[..600];
+        if let Some(fp) = fingerprint_tls_client_hello(truncated, Ja4Transport::Tcp) {
+            assert!(fp.sni.is_none(), "the SNI bytes were never captured");
+            assert!(
+                !fp.exts_complete,
+                "a clamped extension walk must NOT testify to SNI absence"
+            );
+        }
+        // (A parse failure is equally acceptable — either way no missing-SNI signal is emitted.)
+    }
+
+    #[test]
+    fn encrypted_client_hello_extension_is_detected() {
+        let ch = client_hello(
+            0x0303,
+            &[0xc02b],
+            &[
+                supported_versions_ext(&[0x0304]),
+                (0xfe0d, vec![0x00, 0x01, 0x02]), // encrypted_client_hello
+            ],
+        );
+        let fp = fingerprint_tls_client_hello(&ch, Ja4Transport::Tcp).expect("client hello");
+        assert!(fp.ech, "ECH (0xfe0d) must be recognized");
+        assert!(fp.sni.is_none() && fp.exts_complete);
     }
 
     #[test]
