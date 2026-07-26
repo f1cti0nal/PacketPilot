@@ -4,10 +4,40 @@
 
 | | |
 |---|---|
-| **Status** | **Proposed — ready to implement** |
+| **Status** | **Implemented** on this branch — engine + CLI + browser/desktop UI parity, adversarially designed, fully test-verified |
 | **Feature branch** | `claude/encrypted-traffic-analysis-6195xf` |
 | **Date** | 2026-07-26 |
 | **Scope** | Engine (Rust: `fingerprint` JA4S + ECH/absent-SNI flags · `tls` server-ALPN parse · `quic` server-Initial keys + a bounded DCID tracker · a new bounded `EntropySampler` at the raw-frame seam · 3 new detectors + `Category::Anomalous`'s first producer · `stats` TLS-server rollup · Parquet flow schema **v10 → v11**, +3 columns) · Threat feed (`bad_ja4s`) + Time Machine (`ja4s` indicator) + STIX/MISP export · CLI (`analyze --no-encrypted-analysis` + stderr summary) · WASM/UI (FlowDto + 14-file schema lockstep, 3 new `FindingKind`s, TLS-posture card, SQL samples) |
+
+> **Implementation status (what actually shipped).** All six milestones were executed on this
+> branch, in order, each committed with the engine and UI suites green.
+>
+> - **M1** — `fingerprint::compute_ja4s` + server ALPN parsing + the Parquet **v10 → v11** bump
+>   (`ja4s`, `entropy_c2s`, `entropy_s2c`) across the full 14-file lockstep.
+> - **M2** — role-generic QUIC Initial key derivation pinned to **RFC 9001 §A.3**, plus
+>   `QuicServerHelloTracker`; QUIC flows now carry server-side TLS metadata.
+> - **M3** — the `entropy` module (per-flow identification state, STUN/HASSH/compression screens),
+>   `detect_encrypted_unknown`, the first `Category::Anomalous` producer, and
+>   `Scenario::EncryptedAnomaly`.
+> - **M4** — `detect_missing_sni` + `detect_port_mismatch`, with the ClientHello
+>   parse-completeness and ECH plumbing they depend on.
+> - **M5** — `bad_ja4s` through feed → `FingerprintHit.ja4s` → STIX/MISP → Time Machine
+>   (`IndicatorKind::Ja4s`).
+> - **M6** — `analyze --no-encrypted-analysis` + stderr summary, `Summary.tls_servers` +
+>   `TlsServersCard`, CertHealthPanel widening, flyout fingerprints, two SQL samples, and the
+>   user-facing `docs/encrypted-traffic-analysis.md`.
+>
+> **Verified here:** engine `cargo fmt --all --check`, `clippy --workspace --all-targets
+> -D warnings`, and `cargo test --workspace` (**851** tests, up from 764 at branch point); UI
+> `tsc -b`, Vitest (**1008**), and `vite build`. **Not verifiable in this sandbox** (left to CI,
+> per the BBL/PAD precedent): the wasm32 bundle rebuild (`build:wasm`), Playwright e2e, and the
+> Windows Tauri desktop build.
+>
+> **Deviations from the plan, all deliberate:** entropy is stored `entropy_fwd`/`entropy_rev` on
+> `FlowRecord` and mapped to `c2s`/`s2c` only in `oriented()`, matching the repo's orientation
+> invariant rather than the plan's sketch; `compute_ja4s` takes primitives via `Ja4sInput` instead
+> of `&ServerHello`, so `fingerprint` keeps no dependency on `tls`; and the decode-site ServerHello
+> sniff is TCP-gated, which makes the JA4S transport marker correct by construction.
 
 > **How this plan was produced.** Eleven parallel readers each mapped one subsystem ETA touches —
 > the TLS module, fingerprinting, QUIC, flow/model/columnar schema, the detection engine, the stats

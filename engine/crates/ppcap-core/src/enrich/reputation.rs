@@ -334,6 +334,7 @@ mod apply_tests {
             dhcp_hosts: Vec::new(),
             downloads: Vec::new(),
             encrypted_dns: Vec::new(),
+            tls_servers: Vec::new(),
             carved_files: Vec::new(),
             findings,
             incidents: vec![],

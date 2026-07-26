@@ -263,6 +263,37 @@ pub struct EncryptedDnsHost {
     pub flows: u64,
 }
 
+/// One TLS server endpoint's negotiated posture, rolled up across its flows.
+///
+/// Fills the gap where `tls_version`/`tls_cipher`/`ja3s`/`ja4s` reached individual flow rows but
+/// were aggregated nowhere, leaving an analyst no way to ask "what TLS do my servers actually
+/// speak?" without querying the flow table.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TlsServerPosture {
+    /// Server IP (the responder, resolved from the flow initiator).
+    pub server: String,
+    pub port: u16,
+    /// Negotiated protocol version label, when a ServerHello was observed.
+    #[serde(default)]
+    pub tls_version: Option<String>,
+    /// Negotiated cipher-suite label.
+    #[serde(default)]
+    pub tls_cipher: Option<String>,
+    /// Legacy MD5 server fingerprint.
+    #[serde(default)]
+    pub ja3s: Option<String>,
+    /// Modern (FoxIO) server fingerprint.
+    #[serde(default)]
+    pub ja4s: Option<String>,
+    /// A hostname clients asked this endpoint for (first seen).
+    #[serde(default)]
+    pub sni: Option<String>,
+    pub flows: u64,
+    pub bytes: u64,
+    /// Distinct clients observed, saturating at the per-server cap.
+    pub clients: u64,
+}
+
 /// One carved file: a cleartext HTTP download reassembled and hashed in-stream. The SHA-256 is a
 /// ready IOC for external lookup; `known_bad` flags a match against the embedded known-bad set;
 /// `signatures` lists any content signatures matched while streaming (file type + suspicious
@@ -366,6 +397,10 @@ pub struct Summary {
     /// `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub encrypted_dns: Vec<EncryptedDnsHost>,
+    /// Per-server TLS posture (version / cipher / JA3S / JA4S), top-K by flows.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub tls_servers: Vec<TlsServerPosture>,
     /// Carved HTTP file downloads with their SHA-256 (IOC) + known-bad flag. `#[serde(default)]`
     /// keeps older summaries readable.
     #[serde(default)]
@@ -423,6 +458,7 @@ impl Summary {
             dhcp_hosts: Vec::new(),
             downloads: Vec::new(),
             encrypted_dns: Vec::new(),
+            tls_servers: Vec::new(),
             carved_files: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),

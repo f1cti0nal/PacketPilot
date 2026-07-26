@@ -116,6 +116,12 @@ pub enum Command {
         /// captures at the cost of a colder, noisier band.
         #[arg(long = "forecast-min-bins")]
         forecast_min_bins: Option<usize>,
+        /// Encrypted Traffic Analysis: disable the keyless encrypted-traffic detectors. They are
+        /// ON by default, raising `encrypted_unknown_protocol` (a high-entropy channel no protocol
+        /// identifies), `missing_sni`, and `port_protocol_mismatch` findings. Fingerprint
+        /// extraction (JA4S, QUIC server metadata) is metadata rather than detection and stays on.
+        #[arg(long = "no-encrypted-analysis")]
+        no_encrypted_analysis: bool,
     },
     /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
     /// reporting indicators that were clean at capture time but are dirty now.
@@ -141,7 +147,7 @@ pub enum Command {
     Gen {
         /// Output capture path.
         output: PathBuf,
-        /// Scenario: mixed | web-only | dns-flood | port-scan | beacon | bulk-transfer.
+        /// Scenario: mixed | web-only | dns-flood | port-scan | beacon | bulk-transfer | attack-chain | traffic-spike | encrypted-anomaly.
         #[arg(long, default_value = "mixed")]
         scenario: String,
         /// Number of packets to emit.
@@ -293,6 +299,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             baseline,
             update_baseline,
             no_forecast,
+            no_encrypted_analysis,
             forecast_z,
             forecast_min_bins,
         } => {
@@ -352,6 +359,24 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         .unwrap_or(ppcap_core::ForecastParams::default().min_bins),
                     ..Default::default()
                 },
+                // Encrypted Traffic Analysis: on by default; `--no-encrypted-analysis` opts out of
+                // the detectors AND the entropy sampling that feeds one of them.
+                entropy: ppcap_core::entropy::EntropyConfig {
+                    enabled: !no_encrypted_analysis,
+                    ..Default::default()
+                },
+                encrypted_unknown: ppcap_core::detect::EncryptedUnknownParams {
+                    enabled: !no_encrypted_analysis,
+                    ..Default::default()
+                },
+                missing_sni: ppcap_core::detect::MissingSniParams {
+                    enabled: !no_encrypted_analysis,
+                    ..Default::default()
+                },
+                port_mismatch: ppcap_core::detect::PortMismatchParams {
+                    enabled: !no_encrypted_analysis,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
 
@@ -408,6 +433,28 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     eprintln!(
                         "forecast: {n} predictive traffic anomal{}",
                         if n == 1 { "y" } else { "ies" }
+                    );
+                }
+
+                // Encrypted Traffic Analysis summary. Spelled out rather than "eta:", which on a
+                // CLI reads as estimated-time-remaining.
+                let n_eta = out
+                    .summary
+                    .findings
+                    .iter()
+                    .filter(|f| {
+                        matches!(
+                            f.kind,
+                            ppcap_core::FindingKind::EncryptedUnknownProtocol
+                                | ppcap_core::FindingKind::MissingSni
+                                | ppcap_core::FindingKind::PortProtocolMismatch
+                        )
+                    })
+                    .count();
+                if n_eta > 0 {
+                    eprintln!(
+                        "encrypted-traffic: {n_eta} finding{}",
+                        if n_eta == 1 { "" } else { "s" }
                     );
                 }
             }
@@ -1107,6 +1154,29 @@ mod reputation_cli_tests {
             Command::Analyze { rules, .. } => {
                 assert_eq!(rules.as_deref(), Some(std::path::Path::new("r.rules")))
             }
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn analyze_no_encrypted_analysis_flag_parses() {
+        // Default: the encrypted-traffic detectors are on (the flag is absent).
+        let on = Cli::try_parse_from(["ppcap", "analyze", "x.pcap"]).unwrap();
+        match on.command {
+            Command::Analyze {
+                no_encrypted_analysis,
+                ..
+            } => assert!(!no_encrypted_analysis),
+            _ => panic!("expected Analyze"),
+        }
+        // Opt out.
+        let off =
+            Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--no-encrypted-analysis"]).unwrap();
+        match off.command {
+            Command::Analyze {
+                no_encrypted_analysis,
+                ..
+            } => assert!(no_encrypted_analysis),
             _ => panic!("expected Analyze"),
         }
     }

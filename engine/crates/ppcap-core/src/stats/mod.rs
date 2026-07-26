@@ -221,12 +221,33 @@ pub struct StatsAccumulator {
     /// Encrypted DNS (DoH/DoT): (client host, resolver label) → flow count — the resolution passive
     /// DNS can't see. Bounded by `max_tracked_keys`.
     encrypted_dns: HashMap<(IpAddr, String), u64>,
+    /// TLS server posture: (server IP, port) → negotiated version/cipher/fingerprints + volume.
+    /// The server-side counterpart to `per_domain`; bounded by `max_tracked_keys`.
+    tls_servers: HashMap<(IpAddr, u16), TlsServerStat>,
     /// Packet-size distribution: packet count per fixed wire-length bucket (see [`SIZE_BUCKETS`]).
     size_buckets: [u64; SIZE_BUCKETS.len()],
     /// TTL / hop-limit distribution: packet count indexed by TTL value (0 slot stays unused —
     /// non-IP frames carry no TTL). Fixed 256-wide, so it is inherently bounded.
     ttl_hist: [u64; 256],
 }
+
+/// Accumulated TLS posture for one server endpoint. Scalars are first-seen-wins (a server's
+/// negotiated parameters are stable); volume accumulates.
+#[derive(Debug, Clone, Default)]
+struct TlsServerStat {
+    tls_version: Option<String>,
+    tls_cipher: Option<String>,
+    ja3s: Option<String>,
+    ja4s: Option<String>,
+    sni: Option<String>,
+    flows: u64,
+    bytes: u64,
+    /// Distinct clients, capped so a busy public server cannot grow this without bound.
+    clients: std::collections::BTreeSet<IpAddr>,
+}
+
+/// Cap on distinct clients tracked per TLS server (the projected count saturates here).
+const MAX_TLS_SERVER_CLIENTS: usize = 64;
 
 /// Fixed packet-size buckets `(label, min, max)` with inclusive `[min, max]` wire-length ranges;
 /// the final bucket is open-ended (`u32::MAX`). Chosen to separate tiny control packets
@@ -294,6 +315,7 @@ impl StatsAccumulator {
             arp_macs: HashMap::new(),
             dhcp: HashMap::new(),
             encrypted_dns: HashMap::new(),
+            tls_servers: HashMap::new(),
             downloads: HashMap::new(),
             size_buckets: [0; SIZE_BUCKETS.len()],
             ttl_hist: [0; 256],
@@ -695,6 +717,40 @@ impl StatsAccumulator {
                     None => "DNS-over-TLS".to_string(),
                 };
                 self.bump_encrypted_dns(client, &resolver);
+            }
+        }
+
+        // TLS server posture: any flow carrying server-side TLS metadata. Client/server are
+        // resolved from the flow INITIATOR (the smaller-port convention misattributes services on
+        // high ports — exactly the traffic worth surfacing here).
+        if f.tls_version.is_some() || f.ja3s.is_some() || f.ja4s.is_some() {
+            let o = f.oriented();
+            let key = (o.dst_ip, o.dst_port);
+            if self.tls_servers.contains_key(&key)
+                || self.tls_servers.len() < self.cfg.max_tracked_keys
+            {
+                let e = self.tls_servers.entry(key).or_default();
+                // First-seen wins: a server's negotiated parameters are stable across its flows.
+                if e.tls_version.is_none() {
+                    e.tls_version.clone_from(&f.tls_version);
+                }
+                if e.tls_cipher.is_none() {
+                    e.tls_cipher.clone_from(&f.tls_cipher);
+                }
+                if e.ja3s.is_none() {
+                    e.ja3s.clone_from(&f.ja3s);
+                }
+                if e.ja4s.is_none() {
+                    e.ja4s.clone_from(&f.ja4s);
+                }
+                if e.sni.is_none() {
+                    e.sni.clone_from(&f.sni);
+                }
+                e.flows += 1;
+                e.bytes += f.total_bytes();
+                if e.clients.len() < MAX_TLS_SERVER_CLIENTS {
+                    e.clients.insert(o.src_ip);
+                }
             }
         }
 
@@ -1364,6 +1420,36 @@ impl StatsAccumulator {
         });
         encrypted_dns.truncate(TOP_K_ENCRYPTED_DNS);
 
+        // TLS server posture, busiest first. `bytes` is the tie-break, which is why the
+        // accumulator carries it (and analysts want it on the card anyway).
+        const TOP_K_TLS_SERVERS: usize = 50;
+        let mut tls_servers: Vec<crate::model::summary::TlsServerPosture> = self
+            .tls_servers
+            .iter()
+            .map(
+                |((server, port), st)| crate::model::summary::TlsServerPosture {
+                    server: server.to_string(),
+                    port: *port,
+                    tls_version: st.tls_version.clone(),
+                    tls_cipher: st.tls_cipher.clone(),
+                    ja3s: st.ja3s.clone(),
+                    ja4s: st.ja4s.clone(),
+                    sni: st.sni.clone(),
+                    flows: st.flows,
+                    bytes: st.bytes,
+                    clients: st.clients.len() as u64,
+                },
+            )
+            .collect();
+        tls_servers.sort_by(|a, b| {
+            b.flows
+                .cmp(&a.flows)
+                .then(b.bytes.cmp(&a.bytes))
+                .then(a.server.cmp(&b.server))
+                .then(a.port.cmp(&b.port))
+        });
+        tls_servers.truncate(TOP_K_TLS_SERVERS);
+
         // Packet-size distribution: all fixed buckets, ascending order (a distribution reads
         // clearest with every range shown, including empty ones).
         let size_distribution: Vec<SizeBucket> = SIZE_BUCKETS
@@ -1422,6 +1508,7 @@ impl StatsAccumulator {
             dhcp_hosts,
             downloads,
             encrypted_dns,
+            tls_servers,
             // Populated by the analyze pass from the HTTP file carver (post-`finish`).
             carved_files: Vec::new(),
             // Behavioral findings + their per-host correlation are produced by the `detect`

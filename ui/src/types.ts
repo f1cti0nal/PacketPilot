@@ -127,6 +127,8 @@ export interface Summary {
   downloads?: DownloadEvent[];
   /** Encrypted DNS (DoH/DoT): hosts whose DNS is hidden from passive DNS; absent in older summaries. */
   encrypted_dns?: EncryptedDnsHost[];
+  /** Per-server TLS posture (version / cipher / JA3S / JA4S); absent in older summaries. */
+  tls_servers?: TlsServerPosture[];
   /** Carved HTTP downloads with their SHA-256 (IOC) + known-bad flag; absent in older summaries. */
   carved_files?: CarvedFile[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
@@ -228,6 +230,20 @@ export interface DhcpHost {
 }
 
 /** One encrypted-DNS row: a client host resolving via DoH/DoT, the resolver, and flow count. */
+/** One TLS server endpoint's negotiated posture, rolled up across its flows (keyless). */
+export interface TlsServerPosture {
+  server: string;
+  port: number;
+  tls_version?: string | null;
+  tls_cipher?: string | null;
+  ja3s?: string | null;
+  ja4s?: string | null;
+  sni?: string | null;
+  flows: number;
+  bytes: number;
+  clients: number;
+}
+
 export interface EncryptedDnsHost {
   host: string;
   resolver: string;

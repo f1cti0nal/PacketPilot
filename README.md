@@ -151,7 +151,14 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   S7comm, BACnet/IP, and EtherNet/IP-CIP (recognized on non-standard ports, not just by port), so
   industrial traffic surfaces in the IoT/OT category and protocol hierarchy. Modbus **write/control
   commands to a PLC** raise an explainable *ICS control command* finding (ATT&CK for ICS T0855/T0831).
-- **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3), MITRE ATT&CK.
+- **Encrypted Traffic Analysis** — analyst-grade verdicts on traffic that is never decrypted:
+  **JA4S** server fingerprints (TCP *and* keyless QUIC, whose server Initial is opened with the
+  RFC-published salt — no keys), a per-server **TLS posture** rollup, and three explainable
+  findings — an unnamed **high-entropy channel** (custom-crypto C2 / hand-rolled tunnels, and the
+  first producer of the `anomalous` category), **TLS without SNI** (ECH-aware), and
+  **port/protocol mismatch** (TLS on an odd port; non-TLS on 443). JA4S is feed-matchable
+  (`bad_ja4s`) and re-scannable by Time Machine. See [docs/encrypted-traffic-analysis.md](docs/encrypted-traffic-analysis.md).
+- **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
   indicators that were clean at capture time but are dirty now — no pcap re-read, fully offline.

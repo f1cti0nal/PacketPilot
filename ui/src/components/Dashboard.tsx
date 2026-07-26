@@ -25,6 +25,7 @@ import { TopPortsCard } from "../cockpit/TopPortsCard";
 import { HttpOverviewCard } from "../cockpit/HttpOverviewCard";
 import { DnsResolutionsCard } from "../cockpit/DnsResolutionsCard";
 import { EncryptedDnsCard } from "../cockpit/EncryptedDnsCard";
+import { TlsServersCard } from "../cockpit/TlsServersCard";
 import { CarvedFilesCard } from "../cockpit/CarvedFilesCard";
 import { LocalHostsCard } from "../cockpit/LocalHostsCard";
 import { DownloadsCard } from "../cockpit/DownloadsCard";
@@ -256,6 +257,7 @@ export function Dashboard({
         <DomainThreatsPanel domains={s.domain_threats ?? []} />
         <DnsResolutionsCard resolved={s.resolved_ips ?? []} />
         <EncryptedDnsCard hosts={s.encrypted_dns ?? []} />
+        <TlsServersCard servers={s.tls_servers ?? []} onJump={toFlowsIp} />
         <CarvedFilesCard files={s.carved_files ?? []} />
         <LocalHostsCard arp={s.arp_hosts ?? []} dhcp={s.dhcp_hosts ?? []} />
         <DownloadsCard downloads={s.downloads ?? []} />
@@ -270,6 +272,9 @@ export function Dashboard({
         scoreTerms={selectedIncident ? threatByHost.get(selectedIncident.host)?.score_terms : undefined}
         resolvedDomain={selectedIncident ? domainByIp.get(selectedIncident.host) : undefined}
         mac={selectedIncident ? macByIp.get(selectedIncident.host) : undefined}
+        fingerprints={
+          selectedIncident ? threatByHost.get(selectedIncident.host)?.fingerprints : undefined
+        }
         captureKey={captureKey(output)}
       />
     </div>
