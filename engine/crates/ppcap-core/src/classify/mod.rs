@@ -34,6 +34,14 @@ const BEACON_MIN_PKTS_EACH_WAY: u64 = 2;
 /// Beaconing candidate: total bytes must stay below this ceiling (small, regular pings).
 const BEACON_MAX_BYTES: u64 = 4_096;
 
+/// Encrypted-unknown candidate: sampled payload entropy at or above this (bits/byte) reads as
+/// ciphertext rather than an unrecognized cleartext protocol. MUST match
+/// `detect::EncryptedUnknownParams::min_entropy_bits`.
+const ENCRYPTED_UNKNOWN_MIN_BITS: f32 = 7.2;
+
+/// Encrypted-unknown candidate: minimum total bytes, so a stray fragment is never uplifted.
+const ENCRYPTED_UNKNOWN_MIN_BYTES: u64 = 4_096;
+
 /// Tunnel candidate: a long-lived flow on a non-standard port carrying at least this many
 /// bytes. 1 MiB over a non-service port that we could not name is the Phase-0 signal.
 const TUNNEL_MIN_BYTES: u64 = 1 << 20;
@@ -169,7 +177,34 @@ impl Classifier {
         if Self::looks_like_beacon(record) {
             return Some(Category::C2);
         }
+        if Self::looks_like_encrypted_unknown(record) {
+            return Some(Category::Anomalous);
+        }
         None
+    }
+
+    /// A flow carrying ciphertext-grade payload entropy that no dissector could name.
+    ///
+    /// Deliberately the LAST arm: a high-entropy flow that is also long-lived and ≥ 1 MiB stays
+    /// `TunnelVpn` (the tunnel arm fires first), so no existing verdict changes and this covers
+    /// the sub-tunnel band. The cross-flow `encrypted_unknown_protocol` finding is
+    /// category-independent and covers the big-tunnel case, so nothing is lost.
+    ///
+    /// Idempotent: the entropy fields are written once at flow close, before classify runs, and
+    /// never change afterwards.
+    fn looks_like_encrypted_unknown(record: &FlowRecord) -> bool {
+        // SSH has no `AppProto` variant, so an odd-port SSH session is "unidentified" — its HASSH
+        // is the tell, and it must not be uplifted.
+        if record.hassh.is_some() || record.hassh_server.is_some() {
+            return false;
+        }
+        let peak = match (record.entropy_fwd, record.entropy_rev) {
+            (Some(a), Some(b)) => a.max(b),
+            (Some(a), None) => a,
+            (None, Some(b)) => b,
+            (None, None) => return false,
+        };
+        peak >= ENCRYPTED_UNKNOWN_MIN_BITS && record.total_bytes() >= ENCRYPTED_UNKNOWN_MIN_BYTES
     }
 
     /// A single source touching a port with a tiny TCP flow that never established:

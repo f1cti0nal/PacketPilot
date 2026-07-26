@@ -1,5 +1,6 @@
 import {
   Activity,
+  Lock,
   ArrowUpFromLine,
   Bug,
   Globe,
@@ -65,6 +66,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   ics_control_command: { label: "ICS Control", Icon: Factory },
   baseline_deviation: { label: "Baseline Deviation", Icon: Gauge },
   traffic_anomaly: { label: "Traffic Forecast Anomaly", Icon: TrendingUp },
+  encrypted_unknown_protocol: { label: "Encrypted Unknown Protocol", Icon: Lock },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 

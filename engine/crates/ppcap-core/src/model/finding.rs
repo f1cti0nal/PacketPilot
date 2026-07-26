@@ -81,6 +81,11 @@ pub enum FindingKind {
     /// so it catches temporal shape a per-capture aggregate baseline cannot. Appended last to keep
     /// existing variant ordinals stable.
     TrafficAnomaly,
+    /// A sustained, high-entropy channel that no payload sniffer can name — the signature of a
+    /// custom-crypto C2 channel or a hand-rolled tunnel. Keyless by construction: the verdict
+    /// comes from the byte *distribution* of an unidentified stream, never its content. Appended
+    /// last to keep existing variant ordinals stable.
+    EncryptedUnknownProtocol,
 }
 
 impl FindingKind {
@@ -112,6 +117,7 @@ impl FindingKind {
             FindingKind::IcsControlCommand => "ics_control_command",
             FindingKind::BaselineDeviation => "baseline_deviation",
             FindingKind::TrafficAnomaly => "traffic_anomaly",
+            FindingKind::EncryptedUnknownProtocol => "encrypted_unknown_protocol",
         }
     }
 }

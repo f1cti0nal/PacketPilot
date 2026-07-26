@@ -677,6 +677,39 @@ pub struct BehaviorTracker {
     /// Behavioral-baseline: per-source traffic-category histogram (13 slots, `Category` order) — the
     /// "first use of a category" novelty axis. Fixed-width per source; key-count bounded.
     category: HashMap<IpAddr, [u32; 13]>,
+    /// Encrypted-traffic analysis: per-`(client, server, port)` high-entropy unidentified channels.
+    /// Key-count bounded by `max_tracked_keys` (new-key-drop).
+    encrypted_unknown: HashMap<(IpAddr, IpAddr, u16), EncryptedChannelStat>,
+}
+
+/// One unidentified, high-entropy channel: the worst entropy seen in each direction plus the
+/// volume behind it. First observation wins for the scalars; volume accumulates.
+#[derive(Debug, Clone, Default)]
+struct EncryptedChannelStat {
+    /// Peak client->server payload entropy (bits/byte) observed on this channel.
+    bits_c2s: f32,
+    /// Peak server->client payload entropy (bits/byte).
+    bits_s2c: f32,
+    /// Total wire bytes across the channel's flows.
+    bytes: u64,
+    /// Flows folded into this channel.
+    flows: u64,
+    /// Whether the service port is one the port table names (a named encrypted service is not an
+    /// "unknown protocol" — see `detect_encrypted_unknown`).
+    port_named: bool,
+}
+
+/// A candidate unidentified high-entropy channel, ready for `detect_encrypted_unknown`.
+#[derive(Debug, Clone)]
+pub struct EncryptedUnknownCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub bits_c2s: f32,
+    pub bits_s2c: f32,
+    pub bytes: u64,
+    pub flows: u64,
+    pub port_named: bool,
 }
 
 /// Cap on distinct JA3 fingerprints tracked per source (bounded memory on a pathological capture).
@@ -787,6 +820,7 @@ impl BehaviorTracker {
             ja3: HashMap::new(),
             activity: HashMap::new(),
             category: HashMap::new(),
+            encrypted_unknown: HashMap::new(),
         }
     }
 
@@ -902,6 +936,69 @@ impl BehaviorTracker {
             set.insert(ja3.to_string());
             self.ja3.insert(src, set);
         }
+    }
+
+    /// Encrypted-traffic analysis: fold one unidentified, high-entropy flow into its
+    /// `(client, server, port)` channel. Callers pass the *initiator-oriented* endpoints — the
+    /// smaller-port convention misattributes services on high ports, which is exactly the traffic
+    /// this detector targets. Bounded: key-count capped (new-key-drop).
+    #[allow(clippy::too_many_arguments)]
+    pub fn observe_encrypted_channel(
+        &mut self,
+        client: IpAddr,
+        server: IpAddr,
+        server_port: u16,
+        bits_c2s: Option<f32>,
+        bits_s2c: Option<f32>,
+        bytes: u64,
+        port_named: bool,
+    ) {
+        let key = (client, server, server_port);
+        if !self.encrypted_unknown.contains_key(&key)
+            && self.encrypted_unknown.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        let e = self.encrypted_unknown.entry(key).or_default();
+        // Keep the strongest evidence per direction across the channel's flows.
+        if let Some(b) = bits_c2s {
+            e.bits_c2s = e.bits_c2s.max(b);
+        }
+        if let Some(b) = bits_s2c {
+            e.bits_s2c = e.bits_s2c.max(b);
+        }
+        e.bytes = e.bytes.saturating_add(bytes);
+        e.flows = e.flows.saturating_add(1);
+        e.port_named = port_named;
+    }
+
+    /// Unidentified high-entropy channels, worst-entropy first (deterministic total order).
+    pub fn encrypted_unknown_candidates(&self) -> Vec<EncryptedUnknownCandidate> {
+        let mut out: Vec<EncryptedUnknownCandidate> = self
+            .encrypted_unknown
+            .iter()
+            .map(|((c, s, p), st)| EncryptedUnknownCandidate {
+                client: *c,
+                server: *s,
+                server_port: *p,
+                bits_c2s: st.bits_c2s,
+                bits_s2c: st.bits_s2c,
+                bytes: st.bytes,
+                flows: st.flows,
+                port_named: st.port_named,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            let pa = a.bits_c2s.max(a.bits_s2c);
+            let pb = b.bits_c2s.max(b.bits_s2c);
+            pb.partial_cmp(&pa)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(b.bytes.cmp(&a.bytes))
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+                .then(a.server_port.cmp(&b.server_port))
+        });
+        out
     }
 
     /// Behavioral-baseline: fold one flow's traffic `category` for `src` into its per-source
@@ -3561,6 +3658,118 @@ pub struct WeakTlsParams {
     pub enabled: bool,
 }
 
+/// Tuning for [`detect_encrypted_unknown`].
+#[derive(Debug, Clone)]
+pub struct EncryptedUnknownParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Entropy (bits/byte) at or above which a sampled direction reads as ciphertext. 7.2 over a
+    /// ≥1 KiB sample sits comfortably above natural-language and binary-protocol text (~4-6) and
+    /// below only ciphertext/compressed data (~7.6-8.0).
+    pub min_entropy_bits: f32,
+    /// Minimum total bytes on the channel — screens probes and stray fragments.
+    pub min_payload_bytes: u64,
+    /// Channels to never report (sanctioned encrypted services on unnamed ports, VPN gateways…).
+    pub ignore_ips: Vec<IpAddr>,
+}
+
+impl Default for EncryptedUnknownParams {
+    fn default() -> Self {
+        EncryptedUnknownParams {
+            enabled: true,
+            min_entropy_bits: 7.2,
+            min_payload_bytes: 4096,
+            ignore_ips: Vec::new(),
+        }
+    }
+}
+
+/// Detect sustained high-entropy channels that no payload sniffer can name — the shape of a
+/// custom-crypto C2 channel or a hand-rolled tunnel.
+///
+/// Everything that *can* be named is already excluded upstream: the entropy substrate refuses to
+/// sample a flow once any evidence identifies its protocol (`app_proto`, an SSH HASSH, or a STUN
+/// handshake), and the analyze seam only folds flows whose service port the port table does not
+/// name as an encrypted-by-design service. What reaches here is genuinely unidentified.
+///
+/// Severity tops out at Medium on this signal alone — an unnamed encrypted channel is a strong
+/// lead, not a verdict. High/Critical comes from corroboration: an IOC floor, or a second finding
+/// kind on the same host escalating the incident. Deterministic order.
+pub fn detect_encrypted_unknown(
+    tracker: &BehaviorTracker,
+    params: &EncryptedUnknownParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.encrypted_unknown_candidates() {
+        if c.bytes < params.min_payload_bytes {
+            continue;
+        }
+        let peak = c.bits_c2s.max(c.bits_s2c);
+        if peak < params.min_entropy_bits {
+            continue;
+        }
+        if params.ignore_ips.contains(&c.server) || params.ignore_ips.contains(&c.client) {
+            continue;
+        }
+        // A channel on a port the table names is a weaker story ("the port says what this is,
+        // the payload just isn't sniffable"), so it drops a band rather than being dropped.
+        let external = crate::enrich::classify_ip(c.server).is_external();
+        let severity = if c.port_named || !external {
+            Severity::Low
+        } else {
+            Severity::Medium
+        };
+        let score = match severity {
+            Severity::Medium => 50,
+            _ => 30,
+        };
+        let mut evidence = vec![format!(
+            "payload entropy {:.2} bits/byte outbound, {:.2} inbound (>= {:.1} reads as ciphertext)",
+            c.bits_c2s, c.bits_s2c, params.min_entropy_bits
+        )];
+        evidence.push(format!(
+            "{} bytes over {} flow(s) with no protocol identified by payload inspection",
+            c.bytes, c.flows
+        ));
+        if c.port_named {
+            evidence.push(
+                "service port is a named service, so the port — not the payload — explains this channel"
+                    .to_string(),
+            );
+        }
+        evidence.push(
+            "high-entropy traffic no dissector can name is the shape of custom-crypto C2 or a hand-rolled tunnel"
+                .to_string(),
+        );
+        findings.push(Finding {
+            kind: FindingKind::EncryptedUnknownProtocol,
+            severity,
+            score,
+            title: format!(
+                "Unidentified encrypted channel: {} -> {}:{} ({:.2} bits/byte)",
+                c.client, c.server, c.server_port, peak
+            ),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: Some(c.server_port),
+            // T1573 (Encrypted Channel) only: MITRE scopes T1095 to non-application-layer
+            // channels, and the flow-level Anomalous -> T1095 mapping in `enrich` is separate.
+            attack: vec!["T1573".to_string()],
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        });
+    }
+    findings
+}
+
 impl Default for WeakTlsParams {
     fn default() -> Self {
         WeakTlsParams { enabled: true }
@@ -3793,31 +4002,32 @@ pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
 /// Kill-chain stage of a finding kind (lower = earlier in the chain).
 fn stage_ordinal(kind: FindingKind) -> u8 {
     match kind {
-        FindingKind::HostSweep => 0,           // discovery
-        FindingKind::CleartextCreds => 1,      // credential access (exposure)
-        FindingKind::BruteForce => 1,          // credential access
-        FindingKind::LateralMovement => 2,     // lateral movement
-        FindingKind::PiiExposure => 3,         // collection (data at risk on the wire)
-        FindingKind::Beacon => 4,              // command-and-control
-        FindingKind::DataExfil => 5,           // exfiltration
-        FindingKind::DnsTunnel => 5,           // exfiltration / C2 over DNS
-        FindingKind::RuleMatch => 4,           // imported signature — treat as C2-stage by default
+        FindingKind::HostSweep => 0,                // discovery
+        FindingKind::CleartextCreds => 1,           // credential access (exposure)
+        FindingKind::BruteForce => 1,               // credential access
+        FindingKind::LateralMovement => 2,          // lateral movement
+        FindingKind::PiiExposure => 3,              // collection (data at risk on the wire)
+        FindingKind::Beacon => 4,                   // command-and-control
+        FindingKind::DataExfil => 5,                // exfiltration
+        FindingKind::DnsTunnel => 5,                // exfiltration / C2 over DNS
+        FindingKind::RuleMatch => 4, // imported signature — treat as C2-stage by default
         FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
-        FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
-        FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
-        FindingKind::Dga => 4,           // command-and-control (C2 domain rendezvous)
-        FindingKind::PortScan => 0,      // discovery (vertical service enumeration)
-        FindingKind::ArpSpoof => 3,      // collection (adversary-in-the-middle positioning)
-        FindingKind::SynFlood => 6,      // impact (service denial)
-        FindingKind::SuspiciousUa => 0,  // discovery (active scanning with a known tool)
+        FindingKind::WeakTls => 3,   // collection (weak crypto -> interceptable traffic)
+        FindingKind::IcmpTunnel => 5, // exfiltration / C2 over a non-application protocol
+        FindingKind::Dga => 4,       // command-and-control (C2 domain rendezvous)
+        FindingKind::PortScan => 0,  // discovery (vertical service enumeration)
+        FindingKind::ArpSpoof => 3,  // collection (adversary-in-the-middle positioning)
+        FindingKind::SynFlood => 6,  // impact (service denial)
+        FindingKind::SuspiciousUa => 0, // discovery (active scanning with a known tool)
         FindingKind::DisguisedDownload => 4, // command-and-control (malware payload delivery)
-        FindingKind::Cryptomining => 6,  // impact (resource hijacking)
+        FindingKind::Cryptomining => 6, // impact (resource hijacking)
         FindingKind::MalwareDownload => 4, // command-and-control (confirmed malware delivery)
         FindingKind::MalwareSignature => 4, // command-and-control (signature-matched payload)
         FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
         FindingKind::IcsControlCommand => 6,   // impact (manipulation of an industrial process)
         FindingKind::BaselineDeviation => 4, // command-and-control (anomalous egress / drift; generic like RuleMatch)
         FindingKind::TrafficAnomaly => 5, // exfiltration/impact (a volume spike/drop/level-shift; generic egress-shape signal)
+        FindingKind::EncryptedUnknownProtocol => 4, // command & control (an unnamed encrypted channel)
     }
 }
 
@@ -3849,6 +4059,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::IcsControlCommand => "Impact",
         FindingKind::BaselineDeviation => "Command & Control",
         FindingKind::TrafficAnomaly => "Exfiltration",
+        FindingKind::EncryptedUnknownProtocol => "Command & Control",
     }
 }
 
@@ -3880,6 +4091,9 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::IcsControlCommand => "issued a control command to an industrial device",
         FindingKind::BaselineDeviation => "deviated from its learned baseline",
         FindingKind::TrafficAnomaly => "showed a traffic pattern its own forecast did not predict",
+        FindingKind::EncryptedUnknownProtocol => {
+            "ran a high-entropy channel no protocol identifies"
+        }
     }
 }
 

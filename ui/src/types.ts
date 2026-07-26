@@ -284,6 +284,7 @@ export type FindingKind =
   | "ics_control_command"
   | "baseline_deviation"
   | "traffic_anomaly"
+  | "encrypted_unknown_protocol"
   | "ioc_match";
 
 /**

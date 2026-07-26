@@ -33,6 +33,7 @@ export const KIND_STAGE: Record<FindingKind, string> = {
   ics_control_command: "Impact",
   baseline_deviation: "Command & Control",
   traffic_anomaly: "Exfiltration",
+  encrypted_unknown_protocol: "Command & Control",
 };
 
 /** The noun for a finding kind's contributing count (e.g. "contacts", "hosts"). */

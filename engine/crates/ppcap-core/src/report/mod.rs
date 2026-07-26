@@ -621,6 +621,7 @@ fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::IcsControlCommand => "ICS Control Command",
         FindingKind::BaselineDeviation => "Baseline Deviation",
         FindingKind::TrafficAnomaly => "Traffic Forecast Anomaly",
+        FindingKind::EncryptedUnknownProtocol => "Encrypted Unknown Protocol",
     }
 }
 
