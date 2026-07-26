@@ -50,7 +50,7 @@ same folder yields the same ids across runs and machines.
   `severity_counts`, `total_packets`/`total_flows`, `finding_count`, `status` (`ok`/`error`), and
   the case-relative `parquet_path` / `summary_path` / `report_path`.
 - `shared_indicators[]` — indicators seen in **≥2** captures, ranked worst-severity first. Each has
-  `kind` (`ip` / `domain` / `ja3`), `value`, the `captures` list (capture ids), and the
+  `kind` (`ip` / `domain` / `ja3` / `ja4` / `ja4s`), `value`, the `captures` list (capture ids), and the
   `worst_severity` associated with it across those captures.
 
 ## Querying the whole case in DuckDB

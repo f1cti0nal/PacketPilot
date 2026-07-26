@@ -137,6 +137,11 @@ pub struct FingerprintHit {
     pub ja3: Option<String>,
     #[serde(default)]
     pub ja4: Option<String>,
+    /// The matched JA4S *server* fingerprint, when the hit came from the server side. Without
+    /// this the whole `bad_ja4s` chain would label a flow but export and index nothing: the STIX
+    /// and MISP writers and the Time Machine harvest all read their indicators off this struct.
+    #[serde(default)]
+    pub ja4s: Option<String>,
     pub label: String,
 }
 

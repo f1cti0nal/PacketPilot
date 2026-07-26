@@ -657,6 +657,7 @@ impl StatsAccumulator {
                 let hit = FingerprintHit {
                     ja3: f.ja3.clone(),
                     ja4: f.ja4.clone(),
+                    ja4s: f.ja4s.clone(),
                     label: label.clone(),
                 };
                 const MAX_FP_PER_IP: usize = 6;

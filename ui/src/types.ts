@@ -161,6 +161,8 @@ export interface ReputationVerdict {
 export interface FingerprintHit {
   ja3: string | null;
   ja4: string | null;
+  /** Matched JA4S *server* fingerprint, when the hit came from the server side. */
+  ja4s?: string | null;
   label: string;
 }
 

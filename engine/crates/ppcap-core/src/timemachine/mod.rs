@@ -40,6 +40,15 @@ pub enum IndicatorKind {
     Ja3,
     /// A JA4 TLS client fingerprint.
     Ja4,
+    /// A JA4S TLS *server* fingerprint. Appended last so the derived `Ord` keeps existing
+    /// indicator sort order stable.
+    ///
+    /// Back-compat, stated precisely: the enum serializes by lowercase NAME, so an old index
+    /// parses fine under a new engine regardless of variant position. The asymmetry runs the
+    /// other way — an OLD engine reading a NEW index containing `"ja4s"` fails the whole-file
+    /// parse (`from_json_str` has no unknown-variant tolerance) while `INDEX_SCHEMA_VERSION`
+    /// stays 1. Accepted and documented, matching the `ThreatFeedFile` precedent for new keys.
+    Ja4s,
 }
 
 impl IndicatorKind {
@@ -50,6 +59,7 @@ impl IndicatorKind {
             IndicatorKind::Domain => "domain",
             IndicatorKind::Ja3 => "ja3",
             IndicatorKind::Ja4 => "ja4",
+            IndicatorKind::Ja4s => "ja4s",
         }
     }
 }
@@ -137,6 +147,9 @@ pub fn build_index(out: &AnalysisOutput, analyzed_unix_secs: i64) -> CaptureInde
             }
             if let Some(j) = fp.ja4.as_ref().filter(|v| !v.is_empty()) {
                 add(&mut acc, IndicatorKind::Ja4, j.clone(), flagged);
+            }
+            if let Some(j) = fp.ja4s.as_ref().filter(|v| !v.is_empty()) {
+                add(&mut acc, IndicatorKind::Ja4s, j.clone(), flagged);
             }
         }
     }
@@ -228,6 +241,7 @@ fn feed_matches(feed: &ThreatFeed, ind: &Indicator) -> (bool, Option<String>) {
             feed.matches_ja4(&ind.value),
             feed.fingerprint_label(None, Some(&ind.value)),
         ),
+        IndicatorKind::Ja4s => (feed.matches_ja4s(&ind.value), feed.ja4s_label(&ind.value)),
     }
 }
 
@@ -301,12 +315,66 @@ mod tests {
                     vec![FingerprintHit {
                         ja3: Some(j.to_string()),
                         ja4: None,
+                        ja4s: None,
                         label: "test".to_string(),
                     }]
                 })
                 .unwrap_or_default(),
             score_terms: vec![],
         }
+    }
+
+    /// An IP threat carrying only a SERVER fingerprint (JA4S) — the shape a `bad_ja4s` hit
+    /// produces.
+    fn ip_threat_ja4s(ip: &str, ja4s: &str) -> IpThreat {
+        let mut t = ip_threat(ip, false, None);
+        t.fingerprints = vec![FingerprintHit {
+            ja3: None,
+            ja4: None,
+            ja4s: Some(ja4s.to_string()),
+            label: "test-server".to_string(),
+        }];
+        t
+    }
+
+    #[test]
+    fn ja4s_fingerprints_are_harvested_and_rescannable() {
+        let mut out = sample_output();
+        out.summary.ip_threats = vec![ip_threat_ja4s("185.220.101.9", "t130200_1301_abc123def456")];
+        let index = build_index(&out, 1_700_000_000);
+
+        // Harvested as its own indicator class — without this the whole bad_ja4s chain would
+        // label a flow but index nothing.
+        let ind = index
+            .indicators
+            .iter()
+            .find(|i| i.kind == IndicatorKind::Ja4s)
+            .expect("a ja4s indicator");
+        assert_eq!(ind.value, "t130200_1301_abc123def456");
+        assert!(!ind.flagged_at_capture, "clean at capture time");
+
+        // A later feed naming that server fingerprint flags it retroactively.
+        let feed = ThreatFeed::from_file(crate::enrich::ThreatFeedFile {
+            bad_ja4s: vec!["t130200_1301_abc123def456".into()],
+            ..Default::default()
+        })
+        .expect("feed");
+        let report = rescan(&[index], &feed);
+        assert!(
+            report
+                .newly_flagged
+                .iter()
+                .any(|m| m.kind == IndicatorKind::Ja4s),
+            "a JA4S indicator must be re-scannable like ja3/ja4"
+        );
+    }
+
+    #[test]
+    fn indicator_kind_ja4s_token_is_stable() {
+        assert_eq!(IndicatorKind::Ja4s.as_str(), "ja4s");
+        // Round-trips through serde by NAME, so old indices stay readable under the new engine.
+        let json = serde_json::to_string(&IndicatorKind::Ja4s).unwrap();
+        assert_eq!(json, "\"ja4s\"");
     }
 
     fn sample_output() -> AnalysisOutput {

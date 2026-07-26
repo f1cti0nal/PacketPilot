@@ -134,9 +134,10 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
     for t in &out.summary.ip_threats {
         for fp in &t.fingerprints {
             let key = format!(
-                "{}|{}|{}",
+                "{}|{}|{}|{}",
                 fp.ja3.as_deref().unwrap_or(""),
                 fp.ja4.as_deref().unwrap_or(""),
+                fp.ja4s.as_deref().unwrap_or(""),
                 fp.label
             );
             fps.entry(key).or_insert(fp);
@@ -149,6 +150,9 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         }
         if let Some(j) = &fp.ja4 {
             parts.push(format!("x-tls-fingerprint:ja4 = '{j}'"));
+        }
+        if let Some(j) = &fp.ja4s {
+            parts.push(format!("x-tls-fingerprint:ja4s = '{j}'"));
         }
         if parts.is_empty() {
             continue;
@@ -315,9 +319,10 @@ pub fn misp_event(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
     for t in &out.summary.ip_threats {
         for fp in &t.fingerprints {
             fps.entry(format!(
-                "{}|{}|{}",
+                "{}|{}|{}|{}",
                 fp.ja3.as_deref().unwrap_or(""),
                 fp.ja4.as_deref().unwrap_or(""),
+                fp.ja4s.as_deref().unwrap_or(""),
                 fp.label
             ))
             .or_insert(fp);
@@ -329,6 +334,9 @@ pub fn misp_event(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         }
         if let Some(j) = &fp.ja4 {
             attrs.push(attr("ja4", j, true, &fp.label));
+        }
+        if let Some(j) = &fp.ja4s {
+            attrs.push(attr("ja4s", j, true, &fp.label));
         }
     }
 
@@ -818,6 +826,7 @@ mod tests {
         out.summary.ip_threats[0].fingerprints = vec![FingerprintHit {
             ja3: Some("e7d705a3286e19ea42f587b344ee6865".into()),
             ja4: None,
+            ja4s: None,
             label: "CobaltStrike".into(),
         }];
         let bundle = stix_bundle(&out, 1_700_000_000);
@@ -842,6 +851,7 @@ mod tests {
         out.summary.ip_threats[0].fingerprints = vec![FingerprintHit {
             ja3: Some("e7d705a3286e19ea42f587b344ee6865".into()),
             ja4: Some("t13d1516h2_8daaf6152771_e5627efa2ab1".into()),
+            ja4s: None,
             label: "CobaltStrike".into(),
         }];
         let s = misp_event(&out, 1_700_000_000);

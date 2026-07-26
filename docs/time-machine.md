@@ -77,7 +77,7 @@ A small JSON sidecar — no packets, no payloads, only derived indicators and pr
 indicator (the alert) from one that was already known bad.
 
 Indicator classes captured: `ip` (external IPs, including passive-DNS-resolved IPs),
-`domain` (TLS SNI + passive-DNS names), `ja3`, `ja4`. These are exactly the classes the
+`domain` (TLS SNI + passive-DNS names), `ja3`, `ja4`, `ja4s`. These are exactly the classes the
 offline threat feed can match.
 
 ---
@@ -112,7 +112,7 @@ offline threat feed can match.
   (`first_ts_ns`/`last_ts_ns`) so you can pivot straight to the relevant traffic.
 
 The updated feed uses the same JSON format as `analyze --threat-feed` (`bad_ips`,
-`bad_cidrs`, `bad_domains`, `bad_suffixes`, `bad_ja3`, `bad_ja4`).
+`bad_cidrs`, `bad_domains`, `bad_suffixes`, `bad_ja3`, `bad_ja4`, `bad_ja4s`).
 
 ---
 
