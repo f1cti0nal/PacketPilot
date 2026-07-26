@@ -559,6 +559,9 @@ export const FLOW_COLUMNS = [
   "severity",
   "threat_score",
   "ioc",
+  "ja4s",
+  "entropy_c2s",
+  "entropy_s2c",
 ] as const;
 export type FlowColumn = (typeof FLOW_COLUMNS)[number];
 
@@ -606,6 +609,9 @@ export interface RawFlowRow {
   ja3: string | null;
   ja4: string | null;
   ja3s: string | null;
+  ja4s: string | null;
+  entropy_c2s: number | null;
+  entropy_s2c: number | null;
   http_host: string | null;
   http_ua: string | null;
   tls_version: string | null;
@@ -646,6 +652,9 @@ export interface WasmFlow {
   ja3: string | null;
   ja4: string | null;
   ja3s: string | null;
+  ja4s: string | null;
+  entropy_c2s: number | null;
+  entropy_s2c: number | null;
   http_host: string | null;
   http_ua: string | null;
   tls_version: string | null;
@@ -682,6 +691,9 @@ export interface FlowRow {
   ja3: string | null; // TLS JA3 fingerprint, if captured
   ja4: string | null; // TLS JA4 fingerprint, if captured
   ja3s: string | null; // TLS JA3S server fingerprint from the ServerHello, if captured
+  ja4s: string | null; // TLS JA4S server fingerprint (JA4 counterpart to ja3s), if captured
+  entropyC2s: number | null; // payload entropy bits/byte, initiator→responder; null unless sampled
+  entropyS2c: number | null; // payload entropy bits/byte, responder→initiator; null unless sampled
   httpHost: string | null; // HTTP request Host header, if captured
   httpUa: string | null; // HTTP request User-Agent header, if captured
   tlsVersion: string | null; // negotiated TLS version label from the ServerHello, if captured

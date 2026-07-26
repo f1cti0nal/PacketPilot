@@ -14,7 +14,7 @@
  * TIMESTAMP via `epoch_ms()` in the insert.
  */
 
-import { Bool, DataType, Table, Utf8, makeVector, vectorFromArray } from "apache-arrow";
+import { Bool, DataType, Float32, Table, Utf8, makeVector, vectorFromArray } from "apache-arrow";
 
 import { FLOW_COLUMNS, type FlowRow } from "../../types";
 import { FLOW_COLUMN_TYPES } from "./schema";
@@ -56,6 +56,9 @@ export function buildFlowArrowTable(rows: FlowRow[]): Table {
   const severity = new Array<string>(n);
   const threatScore = new Uint16Array(n);
   const ioc = new Array<boolean>(n);
+  const ja4s = new Array<string | null>(n);
+  const entropyC2s = new Array<number | null>(n);
+  const entropyS2c = new Array<number | null>(n);
 
   for (let i = 0; i < n; i++) {
     const r = rows[i];
@@ -93,6 +96,9 @@ export function buildFlowArrowTable(rows: FlowRow[]): Table {
     severity[i] = r.severity;
     threatScore[i] = r.threatScore;
     ioc[i] = r.ioc;
+    ja4s[i] = r.ja4s;
+    entropyC2s[i] = r.entropyC2s;
+    entropyS2c[i] = r.entropyS2c;
   }
 
   const utf8 = () => new Utf8();
@@ -129,6 +135,9 @@ export function buildFlowArrowTable(rows: FlowRow[]): Table {
     severity: vectorFromArray(severity, utf8()),
     threat_score: makeVector(threatScore),
     ioc: vectorFromArray(ioc, new Bool()),
+    ja4s: vectorFromArray(ja4s, utf8()),
+    entropy_c2s: vectorFromArray(entropyC2s, new Float32()),
+    entropy_s2c: vectorFromArray(entropyS2c, new Float32()),
   });
 }
 

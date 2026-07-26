@@ -591,8 +591,13 @@ struct ServerHello {
     /// The ServerHello `legacy_version` field (what JA3S hashes; frozen `0x0303` for TLS 1.3).
     legacy_version: u16,
     cipher: u16,
-    /// ServerHello extension types in wire order, GREASE removed (for JA3S).
+    /// ServerHello extension types in wire order, GREASE removed (for JA3S / JA4S).
     ext_types: Vec<u16>,
+    /// The ALPN protocol the server selected (extension 0x0010), if the ServerHello carried one.
+    ///
+    /// TLS 1.3 negotiates ALPN in **EncryptedExtensions**, which is encrypted — so this is a
+    /// TLS <= 1.2 signal, and a 1.3 handshake correctly yields the JA4S `"00"` ALPN code.
+    alpn: Option<String>,
 }
 
 fn parse_server_hello(payload: &[u8]) -> Option<ServerHello> {
@@ -628,6 +633,7 @@ fn parse_server_hello_body(body: &[u8]) -> Option<ServerHello> {
     // types in wire order for JA3S.
     let mut version = legacy_version;
     let mut ext_types: Vec<u16> = Vec::new();
+    let mut alpn: Option<String> = None;
     if let (Some(&hi), Some(&lo)) = (body.get(pos), body.get(pos + 1)) {
         let ext_total = ((hi as usize) << 8) | lo as usize;
         pos += 2;
@@ -643,6 +649,14 @@ fn parse_server_hello_body(body: &[u8]) -> Option<ServerHello> {
             if etype == 0x002b && elen >= 2 {
                 version = u16::from_be_bytes([body[data_start], body[data_start + 1]]);
             }
+            // ALPN (0x0010): the server echoes exactly one chosen protocol, in the same
+            // RFC 7301 list framing the client uses — so the client-side parser applies and
+            // the single entry is the selection. Feeds the JA4S ALPN code.
+            if etype == 0x0010 && alpn.is_none() {
+                alpn = crate::fingerprint::parse_alpn_list(&body[data_start..data_end])
+                    .into_iter()
+                    .next();
+            }
             if !crate::fingerprint::is_grease(etype) {
                 ext_types.push(etype);
             }
@@ -654,7 +668,23 @@ fn parse_server_hello_body(body: &[u8]) -> Option<ServerHello> {
         legacy_version,
         cipher,
         ext_types,
+        alpn,
     })
+}
+
+/// Compute JA4S — the modern (FoxIO) server fingerprint — for a parsed ServerHello.
+/// The hashing lives in [`crate::fingerprint`] so both JA4 variants share one version/ALPN
+/// encoding; this is the thin adapter from the parsed struct.
+fn ja4s_hash(sh: &ServerHello, transport: crate::fingerprint::Ja4Transport) -> String {
+    crate::fingerprint::compute_ja4s(
+        transport,
+        &crate::fingerprint::Ja4sInput {
+            version: sh.version,
+            cipher: sh.cipher,
+            ext_types: &sh.ext_types,
+            alpn: sh.alpn.as_deref(),
+        },
+    )
 }
 
 /// Compute JA3S = `MD5("SSLVersion,Cipher,Extensions")` over a ServerHello: the legacy version, the
@@ -705,13 +735,37 @@ fn weak_cipher(cipher: u16) -> Option<(&'static str, u8)> {
         .map(|(_, name, rank)| (*name, *rank))
 }
 
+/// The server-side TLS posture derived from a ServerHello: what `decode` puts on `PacketMeta`
+/// (and, sticky-first, on the flow row).
+pub(crate) struct ServerPosture {
+    /// Negotiated protocol version label ("TLS 1.2" …).
+    pub version: &'static str,
+    /// Negotiated cipher-suite label (IANA name or `0xNNNN`).
+    pub cipher: String,
+    /// JA3S — the legacy MD5 server fingerprint.
+    pub ja3s: String,
+    /// JA4S — the modern (FoxIO) server fingerprint.
+    pub ja4s: String,
+}
+
 /// Sniff the negotiated TLS posture from a server payload that begins with a ServerHello: the
-/// protocol version name and a cipher-suite label. Used by `decode` to populate the per-flow
-/// `tls_version` / `tls_cipher` columns. Payload-free; `None` when the payload is not a ServerHello.
-pub(crate) fn sniff_server_hello(payload: &[u8]) -> Option<(&'static str, String, String)> {
+/// protocol version name, a cipher-suite label, and both server fingerprints. Used by `decode` to
+/// populate the per-flow `tls_version` / `tls_cipher` / `ja3s` / `ja4s` columns.
+///
+/// `transport` sets the JA4S protocol letter (`t` TCP / `q` QUIC) — the QUIC side is fed by the
+/// keyless server-Initial path, not by this payload sniff. Payload-free; `None` when the payload
+/// does not begin a ServerHello.
+pub(crate) fn sniff_server_hello(
+    payload: &[u8],
+    transport: crate::fingerprint::Ja4Transport,
+) -> Option<ServerPosture> {
     let sh = parse_server_hello(payload)?;
-    let ja3s = ja3s_hash(&sh);
-    Some((tls_version_name(sh.version), cipher_label(sh.cipher), ja3s))
+    Some(ServerPosture {
+        version: tls_version_name(sh.version),
+        cipher: cipher_label(sh.cipher),
+        ja3s: ja3s_hash(&sh),
+        ja4s: ja4s_hash(&sh, transport),
+    })
 }
 
 /// The negotiated `(version, cipher)` words from a server payload beginning with a ServerHello —
@@ -952,14 +1006,38 @@ pub(crate) mod testcert {
         cipher: u16,
         supported: Option<u16>,
     ) -> Vec<u8> {
+        server_hello_with_alpn(legacy_version, cipher, supported, None)
+    }
+
+    /// A ServerHello that additionally selects an ALPN protocol (extension 0x0010) — the
+    /// TLS <= 1.2 shape, where ALPN is still cleartext and feeds the JA4S ALPN code.
+    pub(crate) fn server_hello_with_alpn(
+        legacy_version: u16,
+        cipher: u16,
+        supported: Option<u16>,
+        alpn: Option<&str>,
+    ) -> Vec<u8> {
         let mut body = legacy_version.to_be_bytes().to_vec();
         body.extend_from_slice(&[0u8; 32]); // random
         body.push(0x00); // session_id length
         body.extend_from_slice(&cipher.to_be_bytes());
         body.push(0x00); // compression
+        let mut ext = Vec::new();
         if let Some(v) = supported {
-            let mut ext = vec![0x00, 0x2b, 0x00, 0x02];
+            ext.extend_from_slice(&[0x00, 0x2b, 0x00, 0x02]);
             ext.extend_from_slice(&v.to_be_bytes());
+        }
+        if let Some(proto) = alpn {
+            // RFC 7301 body: outer list length(2) + entry(len(1) + bytes).
+            let mut list = vec![proto.len() as u8];
+            list.extend_from_slice(proto.as_bytes());
+            let mut ext_body = (list.len() as u16).to_be_bytes().to_vec();
+            ext_body.extend_from_slice(&list);
+            ext.extend_from_slice(&[0x00, 0x10]);
+            ext.extend_from_slice(&(ext_body.len() as u16).to_be_bytes());
+            ext.extend_from_slice(&ext_body);
+        }
+        if !ext.is_empty() {
             body.extend_from_slice(&(ext.len() as u16).to_be_bytes());
             body.extend_from_slice(&ext);
         }
@@ -1313,6 +1391,7 @@ mod tests {
             legacy_version: 0x0303,          // 771
             cipher: 0x1301,                  // 4865
             ext_types: vec![0x002b, 0x0033], // 43-51
+            alpn: None,
         };
         assert_eq!(
             ja3s_hash(&sh),
@@ -1324,21 +1403,63 @@ mod tests {
             legacy_version: 0x0303,
             cipher: 0x009c, // 156
             ext_types: vec![],
+            alpn: None,
         };
         assert_eq!(ja3s_hash(&bare), crate::fingerprint::md5_hex(b"771,156,"));
     }
 
     #[test]
     fn sniff_server_hello_returns_ja3s() {
+        use crate::fingerprint::Ja4Transport;
         // TLS 1.3 ServerHello: legacy 0x0303, AES-128-GCM, supported_versions ext (0x002b = 43).
         let hello = testcert::server_hello(0x0303, 0x1301, Some(0x0304));
-        let (_ver, cipher, ja3s) = sniff_server_hello(&hello).expect("server hello");
-        assert_eq!(cipher, "TLS_AES_128_GCM_SHA256");
-        assert_eq!(ja3s, crate::fingerprint::md5_hex(b"771,4865,43"));
+        let p = sniff_server_hello(&hello, Ja4Transport::Tcp).expect("server hello");
+        assert_eq!(p.cipher, "TLS_AES_128_GCM_SHA256");
+        assert_eq!(p.ja3s, crate::fingerprint::md5_hex(b"771,4865,43"));
         // A ServerHello with no extensions -> empty extensions field.
         let bare = testcert::server_hello(0x0303, 0x009C, None);
-        let (_v, _c, ja3s2) = sniff_server_hello(&bare).expect("bare hello");
-        assert_eq!(ja3s2, crate::fingerprint::md5_hex(b"771,156,"));
+        let p2 = sniff_server_hello(&bare, Ja4Transport::Tcp).expect("bare hello");
+        assert_eq!(p2.ja3s, crate::fingerprint::md5_hex(b"771,156,"));
+    }
+
+    #[test]
+    fn sniff_server_hello_returns_ja4s_with_version_cipher_and_extensions() {
+        use crate::fingerprint::Ja4Transport;
+        // TLS 1.3 ServerHello (version unmasked via supported_versions) with one extension.
+        let hello = testcert::server_hello(0x0303, 0x1301, Some(0x0304));
+        let p = sniff_server_hello(&hello, Ja4Transport::Tcp).expect("server hello");
+        // t (TCP) + 13 (unmasked TLS 1.3 — NOT the frozen legacy 0x0303 JA3S hashes) + 01 ext + 00 ALPN
+        // _ chosen cipher _ sha256[:12] over the wire-ordered extension list.
+        assert_eq!(
+            p.ja4s,
+            format!(
+                "t130100_1301_{}",
+                &crate::analyze::sha256_hex(b"002b")[..12]
+            )
+        );
+        // The QUIC marker is the only difference for the same handshake.
+        let q = sniff_server_hello(&hello, Ja4Transport::Quic).expect("server hello");
+        assert_eq!(&q.ja4s[1..], &p.ja4s[1..]);
+        assert!(q.ja4s.starts_with('q'));
+    }
+
+    #[test]
+    fn server_alpn_is_parsed_and_lands_in_ja4s() {
+        use crate::fingerprint::Ja4Transport;
+        // A TLS 1.2 ServerHello that selects h2: ALPN is cleartext here (in 1.3 it moves to
+        // EncryptedExtensions), so the JA4S ALPN code is "h2" rather than "00".
+        let hello = testcert::server_hello_with_alpn(0x0303, 0xC02F, None, Some("h2"));
+        let p = sniff_server_hello(&hello, Ja4Transport::Tcp).expect("server hello");
+        // t + 12 (TLS 1.2) + 01 (one extension: ALPN) + h2 (the chosen protocol).
+        assert!(
+            p.ja4s.starts_with("t1201h2_c02f_"),
+            "unexpected ja4s: {}",
+            p.ja4s
+        );
+        // The same handshake without ALPN encodes "00".
+        let plain = testcert::server_hello(0x0303, 0xC02F, None);
+        let p2 = sniff_server_hello(&plain, Ja4Transport::Tcp).expect("server hello");
+        assert!(p2.ja4s.starts_with("t120000_c02f_"), "got {}", p2.ja4s);
     }
 
     #[test]

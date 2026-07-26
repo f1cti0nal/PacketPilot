@@ -39,6 +39,10 @@ pub struct OrientedFlow {
     pub tcp_flags_c2s: u8,
     pub tcp_flags_s2c: u8,
     pub ttl_min_c2s: u8,
+    /// Payload entropy (bits/byte) of the sampled client->server bytes; `None` when not sampled.
+    pub entropy_c2s: Option<f32>,
+    /// Payload entropy (bits/byte) of the sampled server->client bytes; `None` when not sampled.
+    pub entropy_s2c: Option<f32>,
 }
 
 /// Canonical, direction-independent flow identity.
@@ -183,6 +187,21 @@ pub struct FlowRecord {
     pub ja4: Option<String>,
     /// First non-empty JA3S (server ServerHello) fingerprint observed on this flow; `None` if none.
     pub ja3s: Option<String>,
+    /// First non-empty JA4S (modern server) fingerprint observed on this flow; `None` if none.
+    /// `serde(default)` for back-compat with summaries written before ETA.
+    #[serde(default)]
+    pub ja4s: Option<String>,
+    /// Shannon entropy (bits/byte) of the sampled lo->hi (forward) payload for a flow whose
+    /// protocol no payload sniffer identified; `None` for identified flows and for flows the
+    /// bounded sampler did not track. Written at flow close by the entropy substrate.
+    ///
+    /// Stored in CANONICAL fwd/rev orientation like every other directional field; only
+    /// [`FlowRecord::oriented`] maps it to the emitted c2s/s2c columns.
+    #[serde(default)]
+    pub entropy_fwd: Option<f32>,
+    /// Shannon entropy (bits/byte) of the sampled hi->lo (reverse) payload; see [`Self::entropy_fwd`].
+    #[serde(default)]
+    pub entropy_rev: Option<f32>,
     /// First HTTP request `Host` header observed on this flow; `None` if none. The HTTP analogue of
     /// `sni` — first non-empty value wins (sticky).
     pub http_host: Option<String>,
@@ -238,6 +257,9 @@ impl FlowRecord {
             ja3: None,
             ja4: None,
             ja3s: None,
+            ja4s: None,
+            entropy_fwd: None,
+            entropy_rev: None,
             http_host: None,
             http_ua: None,
             tls_version: None,
@@ -319,6 +341,13 @@ impl FlowRecord {
             if let Some(v) = &p.ja3s {
                 if !v.is_empty() {
                     self.ja3s = Some(v.clone());
+                }
+            }
+        }
+        if self.ja4s.is_none() {
+            if let Some(v) = &p.ja4s {
+                if !v.is_empty() {
+                    self.ja4s = Some(v.clone());
                 }
             }
         }
@@ -412,6 +441,8 @@ impl FlowRecord {
                 tcp_flags_c2s: self.tcp_flags_fwd,
                 tcp_flags_s2c: self.tcp_flags_rev,
                 ttl_min_c2s: self.ttl_min_fwd,
+                entropy_c2s: self.entropy_fwd,
+                entropy_s2c: self.entropy_rev,
             },
             Direction::Reverse => OrientedFlow {
                 src_ip: self.key.hi_ip,
@@ -423,6 +454,8 @@ impl FlowRecord {
                 tcp_flags_c2s: self.tcp_flags_rev,
                 tcp_flags_s2c: self.tcp_flags_fwd,
                 ttl_min_c2s: self.ttl_min_rev,
+                entropy_c2s: self.entropy_rev,
+                entropy_s2c: self.entropy_fwd,
             },
         }
     }
@@ -496,6 +529,7 @@ mod tests {
             hassh_server: None,
             arp: None,
             ja3s: None,
+            ja4s: None,
             http_host: None,
             http_ua: None,
             download: None,
@@ -564,6 +598,7 @@ mod tests {
             hassh_server: None,
             arp: None,
             ja3s: None,
+            ja4s: None,
             http_host: None,
             http_ua: None,
             download: None,

@@ -77,6 +77,7 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         hassh_server: None,
         arp: None,
         ja3s: None,
+        ja4s: None,
         http_host: None,
         http_ua: None,
         download: None,
@@ -266,14 +267,24 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
             sniff_cleartext_cred(meta.transport, meta.src_port, meta.dst_port, payload);
         // Plaintext PII exposure: derive only the PII *kind* (credit card / SSN), never the value.
         meta.pii = sniff_pii(meta.transport, payload);
-        // TLS server posture: the negotiated version + cipher + JA3S fingerprint from a ServerHello
-        // (server-side counterpart to the ClientHello's sni/ja3/ja4). Payload-free; only set when the
-        // payload begins a ServerHello.
-        if let Some((version, cipher, ja3s)) = crate::tls::sniff_server_hello(payload) {
-            meta.app_proto = AppProto::Tls;
-            meta.tls_version = Some(version.to_string());
-            meta.tls_cipher = Some(cipher);
-            meta.ja3s = Some(ja3s);
+        // TLS server posture: the negotiated version + cipher + JA3S/JA4S fingerprints from a
+        // ServerHello (server-side counterpart to the ClientHello's sni/ja3/ja4). Payload-free;
+        // only set when the payload begins a ServerHello.
+        //
+        // TCP-only: a cleartext TLS record over UDP is not a real deployment (QUIC's ServerHello
+        // is inside an encrypted Initial — recovered keylessly by `quic`, which reports its own
+        // `q`-marked JA4S), so gating here keeps the JA4S transport letter correct by construction
+        // and avoids force-labeling a UDP flow as `tls` off a coincidental payload.
+        if meta.transport == Transport::Tcp {
+            if let Some(p) =
+                crate::tls::sniff_server_hello(payload, crate::fingerprint::Ja4Transport::Tcp)
+            {
+                meta.app_proto = AppProto::Tls;
+                meta.tls_version = Some(p.version.to_string());
+                meta.tls_cipher = Some(p.cipher);
+                meta.ja3s = Some(p.ja3s);
+                meta.ja4s = Some(p.ja4s);
+            }
         }
         // SSH fingerprints (HASSH / HASSHServer): the algorithm name-lists of a KEXINIT, MD5-
         // fingerprinted (the SSH analogue of JA3 / JA3S). TCP-only; payload-free; each is set only on
@@ -1601,6 +1612,7 @@ mod tests {
             hassh_server: None,
             arp: None,
             ja3s: None,
+            ja4s: None,
             http_host: None,
             http_ua: None,
             download: None,

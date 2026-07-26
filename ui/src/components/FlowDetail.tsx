@@ -426,6 +426,9 @@ export function FlowDetail({
         <Field label="TLS JA3S" mono title={flow.ja3s ?? undefined}>
           {flow.ja3s ?? <span className="text-[var(--color-text-faint)]">—</span>}
         </Field>
+        <Field label="TLS JA4S" mono title={flow.ja4s ?? undefined}>
+          {flow.ja4s ?? <span className="text-[var(--color-text-faint)]">—</span>}
+        </Field>
         <Field label="TLS version" mono title={flow.tlsVersion ?? undefined}>
           {flow.tlsVersion ?? <span className="text-[var(--color-text-faint)]">—</span>}
         </Field>

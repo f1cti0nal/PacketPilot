@@ -481,6 +481,9 @@ struct FlowDto {
     severity: String,
     threat_score: u16,
     ioc: bool,
+    ja4s: Option<String>,
+    entropy_c2s: Option<f32>,
+    entropy_s2c: Option<f32>,
 }
 
 impl FlowDto {
@@ -565,6 +568,13 @@ impl FlowDto {
             severity: rec.severity.as_str().to_string(),
             threat_score: rec.threat_score,
             ioc: rec.ioc,
+            ja4s: rec
+                .ja4s
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| v.to_string()),
+            entropy_c2s: o.entropy_c2s,
+            entropy_s2c: o.entropy_s2c,
         }
     }
 }

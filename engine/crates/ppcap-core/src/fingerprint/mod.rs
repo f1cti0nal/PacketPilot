@@ -1,6 +1,9 @@
-//! TLS client fingerprinting (JA3/JA4) + the vendored MD5 JA3 requires.
+//! TLS fingerprinting — client (JA3/JA4) and server (JA4S) — plus the vendored MD5 JA3 requires.
 //! No hashing crate (mirrors the vendored SHA-256 in `analyze`): the C-free / minimal-deps
 //! invariant forbids adding `md-5`/`sha2`.
+//!
+//! The server-side MD5 JA3S lives in [`crate::tls`] (next to the ServerHello parser); the modern
+//! [`compute_ja4s`] lives here so both JA4 variants share one version/ALPN encoding.
 
 /// Minimal MD5 (RFC 1321), lowercase hex. JA3 is defined as the MD5 of its string.
 pub(crate) fn md5_hex(data: &[u8]) -> String {
@@ -308,29 +311,13 @@ fn compute_ja4(
         .filter(|v| !is_grease(*v))
         .max()
         .unwrap_or(legacy_ver);
-    let ver_code = match ver {
-        0x0304 => "13",
-        0x0303 => "12",
-        0x0302 => "11",
-        0x0301 => "10",
-        0x0300 => "s3",
-        0x0002 => "s2",
-        _ => "00",
-    };
+    let ver_code = ja4_version_code(ver);
     let sni_flag = if sni_present { "d" } else { "i" };
     // Cipher + extension counts: GREASE already removed; cap at 99, zero-padded to 2 digits.
     let nc = ciphers.len().min(99);
     let ne = exts.len().min(99);
     // ALPN: first and last ASCII character of the first protocol string; "00" if absent/empty.
-    let alpn = match alpn_first {
-        Some(a) if !a.is_empty() => {
-            let bytes = a.as_bytes();
-            let first = bytes[0] as char;
-            let last = bytes[bytes.len() - 1] as char;
-            format!("{first}{last}")
-        }
-        _ => "00".to_string(),
-    };
+    let alpn = ja4_alpn_code(alpn_first);
     let ja4_a = format!(
         "{}{ver_code}{sni_flag}{nc:02}{ne:02}{alpn}",
         transport.marker()
@@ -389,6 +376,85 @@ fn compute_ja4(
     };
 
     format!("{ja4_a}_{ja4_b}_{ja4_c}")
+}
+
+/// The 2-character JA4/JA4S TLS-version code for a protocol version word.
+/// Unrecognized versions encode as `"00"` (FoxIO spec).
+fn ja4_version_code(ver: u16) -> &'static str {
+    match ver {
+        0x0304 => "13",
+        0x0303 => "12",
+        0x0302 => "11",
+        0x0301 => "10",
+        0x0300 => "s3",
+        0x0002 => "s2",
+        _ => "00",
+    }
+}
+
+/// The 2-character JA4/JA4S ALPN code: first + last ASCII character of the protocol string
+/// (so `"h2"` -> `"h2"`, `"http/1.1"` -> `"h1"`), or `"00"` when absent/empty.
+fn ja4_alpn_code(alpn: Option<&str>) -> String {
+    match alpn {
+        Some(a) if !a.is_empty() => {
+            let bytes = a.as_bytes();
+            let first = bytes[0] as char;
+            let last = bytes[bytes.len() - 1] as char;
+            format!("{first}{last}")
+        }
+        _ => "00".to_string(),
+    }
+}
+
+// ── JA4S builder (server side) ────────────────────────────────────────────────
+
+/// The ServerHello facts a JA4S is built from. Passed as primitives (not the `tls::ServerHello`
+/// struct) so this module stays free of a `tls` dependency — `tls` already depends on `fingerprint`.
+pub(crate) struct Ja4sInput<'a> {
+    /// Negotiated version: `supported_versions`-unmasked (authoritative for TLS 1.3), else legacy.
+    pub version: u16,
+    /// The cipher suite the server chose.
+    pub cipher: u16,
+    /// ServerHello extension types **in wire order**, GREASE already removed.
+    pub ext_types: &'a [u16],
+    /// The ALPN protocol the server selected, if the ServerHello carried one. Encrypted (and so
+    /// absent) for TLS 1.3, where ALPN moves to EncryptedExtensions — `"00"` per the spec.
+    pub alpn: Option<&'a str>,
+}
+
+/// Build the JA4S server fingerprint per the FoxIO spec.
+///
+/// # Canonical shape
+/// `<t|q><ver><ne><alpn>_<cipher-4hex>_<sha256_12(extensions in wire order)>`
+///
+/// Differences from client JA4, all deliberate:
+/// * no SNI `d`/`i` marker (that is a client property),
+/// * the cipher part is the single **chosen** suite in hex, not a hash of the offered list,
+/// * the extension hash is over **wire order** with no exclusions (JA4 sorts and drops SNI/ALPN).
+///
+/// Reference: <https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4S.md>
+pub(crate) fn compute_ja4s(transport: Ja4Transport, input: &Ja4sInput<'_>) -> String {
+    let ver_code = ja4_version_code(input.version);
+    let ne = input.ext_types.len().min(99);
+    let alpn = ja4_alpn_code(input.alpn);
+    let ja4s_a = format!("{}{ver_code}{ne:02}{alpn}", transport.marker());
+
+    let ja4s_b = format!("{:04x}", input.cipher);
+
+    // Extensions in the order they appear (no sort, no exclusions), 4-hex lowercase, comma-joined.
+    let ja4s_c = if input.ext_types.is_empty() {
+        "000000000000".to_string()
+    } else {
+        let ex_hex = input
+            .ext_types
+            .iter()
+            .map(|e| format!("{e:04x}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        crate::analyze::sha256_hex(ex_hex.as_bytes())[..12].to_string()
+    };
+
+    format!("{ja4s_a}_{ja4s_b}_{ja4s_c}")
 }
 
 // ── Extension sub-parsers ─────────────────────────────────────────────────────
@@ -462,12 +528,13 @@ fn parse_u8_list(data: &[u8]) -> Vec<u8> {
     data.get(1..end).unwrap_or(&[]).to_vec()
 }
 
-/// Parse the ALPN extension (0x0010) and return the first protocol string.
-/// Wire format: u16 total-list-length, then entries of u8-length + bytes.
 /// Parse every ALPN protocol ID from an ALPN extension body (RFC 7301): a 2-byte
 /// outer list length, then a sequence of `len(1) + bytes` entries. Non-UTF-8
 /// entries are skipped. Bounded + panic-free.
-fn parse_alpn_list(data: &[u8]) -> Vec<String> {
+///
+/// Shared with the ServerHello parser in [`crate::tls`], where the same wire format carries the
+/// server's single *chosen* protocol (the first — and only — entry).
+pub(crate) fn parse_alpn_list(data: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
     // Skip the 2-byte outer ProtocolNameList length; entries start at offset 2.
     let mut pos = 2usize;
@@ -688,6 +755,94 @@ mod ch_tests {
         assert!(
             fingerprint_tls_client_hello(&[22, 3, 1, 0, 5, 1, 0, 0], Ja4Transport::Tcp).is_none()
         );
+    }
+
+    // ── JA4S (server) ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn ja4s_shape_and_parts_are_self_consistent() {
+        // FoxIO JA4S shape: <t|q><ver><ne><alpn>_<cipher>_<sha256_12(exts in wire order)>.
+        let exts = [0x002bu16, 0x0033, 0x0010];
+        let fp = compute_ja4s(
+            Ja4Transport::Tcp,
+            &Ja4sInput {
+                version: 0x0304,
+                cipher: 0x1301,
+                ext_types: &exts,
+                alpn: Some("h2"),
+            },
+        );
+        let parts: Vec<&str> = fp.split('_').collect();
+        assert_eq!(parts.len(), 3, "ja4s has exactly 3 parts");
+        // t (TCP) + 13 (TLS 1.3) + 03 (three extensions) + h2 (chosen ALPN)
+        assert_eq!(parts[0], "t1303h2");
+        // The chosen cipher suite, 4 lowercase hex digits — not a hash.
+        assert_eq!(parts[1], "1301");
+        // Extensions hashed in WIRE order (unsorted): 002b,0033,0010.
+        assert_eq!(
+            parts[2],
+            &crate::analyze::sha256_hex(b"002b,0033,0010")[..12]
+        );
+    }
+
+    #[test]
+    fn ja4s_extension_order_is_not_sorted() {
+        // The JA4 client hash sorts its extension list; JA4S must NOT — a different wire order
+        // is a different server fingerprint.
+        let a = compute_ja4s(
+            Ja4Transport::Tcp,
+            &Ja4sInput {
+                version: 0x0303,
+                cipher: 0xc030,
+                ext_types: &[0x0010, 0x002b],
+                alpn: None,
+            },
+        );
+        let b = compute_ja4s(
+            Ja4Transport::Tcp,
+            &Ja4sInput {
+                version: 0x0303,
+                cipher: 0xc030,
+                ext_types: &[0x002b, 0x0010],
+                alpn: None,
+            },
+        );
+        assert_ne!(a, b);
+        // Absent ALPN encodes as "00" (the TLS 1.3 case, where ALPN is in EncryptedExtensions).
+        assert!(a.starts_with("t120200_c030_"));
+    }
+
+    #[test]
+    fn ja4s_empty_extension_list_uses_zero_sentinel() {
+        let fp = compute_ja4s(
+            Ja4Transport::Tcp,
+            &Ja4sInput {
+                version: 0x0303,
+                cipher: 0x009c,
+                ext_types: &[],
+                alpn: None,
+            },
+        );
+        assert_eq!(fp, "t120000_009c_000000000000");
+    }
+
+    #[test]
+    fn ja4s_quic_marker_differs_only_in_protocol_letter() {
+        let exts = [0x002bu16];
+        let mk = |t| {
+            compute_ja4s(
+                t,
+                &Ja4sInput {
+                    version: 0x0304,
+                    cipher: 0x1301,
+                    ext_types: &exts,
+                    alpn: None,
+                },
+            )
+        };
+        let (t, q) = (mk(Ja4Transport::Tcp), mk(Ja4Transport::Quic));
+        assert!(t.starts_with('t') && q.starts_with('q'));
+        assert_eq!(&t[1..], &q[1..]);
     }
 
     #[test]

@@ -451,6 +451,7 @@ mod tests {
             hassh_server: None,
             arp: None,
             ja3s: None,
+            ja4s: None,
             http_host: None,
             http_ua: None,
             download: None,

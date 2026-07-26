@@ -224,12 +224,14 @@ export function FlowsTable({
                   {f.ja4 ? `JA4 ${f.ja4.slice(0, 12)}…` : `JA3 ${f.ja3!.slice(0, 12)}…`}
                 </span>
               )}
-              {f.ja3s && (
+              {(f.ja4s || f.ja3s) && (
                 <span
                   className="font-mono-num truncate text-xs text-[var(--color-text-faint)]"
-                  title={`JA3S: ${f.ja3s}`}
+                  title={[f.ja3s && `JA3S: ${f.ja3s}`, f.ja4s && `JA4S: ${f.ja4s}`]
+                    .filter(Boolean)
+                    .join("\n")}
                 >
-                  {`JA3S ${f.ja3s.slice(0, 12)}…`}
+                  {f.ja4s ? `JA4S ${f.ja4s.slice(0, 12)}…` : `JA3S ${f.ja3s!.slice(0, 12)}…`}
                 </span>
               )}
               {f.tlsVersion && (
