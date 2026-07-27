@@ -33,7 +33,8 @@ export function DetailFlyout({
   scoreTerms?: ScoreTerm[];
   /** Passive-DNS domain this host's IP resolved from, if known. */
   resolvedDomain?: string;
-  /** Known-bad TLS fingerprints matched on this host (JA3 / JA4 / JA4S + family label). */
+  /** Known-bad stack fingerprints matched on this host — TLS (JA3 / JA4 / JA4S) or SSH
+   * (HASSH / HASSHServer) — each with its family label. */
   fingerprints?: FingerprintHit[];
   /** L2 MAC address claimed by this host's IP via ARP, if known. */
   mac?: string;
@@ -130,8 +131,19 @@ export function DetailFlyout({
                   </div>
                 )}
                 {(fingerprints ?? []).map((fp) => {
-                  const value = fp.ja4s ?? fp.ja4 ?? fp.ja3 ?? "";
-                  const kind = fp.ja4s ? "JA4S" : fp.ja4 ? "JA4" : "JA3";
+                  // Most specific first: a server fingerprint identifies the infrastructure,
+                  // which beats identifying the client stack that reached it.
+                  const value =
+                    fp.hassh_server ?? fp.hassh ?? fp.ja4s ?? fp.ja4 ?? fp.ja3 ?? "";
+                  const kind = fp.hassh_server
+                    ? "HASSHServer"
+                    : fp.hassh
+                      ? "HASSH"
+                      : fp.ja4s
+                        ? "JA4S"
+                        : fp.ja4
+                          ? "JA4"
+                          : "JA3";
                   return (
                     <div key={`${kind}-${value}`} className="flex items-baseline gap-2">
                       <dt className="shrink-0 text-[var(--color-text-faint)]">{kind}</dt>

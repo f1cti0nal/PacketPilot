@@ -680,6 +680,8 @@ impl StatsAccumulator {
                     ja3: f.ja3.clone(),
                     ja4: f.ja4.clone(),
                     ja4s: f.ja4s.clone(),
+                    hassh: f.hassh.clone(),
+                    hassh_server: f.hassh_server.clone(),
                     label: label.clone(),
                 };
                 const MAX_FP_PER_IP: usize = 6;

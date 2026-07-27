@@ -165,6 +165,10 @@ export interface FingerprintHit {
   ja4: string | null;
   /** Matched JA4S *server* fingerprint, when the hit came from the server side. */
   ja4s?: string | null;
+  /** Matched HASSH *SSH client* fingerprint (MD5), when the hit came from SSH. */
+  hassh?: string | null;
+  /** Matched HASSHServer *SSH server* fingerprint (MD5). */
+  hassh_server?: string | null;
   label: string;
 }
 

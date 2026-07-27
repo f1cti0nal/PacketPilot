@@ -155,10 +155,12 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   **JA4S** server fingerprints (TCP *and* keyless QUIC, whose server Initial is opened with the
   RFC-published salt — no keys), a per-server **TLS posture** rollup, and three explainable
   findings — an unnamed **high-entropy channel** (custom-crypto C2 / hand-rolled tunnels, and the
-  first producer of the `anomalous` category), **TLS without SNI** (ECH-aware), and
-  **port/protocol mismatch** (TLS on an odd port; non-TLS on 443). JA4S is feed-matchable
-  (`bad_ja4s`) and re-scannable by Time Machine. See [docs/encrypted-traffic-analysis.md](docs/encrypted-traffic-analysis.md).
-- **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S), MITRE ATT&CK.
+  first producer of the `anomalous` category), **TLS without SNI** (ECH-aware),
+  **port/protocol mismatch** (TLS on an odd port; non-TLS on 443), and **weak SSH posture**
+  (SSH-1 support, deprecated host keys, CBC/`none` ciphers — all read from the cleartext
+  identification line and KEXINIT, which precede key exchange). Server fingerprints are
+  feed-matchable (`bad_ja4s`, `bad_hassh`, `bad_hassh_server`) and re-scannable by Time Machine.
+- **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S/HASSH), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
   indicators that were clean at capture time but are dirty now — no pcap re-read, fully offline.

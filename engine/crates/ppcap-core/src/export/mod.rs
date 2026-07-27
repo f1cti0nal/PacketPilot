@@ -129,18 +129,12 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         }
     }
 
-    // JA3/JA4 fingerprint indicators (deduped across IPs; deterministic order).
+    // TLS (JA3/JA4/JA4S) and SSH (HASSH/HASSHServer) fingerprint indicators, deduped across IPs
+    // in a deterministic order.
     let mut fps: BTreeMap<String, &crate::model::summary::FingerprintHit> = BTreeMap::new();
     for t in &out.summary.ip_threats {
         for fp in &t.fingerprints {
-            let key = format!(
-                "{}|{}|{}|{}",
-                fp.ja3.as_deref().unwrap_or(""),
-                fp.ja4.as_deref().unwrap_or(""),
-                fp.ja4s.as_deref().unwrap_or(""),
-                fp.label
-            );
-            fps.entry(key).or_insert(fp);
+            fps.entry(fingerprint_key(fp)).or_insert(fp);
         }
     }
     for (key, fp) in &fps {
@@ -154,9 +148,27 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         if let Some(j) = &fp.ja4s {
             parts.push(format!("x-tls-fingerprint:ja4s = '{j}'"));
         }
+        // SSH gets its own custom-object namespace: a HASSH is not a TLS fingerprint, and a
+        // consumer filtering on `x-tls-fingerprint` must not silently ingest SSH hashes.
+        if let Some(h) = &fp.hassh {
+            parts.push(format!("x-ssh-fingerprint:hassh = '{h}'"));
+        }
+        if let Some(h) = &fp.hassh_server {
+            parts.push(format!("x-ssh-fingerprint:hassh_server = '{h}'"));
+        }
         if parts.is_empty() {
             continue;
         }
+        // Name the protocol the hashes actually came from, so the SDO does not claim TLS for an
+        // SSH-only hit.
+        let proto = match (
+            fp.ja3.is_some() || fp.ja4.is_some() || fp.ja4s.is_some(),
+            fp.hassh.is_some() || fp.hassh_server.is_some(),
+        ) {
+            (true, true) => "TLS/SSH",
+            (false, true) => "SSH",
+            _ => "TLS",
+        };
         let ind_id = format!("indicator--{}", det_uuid(&format!("indicator:fp:{key}")));
         objects.push(serde_json::json!({
             "type": "indicator",
@@ -164,8 +176,8 @@ pub fn stix_bundle(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
             "id": ind_id,
             "created": ts,
             "modified": ts,
-            "name": format!("Malicious TLS fingerprint ({})", fp.label),
-            "description": format!("TLS client fingerprint attributed to {}", fp.label),
+            "name": format!("Malicious {proto} fingerprint ({})", fp.label),
+            "description": format!("{proto} stack fingerprint attributed to {}", fp.label),
             "indicator_types": ["malicious-activity"],
             "pattern": format!("[{}]", parts.join(" OR ")),
             "pattern_type": "stix",
@@ -318,14 +330,7 @@ pub fn misp_event(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
     let mut fps: BTreeMap<String, &crate::model::summary::FingerprintHit> = BTreeMap::new();
     for t in &out.summary.ip_threats {
         for fp in &t.fingerprints {
-            fps.entry(format!(
-                "{}|{}|{}|{}",
-                fp.ja3.as_deref().unwrap_or(""),
-                fp.ja4.as_deref().unwrap_or(""),
-                fp.ja4s.as_deref().unwrap_or(""),
-                fp.label
-            ))
-            .or_insert(fp);
+            fps.entry(fingerprint_key(fp)).or_insert(fp);
         }
     }
     for fp in fps.values() {
@@ -337,6 +342,13 @@ pub fn misp_event(out: &AnalysisOutput, generated_unix_secs: i64) -> String {
         }
         if let Some(j) = &fp.ja4s {
             attrs.push(attr("ja4s", j, true, &fp.label));
+        }
+        // MISP ships `hassh-md5` / `hasshserver-md5` as first-class attribute types.
+        if let Some(h) = &fp.hassh {
+            attrs.push(attr("hassh-md5", h, true, &fp.label));
+        }
+        if let Some(h) = &fp.hassh_server {
+            attrs.push(attr("hasshserver-md5", h, true, &fp.label));
         }
     }
 
@@ -501,6 +513,21 @@ fn csv_field(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Dedup key for a [`crate::model::summary::FingerprintHit`] — every hash class plus the family
+/// label, in a fixed order. Shared by the STIX and MISP writers so the two exports can never
+/// disagree about which hits are distinct, and so a new hash class is added in exactly one place.
+fn fingerprint_key(fp: &crate::model::summary::FingerprintHit) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}",
+        fp.ja3.as_deref().unwrap_or(""),
+        fp.ja4.as_deref().unwrap_or(""),
+        fp.ja4s.as_deref().unwrap_or(""),
+        fp.hassh.as_deref().unwrap_or(""),
+        fp.hassh_server.as_deref().unwrap_or(""),
+        fp.label
+    )
 }
 
 /// A deterministic, syntactically-valid UUID derived from `seed` (no randomness). Uses two
@@ -827,6 +854,8 @@ mod tests {
             ja3: Some("e7d705a3286e19ea42f587b344ee6865".into()),
             ja4: None,
             ja4s: None,
+            hassh: None,
+            hassh_server: None,
             label: "CobaltStrike".into(),
         }];
         let bundle = stix_bundle(&out, 1_700_000_000);
@@ -852,6 +881,8 @@ mod tests {
             ja3: Some("e7d705a3286e19ea42f587b344ee6865".into()),
             ja4: Some("t13d1516h2_8daaf6152771_e5627efa2ab1".into()),
             ja4s: None,
+            hassh: None,
+            hassh_server: None,
             label: "CobaltStrike".into(),
         }];
         let s = misp_event(&out, 1_700_000_000);
@@ -880,5 +911,89 @@ mod tests {
 
         // deterministic: same input => same event
         assert_eq!(s, misp_event(&out, 1_700_000_000));
+    }
+
+    /// An SSH-only hit must export as SSH: its own STIX object namespace, its own MISP attribute
+    /// types, and an SDO that does not claim TLS.
+    #[test]
+    fn ssh_fingerprints_export_under_their_own_namespace() {
+        let mut out = out_with_ip_threat();
+        out.summary.ip_threats[0].fingerprints = vec![FingerprintHit {
+            ja3: None,
+            ja4: None,
+            ja4s: None,
+            hassh: Some("0df0d56bc302d51d6f1e1c1e0b3e4a5b".into()),
+            hassh_server: Some("b12f3a4c5d6e7f8091a2b3c4d5e6f701".into()),
+            label: "SSH-Scanner".into(),
+        }];
+
+        let bundle = stix_bundle(&out, 1_700_000_000);
+        assert!(
+            bundle.contains("x-ssh-fingerprint:hassh = '0df0d56bc302d51d6f1e1c1e0b3e4a5b'"),
+            "missing client hassh pattern: {bundle}"
+        );
+        assert!(
+            bundle.contains("x-ssh-fingerprint:hassh_server = 'b12f3a4c5d6e7f8091a2b3c4d5e6f701'"),
+            "missing server hassh pattern: {bundle}"
+        );
+        // A consumer filtering on the TLS namespace must not pick these up.
+        assert!(
+            !bundle.contains("x-tls-fingerprint"),
+            "SSH-only hit leaked into the TLS namespace: {bundle}"
+        );
+        assert!(
+            bundle.contains("Malicious SSH fingerprint (SSH-Scanner)"),
+            "SDO must name SSH, not TLS: {bundle}"
+        );
+        assert_eq!(bundle, stix_bundle(&out, 1_700_000_000), "deterministic");
+
+        let v: serde_json::Value =
+            serde_json::from_str(&misp_event(&out, 1_700_000_000)).expect("valid JSON");
+        let attrs = v["Event"]["Attribute"].as_array().expect("Attribute array");
+        let hassh = attrs
+            .iter()
+            .find(|a| a["type"] == "hassh-md5")
+            .expect("hassh-md5 attribute missing");
+        assert_eq!(hassh["value"], "0df0d56bc302d51d6f1e1c1e0b3e4a5b");
+        assert_eq!(hassh["to_ids"], true);
+        let hassh_server = attrs
+            .iter()
+            .find(|a| a["type"] == "hasshserver-md5")
+            .expect("hasshserver-md5 attribute missing");
+        assert_eq!(hassh_server["value"], "b12f3a4c5d6e7f8091a2b3c4d5e6f701");
+    }
+
+    /// Two hits differing only in their SSH hashes must stay distinct: before `fingerprint_key`
+    /// covered the SSH columns, they collapsed to one exported indicator.
+    #[test]
+    fn fingerprint_dedup_key_separates_ssh_hits() {
+        let mut out = out_with_ip_threat();
+        let base = FingerprintHit {
+            ja3: None,
+            ja4: None,
+            ja4s: None,
+            hassh: None,
+            hassh_server: None,
+            label: "SSH-Scanner".into(),
+        };
+        out.summary.ip_threats[0].fingerprints = vec![
+            FingerprintHit {
+                hassh: Some("0df0d56bc302d51d6f1e1c1e0b3e4a5b".into()),
+                ..base.clone()
+            },
+            FingerprintHit {
+                hassh: Some("11112222333344445555666677778888".into()),
+                ..base
+            },
+        ];
+        let bundle = stix_bundle(&out, 1_700_000_000);
+        assert!(
+            bundle.contains("0df0d56bc302d51d6f1e1c1e0b3e4a5b"),
+            "{bundle}"
+        );
+        assert!(
+            bundle.contains("11112222333344445555666677778888"),
+            "{bundle}"
+        );
     }
 }

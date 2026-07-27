@@ -10,7 +10,8 @@ CREATE TYPE severity_t  AS ENUM ('info','low','medium','high','critical');
 CREATE TYPE category_t  AS ENUM (
   'web','dns','email','file_transfer','remote_access','voip','iot_ot',
   'tunnel_vpn','scan','c2','anomalous','unknown');     -- matches Category::as_str()
-CREATE TYPE indicator_t AS ENUM ('ipv4','ipv6','domain','url','sha256','ja3','ja4','ja4s','email_addr');
+CREATE TYPE indicator_t AS ENUM ('ipv4','ipv6','domain','url','sha256','ja3','ja4','ja4s',
+                                 'hassh','hassh_server','email_addr');
 
 CREATE TABLE capture (
   id UBIGINT PRIMARY KEY, path VARCHAR NOT NULL, sha256 VARCHAR NOT NULL,

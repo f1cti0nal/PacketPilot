@@ -30,6 +30,16 @@
       "ja4s": "t000000_0000_000000000000",
       "label": "test-sig-server",
       "_note": "Sentinel: deterministic JA4S test entry; never appears in real traffic. Real known-bad JA4S seeding is a data-curation task."
+    },
+    {
+      "hassh": "11111111111111111111111111111111",
+      "label": "test-sig-ssh-client",
+      "_note": "Sentinel: deterministic HASSH test entry; never appears in real traffic. Real known-bad HASSH seeding is a data-curation task."
+    },
+    {
+      "hassh_server": "22222222222222222222222222222222",
+      "label": "test-sig-ssh-server",
+      "_note": "Sentinel: deterministic HASSHServer test entry; never appears in real traffic. Real known-bad HASSHServer seeding is a data-curation task."
     }
   ]
 }
