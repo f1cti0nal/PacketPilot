@@ -1,6 +1,6 @@
 //! The canonical flow Parquet/Arrow schema — the single source of truth.
 //!
-//! **34 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
+//! **35 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
 //! SELECT order. The `schema_drift` test (CI guard) asserts all three agree. Any column
 //! change MUST bump [`FLOW_PARQUET_VERSION`] and update the SQL view + `flow_columns_in_order`.
 //!
@@ -21,7 +21,10 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 // v11: Encrypted Traffic Analysis — three appended columns: `ja4s` (modern server fingerprint,
 // the JA4 counterpart to `ja3s`) and the `entropy_c2s`/`entropy_s2c` pair (payload byte-entropy,
 // non-NULL only for flows whose protocol no payload sniffer identified).
-pub const FLOW_PARQUET_VERSION: u16 = 11;
+// v12: SSH posture — one appended column, `ssh_banner` (the cleartext RFC 4253 §4.2 identification
+// line). The `hassh` pair says *which stack*; the banner says *which build*, which is what an
+// inventory query ("every SSH version on the wire") actually needs.
+pub const FLOW_PARQUET_VERSION: u16 = 12;
 
 /// Canonical Arrow schema for the persisted flow Parquet table.
 pub fn flow_arrow_schema() -> Arc<Schema> {
@@ -61,11 +64,12 @@ pub fn flow_arrow_schema() -> Arc<Schema> {
         Field::new("ja4s", DataType::Utf8, true),    // 32 TLS JA4S server fingerprint; NULL if none
         Field::new("entropy_c2s", DataType::Float32, true), // 33 payload entropy bits/byte; NULL unless sampled
         Field::new("entropy_s2c", DataType::Float32, true), // 34 payload entropy bits/byte; NULL unless sampled
+        Field::new("ssh_banner", DataType::Utf8, true), // 35 SSH identification line; NULL if none observed
     ]))
 }
 
 /// CI drift guard: exact column names in canonical order.
-pub fn flow_columns_in_order() -> [&'static str; 34] {
+pub fn flow_columns_in_order() -> [&'static str; 35] {
     [
         "flow_id",
         "capture_id",
@@ -101,5 +105,6 @@ pub fn flow_columns_in_order() -> [&'static str; 34] {
         "ja4s",
         "entropy_c2s",
         "entropy_s2c",
+        "ssh_banner",
     ]
 }

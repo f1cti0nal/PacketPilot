@@ -116,6 +116,7 @@ struct Builders {
     ja4s: StringBuilder,
     entropy_c2s: Float32Builder,
     entropy_s2c: Float32Builder,
+    ssh_banner: StringBuilder,
 }
 
 impl Builders {
@@ -155,6 +156,7 @@ impl Builders {
             ja4s: StringBuilder::new(),
             entropy_c2s: Float32Builder::new(),
             entropy_s2c: Float32Builder::new(),
+            ssh_banner: StringBuilder::new(),
         }
     }
 
@@ -199,6 +201,7 @@ impl Builders {
             Arc::new(self.ja4s.finish()),
             Arc::new(self.entropy_c2s.finish()),
             Arc::new(self.entropy_s2c.finish()),
+            Arc::new(self.ssh_banner.finish()),
         ];
         // `?` converts arrow_schema::ArrowError -> PpError::Columnar via the From impl.
         Ok(RecordBatch::try_new(flow_arrow_schema(), columns)?)
@@ -245,6 +248,8 @@ impl FlowParquetWriter {
             "http_host",
             "http_ua",
             "severity",
+            // A capture sees a handful of distinct SSH builds repeated across many flows.
+            "ssh_banner",
         ];
 
         let mut props = WriterProperties::builder()
@@ -392,6 +397,12 @@ impl FlowParquetWriter {
         // flow the bounded sampler did not track.
         b.entropy_c2s.append_option(o.entropy_c2s);
         b.entropy_s2c.append_option(o.entropy_s2c);
+        // ssh_banner: the cleartext SSH identification line, first one seen on the flow; NULL for
+        // every non-SSH flow and for an SSH flow whose handshake predates the capture.
+        match &rec.ssh_banner {
+            Some(v) if !v.is_empty() => b.ssh_banner.append_value(v),
+            _ => b.ssh_banner.append_null(),
+        }
 
         self.buffered_rows += 1;
         self.rows_written += 1;
@@ -559,11 +570,12 @@ mod tests {
             b.ja4s.append_null();
             b.entropy_c2s.append_null();
             b.entropy_s2c.append_null();
+            b.ssh_banner.append_null();
             let _ = app.1;
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 34);
+        assert_eq!(batch.num_columns(), 35);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }

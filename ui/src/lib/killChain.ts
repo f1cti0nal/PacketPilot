@@ -36,6 +36,7 @@ export const KIND_STAGE: Record<FindingKind, string> = {
   encrypted_unknown_protocol: "Command & Control",
   missing_sni: "Command & Control",
   port_protocol_mismatch: "Command & Control",
+  ssh_posture: "Credential Access",
 };
 
 /** The noun for a finding kind's contributing count (e.g. "contacts", "hosts"). */

@@ -95,6 +95,11 @@ pub enum FindingKind {
     /// established non-TLS channel on 443. Either is ordinary misconfiguration or deliberate
     /// evasion — the evidence says which. Appended last to keep existing variant ordinals stable.
     PortProtocolMismatch,
+    /// Weak SSH posture visible in the cleartext handshake: SSH-1 support, a deprecated host-key
+    /// algorithm, or a CBC-mode/`none` cipher offered. Keyless — the identification line and the
+    /// KEXINIT algorithm lists precede key exchange. Appended last to keep existing variant
+    /// ordinals stable.
+    SshPosture,
 }
 
 impl FindingKind {
@@ -129,6 +134,7 @@ impl FindingKind {
             FindingKind::EncryptedUnknownProtocol => "encrypted_unknown_protocol",
             FindingKind::MissingSni => "missing_sni",
             FindingKind::PortProtocolMismatch => "port_protocol_mismatch",
+            FindingKind::SshPosture => "ssh_posture",
         }
     }
 }

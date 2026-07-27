@@ -11,8 +11,8 @@ import {
 } from "./schema";
 
 describe("flow schema drift guard (UI side)", () => {
-  it("FLOW_COLUMNS has all 34 canonical columns", () => {
-    expect(FLOW_COLUMNS).toHaveLength(34);
+  it("FLOW_COLUMNS has all 35 canonical columns", () => {
+    expect(FLOW_COLUMNS).toHaveLength(35);
   });
 
   it("FLOW_COLUMNS matches the shared fixture exactly (names and order)", () => {

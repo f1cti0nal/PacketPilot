@@ -52,7 +52,29 @@ describe("CertHealthPanel", () => {
     expect(screen.getByText("198.51.100.7:443")).toBeInTheDocument();
   });
 
-  it("renders nothing when there are no TLS findings", () => {
+  it("also renders SSH posture findings — same panel, same keyless reading", () => {
+    const ssh: Finding = {
+      ...certFinding(),
+      kind: "ssh_posture",
+      severity: "high",
+      score: 72,
+      title: "Weak SSH: 10.0.0.5 -> 185.220.101.9:22 (weak-cipher, weak-host-key)",
+      dst_ip: "185.220.101.9",
+      dst_port: 22,
+      attack: ["T1040", "T1021.004"],
+      evidence: [
+        "cipher 3des-cbc offered — CBC-mode/none encryption is unsafe (CVE-2008-5161)",
+        "identification line: SSH-2.0-OpenSSH_5.3",
+      ],
+    };
+    render(<CertHealthPanel findings={[ssh]} />);
+    expect(screen.getByText(/Weak SSH/)).toBeInTheDocument();
+    expect(screen.getByText(/3des-cbc/)).toBeInTheDocument();
+    expect(screen.getByText("185.220.101.9:22")).toBeInTheDocument();
+    expect(screen.getByText("T1021.004")).toBeInTheDocument();
+  });
+
+  it("renders nothing when there are no handshake-posture findings", () => {
     const { container } = render(
       <CertHealthPanel findings={[{ ...certFinding(), kind: "beacon" }]} />,
     );

@@ -24,6 +24,7 @@ import {
   ShieldOff,
   Shuffle,
   Split,
+  Terminal,
   TrendingUp,
   Waves,
   Waypoints,
@@ -70,6 +71,7 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   encrypted_unknown_protocol: { label: "Encrypted Unknown Protocol", Icon: Lock },
   missing_sni: { label: "TLS Without SNI", Icon: EyeOff },
   port_protocol_mismatch: { label: "Port / Protocol Mismatch", Icon: Shuffle },
+  ssh_posture: { label: "Weak SSH Posture", Icon: Terminal },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 

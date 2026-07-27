@@ -686,6 +686,28 @@ pub struct BehaviorTracker {
     /// Encrypted-traffic analysis: per-`(client, server, port)` protocol/port disagreements.
     /// Key-count bounded by `max_tracked_keys` (new-key-drop).
     port_mismatch: HashMap<(IpAddr, IpAddr, u16), PortMismatchStat>,
+    /// SSH posture: per-`(client, server, port)` weaknesses seen in the cleartext handshake.
+    /// Key-count bounded by `max_tracked_keys` (new-key-drop).
+    ssh_posture: HashMap<(IpAddr, IpAddr, u16), SshPostureStat>,
+}
+
+/// One SSH channel's cleartext-handshake posture.
+#[derive(Debug, Clone, Default)]
+struct SshPostureStat {
+    /// Distinct weaknesses observed, deduped and kept in deterministic order.
+    issues: Vec<crate::ssh::SshIssue>,
+    /// First identification line seen on the channel (software + version).
+    banner: Option<String>,
+}
+
+/// A candidate weak-SSH channel.
+#[derive(Debug, Clone)]
+pub struct SshPostureCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub issues: Vec<crate::ssh::SshIssue>,
+    pub banner: Option<String>,
 }
 
 /// TLS channel whose client named no server.
@@ -879,6 +901,7 @@ impl BehaviorTracker {
             encrypted_unknown: HashMap::new(),
             missing_sni: HashMap::new(),
             port_mismatch: HashMap::new(),
+            ssh_posture: HashMap::new(),
         }
     }
 
@@ -1139,6 +1162,63 @@ impl BehaviorTracker {
         out.sort_by(|a, b| {
             b.bytes
                 .cmp(&a.bytes)
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+                .then(a.server_port.cmp(&b.server_port))
+        });
+        out
+    }
+
+    /// SSH posture: fold one packet's cleartext-handshake weaknesses. `banner` is recorded even
+    /// when `issues` is empty, so a healthy channel still contributes its software version to the
+    /// flow row — but a channel with no issues never becomes a finding. Bounded: key-count capped.
+    pub(crate) fn observe_ssh_posture(
+        &mut self,
+        client: IpAddr,
+        server: IpAddr,
+        server_port: u16,
+        banner: Option<&str>,
+        issues: &[crate::ssh::SshIssue],
+    ) {
+        if issues.is_empty() && banner.is_none() {
+            return;
+        }
+        let key = (client, server, server_port);
+        if !self.ssh_posture.contains_key(&key)
+            && self.ssh_posture.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        let e = self.ssh_posture.entry(key).or_default();
+        if e.banner.is_none() {
+            e.banner = banner.map(|b| b.to_string());
+        }
+        for issue in issues {
+            if !e.issues.contains(issue) {
+                e.issues.push(issue.clone());
+            }
+        }
+        e.issues.sort_by(|a, b| a.order_key().cmp(&b.order_key()));
+    }
+
+    /// Weak-SSH channels, worst-first (deterministic total order). Channels whose handshake showed
+    /// no weakness are omitted — a banner alone is metadata, not a finding.
+    pub fn ssh_posture_candidates(&self) -> Vec<SshPostureCandidate> {
+        let mut out: Vec<SshPostureCandidate> = self
+            .ssh_posture
+            .iter()
+            .filter(|(_, st)| !st.issues.is_empty())
+            .map(|((c, s, p), st)| SshPostureCandidate {
+                client: *c,
+                server: *s,
+                server_port: *p,
+                issues: st.issues.clone(),
+                banner: st.banner.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            worst_ssh_rank(&b.issues)
+                .cmp(&worst_ssh_rank(&a.issues))
                 .then(a.client.cmp(&b.client))
                 .then(a.server.cmp(&b.server))
                 .then(a.server_port.cmp(&b.server_port))
@@ -3840,6 +3920,116 @@ impl Default for EncryptedUnknownParams {
 /// Severity tops out at Medium on this signal alone — an unnamed encrypted channel is a strong
 /// lead, not a verdict. High/Critical comes from corroboration: an IOC floor, or a second finding
 /// kind on the same host escalating the incident. Deterministic order.
+/// Worst severity rank across a set of SSH handshake weaknesses (0 when empty).
+fn worst_ssh_rank(issues: &[crate::ssh::SshIssue]) -> u8 {
+    issues.iter().map(|i| i.severity_rank()).max().unwrap_or(0)
+}
+
+/// Tuning for [`detect_ssh_posture`].
+#[derive(Debug, Clone)]
+pub struct SshPostureParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Channels to never report (a known-legacy appliance you cannot upgrade).
+    pub ignore_ips: Vec<IpAddr>,
+}
+
+impl Default for SshPostureParams {
+    fn default() -> Self {
+        SshPostureParams {
+            enabled: true,
+            ignore_ips: Vec::new(),
+        }
+    }
+}
+
+/// Detect weak SSH posture from the cleartext handshake.
+///
+/// SSH negotiates in the clear before key exchange: the identification line names the software,
+/// and the KEXINIT lists every algorithm each side will accept. That is enough to see a broken
+/// protocol version, a deprecated host key, or a cipher that should not be on offer — with no
+/// decryption and no key material, exactly like `detect_weak_tls` does for TLS.
+///
+/// Severity follows the worst issue (SSH-1 support = High, weak/absent cipher = Medium,
+/// deprecated host key = Low); two or more distinct issue kinds escalate one band, capped at High
+/// — the same escalation `detect_tls_cert_health` uses. Deterministic order.
+pub fn detect_ssh_posture(tracker: &BehaviorTracker, params: &SshPostureParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.ssh_posture_candidates() {
+        if params.ignore_ips.contains(&c.server) || params.ignore_ips.contains(&c.client) {
+            continue;
+        }
+        // Distinct *kinds*, not distinct issues: a server offering three CBC ciphers has one
+        // problem, not three.
+        let summary: Vec<&str> = {
+            let mut k: Vec<&str> = c.issues.iter().map(|i| i.kind_str()).collect();
+            k.sort_unstable();
+            k.dedup();
+            k
+        };
+        let mut severity = match worst_ssh_rank(&c.issues) {
+            3 => Severity::High,
+            2 => Severity::Medium,
+            _ => Severity::Low,
+        };
+        // Several independent weaknesses on one channel is a worse story than any single one.
+        // Capped at High, like `detect_tls_cert_health`: a posture reading alone is never
+        // Critical — incident correlation escalates a host that *also* does something with it.
+        let multi = summary.len() >= 2;
+        if multi && severity != Severity::High {
+            severity = escalate(severity);
+        }
+        // Derived AFTER escalation so the score always lands in its severity's band.
+        let mut score: u16 = match severity {
+            Severity::High => 66,
+            Severity::Medium => 46,
+            _ => 30,
+        };
+        if multi {
+            score = (score + 6).min(100);
+        }
+        let mut evidence: Vec<String> = c.issues.iter().map(|i| i.evidence()).collect();
+        if let Some(b) = &c.banner {
+            evidence.push(format!("identification line: {b}"));
+        }
+        evidence.push(
+            "SSH negotiates in the clear before key exchange, so this posture is visible without \
+             any decryption — and so is visible to an attacker choosing what to downgrade to"
+                .to_string(),
+        );
+
+        findings.push(Finding {
+            kind: FindingKind::SshPosture,
+            severity,
+            score,
+            title: format!(
+                "Weak SSH: {} -> {}:{} ({})",
+                c.client,
+                c.server,
+                c.server_port,
+                summary.join(", ")
+            ),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: Some(c.server_port),
+            // T1040 (Network Sniffing) matches WeakTls — a downgradeable/weak channel is
+            // interceptable; T1021.004 is Remote Services: SSH.
+            attack: vec!["T1040".to_string(), "T1021.004".to_string()],
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        });
+    }
+    findings
+}
+
 /// Tuning for [`detect_missing_sni`].
 #[derive(Debug, Clone)]
 pub struct MissingSniParams {
@@ -4392,6 +4582,7 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::EncryptedUnknownProtocol => 4, // command & control (an unnamed encrypted channel)
         FindingKind::MissingSni => 4, // command & control (a client hiding which server it wants)
         FindingKind::PortProtocolMismatch => 4, // command & control (protocol/port disagreement)
+        FindingKind::SshPosture => 2, // credential access (a weak admin channel is the way in)
     }
 }
 
@@ -4426,6 +4617,7 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::EncryptedUnknownProtocol => "Command & Control",
         FindingKind::MissingSni => "Command & Control",
         FindingKind::PortProtocolMismatch => "Command & Control",
+        FindingKind::SshPosture => "Credential Access",
     }
 }
 
@@ -4462,6 +4654,7 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         }
         FindingKind::MissingSni => "opened TLS sessions without naming a server",
         FindingKind::PortProtocolMismatch => "spoke a protocol the port does not match",
+        FindingKind::SshPosture => "negotiated SSH with a weak or broken configuration",
     }
 }
 
@@ -5482,6 +5675,167 @@ mod tests {
             );
         }
         assert!(detect_port_mismatch(&t, &PortMismatchParams::default()).is_empty());
+    }
+
+    // ── SSH posture ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn ssh_posture_severity_follows_the_worst_issue() {
+        use crate::ssh::SshIssue;
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let p = SshPostureParams::default();
+
+        // A deprecated host key alone is a hygiene note.
+        let mut hostkey = BehaviorTracker::new(DetectConfig::default());
+        hostkey.observe_ssh_posture(
+            client,
+            server,
+            22,
+            None,
+            &[SshIssue::WeakHostKey {
+                algo: "ssh-dss".to_string(),
+            }],
+        );
+        let f = detect_ssh_posture(&hostkey, &p);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, FindingKind::SshPosture);
+        assert_eq!(f[0].severity, Severity::Low);
+
+        // A CBC cipher is an exploitable channel (CVE-2008-5161), so it outranks the host key.
+        let mut cipher = BehaviorTracker::new(DetectConfig::default());
+        cipher.observe_ssh_posture(
+            client,
+            server,
+            22,
+            None,
+            &[SshIssue::WeakCipher {
+                algo: "aes128-cbc".to_string(),
+            }],
+        );
+        assert_eq!(
+            detect_ssh_posture(&cipher, &p)[0].severity,
+            Severity::Medium
+        );
+
+        // SSH-1 is cryptographically broken — the worst of the three.
+        let mut ssh1 = BehaviorTracker::new(DetectConfig::default());
+        ssh1.observe_ssh_posture(
+            client,
+            server,
+            22,
+            Some("SSH-1.99-OpenSSH_3.4p1"),
+            &[SshIssue::Ssh1Supported {
+                banner: "SSH-1.99-OpenSSH_3.4p1".to_string(),
+            }],
+        );
+        let f = detect_ssh_posture(&ssh1, &p);
+        assert_eq!(f[0].severity, Severity::High);
+        assert!(f[0].attack.iter().any(|t| t == "T1021.004"));
+        // The identification line rides along as evidence, never as the verdict.
+        assert!(f[0]
+            .evidence
+            .iter()
+            .any(|e| e.contains("SSH-1.99-OpenSSH_3.4p1")));
+    }
+
+    /// Two independent weaknesses on one channel is a worse story than either alone.
+    #[test]
+    fn ssh_posture_escalates_on_multiple_distinct_kinds() {
+        use crate::ssh::SshIssue;
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_ssh_posture(
+            client,
+            server,
+            22,
+            None,
+            &[
+                SshIssue::WeakHostKey {
+                    algo: "ssh-dss".to_string(),
+                },
+                SshIssue::WeakCipher {
+                    algo: "3des-cbc".to_string(),
+                },
+            ],
+        );
+        let f = detect_ssh_posture(&t, &SshPostureParams::default());
+        assert_eq!(f.len(), 1);
+        // Worst issue is Medium; a second distinct kind lifts it one band.
+        assert_eq!(f[0].severity, Severity::High);
+
+        // Two *instances* of the same kind must NOT escalate — a server offering three CBC
+        // ciphers has one problem, not three.
+        let mut same = BehaviorTracker::new(DetectConfig::default());
+        same.observe_ssh_posture(
+            client,
+            server,
+            22,
+            None,
+            &[
+                SshIssue::WeakCipher {
+                    algo: "3des-cbc".to_string(),
+                },
+                SshIssue::WeakCipher {
+                    algo: "aes256-cbc".to_string(),
+                },
+            ],
+        );
+        assert_eq!(
+            detect_ssh_posture(&same, &SshPostureParams::default())[0].severity,
+            Severity::Medium
+        );
+    }
+
+    /// A healthy SSH channel contributes its banner to the flow row but must never become a
+    /// finding — otherwise every capture with SSH in it raises an alert.
+    #[test]
+    fn ssh_posture_is_silent_on_a_clean_handshake() {
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_ssh_posture(client, server, 22, Some("SSH-2.0-OpenSSH_9.6p1"), &[]);
+        assert!(detect_ssh_posture(&t, &SshPostureParams::default()).is_empty());
+        // ...but the banner was still retained for the flow row.
+        assert_eq!(t.ssh_posture.len(), 1);
+    }
+
+    #[test]
+    fn ssh_posture_is_disableable_allowlistable_and_bounded() {
+        use crate::ssh::SshIssue;
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let weak = [SshIssue::WeakCipher {
+            algo: "aes128-cbc".to_string(),
+        }];
+
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_ssh_posture(client, server, 22, None, &weak);
+        assert!(detect_ssh_posture(
+            &t,
+            &SshPostureParams {
+                enabled: false,
+                ..SshPostureParams::default()
+            }
+        )
+        .is_empty());
+        // A legacy appliance you cannot upgrade is silenceable from either end.
+        assert!(detect_ssh_posture(
+            &t,
+            &SshPostureParams {
+                ignore_ips: vec![server],
+                ..SshPostureParams::default()
+            }
+        )
+        .is_empty());
+
+        // The tracked-channel map is capped like every other bounded tracker map.
+        let cfg = DetectConfig {
+            max_tracked_keys: 4,
+            ..DetectConfig::default()
+        };
+        let mut bounded = BehaviorTracker::new(cfg);
+        for i in 0..50u8 {
+            bounded.observe_ssh_posture(client, ip(185, 220, 101, i), 22, None, &weak);
+        }
+        assert_eq!(bounded.ssh_posture.len(), 4);
     }
 
     #[test]

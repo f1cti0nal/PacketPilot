@@ -7,11 +7,173 @@
 //! HASSHes, so they surface scripted/automated SSH clients and identify server builds — a useful
 //! companion to the brute-force detector. Payload-free: only the derived fingerprint is kept, never
 //! the handshake bytes.
+//!
+//! The same cleartext handshake also carries the module's second product: [`SshIssue`], a *posture*
+//! verdict (SSH-1 support, a deprecated host key, a CBC/`none` cipher). Same keyless principle —
+//! everything read here precedes key exchange, so no decryption is involved.
 
 use crate::fingerprint::md5_hex;
 use crate::model::packet::Transport;
 
 const SSH_MSG_KEXINIT: u8 = 20;
+
+/// Longest identification line retained. RFC 4253 §4.2 caps the line at 255 bytes including CRLF.
+const MAX_BANNER_LEN: usize = 255;
+
+// ---------------------------------------------------------------------------------------------
+// SSH posture
+// ---------------------------------------------------------------------------------------------
+
+/// A weakness visible in the cleartext SSH handshake — the SSH counterpart to
+/// [`crate::tls::WeakTlsReason`], and deliberately the same shape: a closed enum whose variants
+/// each know their own token, rank, and evidence line.
+///
+/// Conservative by construction: only *known-bad* algorithms are named. An unrecognized algorithm
+/// is never flagged, so a modern or vendor-specific stack cannot false-positive.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SshIssue {
+    /// The identification line advertises SSH protocol 1.x (including the `1.99` dual-stack
+    /// banner, which means SSH-1 is *accepted*). SSH-1 is cryptographically broken.
+    Ssh1Supported { banner: String },
+    /// A host-key algorithm relying on SHA-1 or DSA was offered.
+    WeakHostKey { algo: String },
+    /// A CBC-mode or `none` cipher was offered (CBC in SSH is the plaintext-recovery attack of
+    /// CVE-2008-5161; `none` is no encryption at all).
+    WeakCipher { algo: String },
+}
+
+impl SshIssue {
+    /// Stable kebab-case token.
+    pub(crate) fn kind_str(&self) -> &'static str {
+        match self {
+            SshIssue::Ssh1Supported { .. } => "ssh1-supported",
+            SshIssue::WeakHostKey { .. } => "weak-host-key",
+            SshIssue::WeakCipher { .. } => "weak-cipher",
+        }
+    }
+
+    /// Severity rank: 3 = broken protocol, 2 = weak/absent encryption, 1 = deprecated signature.
+    pub(crate) fn severity_rank(&self) -> u8 {
+        match self {
+            SshIssue::Ssh1Supported { .. } => 3,
+            SshIssue::WeakCipher { .. } => 2,
+            SshIssue::WeakHostKey { .. } => 1,
+        }
+    }
+
+    /// Deterministic ordering key so evidence lists are stable across runs. Worst-first (the tag
+    /// mirrors [`SshIssue::severity_rank`] inverted), then by algorithm name, so the bullet an
+    /// operator should act on leads the list.
+    pub(crate) fn order_key(&self) -> (u8, &str) {
+        match self {
+            SshIssue::Ssh1Supported { banner } => (0, banner.as_str()),
+            SshIssue::WeakCipher { algo } => (1, algo.as_str()),
+            SshIssue::WeakHostKey { algo } => (2, algo.as_str()),
+        }
+    }
+
+    /// One human-readable evidence bullet.
+    pub(crate) fn evidence(&self) -> String {
+        match self {
+            SshIssue::Ssh1Supported { banner } => format!(
+                "identification line advertises SSH-1 support ({banner}) — SSH-1 is cryptographically broken"
+            ),
+            SshIssue::WeakHostKey { algo } => format!(
+                "host-key algorithm {algo} offered — SHA-1/DSA signatures are deprecated"
+            ),
+            SshIssue::WeakCipher { algo } => {
+                format!("cipher {algo} offered — CBC-mode/none encryption is unsafe (CVE-2008-5161)")
+            }
+        }
+    }
+}
+
+/// Host-key algorithms an analyst should be told about: SHA-1-based RSA and DSA.
+///
+/// `ssh-rsa` is the *SHA-1* RSA signature algorithm — distinct from `rsa-sha2-256`/`rsa-sha2-512`,
+/// which are fine. Matching is exact, so the modern names are never caught by this list.
+const WEAK_HOST_KEYS: &[&str] = &["ssh-dss", "ssh-rsa", "ssh-dss-cert-v01@openssh.com"];
+
+/// Cipher names that are CBC-mode or no encryption at all. Exact matches only.
+#[rustfmt::skip]
+const WEAK_CIPHERS: &[&str] = &[
+    "none",
+    "3des-cbc", "blowfish-cbc", "cast128-cbc", "arcfour", "arcfour128", "arcfour256",
+    "aes128-cbc", "aes192-cbc", "aes256-cbc", "rijndael-cbc@lysator.liu.se",
+];
+
+/// Sniff the SSH identification line ("SSH-2.0-OpenSSH_9.6") from a payload that begins with one.
+///
+/// Retained because it is the single most useful SSH triage datum and is pure cleartext: it names
+/// the software and version on both ends. Separate from the KEXINIT sniff because the banner very
+/// often arrives in its own segment, ahead of any KEXINIT.
+///
+/// Bounded (RFC 4253 §4.2 caps the line at 255 bytes) and ASCII-gated, so a coincidental payload
+/// beginning `SSH-` cannot inject arbitrary bytes into the summary.
+pub(crate) fn sniff_ssh_banner(transport: Transport, payload: &[u8]) -> Option<String> {
+    if transport != Transport::Tcp || !payload.starts_with(b"SSH-") {
+        return None;
+    }
+    let end = payload
+        .iter()
+        .take(MAX_BANNER_LEN)
+        .position(|&b| b == b'\r' || b == b'\n')?;
+    let line = payload.get(..end)?;
+    // Printable ASCII only — the version string is defined as such, and this keeps control bytes
+    // out of the summary/report surface.
+    if line.len() < 5 || !line.iter().all(|b| (0x20..0x7f).contains(b)) {
+        return None;
+    }
+    Some(String::from_utf8_lossy(line).into_owned())
+}
+
+/// Derive the posture issues visible in a cleartext SSH handshake segment.
+///
+/// Reads the identification line (SSH-1 support) and, when the segment also carries a KEXINIT, the
+/// offered host-key and cipher algorithm lists. Returns an empty vec for healthy handshakes and
+/// for non-SSH payloads, so the caller can store it unconditionally.
+pub(crate) fn sniff_ssh_issues(transport: Transport, payload: &[u8]) -> Vec<SshIssue> {
+    if transport != Transport::Tcp {
+        return Vec::new();
+    }
+    let mut issues = Vec::new();
+
+    if let Some(banner) = sniff_ssh_banner(transport, payload) {
+        // "SSH-1.x" is SSH-1 only; "SSH-1.99" is the dual-stack banner meaning SSH-1 is accepted.
+        let proto = banner.strip_prefix("SSH-").unwrap_or("");
+        if proto.starts_with("1.") {
+            issues.push(SshIssue::Ssh1Supported { banner });
+        }
+    }
+
+    if let Some(k) = parse_kexinit(payload) {
+        for algo in WEAK_HOST_KEYS {
+            if list_contains(&k.host_key, algo) {
+                issues.push(SshIssue::WeakHostKey {
+                    algo: (*algo).to_string(),
+                });
+            }
+        }
+        for algo in WEAK_CIPHERS {
+            if list_contains(&k.enc_c2s, algo) || list_contains(&k.enc_s2c, algo) {
+                issues.push(SshIssue::WeakCipher {
+                    algo: (*algo).to_string(),
+                });
+            }
+        }
+    }
+
+    issues.sort_by(|a, b| a.order_key().cmp(&b.order_key()));
+    issues.dedup();
+    issues
+}
+
+/// Exact membership test over an SSH comma-separated name-list (so `ssh-rsa` never matches
+/// `rsa-sha2-512`, and `arcfour` never matches `arcfour128`).
+fn list_contains(list: &str, needle: &str) -> bool {
+    list.split(',').any(|n| n.trim() == needle)
+}
 
 /// Sniff a client HASSH from an L4 payload that begins (after an optional identification line) with
 /// an SSH KEXINIT. Returns the MD5 HASSH of the client's offered algorithm lists, or `None` when the
@@ -72,6 +234,8 @@ pub(crate) fn sniff_server_hassh(
 /// encryption / MAC / compression lists).
 struct KexInit {
     kex: String,
+    /// `server_host_key_algorithms` — read but discarded before F2; now feeds the posture check.
+    host_key: String,
     enc_c2s: String,
     mac_c2s: String,
     comp_c2s: String,
@@ -112,7 +276,7 @@ fn parse_kexinit(payload: &[u8]) -> Option<KexInit> {
         buf: msg.get(17..)?,
     };
     let kex = r.next()?; // kex_algorithms
-    let _host_key = r.next()?; // server_host_key_algorithms
+    let host_key = r.next()?; // server_host_key_algorithms
     let enc_c2s = r.next()?; // encryption_algorithms_client_to_server
     let enc_s2c = r.next()?; // encryption_algorithms_server_to_client
     let mac_c2s = r.next()?; // mac_algorithms_client_to_server
@@ -126,6 +290,7 @@ fn parse_kexinit(payload: &[u8]) -> Option<KexInit> {
     }
     Some(KexInit {
         kex,
+        host_key,
         enc_c2s,
         mac_c2s,
         comp_c2s,
@@ -276,5 +441,181 @@ mod tests {
         assert!(sniff_server_hassh(Transport::Tcp, 54321, 22, &pkt).is_none());
         assert!(sniff_server_hassh(Transport::Tcp, 22, 22, &pkt).is_none());
         assert!(sniff_server_hassh(Transport::Udp, 22, 54321, &pkt).is_none());
+    }
+
+    // ── SSH posture ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn banner_is_read_only_from_a_well_formed_identification_line() {
+        assert_eq!(
+            sniff_ssh_banner(Transport::Tcp, b"SSH-2.0-OpenSSH_9.6p1 Debian-2\r\nrest"),
+            Some("SSH-2.0-OpenSSH_9.6p1 Debian-2".to_string())
+        );
+        // Bare LF is what a number of stacks actually send; RFC 4253 wants CRLF.
+        assert_eq!(
+            sniff_ssh_banner(Transport::Tcp, b"SSH-2.0-libssh_0.10.5\n"),
+            Some("SSH-2.0-libssh_0.10.5".to_string())
+        );
+        // Not SSH, wrong transport, unterminated, and control bytes all yield nothing.
+        assert!(sniff_ssh_banner(Transport::Tcp, b"HTTP/1.1 200 OK\r\n").is_none());
+        assert!(sniff_ssh_banner(Transport::Udp, b"SSH-2.0-OpenSSH_9.6\r\n").is_none());
+        assert!(sniff_ssh_banner(Transport::Tcp, b"SSH-2.0-OpenSSH_9.6").is_none());
+        assert!(sniff_ssh_banner(Transport::Tcp, b"SSH-\x01\x02bad\r\n").is_none());
+        // A 300-byte line exceeds the RFC 4253 §4.2 cap, so no terminator is found in range.
+        let mut long = b"SSH-2.0-".to_vec();
+        long.extend(std::iter::repeat_n(b'x', 300));
+        long.extend_from_slice(b"\r\n");
+        assert!(sniff_ssh_banner(Transport::Tcp, &long).is_none());
+    }
+
+    #[test]
+    fn ssh1_banners_are_flagged_and_ssh2_banners_are_not() {
+        let ssh1 = sniff_ssh_issues(Transport::Tcp, b"SSH-1.5-OpenSSH_3.4p1\r\n");
+        assert_eq!(
+            ssh1,
+            vec![SshIssue::Ssh1Supported {
+                banner: "SSH-1.5-OpenSSH_3.4p1".to_string()
+            }]
+        );
+        // "1.99" is the dual-stack banner: SSH-1 is *accepted*, so it is equally flagged.
+        assert_eq!(
+            sniff_ssh_issues(Transport::Tcp, b"SSH-1.99-OpenSSH_3.9p1\r\n").len(),
+            1
+        );
+        assert!(sniff_ssh_issues(Transport::Tcp, b"SSH-2.0-OpenSSH_9.6p1\r\n").is_empty());
+    }
+
+    #[test]
+    fn kexinit_weak_host_keys_and_ciphers_are_flagged_exactly() {
+        let lists = [
+            "curve25519-sha256",
+            "rsa-sha2-512,ssh-dss", // ssh-dss is DSA — deprecated
+            "aes128-ctr,3des-cbc",  // c2s carries a CBC cipher
+            "aes128-ctr",
+            "hmac-sha2-256",
+            "hmac-sha2-256",
+            "none",
+            "none",
+            "",
+            "",
+        ];
+        let issues = sniff_ssh_issues(Transport::Tcp, &kexinit_packet(&lists));
+        // Worst-first: the exploitable cipher leads the deprecated host key.
+        assert_eq!(
+            issues,
+            vec![
+                SshIssue::WeakCipher {
+                    algo: "3des-cbc".to_string()
+                },
+                SshIssue::WeakHostKey {
+                    algo: "ssh-dss".to_string()
+                },
+            ]
+        );
+        // A weakness offered only server→client is just as real as one offered client→server.
+        let s2c_only = [
+            "curve25519-sha256",
+            "ssh-ed25519",
+            "aes128-ctr",
+            "aes256-cbc",
+            "hmac-sha2-256",
+            "hmac-sha2-256",
+            "none",
+            "none",
+            "",
+            "",
+        ];
+        assert_eq!(
+            sniff_ssh_issues(Transport::Tcp, &kexinit_packet(&s2c_only)),
+            vec![SshIssue::WeakCipher {
+                algo: "aes256-cbc".to_string()
+            }]
+        );
+    }
+
+    /// The whole point of an exact name-list match: `ssh-rsa` (SHA-1) is weak, `rsa-sha2-512` is
+    /// not, and `arcfour` is not `arcfour256`. A substring test would flag all of them.
+    #[test]
+    fn a_modern_handshake_is_never_flagged_by_prefix_collision() {
+        assert!(sniff_ssh_issues(Transport::Tcp, &kexinit_packet(&LISTS)).is_empty());
+
+        let modern = [
+            "sntrup761x25519-sha512@openssh.com",
+            "rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256", // none of these is "ssh-rsa"
+            "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com",
+            "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com",
+            "hmac-sha2-256-etm@openssh.com",
+            "hmac-sha2-256-etm@openssh.com",
+            // "none" here is the *compression* list, not a cipher — must not be flagged.
+            "none,zlib@openssh.com",
+            "none,zlib@openssh.com",
+            "",
+            "",
+        ];
+        assert!(sniff_ssh_issues(Transport::Tcp, &kexinit_packet(&modern)).is_empty());
+        assert!(list_contains("ssh-rsa,rsa-sha2-512", "ssh-rsa"));
+        assert!(!list_contains("rsa-sha2-512,rsa-sha2-256", "ssh-rsa"));
+        assert!(!list_contains("arcfour256", "arcfour"));
+    }
+
+    #[test]
+    fn issues_are_deduped_and_deterministically_ordered() {
+        // An identification line + a KEXINIT in one segment: both sources contribute.
+        let lists = [
+            "curve25519-sha256",
+            "ssh-rsa",
+            "aes128-cbc",
+            "aes128-cbc", // same cipher on both directions -> one issue, not two
+            "hmac-sha2-256",
+            "hmac-sha2-256",
+            "none",
+            "none",
+            "",
+            "",
+        ];
+        let mut buf = b"SSH-1.99-OpenSSH_4.3\r\n".to_vec();
+        buf.extend_from_slice(&kexinit_packet(&lists));
+        let issues = sniff_ssh_issues(Transport::Tcp, &buf);
+        assert_eq!(
+            issues,
+            vec![
+                SshIssue::Ssh1Supported {
+                    banner: "SSH-1.99-OpenSSH_4.3".to_string()
+                },
+                SshIssue::WeakCipher {
+                    algo: "aes128-cbc".to_string()
+                },
+                SshIssue::WeakHostKey {
+                    algo: "ssh-rsa".to_string()
+                },
+            ]
+        );
+        // Non-SSH and non-TCP payloads return an empty vec rather than erroring, so the caller
+        // can store the result unconditionally.
+        assert!(sniff_ssh_issues(Transport::Udp, &buf).is_empty());
+        assert!(sniff_ssh_issues(Transport::Tcp, b"GET / HTTP/1.1\r\n\r\n").is_empty());
+    }
+
+    /// The wire tokens are contract: they reach the summary JSON and the UI.
+    #[test]
+    fn issue_kind_tokens_and_ranks_are_stable() {
+        let ssh1 = SshIssue::Ssh1Supported {
+            banner: "SSH-1.5-x".to_string(),
+        };
+        let hk = SshIssue::WeakHostKey {
+            algo: "ssh-dss".to_string(),
+        };
+        let cipher = SshIssue::WeakCipher {
+            algo: "3des-cbc".to_string(),
+        };
+        assert_eq!(ssh1.kind_str(), "ssh1-supported");
+        assert_eq!(hk.kind_str(), "weak-host-key");
+        assert_eq!(cipher.kind_str(), "weak-cipher");
+        // Broken protocol > exploitable cipher > deprecated host key.
+        assert!(ssh1.severity_rank() > cipher.severity_rank());
+        assert!(cipher.severity_rank() > hk.severity_rank());
+        // Evidence names the specific algorithm, so an operator knows what to turn off.
+        assert!(cipher.evidence().contains("3des-cbc"));
+        assert!(hk.evidence().contains("ssh-dss"));
     }
 }

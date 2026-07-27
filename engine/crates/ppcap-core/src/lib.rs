@@ -56,7 +56,7 @@ pub mod reader;
 pub mod report;
 pub mod sanitize;
 pub mod score;
-pub(crate) mod ssh;
+pub mod ssh;
 pub mod stats;
 pub mod timemachine;
 pub mod tls;

@@ -59,6 +59,7 @@ export function buildFlowArrowTable(rows: FlowRow[]): Table {
   const ja4s = new Array<string | null>(n);
   const entropyC2s = new Array<number | null>(n);
   const entropyS2c = new Array<number | null>(n);
+  const sshBanner = new Array<string | null>(n);
 
   for (let i = 0; i < n; i++) {
     const r = rows[i];
@@ -99,6 +100,7 @@ export function buildFlowArrowTable(rows: FlowRow[]): Table {
     ja4s[i] = r.ja4s;
     entropyC2s[i] = r.entropyC2s;
     entropyS2c[i] = r.entropyS2c;
+    sshBanner[i] = r.sshBanner;
   }
 
   const utf8 = () => new Utf8();
@@ -138,6 +140,7 @@ export function buildFlowArrowTable(rows: FlowRow[]): Table {
     ja4s: vectorFromArray(ja4s, utf8()),
     entropy_c2s: vectorFromArray(entropyC2s, new Float32()),
     entropy_s2c: vectorFromArray(entropyS2c, new Float32()),
+    ssh_banner: vectorFromArray(sshBanner, utf8()),
   });
 }
 

@@ -124,6 +124,8 @@ pub struct PipelineConfig {
     pub missing_sni: crate::detect::MissingSniParams,
     /// Encrypted-traffic analysis: protocol/port disagreements.
     pub port_mismatch: crate::detect::PortMismatchParams,
+    /// Encrypted-traffic analysis: weak SSH posture from the cleartext handshake.
+    pub ssh_posture: crate::detect::SshPostureParams,
 }
 
 impl Default for PipelineConfig {
@@ -172,6 +174,7 @@ impl Default for PipelineConfig {
             encrypted_unknown: crate::detect::EncryptedUnknownParams::default(),
             missing_sni: crate::detect::MissingSniParams::default(),
             port_mismatch: crate::detect::PortMismatchParams::default(),
+            ssh_posture: crate::detect::SshPostureParams::default(),
         }
     }
 }
@@ -369,6 +372,29 @@ pub fn run_source_visiting<'a>(
                 if let (Some(kind), Some(src), Some(dst)) = (meta.pii, meta.src_ip, meta.dst_ip) {
                     tracker.observe_pii(src, dst, meta.dst_port, kind);
                 }
+                // Encrypted-traffic analysis: SSH posture from the cleartext handshake. Both sides
+                // negotiate before key exchange, so the fold runs on either direction's segment and
+                // orients by the same lower-port-is-the-server rule the HASSH sniffs use — that way
+                // a channel's client and server evidence land under one key. Equal ports drop
+                // rather than pick an arbitrary side.
+                if (meta.ssh_banner.is_some() || !meta.ssh_issues.is_empty())
+                    && meta.src_port != meta.dst_port
+                {
+                    if let (Some(src), Some(dst)) = (meta.src_ip, meta.dst_ip) {
+                        let (client, server, server_port) = if meta.dst_port < meta.src_port {
+                            (src, dst, meta.dst_port)
+                        } else {
+                            (dst, src, meta.src_port)
+                        };
+                        tracker.observe_ssh_posture(
+                            client,
+                            server,
+                            server_port,
+                            meta.ssh_banner.as_deref(),
+                            &meta.ssh_issues,
+                        );
+                    }
+                }
                 // ICMP tunneling: fold echo request/reply data sizes per (src, dst). Sustained
                 // large echo payloads are a covert-channel / exfil shape.
                 if let (Some(t), Some(src), Some(dst)) = (meta.icmp_type, meta.src_ip, meta.dst_ip)
@@ -526,6 +552,10 @@ pub fn run_source_visiting<'a>(
     findings.extend(crate::detect::detect_port_mismatch(
         &tracker,
         &cfg.port_mismatch,
+    ));
+    findings.extend(crate::detect::detect_ssh_posture(
+        &tracker,
+        &cfg.ssh_posture,
     ));
     findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
     findings.extend(detect_dga(&tracker, &cfg.dga));

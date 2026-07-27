@@ -118,8 +118,9 @@ pub enum Command {
         forecast_min_bins: Option<usize>,
         /// Encrypted Traffic Analysis: disable the keyless encrypted-traffic detectors. They are
         /// ON by default, raising `encrypted_unknown_protocol` (a high-entropy channel no protocol
-        /// identifies), `missing_sni`, and `port_protocol_mismatch` findings. Fingerprint
-        /// extraction (JA4S, QUIC server metadata) is metadata rather than detection and stays on.
+        /// identifies), `missing_sni`, `port_protocol_mismatch`, and `ssh_posture` findings.
+        /// Fingerprint extraction (JA4S, QUIC server metadata, the SSH identification line) is
+        /// metadata rather than detection and stays on.
         #[arg(long = "no-encrypted-analysis")]
         no_encrypted_analysis: bool,
     },
@@ -377,6 +378,10 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     enabled: !no_encrypted_analysis,
                     ..Default::default()
                 },
+                ssh_posture: ppcap_core::detect::SshPostureParams {
+                    enabled: !no_encrypted_analysis,
+                    ..Default::default()
+                },
                 ..Default::default()
             };
 
@@ -448,6 +453,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                             ppcap_core::FindingKind::EncryptedUnknownProtocol
                                 | ppcap_core::FindingKind::MissingSni
                                 | ppcap_core::FindingKind::PortProtocolMismatch
+                                | ppcap_core::FindingKind::SshPosture
                         )
                     })
                     .count();

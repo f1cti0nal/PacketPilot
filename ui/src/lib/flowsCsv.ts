@@ -34,6 +34,7 @@ const COLUMNS: { header: string; get: (r: FlowRow) => string | number }[] = [
   { header: "tls_cipher", get: (r) => r.tlsCipher ?? "" },
   { header: "hassh", get: (r) => r.hassh ?? "" },
   { header: "hassh_server", get: (r) => r.hasshServer ?? "" },
+  { header: "ssh_banner", get: (r) => r.sshBanner ?? "" },
 ];
 
 /** RFC-4180 field escape: quote-wrap and double internal quotes when the value holds a comma, quote, or newline. */

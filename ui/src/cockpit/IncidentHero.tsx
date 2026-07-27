@@ -38,6 +38,7 @@ const KIND_STAGE: Record<FindingKind, string> = {
   encrypted_unknown_protocol: "Command & Control",
   missing_sni: "Command & Control",
   port_protocol_mismatch: "Command & Control",
+  ssh_posture: "Credential Access",
   ioc_match: "Detection",
 };
 

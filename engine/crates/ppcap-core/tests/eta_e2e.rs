@@ -462,6 +462,120 @@ mod posture {
             FindingKind::MissingSni | FindingKind::PortProtocolMismatch
         )));
     }
+
+    // ── SSH posture ──────────────────────────────────────────────────────────
+
+    const SSH_MSG_KEXINIT: u8 = 20;
+
+    /// A minimal SSH KEXINIT binary packet built from the ten name-lists, in RFC 4253 order:
+    /// kex, host-key, enc_c2s, enc_s2c, mac_c2s, mac_s2c, comp_c2s, comp_s2c, lang_c2s, lang_s2c.
+    fn kexinit(lists: &[&str; 10]) -> Vec<u8> {
+        let mut msg = vec![SSH_MSG_KEXINIT];
+        msg.extend_from_slice(&[0u8; 16]); // cookie
+        for l in lists {
+            msg.extend_from_slice(&(l.len() as u32).to_be_bytes());
+            msg.extend_from_slice(l.as_bytes());
+        }
+        msg.push(0); // first_kex_packet_follows
+        msg.extend_from_slice(&[0u8; 4]); // reserved
+        let mut pkt = ((msg.len() + 1) as u32).to_be_bytes().to_vec();
+        pkt.push(0); // padding_length
+        pkt.extend_from_slice(&msg);
+        pkt
+    }
+
+    /// One SSH session: both sides send their identification line followed by their KEXINIT,
+    /// exactly as they do on the wire before any key exchange happens.
+    fn ssh_session(client_port: u16, banner: &str, lists: &[&str; 10]) -> Vec<Vec<u8>> {
+        let mut flight = banner.as_bytes().to_vec();
+        flight.extend_from_slice(b"\r\n");
+        flight.extend_from_slice(&kexinit(lists));
+        vec![
+            seg(CLIENT, SERVER, client_port, 22, TCP_SYN, &[]),
+            seg(SERVER, CLIENT, 22, client_port, TCP_SYN | TCP_ACK, &[]),
+            // Server first, per RFC 4253 §4.2 — its identification line is the one retained.
+            seg(SERVER, CLIENT, 22, client_port, TCP_PSH | TCP_ACK, &flight),
+            seg(CLIENT, SERVER, client_port, 22, TCP_PSH | TCP_ACK, &flight),
+        ]
+    }
+
+    const LEGACY_LISTS: [&str; 10] = [
+        "diffie-hellman-group1-sha1",
+        "ssh-rsa,ssh-dss",
+        "aes128-ctr,3des-cbc",
+        "aes128-ctr,3des-cbc",
+        "hmac-sha1",
+        "hmac-sha1",
+        "none",
+        "none",
+        "",
+        "",
+    ];
+
+    const MODERN_LISTS: [&str; 10] = [
+        "curve25519-sha256",
+        "rsa-sha2-512,ssh-ed25519",
+        "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com",
+        "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com",
+        "hmac-sha2-256-etm@openssh.com",
+        "hmac-sha2-256-etm@openssh.com",
+        "none,zlib@openssh.com",
+        "none,zlib@openssh.com",
+        "",
+        "",
+    ];
+
+    /// The full keyless path: a legacy SSH handshake read straight off the wire, no decryption.
+    #[test]
+    fn legacy_ssh_handshake_raises_ssh_posture() {
+        let summary = analyze_frames(
+            "ssh_weak",
+            ssh_session(51000, "SSH-2.0-OpenSSH_5.3", &LEGACY_LISTS),
+        );
+        let f = summary
+            .findings
+            .iter()
+            .find(|f| f.kind == FindingKind::SshPosture)
+            .expect("an ssh_posture finding");
+
+        // Both directions of one channel fold under a single client->server key.
+        assert_eq!(f.src_ip, "10.0.0.5");
+        assert_eq!(f.dst_ip.as_deref(), Some("185.220.101.9"));
+        assert_eq!(f.dst_port, Some(22));
+        assert!(f.attack.iter().any(|t| t == "T1021.004"));
+        // A CBC cipher (Medium) plus a deprecated host key is two distinct kinds -> escalates.
+        assert!(
+            f.score >= 60,
+            "two distinct weaknesses escalate, got {}",
+            f.score
+        );
+        // The evidence names the exact algorithms an operator has to turn off, plus the build.
+        let ev = f.evidence.join(" | ");
+        assert!(ev.contains("3des-cbc"), "{ev}");
+        assert!(ev.contains("ssh-dss") || ev.contains("ssh-rsa"), "{ev}");
+        assert!(ev.contains("SSH-2.0-OpenSSH_5.3"), "{ev}");
+    }
+
+    /// A current OpenSSH handshake must stay silent — otherwise every capture with SSH alerts.
+    #[test]
+    fn modern_ssh_handshake_raises_no_ssh_posture() {
+        let summary = analyze_frames(
+            "ssh_ok",
+            ssh_session(51000, "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3", &MODERN_LISTS),
+        );
+        assert!(
+            !summary
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::SshPosture),
+            "a modern handshake must not be flagged: {:?}",
+            summary
+                .findings
+                .iter()
+                .map(|f| f.title.clone())
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 /// Generation is deterministic: the same (scenario, seed, count) yields byte-identical captures.
