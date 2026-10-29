@@ -174,7 +174,9 @@ Every row about one connection carries the same `uid`, and `notice.log` holds Pa
 (`note` is `PacketPilot::<kind>`, with severity, score and ATT&CK ids). Fields are filled from one
 pass without TCP reassembly beyond a segment: `conn_state` comes from each side's TCP flags,
 `history` is left unset, HTTP body lengths are the declared `Content-Length`, and `files.log`
-lists the HTTP downloads the analysis carved.
+lists the HTTP downloads the analysis carved. An export first removes the Zeek logs an earlier export left in the same
+directory, so the folder only ever holds one capture's logs; `--evidence` records every log written
+and every `--eve` input.
 
 Suricata EVE import reads `alert` events and skips other event types. Each signature between the
 same two hosts becomes one `rule_match` finding with a hit count and first/last seen; Suricata

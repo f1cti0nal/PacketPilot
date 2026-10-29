@@ -994,6 +994,9 @@ fn tsv_escape(s: &str, in_set: bool) -> String {
         match c {
             '\\' => out.push_str("\\x5c"),
             ',' if in_set => out.push_str("\\x2c"),
+            c if raw_byte(c).is_some() => {
+                out.push_str(&format!("\\x{:02x}", raw_byte(c).unwrap_or(0)));
+            }
             c if (c as u32) < 0x20 || c as u32 == 0x7f => {
                 out.push_str(&format!("\\x{:02x}", c as u32));
             }
@@ -1034,7 +1037,7 @@ fn json_row(schema: Schema, vals: &[Val]) -> String {
         let value = match v {
             Val::Unset => continue,
             Val::Time(ns) | Val::Interval(ns) => Value::from(*ns as f64 / 1_000_000_000.0),
-            Val::Str(s) => Value::from(s.clone()),
+            Val::Str(s) => Value::from(json_text(s)),
             Val::Addr(a) => Value::from(a.to_string()),
             Val::Port(p) => Value::from(*p),
             Val::Count(n) => Value::from(*n),
@@ -1045,7 +1048,7 @@ fn json_row(schema: Schema, vals: &[Val]) -> String {
                     .map(|s| Value::from(s.parse::<f64>().unwrap_or(0.0)))
                     .collect::<Vec<_>>(),
             ),
-            Val::List(items) => Value::from(items.clone()),
+            Val::List(items) => Value::from(items.iter().map(|s| json_text(s)).collect::<Vec<_>>()),
         };
         obj.insert((*name).to_string(), value);
     }
@@ -1207,17 +1210,42 @@ fn dns_name(b: &[u8], mut off: usize) -> Option<(String, usize)> {
     Some((name, end.unwrap_or(off)))
 }
 
-/// Printable ASCII as-is, every other byte as `\xHH` (Zeek's rendering of raw bytes).
+/// First of 256 private-use code points that carry a raw wire byte through a `String` until it is
+/// written, where it becomes Zeek's `\xHH` exactly once.
+const RAW_BYTE_BASE: u32 = 0xF700;
+
+/// Printable ASCII as-is; every other byte as its raw-byte code point (see [`RAW_BYTE_BASE`]).
 fn escape_bytes(b: &[u8]) -> String {
-    let mut s = String::with_capacity(b.len());
-    for &c in b {
-        if (0x20..0x7f).contains(&c) {
-            s.push(char::from(c));
-        } else {
-            s.push_str(&format!("\\x{c:02x}"));
-        }
+    b.iter()
+        .map(|&c| {
+            if (0x20..0x7f).contains(&c) {
+                char::from(c)
+            } else {
+                char::from_u32(RAW_BYTE_BASE + u32::from(c)).unwrap_or('?')
+            }
+        })
+        .collect()
+}
+
+/// The wire byte a raw-byte code point stands for.
+fn raw_byte(c: char) -> Option<u8> {
+    let v = c as u32;
+    (RAW_BYTE_BASE..RAW_BYTE_BASE + 256)
+        .contains(&v)
+        .then(|| (v - RAW_BYTE_BASE) as u8)
+}
+
+/// JSON text for a string: raw bytes as the literal `\xHH`, as Zeek's JSON writer renders them.
+fn json_text(s: &str) -> String {
+    if !s.chars().any(|c| raw_byte(c).is_some()) {
+        return s.to_string();
     }
-    s
+    s.chars()
+        .map(|c| match raw_byte(c) {
+            Some(b) => format!("\\x{b:02x}"),
+            None => c.to_string(),
+        })
+        .collect()
 }
 
 fn qclass_name(c: u16) -> String {
@@ -1470,7 +1498,11 @@ mod tests {
         b[5] = 1;
         b.extend_from_slice(&[3, b'a', 0x01, b'\t', 0, 0, 1, 0, 1]);
         let m = parse_dns(&b).unwrap();
-        assert_eq!(m.question.unwrap().0, "a\\x01\\x09");
+        let name = m.question.unwrap().0;
+        // Escaped once on output: a Zeek reader gets the original bytes back.
+        assert_eq!(tsv_escape(&name, false), "a\\x01\\x09");
+        assert_eq!(json_text(&name), "a\\x01\\x09");
+        assert_eq!(tsv_escape("a\\b", false), "a\\x5cb");
     }
 
     #[test]

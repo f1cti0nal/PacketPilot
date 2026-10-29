@@ -24,7 +24,12 @@ const MAX_EVE_CONTACTS: usize = 262_144;
 /// The evidence line that marks a finding as imported from EVE.
 const EVE_TAG: &str = "imported from Suricata EVE";
 
-/// What one import read and produced.
+/// Longest EVE line read, in bytes. Real events are a few KB (a full-payload alert tens of KB);
+/// a longer line is skipped without being held in memory.
+const MAX_EVE_LINE: usize = 4 << 20;
+
+/// What one import read and produced. Build one with [`read_eve`], or feed several files to one
+/// import with [`EveImport::read`] and then [`EveImport::finish`], so their hits add up.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EveImport {
     /// One finding per `(gid, sid, src, dst, dst port)`, in first-seen order.
@@ -37,48 +42,72 @@ pub struct EveImport {
     pub alerts: u64,
     /// Events of other types (`flow`, `dns`, `tls`, ...), which are not imported.
     pub other_events: u64,
-    /// Lines that were not an EVE event (bad JSON, or an alert missing its addresses).
+    /// Lines that were not an EVE event (bad JSON, oversized, or an alert missing its addresses).
     pub skipped: u64,
+    index: HashMap<(u64, u64, String, String, Option<u16>), usize>,
+    contacts: BTreeMap<(IpAddr, IpAddr), (i64, IpAddr, Option<u16>)>,
 }
 
-/// Stream an EVE file and aggregate its alerts.
+/// Stream one EVE file and aggregate its alerts.
 pub fn read_eve<R: BufRead>(reader: R) -> std::io::Result<EveImport> {
     let mut imp = EveImport::default();
-    let mut index: HashMap<(u64, u64, String, String, Option<u16>), usize> = HashMap::new();
-    let mut contacts: BTreeMap<(IpAddr, IpAddr), (i64, IpAddr, Option<u16>)> = BTreeMap::new();
-    for line in reader.lines() {
-        let line = line?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+    imp.read(reader)?;
+    imp.finish();
+    Ok(imp)
+}
+
+impl EveImport {
+    /// Stream one more EVE file into this import.
+    pub fn read<R: BufRead>(&mut self, mut reader: R) -> std::io::Result<()> {
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            let (n, whole) = read_line_capped(&mut reader, &mut buf, MAX_EVE_LINE)?;
+            if n == 0 {
+                break;
+            }
+            let line = String::from_utf8_lossy(&buf);
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            self.lines += 1;
+            if !whole {
+                self.skipped += 1;
+                continue;
+            }
+            self.event(line);
         }
-        imp.lines += 1;
+        Ok(())
+    }
+
+    fn event(&mut self, line: &str) {
         let Ok(ev) = serde_json::from_str::<serde_json::Value>(line) else {
-            imp.skipped += 1;
-            continue;
+            self.skipped += 1;
+            return;
         };
         if ev.get("event_type").and_then(|v| v.as_str()) != Some("alert") {
             if ev.get("event_type").is_some() {
-                imp.other_events += 1;
+                self.other_events += 1;
             } else {
-                imp.skipped += 1;
+                self.skipped += 1;
             }
-            continue;
+            return;
         }
         let Some(hit) = Hit::from_event(&ev) else {
-            imp.skipped += 1;
-            continue;
+            self.skipped += 1;
+            return;
         };
-        imp.alerts += 1;
+        self.alerts += 1;
         if let (Some((ts, initiator, responder, port)), true) =
-            (hit.flow_start, contacts.len() < MAX_EVE_CONTACTS)
+            (hit.flow_start, self.contacts.len() < MAX_EVE_CONTACTS)
         {
             let pair = if initiator <= responder {
                 (initiator, responder)
             } else {
                 (responder, initiator)
             };
-            let e = contacts.entry(pair).or_insert((ts, initiator, port));
+            let e = self.contacts.entry(pair).or_insert((ts, initiator, port));
             if ts < e.0 {
                 *e = (ts, initiator, port);
             }
@@ -90,29 +119,70 @@ pub fn read_eve<R: BufRead>(reader: R) -> std::io::Result<EveImport> {
             hit.dst.to_string(),
             hit.dst_port,
         );
-        match index.get(&key) {
-            Some(&i) => widen(&mut imp.findings[i], hit.ts, 1),
-            None if imp.findings.len() < MAX_EVE_FINDINGS => {
-                index.insert(key, imp.findings.len());
-                imp.findings.push(hit.finding());
+        match self.index.get(&key) {
+            Some(&i) => widen(&mut self.findings[i], hit.ts, 1),
+            None if self.findings.len() < MAX_EVE_FINDINGS => {
+                self.index.insert(key, self.findings.len());
+                self.findings.push(hit.finding());
             }
             None => {}
         }
     }
-    imp.context.first_contacts = contacts
-        .into_iter()
-        .map(|((a, b), (ts, initiator, port))| FirstContact {
-            initiator: initiator.to_string(),
-            responder: if initiator == a { b } else { a }.to_string(),
-            port,
-            first_seen_ns: ts,
-        })
-        .collect();
-    imp.context.first_contacts.sort_by(|a, b| {
-        (a.initiator.as_str(), a.responder.as_str())
-            .cmp(&(b.initiator.as_str(), b.responder.as_str()))
-    });
-    Ok(imp)
+
+    /// Settle the timeline context after the last [`EveImport::read`].
+    pub fn finish(&mut self) {
+        self.context.first_contacts = self
+            .contacts
+            .iter()
+            .map(|(&(a, b), &(ts, initiator, port))| FirstContact {
+                initiator: initiator.to_string(),
+                responder: if initiator == a { b } else { a }.to_string(),
+                port,
+                first_seen_ns: ts,
+            })
+            .collect();
+        self.context.first_contacts.sort_by(|a, b| {
+            (a.initiator.as_str(), a.responder.as_str())
+                .cmp(&(b.initiator.as_str(), b.responder.as_str()))
+        });
+    }
+}
+
+/// Read one line into `buf`, keeping at most `cap` bytes of it. Returns the bytes consumed and
+/// whether the whole line fit.
+fn read_line_capped<R: BufRead>(
+    reader: &mut R,
+    buf: &mut Vec<u8>,
+    cap: usize,
+) -> std::io::Result<(usize, bool)> {
+    let mut consumed = 0;
+    let mut whole = true;
+    loop {
+        let chunk = reader.fill_buf()?;
+        if chunk.is_empty() {
+            return Ok((consumed, whole));
+        }
+        let (take, done) = match chunk.iter().position(|&b| b == b'\n') {
+            Some(i) => (i + 1, true),
+            None => (chunk.len(), false),
+        };
+        if whole && buf.len() + take <= cap {
+            buf.extend_from_slice(&chunk[..take]);
+        } else {
+            whole = false;
+            buf.clear();
+        }
+        reader.consume(take);
+        consumed += take;
+        if done {
+            return Ok((consumed, whole));
+        }
+    }
+}
+
+/// The signature identity in a finding's first evidence line (`suricata gid:sid`).
+fn signature_id(f: &Finding) -> Option<&str> {
+    f.evidence.first().map(String::as_str)
 }
 
 /// Fold an import into an analysis: new findings are added and the queue is re-derived, while a
@@ -124,7 +194,7 @@ pub fn fold_eve(summary: &mut Summary, imp: &EveImport) -> usize {
         let existing = summary.findings.iter_mut().find(|e| {
             e.kind == FindingKind::RuleMatch
                 && e.evidence.iter().any(|l| l == EVE_TAG)
-                && e.evidence.first() == f.evidence.first()
+                && signature_id(e) == signature_id(f)
                 && e.src_ip == f.src_ip
                 && e.dst_ip == f.dst_ip
                 && e.dst_port == f.dst_port
@@ -261,10 +331,12 @@ impl Hit {
     }
 
     fn finding(&self) -> Finding {
-        let mut evidence = vec![match self.rev {
-            Some(rev) => format!("suricata {}:{}:{}", self.gid, self.sid, rev),
-            None => format!("suricata {}:{}", self.gid, self.sid),
-        }];
+        // The first line is the signature identity imports match on, so the revision (which a
+        // ruleset update bumps) gets its own line.
+        let mut evidence = vec![format!("suricata {}:{}", self.gid, self.sid)];
+        if let Some(rev) = self.rev {
+            evidence.push(format!("revision {rev}"));
+        }
         if let Some(c) = &self.category {
             evidence.push(format!("category: {c}"));
         }
@@ -375,7 +447,8 @@ not json
         assert_eq!(cs.contacts, Some(2));
         assert_eq!(cs.first_seen_ns, Some(1_700_000_001_250_000_000));
         assert_eq!(cs.last_seen_ns, Some(1_700_000_005_000_000_000));
-        assert_eq!(cs.evidence[0], "suricata 1:2030000:2");
+        assert_eq!(cs.evidence[0], "suricata 1:2030000");
+        assert_eq!(cs.evidence[1], "revision 2");
         let smb = &imp.findings[1];
         assert_eq!(smb.severity, Severity::Low);
         assert_eq!(smb.title, "sid:7");
@@ -383,6 +456,49 @@ not json
         let fc = &imp.context.first_contacts;
         assert_eq!(fc[0].initiator, "10.0.0.5");
         assert_eq!(fc[0].first_seen_ns, 1_700_000_000_500_000_000);
+    }
+
+    #[test]
+    fn files_in_one_import_add_up_and_revisions_stay_one_finding() {
+        let hit = |ts: &str, rev: u32| {
+            format!(
+                r#"{{"timestamp":"{ts}","event_type":"alert","src_ip":"10.0.0.1","dest_ip":"10.0.0.2","dest_port":80,"alert":{{"signature_id":42,"rev":{rev},"signature":"x","severity":2}}}}"#
+            )
+        };
+        let a = format!(
+            "{}\n{}\n",
+            hit("2023-11-14T22:13:20Z", 1),
+            hit("2023-11-14T22:13:21Z", 1)
+        );
+        let b = format!("{}\n", hit("2023-11-14T22:13:30Z", 2));
+        let mut imp = EveImport::default();
+        imp.read(a.as_bytes()).unwrap();
+        imp.read(b.as_bytes()).unwrap();
+        imp.finish();
+        assert_eq!(imp.findings.len(), 1);
+        assert_eq!(imp.findings[0].contacts, Some(3));
+
+        // A later import of the newer revision alone widens the same finding.
+        let mut s = Summary::empty();
+        fold_eve(&mut s, &read_eve(a.as_bytes()).unwrap());
+        assert_eq!(fold_eve(&mut s, &read_eve(b.as_bytes()).unwrap()), 0);
+        assert_eq!(s.findings.len(), 1);
+        assert_eq!(s.findings[0].last_seen_ns, Some(1_700_000_010_000_000_000));
+    }
+
+    #[test]
+    fn oversized_lines_are_skipped_without_buffering() {
+        let mut text = "x".repeat(64);
+        text.push('\n');
+        text.push_str(EVE.trim_start());
+        let mut buf = Vec::new();
+        let mut r = text.as_bytes();
+        let (n, whole) = read_line_capped(&mut r, &mut buf, 16).unwrap();
+        assert_eq!((n, whole), (65, false));
+        assert!(buf.is_empty());
+        let (_, whole) = read_line_capped(&mut r, &mut buf, 1 << 20).unwrap();
+        assert!(whole);
+        assert!(buf.starts_with(b"{"));
     }
 
     #[test]

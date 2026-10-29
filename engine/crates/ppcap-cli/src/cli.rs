@@ -1108,7 +1108,10 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 let _ = err.flush();
             };
 
-            let mut zeek_logger = zeek.as_deref().map(|d| crate::zeek::logger(d, zeek_json));
+            let mut zeek_logger = zeek
+                .as_deref()
+                .map(|d| crate::zeek::logger(d, zeek_json))
+                .transpose()?;
             let mut out = match zeek_logger.as_mut() {
                 Some(l) => ppcap_core::run_observing(&input, &cfg, l, progress)?,
                 None => ppcap_core::run(&input, &cfg, progress)?,
@@ -1298,9 +1301,10 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             }
 
             // notice.log carries every finding, so the logs close after the passes that add them.
-            if let (Some(l), Some(dir)) = (zeek_logger, zeek.as_deref()) {
-                crate::zeek::finish(l, &out, dir, quiet)?;
-            }
+            let zeek_report = match (zeek_logger, zeek.as_deref()) {
+                (Some(l), Some(dir)) => Some(crate::zeek::finish(l, &out, dir, quiet)?),
+                _ => None,
+            };
 
             let s = out.to_json_pretty()?;
             match json.as_deref() {
@@ -1449,6 +1453,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if let (Some(p), Some((sha, _))) = (keylog_path.as_ref(), keylog_digest.as_ref()) {
                     settings.push(format!("--keylog {} (sha256 {sha})", p.display()));
                 }
+                for p in &eve {
+                    settings.push(format!("--eve {}", p.display()));
+                }
+                if let Some(d) = zeek.as_ref() {
+                    settings.push(format!("--zeek {}", d.display()));
+                    if zeek_json {
+                        settings.push("--zeek-json".to_string());
+                    }
+                }
 
                 // Input hash: reuse the --hash pass's result when present, else hash now —
                 // an unhashed input is not evidence.
@@ -1518,6 +1531,16 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 // `verify` notices a rule file edited after the fact.
                 for p in &suppress {
                     record("suppression_rules", p)?;
+                }
+                // Suricata EVE files add findings, so they are inputs like the rule files.
+                for p in &eve {
+                    record("eve_input", p)?;
+                }
+                // Every Zeek log this run wrote.
+                if let (Some(dir), Some(report)) = (zeek.as_ref(), zeek_report.as_ref()) {
+                    for (log, _) in &report.logs {
+                        record("zeek_log", &dir.join(format!("{log}.log")))?;
+                    }
                 }
                 // Bodies extracted by --carve-dir are evidence too; one record per file (the
                 // uncapped list, not the top-k `carved_files` projection).
@@ -1932,7 +1955,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 },
                 ..Default::default()
             };
-            let mut logger = crate::zeek::logger(&out_dir, json);
+            let mut logger = crate::zeek::logger(&out_dir, json)?;
             let mut out = ppcap_core::run_observing(&input, &cfg, &mut logger, |_, _, _| {})?;
             crate::zeek::fold_eve_files(&mut out.summary, &eve, quiet)?;
             crate::zeek::finish(logger, &out, &out_dir, quiet)?;

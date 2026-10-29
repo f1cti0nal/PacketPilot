@@ -115,6 +115,8 @@ fn analyze_writes_zeek_json_and_folds_eve_alerts() {
         "--zeek",
         logs.to_str().unwrap(),
         "--zeek-json",
+        "--evidence",
+        dir.path().join("case.json").to_str().unwrap(),
         "--quiet",
     ]);
     let analysis: Value =
@@ -143,6 +145,15 @@ fn analyze_writes_zeek_json_and_folds_eve_alerts() {
         .lines()
         .map(|l| serde_json::from_str::<Value>(l).unwrap())
         .any(|n| n["msg"] == "TEST sensor hit" && n["note"] == "PacketPilot::rule_match"));
+
+    // The evidence manifest covers the EVE input and every Zeek log.
+    let case = dir.path().join("case.json");
+    let manifest = std::fs::read_to_string(&case).unwrap();
+    assert!(manifest.contains("\"eve_input\""));
+    assert!(manifest.contains("notice.log"));
+    ok(&["verify", case.to_str().unwrap()]);
+    std::fs::write(logs.join("notice.log"), "tampered\n").unwrap();
+    assert!(!ppcap(&["verify", case.to_str().unwrap()]).status.success());
 }
 
 #[test]

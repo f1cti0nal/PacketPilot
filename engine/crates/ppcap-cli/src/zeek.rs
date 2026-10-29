@@ -8,6 +8,33 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+/// Every log `ZeekLogger` can write; an export clears all of them first, so a reused directory never
+/// mixes an earlier export's logs with this one's.
+const LOG_FILES: [&str; 7] = [
+    "conn.log",
+    "dns.log",
+    "http.log",
+    "ssl.log",
+    "ssh.log",
+    "files.log",
+    "notice.log",
+];
+
+/// Remove the Zeek logs an earlier export left in `dir` (other files are left alone).
+pub fn clear_logs(dir: &Path) -> Result<()> {
+    for name in LOG_FILES {
+        let path = dir.join(name);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(e).with_context(|| format!("remove old Zeek log {}", path.display()))
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Writes each Zeek log to `<dir>/<path>.log`, creating the directory and files on first use.
 pub struct DirSink {
     dir: PathBuf,
@@ -47,15 +74,20 @@ impl ppcap_core::LogSink for DirSink {
 
 pub type DirLogger = ppcap_core::ZeekLogger<DirSink>;
 
-/// A logger writing to `dir`, opened now.
-pub fn logger(dir: &Path, json: bool) -> DirLogger {
+/// A logger writing to `dir`, opened now. Logs from an earlier export in `dir` are removed.
+pub fn logger(dir: &Path, json: bool) -> Result<DirLogger> {
+    clear_logs(dir)?;
     let format = if json {
         ppcap_core::ZeekFormat::Json
     } else {
         ppcap_core::ZeekFormat::Tsv
     };
     let open = ppcap_core::zeek_header_time(crate::cli::unix_now());
-    ppcap_core::ZeekLogger::new(DirSink::new(dir), format, &open)
+    Ok(ppcap_core::ZeekLogger::new(
+        DirSink::new(dir),
+        format,
+        &open,
+    ))
 }
 
 /// Write the logs that need the finished analysis, close every log, and report on stderr.
@@ -96,33 +128,39 @@ pub fn fold_eve_files(
     files: &[PathBuf],
     quiet: bool,
 ) -> Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    // One import across every file, so hits of one signature in several files add up.
+    let mut imp = ppcap_core::EveImport::default();
     for path in files {
         let f = File::open(path).with_context(|| format!("open EVE file {}", path.display()))?;
-        let imp = ppcap_core::read_eve(BufReader::new(f))
+        let before = (imp.lines, imp.alerts, imp.other_events);
+        imp.read(BufReader::new(f))
             .with_context(|| format!("read EVE file {}", path.display()))?;
-        let added = ppcap_core::fold_eve(summary, &imp);
-        if !quiet {
-            eprintln!(
-                "eve: {} alert{} -> {} finding{} ({added} new) from {}{}",
-                imp.alerts,
-                if imp.alerts == 1 { "" } else { "s" },
-                imp.findings.len(),
-                if imp.findings.len() == 1 { "" } else { "s" },
-                path.display(),
-                if imp.skipped > 0 {
-                    format!(", {} line(s) skipped", imp.skipped)
-                } else {
-                    String::new()
-                }
-            );
-        }
-        if imp.lines > 0 && imp.alerts == 0 && imp.other_events == 0 {
+        if imp.lines > before.0 && imp.alerts == before.1 && imp.other_events == before.2 {
             anyhow::bail!(
                 "{} has no Suricata EVE events (expected one JSON object per line with an \
                  `event_type`)",
                 path.display()
             );
         }
+    }
+    imp.finish();
+    let added = ppcap_core::fold_eve(summary, &imp);
+    if !quiet {
+        eprintln!(
+            "eve: {} alert{} -> {} finding{} ({added} new){}",
+            imp.alerts,
+            if imp.alerts == 1 { "" } else { "s" },
+            imp.findings.len(),
+            if imp.findings.len() == 1 { "" } else { "s" },
+            if imp.skipped > 0 {
+                format!(", {} line(s) skipped", imp.skipped)
+            } else {
+                String::new()
+            }
+        );
     }
     Ok(())
 }
@@ -149,6 +187,16 @@ mod tests {
             std::fs::read_to_string(logs.join("dns.log")).unwrap(),
             "c\n"
         );
+    }
+
+    #[test]
+    fn an_export_clears_old_logs_but_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("http.log"), "old").unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "keep").unwrap();
+        let _logger = logger(dir.path(), false).unwrap();
+        assert!(!dir.path().join("http.log").exists());
+        assert!(dir.path().join("notes.txt").exists());
     }
 
     #[test]
