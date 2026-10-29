@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CompareView } from "./CompareView";
-import type { RecentEntry, Summary, IpThreat, Incident, Finding, SeverityCounts } from "../types";
+import type { Alert, RecentEntry, Summary, IpThreat, Incident, Finding, SeverityCounts } from "../types";
+import { makeOutput } from "../test/fixtures";
 
 const sev = (o: Partial<SeverityCounts> = {}): SeverityCounts => ({ critical: 0, high: 0, medium: 0, low: 0, info: 0, ...o });
 const threat = (o: Partial<IpThreat>): IpThreat =>
@@ -94,6 +95,32 @@ describe("CompareView", () => {
     render(<CompareView before={before} after={after} onSwap={() => {}} />);
     expect(screen.getByText("+2 new")).toBeInTheDocument(); // Findings: 2 new
     expect(screen.getByText(/1 resolved/)).toBeInTheDocument(); // Findings: 1 resolved
+  });
+
+  it("renders the Alerts section with new, resolved, and changed rows", () => {
+    // Seed from the shared fixture queue: [0] = act_now chain alert, [1] = review rollup.
+    const [chainAlert, rollupAlert] = makeOutput().summary.alerts ?? [];
+    const resolved: Alert = { ...rollupAlert, id: "alert:feedfacefeedface", title: "Cleartext credentials: 10.0.0.51" };
+    const beforeAlerts: Alert[] = [rollupAlert, resolved]; // rollup at 38/review + one story that goes away
+    const afterAlerts: Alert[] = [
+      chainAlert, // new story
+      { ...rollupAlert, priority: 72, band: "investigate" }, // same id, rank climbed
+    ];
+    const before = ent("a", { alerts: beforeAlerts });
+    const after = ent("b", { alerts: afterAlerts });
+    render(<CompareView before={before} after={after} onSwap={() => {}} />);
+    // New: the chain story, with its band chip.
+    expect(screen.getByText(/New alerts/)).toBeInTheDocument();
+    expect(screen.getByText(chainAlert.title)).toBeInTheDocument();
+    expect(screen.getByText("Act now")).toBeInTheDocument();
+    // Resolved: the story only present before.
+    expect(screen.getByText(/Resolved alerts/)).toBeInTheDocument();
+    expect(screen.getByText("Cleartext credentials: 10.0.0.51")).toBeInTheDocument();
+    // Changed: title + after-side band chip + compact priority delta.
+    expect(screen.getByText(rollupAlert.title)).toBeInTheDocument();
+    expect(screen.getByText("Investigate")).toBeInTheDocument();
+    expect(screen.getByText(/38\s*→\s*72/)).toBeInTheDocument();
+    expect(screen.getByText("+34")).toBeInTheDocument();
   });
 
   it("does not crash when a capture disappears while mounted (hooks order)", () => {

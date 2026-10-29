@@ -417,6 +417,12 @@ pub struct Summary {
     /// (multi-host, campaign-clustered). `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub attack_chains: Vec<AttackChain>,
+    /// Smart Alerting with Context: the ranked, deduplicated, context-bundled triage queue
+    /// derived from findings / incidents / attack chains / threat cards (see
+    /// `docs/smart-alerting-context-plan.md`). Every finding index belongs to exactly one
+    /// alert. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub alerts: Vec<crate::model::alert::Alert>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -463,6 +469,7 @@ impl Summary {
             findings: Vec::new(),
             incidents: Vec::new(),
             attack_chains: Vec::new(),
+            alerts: Vec::new(),
         }
     }
 

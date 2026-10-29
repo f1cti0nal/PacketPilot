@@ -74,8 +74,10 @@ test.describe("PacketPilot — desktop", () => {
     await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden();
   });
 
-  test("digit key 2 jumps to Flows", async ({ page }) => {
+  test("digit key 3 jumps to Flows (2 is the Alerts queue)", async ({ page }) => {
     await page.keyboard.press("2");
+    await expect(page.locator('[data-component="AlertsView"]')).toBeVisible();
+    await page.keyboard.press("3");
     await expect(page.getByLabel("Filter flows")).toBeVisible();
   });
 

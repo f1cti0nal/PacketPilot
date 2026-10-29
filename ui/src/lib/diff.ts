@@ -1,10 +1,16 @@
-import type { IpThreat, Incident, Finding, Summary, SeverityCounts, RepStatus } from "../types";
+// Client-side capture diffing for the Compare tab. The alert-diff semantics mirror the engine's
+// `diff_alerts` (`engine/crates/ppcap-core/src/detect/alerts.rs`) — the house lib-port convention
+// (see `lib/forecast.ts`): stories match by their stable alert id, added = new, removed = resolved,
+// changed = in both with a rank/shape move.
+import type { Alert, IpThreat, Incident, Finding, Summary, SeverityCounts, RepStatus } from "../types";
 
 export interface FieldDelta { field: string; before: string | number; after: string | number; }
 export interface Changed<T> { key: string; before: T; after: T; deltas: FieldDelta[]; }
 export interface DiffResult<T> { added: T[]; removed: T[]; changed: Changed<T>[]; }
 export interface SeverityDelta { band: keyof SeverityCounts; before: number; after: number; delta: number; }
 export interface SummaryDiff {
+  /** Alert-queue stories keyed by their stable alert id: added = new stories, removed = resolved. */
+  alerts: DiffResult<Alert>;
   threats: DiffResult<IpThreat>;
   incidents: DiffResult<Incident>;
   /** Behavioral findings, keyed by kind + endpoints: added = new in `after`, removed = resolved. */
@@ -83,9 +89,21 @@ function findingDeltas(before: Finding, after: Finding): FieldDelta[] {
   return d;
 }
 
+function alertDeltas(before: Alert, after: Alert): FieldDelta[] {
+  const d: FieldDelta[] = [];
+  if (before.priority !== after.priority) d.push({ field: "priority", before: before.priority, after: after.priority });
+  if (before.band !== after.band) d.push({ field: "band", before: before.band, after: after.band });
+  if (before.severity !== after.severity) d.push({ field: "severity", before: before.severity, after: after.severity });
+  if (before.finding_count !== after.finding_count)
+    d.push({ field: "finding_count", before: before.finding_count, after: after.finding_count });
+  if (before.action !== after.action) d.push({ field: "action", before: before.action, after: after.action });
+  return d;
+}
+
 const SEV_BANDS: (keyof SeverityCounts)[] = ["critical", "high", "medium", "low", "info"];
 
 export function diffSummaries(before: Summary, after: Summary): SummaryDiff {
+  const alerts = diffByKey(before.alerts ?? [], after.alerts ?? [], (a) => a.id, alertDeltas);
   const threats = diffByKey(before.ip_threats ?? [], after.ip_threats ?? [], (t) => t.ip, threatDeltas);
   const incidents = diffByKey(before.incidents ?? [], after.incidents ?? [], (i) => i.host, incidentDeltas);
   const findings = diffByKey(before.findings ?? [], after.findings ?? [], findingKey, findingDeltas);
@@ -101,5 +119,5 @@ export function diffSummaries(before: Summary, after: Summary): SummaryDiff {
   let shared = 0;
   for (const t of after.ip_threats ?? []) if (beforeKeys.has(`ip:${t.ip}`)) shared++;
   for (const i of after.incidents ?? []) if (beforeKeys.has(`host:${i.host}`)) shared++;
-  return { threats, incidents, findings, severity, shared };
+  return { alerts, threats, incidents, findings, severity, shared };
 }

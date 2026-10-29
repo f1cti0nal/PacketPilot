@@ -6,6 +6,7 @@ import { supabase } from "../supabase";
 const ROUTES = new Set<string>([
   "/",
   "/app#dashboard",
+  "/app#alerts",
   "/app#flows",
   "/app#query",
   "/app#findings",
