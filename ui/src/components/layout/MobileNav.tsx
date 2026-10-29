@@ -16,6 +16,7 @@ import {
   GitCompare,
   ShieldAlert,
   Waypoints,
+  ChartGantt,
   Gauge,
   type LucideIcon,
 } from "lucide-react";
@@ -58,6 +59,7 @@ export const TAB_ICON: Record<TabId, LucideIcon> = {
   findings: ListChecks,
   threats: ShieldAlert,
   attackchain: Waypoints,
+  timeline: ChartGantt,
   baseline: Gauge,
   recent: History,
   compare: GitCompare,
@@ -106,7 +108,7 @@ export function BottomTabBar({
             onClick={() => onTab(tab.id)}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors",
+              "relative flex min-w-0 flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors",
               active ? "text-[var(--color-accent)]" : "text-[var(--color-text-dim)]",
             )}
           >
@@ -114,7 +116,8 @@ export function BottomTabBar({
               <Icon size={20} aria-hidden />
               {tab.badge ? <Badge>{tab.badge}</Badge> : null}
             </span>
-            <span>{tab.label}</span>
+            {/* Truncate rather than widen the bar: eleven tabs must fit a 360px phone. */}
+            <span className="max-w-full truncate px-0.5">{tab.label}</span>
           </button>
         );
       })}

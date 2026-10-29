@@ -452,7 +452,8 @@ pub fn decrypt_capture(
 /// 64 MiB carve byte budget (matches the browser's retained-source cap).
 pub const MAX_CARVE_BYTES: usize = 64 * 1024 * 1024;
 
-/// What to carve: a directed flow 5-tuple (matched bidirectionally) or a single host IP.
+/// What to carve: a directed flow 5-tuple (matched bidirectionally), a single host IP, or a
+/// timeline row's scope (a host, optionally narrowed to one peer and/or one port).
 #[derive(Clone, Debug)]
 pub enum CarveTarget {
     Flow {
@@ -464,6 +465,13 @@ pub enum CarveTarget {
     },
     Host {
         ip: IpAddr,
+    },
+    /// Frames touching `host`, narrowed to those exchanged with `peer` (either direction) and/or
+    /// carrying `port` on either side, when set. The incident timeline's per-row packet pivot.
+    Scope {
+        host: IpAddr,
+        peer: Option<IpAddr>,
+        port: Option<u16>,
     },
 }
 
@@ -534,6 +542,16 @@ pub fn carve_pcap(
                             && meta.dst_port == *src_port))
             }
             CarveTarget::Host { ip } => s == *ip || d == *ip,
+            CarveTarget::Scope { host, peer, port } => {
+                let touches = match peer {
+                    Some(p) => (s == *host && d == *p) || (s == *p && d == *host),
+                    None => s == *host || d == *host,
+                };
+                touches
+                    && port.is_none_or(|p| {
+                        meta.transport.has_ports() && (meta.src_port == p || meta.dst_port == p)
+                    })
+            }
         };
         if !matched {
             continue;
@@ -811,6 +829,33 @@ mod tests {
         }
         // All 5 packets in tcp_pcap() (4 TCP + 1 UDP) involve 10.0.0.1, so all must be carved.
         assert_eq!(res.packets, 5);
+    }
+
+    #[test]
+    fn carve_scope_narrows_by_peer_and_port() {
+        let bytes = tcp_pcap();
+        let carve = |peer: Option<&str>, port: Option<u16>| {
+            let src = open_reader(Cursor::new(bytes.clone()), Some(bytes.len() as u64)).unwrap();
+            let q = CarveQuery {
+                target: CarveTarget::Scope {
+                    host: "10.0.0.1".parse().unwrap(),
+                    peer: peer.map(|p| p.parse().unwrap()),
+                    port,
+                },
+                start_ns: i64::MIN / 2,
+                end_ns: i64::MAX / 2,
+            };
+            carve_pcap(src, &q, &PacketCaps::default()).unwrap().packets
+        };
+        // Host only == the Host target: all 5 frames touch 10.0.0.1.
+        assert_eq!(carve(None, None), 5);
+        // Peer narrows to the 4 TCP frames exchanged with the server, both directions.
+        assert_eq!(carve(Some("93.184.216.34"), None), 4);
+        // Port alone matches either side: only the UDP frame carries 53.
+        assert_eq!(carve(None, Some(53)), 1);
+        // Peer + a port that pair never used matches nothing.
+        assert_eq!(carve(Some("93.184.216.34"), Some(53)), 0);
+        assert_eq!(carve(Some("93.184.216.34"), Some(443)), 4);
     }
 
     #[test]

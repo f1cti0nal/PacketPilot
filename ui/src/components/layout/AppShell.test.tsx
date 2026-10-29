@@ -167,18 +167,18 @@ describe("AppShell", () => {
     expect(onTabChange).toHaveBeenCalledWith("flows");
   });
 
-  it("digit 0 reaches the 10th tab (Compare) when a comparison is active", () => {
+  it("digit 0 reaches the 10th tab (Recent), with or without Compare active", () => {
     const onTabChange = vi.fn();
     render(<AppShell {...minimalProps({ onTabChange, compareActive: true })} />);
     fireEvent.keyDown(window, { key: "0" });
-    expect(onTabChange).toHaveBeenCalledWith("compare");
+    expect(onTabChange).toHaveBeenCalledWith("recent");
   });
 
-  it("digit 0 is inert when there is no 10th tab", () => {
+  it("digit 8 opens the Timeline tab", () => {
     const onTabChange = vi.fn();
     render(<AppShell {...minimalProps({ onTabChange })} />);
-    fireEvent.keyDown(window, { key: "0" });
-    expect(onTabChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "8" });
+    expect(onTabChange).toHaveBeenCalledWith("timeline");
   });
 
   it("the shortcuts overlay advertises the 10th tab as key 0, never 10", () => {
@@ -187,6 +187,9 @@ describe("AppShell", () => {
     const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     expect(within(dialog).getByText("0")).toBeInTheDocument();
     expect(within(dialog).queryByText("10")).toBeNull();
+    // The 11th tab (Compare) gets no digit chip rather than a wrapped-around "1".
+    expect(within(dialog).queryByText("Go to Compare")).toBeNull();
+    expect(within(dialog).getAllByText("1")).toHaveLength(1);
   });
 
   it("shortcut keys are inert while the command palette is open", () => {

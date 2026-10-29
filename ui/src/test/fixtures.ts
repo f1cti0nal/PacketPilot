@@ -1,4 +1,4 @@
-import type { Alert, AnalysisOutput, Finding, FlowPackets, FlowRow, IpThreat, PacketRow } from "../types";
+import type { Alert, AlertTimeline, AnalysisOutput, Finding, FlowPackets, FlowRow, IpThreat, PacketRow } from "../types";
 
 const f = (p: Partial<Finding> & Pick<Finding, "kind" | "severity" | "score" | "title" | "src_ip">): Finding => ({
   dst_ip: null, dst_port: null, attack: [], evidence: [],
@@ -66,6 +66,45 @@ const alerts: Alert[] = [
     finding_indices: [3], finding_count: 1,
     chain_id: null, incident_hosts: [],
     first_seen_ns: null, last_seen_ns: null,
+  },
+];
+
+const T0 = 1_700_000_000_000_000_000;
+const S = 1_000_000_000;
+const timelines: AlertTimeline[] = [
+  {
+    alert_id: "alert:9f2c41a07be3d512",
+    title: "Cross-host attack chain: 10.13.37.7 → 10.66.0.1",
+    hosts: ["10.13.37.7", "10.66.0.1"],
+    first_ts_ns: T0, last_ts_ns: T0 + 60 * S, event_count: 4,
+    events: [
+      { ts_ns: T0, kind: "detection", host: "10.13.37.7", peer: null, dst_port: 445,
+        title: "Host sweep: 10.13.37.7 probed 24 hosts on port 445", detail: "24 distinct hosts",
+        severity: "high", tactic: "Discovery", attack: ["T1046"], finding_index: 0,
+        packets: { host: "10.13.37.7", peer: null, port: 445, start_ns: T0, end_ns: T0 + 2 * S } },
+      { ts_ns: T0 + 9 * S, kind: "dns_answer", host: "10.66.0.1", peer: "45.77.13.37",
+        title: "c2.example resolved to 45.77.13.37", detail: "First answer delivered to 10.66.0.1",
+        severity: "info", attack: [], finding_index: null,
+        packets: { host: "10.66.0.1", peer: null, port: 53, start_ns: T0 + 8 * S, end_ns: T0 + 10 * S } },
+      { ts_ns: T0 + 10 * S, kind: "pivot", host: "10.66.0.1", peer: "10.13.37.7",
+        title: "Lateral hop 10.13.37.7 → 10.66.0.1 after 10.13.37.7 brute-forced credentials",
+        severity: "critical", tactic: "Lateral Movement", attack: [], finding_index: 1,
+        packets: { host: "10.66.0.1", peer: "10.13.37.7", port: null, start_ns: T0 + 3 * S, end_ns: T0 + 10 * S } },
+      { ts_ns: T0 + 10 * S, end_ns: T0 + 60 * S, kind: "detection", host: "10.66.0.1", peer: "45.77.13.37", dst_port: 443,
+        title: "Periodic beacon: 10.66.0.1 -> 45.77.13.37:443 every ~30s", severity: "high",
+        tactic: "Command & Control", attack: ["T1071"], finding_index: 2,
+        packets: { host: "10.66.0.1", peer: "45.77.13.37", port: 443, start_ns: T0 + 10 * S, end_ns: T0 + 60 * S } },
+    ],
+  },
+  {
+    alert_id: "alert:00c0ffee00c0ffee",
+    title: "Weak TLS posture: 1 host (1 finding)",
+    hosts: ["10.0.0.9"],
+    first_ts_ns: null, last_ts_ns: null, event_count: 1,
+    events: [
+      { ts_ns: null, kind: "detection", host: "10.0.0.9", title: "weak_tls: 10.0.0.9", severity: "medium",
+        attack: [], finding_index: 3, packets: { host: "10.0.0.9", start_ns: T0, end_ns: T0 + 120 * S } },
+    ],
   },
 ];
 
@@ -162,6 +201,7 @@ export function makeOutput(overrides: Partial<AnalysisOutput> = {}): AnalysisOut
         },
       ],
       alerts,
+      timelines,
     },
     ...overrides,
   };

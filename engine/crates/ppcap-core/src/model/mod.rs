@@ -18,6 +18,7 @@ pub mod packet;
 pub mod severity;
 pub mod summary;
 pub mod suppression;
+pub mod timeline;
 
 pub use alert::{
     Alert, AlertContext, AlertSource, ContextEntry, ContextKind, HostContext, PeerContext,
@@ -37,4 +38,8 @@ pub use summary::{
 };
 pub use suppression::{
     BlockReason, SuppressionFile, SuppressionHit, SuppressionOutcome, SuppressionRule,
+};
+pub use timeline::{
+    AlertTimeline, DnsAnswer, FirstContact, PacketScope, TimelineContext, TimelineEvent,
+    TimelineEventKind,
 };

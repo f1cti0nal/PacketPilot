@@ -349,6 +349,8 @@ mod apply_tests {
             alerts: vec![],
             suppression_rules: vec![],
             suppressions: vec![],
+            timeline_context: Default::default(),
+            timelines: vec![],
         }
     }
 

@@ -4,7 +4,7 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, BaselineProfile, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, SuppressionBlockReason, SuppressionFile, SuppressionRule, TeachScope, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
+import type { AnalysisOutput, BaselineProfile, TimelineExportFormat, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, SuppressionBlockReason, SuppressionFile, SuppressionRule, TeachScope, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
 import initWasm, {
@@ -21,6 +21,7 @@ import initWasm, {
   export_misp as wasmExportMisp,
   export_cef as wasmExportCef,
   export_sigma as wasmExportSigma,
+  export_timeline as wasmExportTimeline,
   carve_pcap as wasmCarvePcap,
   render_report as wasmRenderReport,
   sanitize as wasmSanitize,
@@ -366,6 +367,12 @@ export async function exportCefWasm(outputJson: string): Promise<string> {
 export async function exportSigmaWasm(outputJson: string): Promise<string> {
   await ensureWasm();
   return wasmExportSigma(outputJson);
+}
+
+/** Render incident timelines (an `AlertTimeline[]` JSON) as Markdown or CSV via WASM. */
+export async function exportTimelineWasm(timelinesJson: string, format: TimelineExportFormat): Promise<string> {
+  await ensureWasm();
+  return wasmExportTimeline(timelinesJson, format);
 }
 
 /**

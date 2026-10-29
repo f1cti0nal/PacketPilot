@@ -190,6 +190,23 @@ pub enum Command {
         #[arg(long = "suppress")]
         suppress: Vec<PathBuf>,
     },
+    /// Incident timeline: print each alert as one chronological, cross-host story (first
+    /// contact, DNS answers, downloads, detections, lateral hops), ready for a ticket or
+    /// hand-off. Every row carries the capture filter that pulls its packets.
+    Timeline {
+        /// The analysis-output JSON (from `analyze --json`).
+        summary: PathBuf,
+        /// Only these alert id(s) (`alert:…`, as printed by `ppcap alerts`). Repeatable;
+        /// default: every alert, in queue order.
+        #[arg(long = "alert")]
+        alerts: Vec<String>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = TimelineFormat::Markdown)]
+        format: TimelineFormat,
+        /// Write here instead of stdout ("-" => stdout).
+        #[arg(long)]
+        out: Option<String>,
+    },
     /// Teach it once: turn "this alert is benign" into reusable suppression rules, and inspect
     /// or test rule files. Rules are plain JSON, safe to commit and share.
     Suppress {
@@ -326,6 +343,17 @@ pub enum SuppressAction {
         #[arg(long)]
         json: Option<String>,
     },
+}
+
+/// `--format` values for `ppcap timeline`.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TimelineFormat {
+    /// One Markdown section per alert (paste into a ticket).
+    Markdown,
+    /// One CSV row per event, every alert (spreadsheets, SIEM import).
+    Csv,
+    /// The timeline objects as JSON.
+    Json,
 }
 
 /// `--scope` values for `ppcap suppress add`.
@@ -676,6 +704,27 @@ pub fn run() -> ExitCode {
 
 /// Testable inner dispatch (no process exit). Returns `anyhow::Result` so the CLI can add
 /// human context to typed core errors.
+/// The timelines `ppcap timeline` prints: every one, or exactly the requested alert ids (in the
+/// order asked). An unknown id is an error naming it, so a typo never prints a silent subset.
+fn select_timelines(
+    all: &[ppcap_core::AlertTimeline],
+    ids: &[String],
+) -> anyhow::Result<Vec<ppcap_core::AlertTimeline>> {
+    if ids.is_empty() {
+        return Ok(all.to_vec());
+    }
+    ids.iter()
+        .map(|id| {
+            all.iter()
+                .find(|t| &t.alert_id == id)
+                .cloned()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("no alert {id} in this analysis (see `ppcap alerts`)")
+                })
+        })
+        .collect()
+}
+
 pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
     // IMPL: match cli.command and translate flags into core configs, then call the engine.
     match cli.command {
@@ -1001,14 +1050,14 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 let text = std::fs::read_to_string(rules_path)
                     .with_context(|| format!("reading rules file {}", rules_path.display()))?;
                 let parsed = ppcap_core::parse_rules(&text);
-                let rf = match std::fs::File::open(&input) {
+                let (rf, ctx) = match std::fs::File::open(&input) {
                     Ok(f) => {
                         let len = std::fs::metadata(&input).ok().map(|m| m.len());
-                        ppcap_core::apply_rules(f, len, &parsed.rules)
+                        ppcap_core::apply_rules_with_context(f, len, &parsed.rules)
                     }
-                    Err(_) => Vec::new(),
+                    Err(_) => Default::default(),
                 };
-                ppcap_core::fold_rule_findings(&mut out.summary, &rf);
+                ppcap_core::fold_rule_findings_with_context(&mut out.summary, &rf, &ctx);
                 eprintln!(
                     "rules: {} loaded, {} skipped, {} matches",
                     parsed.rules.len(),
@@ -1627,6 +1676,42 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     "-" => println!("{s}"),
                     p => std::fs::write(p, &s)
                         .with_context(|| format!("write updated analysis JSON to {p}"))?,
+                }
+            }
+            Ok(())
+        }
+        Command::Timeline {
+            summary,
+            alerts,
+            format,
+            out,
+        } => {
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut analysis: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            // Re-derive so a summary written before timelines existed still gets them (its
+            // DNS / first-contact rows need the context only a fresh analyze records).
+            ppcap_core::refresh_alerts(&mut analysis.summary);
+            let timelines = select_timelines(&analysis.summary.timelines, &alerts)?;
+            if timelines.is_empty() {
+                eprintln!("timeline: no alerts — nothing to tell");
+            }
+            let rendered = match format {
+                TimelineFormat::Markdown => {
+                    ppcap_core::timelines_text(&timelines, "markdown").expect("known format")
+                }
+                TimelineFormat::Csv => {
+                    ppcap_core::timelines_text(&timelines, "csv").expect("known format")
+                }
+                TimelineFormat::Json => serde_json::to_string_pretty(&timelines)?,
+            };
+            match out.as_deref() {
+                None | Some("-") => print!("{rendered}"),
+                Some(p) => {
+                    std::fs::write(p, &rendered)
+                        .with_context(|| format!("write timeline to {p}"))?;
+                    eprintln!("timeline: {} alert(s) written to {p}", timelines.len());
                 }
             }
             Ok(())
@@ -2298,6 +2383,58 @@ mod reputation_cli_tests {
         assert_eq!(d.changed.len(), 1);
         assert!(d.changed[0].delta > 0);
         assert_eq!(d.resolved.len(), 0);
+    }
+
+    #[test]
+    fn timeline_exports_markdown_csv_json_and_rejects_unknown_ids() {
+        let mut summary = ppcap_core::Summary::empty();
+        summary.findings = vec![ppcap_core::Finding {
+            kind: ppcap_core::FindingKind::Beacon,
+            severity: ppcap_core::Severity::High,
+            score: 75,
+            title: "beacon: 10.0.0.7".to_string(),
+            src_ip: "10.0.0.7".to_string(),
+            dst_ip: Some("45.77.13.37".to_string()),
+            dst_port: Some(443),
+            attack: vec!["T1071".to_string()],
+            evidence: vec!["every 30s".to_string()],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: Some(1_700_000_000_000_000_000),
+            last_seen_ns: Some(1_700_000_060_000_000_000),
+            victims: Vec::new(),
+        }];
+        // Written without alerts/timelines: the command re-derives them.
+        let out = ppcap_core::AnalysisOutput {
+            summary,
+            ..Default::default()
+        };
+        let input = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(input.path(), out.to_json_pretty().unwrap()).unwrap();
+        let run = |args: &[&str]| -> anyhow::Result<String> {
+            let dest = tempfile::NamedTempFile::new().unwrap();
+            let mut argv = vec!["ppcap", "timeline", input.path().to_str().unwrap()];
+            argv.extend_from_slice(args);
+            argv.extend_from_slice(&["--out", dest.path().to_str().unwrap()]);
+            dispatch(Cli::try_parse_from(argv).unwrap())?;
+            Ok(std::fs::read_to_string(dest.path()).unwrap())
+        };
+        let md = run(&[]).unwrap();
+        assert!(md.contains("| Time (UTC) | Host | Event | What | Severity | Packets |"));
+        assert!(md.contains("`host 10.0.0.7 and host 45.77.13.37 and port 443`"));
+        let csv = run(&["--format", "csv"]).unwrap();
+        assert!(csv.starts_with("alert_id,time_utc,"));
+        assert_eq!(csv.lines().count(), 2);
+        let json: Vec<ppcap_core::AlertTimeline> =
+            serde_json::from_str(&run(&["--format", "json"]).unwrap()).unwrap();
+        assert_eq!(json.len(), 1);
+        let id = json[0].alert_id.clone();
+        let one: Vec<ppcap_core::AlertTimeline> =
+            serde_json::from_str(&run(&["--format", "json", "--alert", &id]).unwrap()).unwrap();
+        assert_eq!(one[0].alert_id, id);
+        let err = run(&["--alert", "alert:nope"]).unwrap_err().to_string();
+        assert!(err.contains("alert:nope"), "{err}");
     }
 
     #[test]

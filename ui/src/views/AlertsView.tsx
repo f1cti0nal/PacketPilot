@@ -5,7 +5,7 @@
 // re-sorted. "Teach it once": each card can be marked benign, which becomes a suppression rule
 // applied to every later capture; what the rules hid stays listed under Suppressed.
 import { useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Download, ShieldCheck, Trash2, Upload, Waypoints } from "lucide-react";
+import { ChartGantt, ChevronDown, ChevronRight, Download, ShieldCheck, Trash2, Upload, Waypoints } from "lucide-react";
 import type {
   Alert,
   Finding,
@@ -29,6 +29,8 @@ export interface AlertsViewProps {
   findings: Finding[];
   /** Pivot into the Chains view for an alert that carries a chain_id back-reference. */
   onOpenChain?: (chainId: string) => void;
+  /** Pivot into the Timeline view for an alert (its chronological, cross-host story). */
+  onOpenTimeline?: (alertId: string) => void;
   /** Findings the analyst's suppression rules matched (hidden, or kept by a guardrail). */
   suppressions?: SuppressionHit[];
   /** The rules the engine applied to this capture (normalized; resolves a hit's rule_id). */
@@ -196,6 +198,7 @@ function AlertCard({
   expanded,
   onToggle,
   onOpenChain,
+  onOpenTimeline,
   onTeach,
 }: {
   alert: Alert;
@@ -203,6 +206,7 @@ function AlertCard({
   expanded: boolean;
   onToggle: () => void;
   onOpenChain?: (chainId: string) => void;
+  onOpenTimeline?: (alertId: string) => void;
   onTeach?: (alertId: string, scope: TeachScope, reason: string) => Promise<string>;
 }) {
   const color = sevColor(bandSeverity(alert.band));
@@ -361,12 +365,20 @@ function AlertCard({
             </div>
           )}
 
-          {alert.chain_id && onOpenChain && (
-            <div>
-              <button type="button" className={BTN_OUTLINE} onClick={() => onOpenChain(alert.chain_id!)}>
-                <Waypoints className="mr-1.5 h-4 w-4" />
-                Open chain
-              </button>
+          {((alert.chain_id && onOpenChain) || onOpenTimeline) && (
+            <div className="flex flex-wrap gap-2">
+              {onOpenTimeline && (
+                <button type="button" className={BTN_OUTLINE} onClick={() => onOpenTimeline(alert.id)}>
+                  <ChartGantt className="mr-1.5 h-4 w-4" />
+                  Open timeline
+                </button>
+              )}
+              {alert.chain_id && onOpenChain && (
+                <button type="button" className={BTN_OUTLINE} onClick={() => onOpenChain(alert.chain_id!)}>
+                  <Waypoints className="mr-1.5 h-4 w-4" />
+                  Open chain
+                </button>
+              )}
             </div>
           )}
 
@@ -571,6 +583,7 @@ export function AlertsView({
   alerts,
   findings,
   onOpenChain,
+  onOpenTimeline,
   suppressions = [],
   appliedRules = [],
   storedRules = [],
@@ -634,6 +647,7 @@ export function AlertsView({
                 expanded={expandedId === a.id}
                 onToggle={() => setExpandedId((cur) => (cur === a.id ? null : a.id))}
                 onOpenChain={onOpenChain}
+                onOpenTimeline={onOpenTimeline}
                 onTeach={onTeach}
               />
             </li>

@@ -159,6 +159,9 @@ pub fn render_html(
     s.push_str(&alerts_html(sum));
     s.push_str(&suppressed_html(sum));
 
+    // ---- Section 2c: incident timelines (one cross-host story per alert) --------------
+    s.push_str(&timelines_html(sum));
+
     // ---- Section 3: active incidents (the headline triage unit) ----------------------
     s.push_str(&incidents_html(&sum.incidents));
 
@@ -863,6 +866,97 @@ fn alerts_html(sum: &Summary) -> String {
             hc = a.host_count,
             hp = if a.host_count == 1 { "" } else { "s" },
         );
+    }
+    s.push_str("</section>\n");
+    s
+}
+
+/// Alerts whose timeline the report prints (queue order), and rows per printed timeline.
+const REPORT_TIMELINES: usize = 8;
+const REPORT_TIMELINE_ROWS: usize = 60;
+
+/// The "Incident timeline" section: each top alert retold in time order across its hosts, every
+/// row with the capture filter that pulls its packets (the report is static, so the filter is
+/// the pivot). Returns `""` when there are no timelines.
+fn timelines_html(sum: &Summary) -> String {
+    let shown: Vec<_> = sum
+        .timelines
+        .iter()
+        .filter(|t| !t.events.is_empty())
+        .take(REPORT_TIMELINES)
+        .collect();
+    if shown.is_empty() {
+        return String::new();
+    }
+    let mut s = String::with_capacity(4096);
+    s.push_str(
+        "<section class=\"card\"><h2>Incident timeline</h2><p class=\"muted\">Each alert told \
+         as one story in time order across every host it touches: first contact, DNS answers, \
+         downloads, detections and lateral hops. The filter on each row pulls its packets in \
+         tcpdump or Wireshark (pair it with the row's time).</p>",
+    );
+    for t in shown {
+        let span = match (t.first_ts_ns, t.last_ts_ns) {
+            (Some(a), Some(b)) => format!(
+                "{} &rarr; {} ({})",
+                esc(&fmt_ns_utc(a)),
+                esc(&fmt_ns_utc(b)),
+                esc(&human_duration_ns(b - a))
+            ),
+            _ => "untimed".to_string(),
+        };
+        let _ = write!(
+            s,
+            "<h3>{title}</h3><p class=\"muted\">{hosts} &middot; {span}</p>\
+             <table class=\"timeline\"><tr><th>Time (UTC)</th><th>+T</th><th>Host</th>\
+             <th>Event</th><th>What</th><th>Packets</th></tr>",
+            title = esc(&t.title),
+            hosts = esc(&t.hosts.join(", ")),
+        );
+        for e in t.events.iter().take(REPORT_TIMELINE_ROWS) {
+            let (when, rel) = match (e.ts_ns, t.first_ts_ns) {
+                (Some(ts), Some(start)) if ts > start => (
+                    fmt_ns_utc(ts),
+                    format!("+{}", human_duration_ns(ts - start)),
+                ),
+                (Some(ts), Some(_)) => (fmt_ns_utc(ts), "+0s".to_string()),
+                _ => ("untimed".to_string(), String::new()),
+            };
+            let detail = e
+                .detail
+                .as_deref()
+                .map(|d| format!("<br><span class=\"muted\">{}</span>", esc(d)))
+                .unwrap_or_default();
+            let filter = e
+                .packets
+                .as_ref()
+                .map(|p| format!("<span class=\"mono\">{}</span>", esc(&p.bpf())))
+                .unwrap_or_default();
+            let _ = write!(
+                s,
+                "<tr><td class=\"mono\">{when}</td><td class=\"mono\">{rel}</td>\
+                 <td class=\"mono\">{host}</td><td><span class=\"chip\" \
+                 style=\"background:{color};white-space:nowrap\">{kind}</span></td><td>{title}{detail}</td>\
+                 <td>{filter}</td></tr>",
+                when = esc(&when),
+                rel = esc(&rel),
+                host = esc(&e.host),
+                color = sev_color(e.severity),
+                kind = e.kind.label(),
+                title = esc(&e.title),
+            );
+        }
+        s.push_str("</table>");
+        let hidden =
+            (t.event_count as usize).saturating_sub(t.events.len().min(REPORT_TIMELINE_ROWS));
+        if hidden > 0 {
+            let _ = write!(
+                s,
+                "<p class=\"muted\">{hidden} more event{p} in the summary JSON \
+                 (<span class=\"mono\">ppcap timeline</span> exports them all).</p>",
+                p = if hidden == 1 { "" } else { "s" },
+            );
+        }
     }
     s.push_str("</section>\n");
     s

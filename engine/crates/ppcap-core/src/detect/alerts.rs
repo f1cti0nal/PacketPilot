@@ -427,6 +427,7 @@ pub fn derive_alerts(summary: &Summary) -> Vec<Alert> {
 pub fn refresh_alerts(summary: &mut Summary) {
     summary.suppressions = super::suppress::match_suppressions(summary);
     summary.alerts = derive_alerts(summary);
+    summary.timelines = super::timeline::derive_timelines(summary);
 }
 
 /// The queue's total order: priority desc, severity desc, tier asc, first-seen asc
@@ -1926,6 +1927,8 @@ mod tests {
             known_bad: false,
             signatures: Vec::new(),
             extracted_path: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
         }];
         let alerts = derive_alerts(&summary);
         assert!(alerts.iter().any(|a| a

@@ -36,6 +36,137 @@ pub fn findings_csv(out: &AnalysisOutput) -> String {
     s
 }
 
+/// RFC 3339 UTC with milliseconds for a nanosecond timestamp; `""` on overflow.
+fn iso_ns(ns: i64) -> String {
+    use time::macros::format_description;
+    let fmt =
+        format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z");
+    time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(ns))
+        .ok()
+        .and_then(|dt| dt.format(&fmt).ok())
+        .unwrap_or_default()
+}
+
+/// A CSV field that a spreadsheet will not evaluate: hostile capture text (a DNS name, a title)
+/// starting with a formula trigger is prefixed with `'`, then quoted per RFC 4180.
+fn csv_text(s: &str) -> String {
+    if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        csv_field(&format!("'{s}"))
+    } else {
+        csv_field(s)
+    }
+}
+
+/// Render incident timelines as CSV, one row per event (every alert's rows, queue order). The
+/// `bpf` and window columns reproduce each row's packets in any tool.
+pub fn timeline_csv(timelines: &[crate::model::timeline::AlertTimeline]) -> String {
+    let mut s = String::from(
+        "alert_id,time_utc,ts_ns,end_ns,kind,host,peer,port,severity,tactic,attack,title,detail,\
+         finding_index,bpf,window_start_ns,window_end_ns\n",
+    );
+    let opt = |v: Option<i64>| v.map(|x| x.to_string()).unwrap_or_default();
+    for t in timelines {
+        for e in &t.events {
+            let cols = [
+                csv_field(&t.alert_id),
+                e.ts_ns.map(iso_ns).unwrap_or_default(),
+                opt(e.ts_ns),
+                opt(e.end_ns),
+                e.kind.as_str().to_string(),
+                csv_text(&e.host),
+                csv_text(e.peer.as_deref().unwrap_or("")),
+                e.dst_port.map(|p| p.to_string()).unwrap_or_default(),
+                e.severity.as_str().to_string(),
+                csv_text(e.tactic.as_deref().unwrap_or("")),
+                csv_text(&e.attack.join(";")),
+                csv_text(&e.title),
+                csv_text(e.detail.as_deref().unwrap_or("")),
+                e.finding_index.map(|i| i.to_string()).unwrap_or_default(),
+                e.packets
+                    .as_ref()
+                    .map(|p| csv_text(&p.bpf()))
+                    .unwrap_or_default(),
+                opt(e.packets.as_ref().map(|p| p.start_ns)),
+                opt(e.packets.as_ref().map(|p| p.end_ns)),
+            ];
+            s.push_str(&cols.join(","));
+            s.push('\n');
+        }
+    }
+    s
+}
+
+/// Markdown table cell: pipes escaped, line breaks flattened, HTML-significant `<` neutralized
+/// (ticket systems render inline HTML).
+fn md_cell(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('|', "\\|")
+        .replace(['\n', '\r'], " ")
+        .replace('<', "&lt;")
+}
+
+/// Render one incident timeline as a Markdown section ready to paste into a ticket or hand-off.
+pub fn timeline_markdown(t: &crate::model::timeline::AlertTimeline) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(s, "## {}\n", md_cell(&t.title));
+    let _ = writeln!(s, "- Alert: `{}`", md_cell(&t.alert_id));
+    let _ = writeln!(s, "- Hosts: {}", md_cell(&t.hosts.join(", ")));
+    if let (Some(a), Some(b)) = (t.first_ts_ns, t.last_ts_ns) {
+        let _ = writeln!(s, "- Span: {} → {}", iso_ns(a), iso_ns(b));
+    }
+    if t.event_count as usize > t.events.len() {
+        let _ = writeln!(
+            s,
+            "- Showing {} of {} events (detections and hops kept first)",
+            t.events.len(),
+            t.event_count
+        );
+    }
+    s.push_str("\n| Time (UTC) | Host | Event | What | Severity | Packets |\n");
+    s.push_str("|---|---|---|---|---|---|\n");
+    for e in &t.events {
+        let when = e.ts_ns.map(iso_ns).unwrap_or_else(|| "untimed".to_string());
+        let mut what = md_cell(&e.title);
+        if let Some(d) = &e.detail {
+            let _ = write!(what, "<br>{}", md_cell(d));
+        }
+        let packets = e
+            .packets
+            .as_ref()
+            .map(|p| format!("`{}`", md_cell(&p.bpf())))
+            .unwrap_or_default();
+        let _ = writeln!(
+            s,
+            "| {when} | {} | {} | {what} | {} | {packets} |",
+            md_cell(&e.host),
+            e.kind.label(),
+            e.severity.as_str(),
+        );
+    }
+    s
+}
+
+/// Render timelines as `"markdown"` (one section per alert) or `"csv"` (one row per event) —
+/// the single entry point the browser (wasm) and desktop (Tauri) exports share. `None` for an
+/// unknown format token.
+pub fn timelines_text(
+    timelines: &[crate::model::timeline::AlertTimeline],
+    format: &str,
+) -> Option<String> {
+    match format {
+        "markdown" => Some(
+            timelines
+                .iter()
+                .map(timeline_markdown)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        "csv" => Some(timeline_csv(timelines)),
+        _ => None,
+    }
+}
+
 /// Accumulated indicator state for one external IP.
 struct IndicatorAcc {
     name: String,
@@ -563,6 +694,84 @@ fn det_uuid(seed: &str) -> String {
 mod tests {
     use super::*;
     use crate::enrich::IpClass;
+
+    fn timeline() -> crate::model::timeline::AlertTimeline {
+        use crate::model::timeline::{
+            AlertTimeline, PacketScope, TimelineEvent, TimelineEventKind,
+        };
+        let ev = |ts: Option<i64>, kind, title: &str| TimelineEvent {
+            ts_ns: ts,
+            end_ns: None,
+            kind,
+            host: "10.0.0.7".into(),
+            peer: Some("45.77.13.37".into()),
+            dst_port: Some(443),
+            title: title.into(),
+            detail: Some("line one\nline | two".into()),
+            severity: crate::model::severity::Severity::High,
+            tactic: Some("Command & Control".into()),
+            attack: vec!["T1071".into()],
+            finding_index: Some(2),
+            packets: Some(PacketScope {
+                host: "10.0.0.7".into(),
+                peer: Some("45.77.13.37".into()),
+                port: Some(443),
+                start_ns: 5,
+                end_ns: 9,
+            }),
+        };
+        AlertTimeline {
+            alert_id: "alert:00ff".into(),
+            title: "Beacon | C2".into(),
+            hosts: vec!["10.0.0.7".into()],
+            first_ts_ns: Some(1_700_000_000_123_000_000),
+            last_ts_ns: Some(1_700_000_060_000_000_000),
+            events: vec![
+                ev(
+                    Some(1_700_000_000_123_000_000),
+                    TimelineEventKind::Detection,
+                    "=HYPERLINK(\"x\")",
+                ),
+                ev(None, TimelineEventKind::DnsAnswer, "<script>"),
+            ],
+            event_count: 3,
+        }
+    }
+
+    #[test]
+    fn timeline_csv_rows_carry_packets_and_defuse_formulas() {
+        let csv = timeline_csv(&[timeline()]);
+        let lines: Vec<&str> = csv.lines().collect();
+        assert!(lines[0].starts_with("alert_id,time_utc,ts_ns"));
+        assert!(lines[1].starts_with("alert:00ff,2023-11-14T22:13:20.123Z,1700000000123000000,"));
+        assert!(csv.contains("host 10.0.0.7 and host 45.77.13.37 and port 443,5,9\n"));
+        // A formula-looking title is prefixed so a spreadsheet shows it as text.
+        assert!(
+            lines[1].contains("\"'=HYPERLINK(\"\"x\"\")\""),
+            "{}",
+            lines[1]
+        );
+        // The multi-line detail is quoted, so it spans physical lines but stays one field.
+        assert!(csv.contains("\"line one\nline | two\""));
+    }
+
+    #[test]
+    fn timeline_markdown_is_one_table_safe_to_paste() {
+        let md = timeline_markdown(&timeline());
+        assert!(md.starts_with("## Beacon \\| C2\n"));
+        assert!(md.contains("- Showing 2 of 3 events"));
+        assert!(md.contains("| 2023-11-14T22:13:20.123Z | 10.0.0.7 | Detection |"));
+        assert!(md.contains("line one line \\| two"));
+        assert!(md.contains("`host 10.0.0.7 and host 45.77.13.37 and port 443`"));
+        assert!(md.contains("| untimed |"));
+        assert!(md.contains("&lt;script>"));
+        assert!(!md.contains("<script>"));
+        // Every table row has the same 6 columns (7 unescaped pipes).
+        for row in md.lines().filter(|l| l.starts_with("| ")) {
+            let pipes = row.replace("\\|", "").matches('|').count();
+            assert_eq!(pipes, 7, "{row}");
+        }
+    }
     use crate::model::finding::{Finding, FindingKind};
     use crate::model::severity::Severity;
     use crate::model::summary::{FingerprintHit, IpThreat, Summary};

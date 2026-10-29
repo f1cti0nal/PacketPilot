@@ -111,6 +111,12 @@ export function export_sigma(output_json: string): string;
 export function export_stix(output_json: string, generated_unix_secs: bigint): string;
 
 /**
+ * Render incident timelines (`timelines_json`: an `AlertTimeline[]`, e.g. one alert's) as
+ * `"markdown"` or `"csv"` for a ticket or hand-off.
+ */
+export function export_timeline(timelines_json: string, format: string): string;
+
+/**
  * Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and return the packets for the
  * single flow described by `query_json`, bounded by `caps_json`.
  *
@@ -163,6 +169,7 @@ export interface InitOutput {
     readonly export_misp: (a: number, b: number, c: bigint) => [number, number, number, number];
     readonly export_sigma: (a: number, b: number) => [number, number, number, number];
     readonly export_stix: (a: number, b: number, c: bigint) => [number, number, number, number];
+    readonly export_timeline: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly extract_packets: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly render_report: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number, number];
     readonly sanitize: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => [number, number, number, number];

@@ -16,6 +16,7 @@
 pub mod alerts;
 pub mod rules;
 pub mod suppress;
+pub mod timeline;
 
 /// Streaming mean/variance over a stream of `i64` samples using Welford's online algorithm.
 ///
@@ -5556,6 +5557,17 @@ pub fn fold_rule_findings(summary: &mut crate::model::summary::Summary, rule_fin
     // Alerts read findings + incidents + chains + cards, so they re-derive last. Re-derivation
     // (never patching) is what keeps native and wasm alert output byte-identical.
     alerts::refresh_alerts(summary);
+}
+
+/// [`fold_rule_findings`], first merging the rules pass's timeline context (see
+/// [`rules::apply_rules_with_context`]) so the matches' timelines carry their first contacts.
+pub fn fold_rule_findings_with_context(
+    summary: &mut crate::model::summary::Summary,
+    rule_findings: &[Finding],
+    context: &crate::model::timeline::TimelineContext,
+) {
+    summary.timeline_context.merge(context);
+    fold_rule_findings(summary, rule_findings);
 }
 
 #[cfg(test)]

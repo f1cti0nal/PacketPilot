@@ -196,6 +196,12 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   findings stay listed under *Suppressed* with the rule that hid them, and confirmed malware, ARP
   spoofing, OT writes and threat-intel or reputation hits are never hidden. Rules are a plain
   `suppressions.json`, so one analyst keeps them offline and a team shares them in git — no server.
+- **Incident timeline** — every alert retold as one chronological story across all the hosts it
+  touches: first contact with the peer, the DNS answer that resolved it, downloads with their
+  SHA-256, each detection as it starts, and the lateral hops between hosts. Every row is one click
+  from its packets (the app carves a `.pcap` of just that host pair and time window; the report
+  and exports carry the matching capture filter). It is in the app's Timeline tab, the HTML
+  report, and `ppcap timeline <summary.json> --format markdown|csv|json` for tickets and hand-offs.
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.

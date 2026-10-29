@@ -79,25 +79,31 @@ pub use custody::{
     EVIDENCE_SCHEMA_VERSION,
 };
 pub use detect::alerts::{derive_alerts, diff_alerts, refresh_alerts};
-pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
+pub use detect::rules::{
+    apply_rules, apply_rules_with_context, parse_rules, Rule, RuleParse, RuleProto, SkippedRule,
+};
 pub use detect::suppress::{
     apply_suppressions, expire_carried_rules, load_rules as load_suppression_rules,
     match_suppressions, merge_into_file as merge_suppression_rules, rules_for_alert,
     ymd_from_unix_secs, LoadedRules, Taught, TeachMeta, TeachScope, DEFAULT_RULE_TTL_DAYS,
 };
+pub use detect::timeline::derive_timelines;
 pub use detect::{
-    fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, CryptominingParams, DetectConfig, DgaParams, DisguisedDownloadParams,
-    DnsTunnelParams, ExfilParams, IcmpTunnelParams, IcsControlParams, LateralMovementParams,
-    PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams, SynFloodParams,
-    TlsCertHealthParams, WeakTlsParams,
+    fold_rule_findings, fold_rule_findings_with_context, ArpSpoofParams, BeaconParams,
+    BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams, DetectConfig,
+    DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
+    IcsControlParams, LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams,
+    SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 pub use enrich::{
     apply_domain_reputation, apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher,
     FeedMatch, FlowEnrichment, IpClass, RepStatus, ReputationVerdict, ThreatFeed,
 };
 pub use error::{PpError, Result};
-pub use export::{cef_records, findings_csv, misp_event, sigma_rules, stix_bundle};
+pub use export::{
+    cef_records, findings_csv, misp_event, sigma_rules, stix_bundle, timeline_csv,
+    timeline_markdown, timelines_text,
+};
 pub use fingerprint::{fingerprint_tls_client_hello, Ja4Transport, TlsFingerprints};
 pub use forecast::{
     detect_traffic_anomalies, forecast_next, Anomaly, FlowDir, ForecastInput, ForecastNext,
@@ -124,6 +130,10 @@ pub use model::summary::{
 };
 pub use model::suppression::{
     BlockReason, SuppressionFile, SuppressionHit, SuppressionOutcome, SuppressionRule,
+};
+pub use model::timeline::{
+    AlertTimeline, DnsAnswer, FirstContact, PacketScope, TimelineContext, TimelineEvent,
+    TimelineEventKind,
 };
 pub use packets::{
     carve_pcap, decrypt_capture, decrypt_tls_flow, extract_flow_packets, CarveQuery, CarveResult,

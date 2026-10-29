@@ -156,6 +156,7 @@ export function AppShell({
       { id: "findings" as const, label: "Findings" },
       { id: "threats" as const, label: "Threats", badge: threats.length || undefined },
       { id: "attackchain" as const, label: "Chains", badge: chainCount || undefined },
+      { id: "timeline" as const, label: "Timeline" },
       { id: "baseline" as const, label: "Baseline", badge: deviationCount || undefined },
       { id: "recent" as const, label: "Recent", badge: recentCount || undefined },
       ...(compareActive ? [{ id: "compare" as const, label: "Compare" }] : []),

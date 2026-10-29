@@ -12,6 +12,7 @@ const ROUTES = new Set<string>([
   "/app#findings",
   "/app#threats",
   "/app#attackchain",
+  "/app#timeline",
   "/app#baseline",
   "/app#recent",
   "/app#compare",
