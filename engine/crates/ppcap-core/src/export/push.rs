@@ -374,16 +374,17 @@ impl PushPayload {
     }
 }
 
-/// A stable identity for the analysed capture: the source SHA-256 when the run hashed it, else a
-/// digest of its path, size and packet time span. Re-running push on the same analysis keeps
-/// it; a different capture gets a different one.
+/// A stable identity for the analysed capture, from what the capture itself fixes: its size,
+/// packet count and first / last packet time. It does not depend on the file's path or on
+/// whether the run hashed it (`--hash`), so re-analysing or moving the same capture keeps it,
+/// while a different capture gets a different one.
 pub fn capture_id(out: &AnalysisOutput) -> String {
-    if let Some(h) = out.source_sha256.as_deref().filter(|h| h.len() >= 16) {
-        return h[..16].to_ascii_lowercase();
-    }
     let seed = format!(
         "{}|{}|{:?}|{:?}",
-        out.source_path, out.source_bytes, out.summary.first_ts_ns, out.summary.last_ts_ns
+        out.source_bytes,
+        out.summary.total_packets,
+        out.summary.first_ts_ns,
+        out.summary.last_ts_ns
     );
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for &b in seed.as_bytes() {
@@ -491,10 +492,11 @@ pub fn build_payloads(
                     let mut body = String::new();
                     for a in c {
                         // `create` works for both plain indices and data streams.
-                        // A stable `_id` makes a retried item a 409 conflict, not a duplicate.
-                        body.push_str(&json_body(
-                            &json!({"create": {"_index": index, "_id": delivery_key(out, a)}}),
-                        ));
+                        // A stable `_id` per band makes a retried item a 409 conflict, not a
+                        // duplicate, while an escalation is a new document (data streams are
+                        // append-only, so the old one cannot be overwritten).
+                        let id = format!("{}#{}", delivery_key(out, a), a.band.as_str());
+                        body.push_str(&json_body(&json!({"create": {"_index": index, "_id": id}})));
                         body.push('\n');
                         body.push_str(&json_body(&ecs_document(
                             out,
@@ -1345,9 +1347,23 @@ pub fn resolve_target(
     };
     let mut secrets: Vec<String> = Vec::new();
     if display_url != base_url {
-        // The secret webhook URL's path (its token part) may be echoed without the host.
-        if let Some(path) = base_url.splitn(4, '/').nth(3) {
+        // The secret webhook URL's path and query (its token parts) may be echoed without the
+        // host, or one piece at a time.
+        if let Some(rest) = base_url.splitn(4, '/').nth(3) {
+            secrets.push(rest.to_string());
+            let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
             secrets.push(path.to_string());
+            secrets.extend(
+                path.split('/')
+                    .filter(|seg| seg.len() >= 8)
+                    .map(str::to_string),
+            );
+            secrets.push(query.to_string());
+            secrets.extend(
+                query
+                    .split('&')
+                    .filter_map(|kv| kv.split_once('=').map(|(_, v)| v.to_string())),
+            );
         }
     }
     secrets.extend(token.iter().cloned());
@@ -1901,7 +1917,7 @@ mod tests {
         let p = build_payloads(&out, &d, &[&out.summary.alerts[0]], 0);
         assert_eq!(p[0].path, "/api/v1/alert");
         let v: Value = serde_json::from_str(&p[0].body).unwrap();
-        assert_eq!(v["sourceRef"], format!("alert:1@{}", "ab".repeat(8)));
+        assert_eq!(v["sourceRef"], delivery_key(&out, &out.summary.alerts[0]));
         assert_eq!(v["severity"], 3);
         assert_eq!(v["date"], 1_700_000_000_000i64);
         let obs = v["observables"].as_array().unwrap();
@@ -1944,7 +1960,7 @@ mod tests {
             .collect();
         assert_eq!(
             lines[0]["create"]["_id"],
-            format!("alert:1@{}", "ab".repeat(8))
+            format!("{}#act_now", delivery_key(&out, &out.summary.alerts[0]))
         );
         assert_eq!(
             lines[0]["create"]["_index"],
@@ -2046,16 +2062,15 @@ mod tests {
     fn delivery_keys_separate_captures_and_survive_reruns() {
         let out = output();
         let a = &out.summary.alerts[0];
-        assert_eq!(capture_id(&out), "ab".repeat(8));
-        assert_eq!(delivery_key(&out, a), format!("alert:1@{}", "ab".repeat(8)));
-        // Without a hash the identity comes from path, size and time span: stable per analysis,
-        // different for another capture of the same host.
-        let mut unhashed = out.clone();
-        unhashed.source_sha256 = None;
-        let k1 = delivery_key(&unhashed, a);
-        assert_eq!(k1, delivery_key(&unhashed.clone(), a));
-        let mut other = unhashed.clone();
-        other.source_path = "/cases/acme/host5-day2.pcap".into();
+        let k1 = delivery_key(&out, a);
+        // Hashing or moving the same capture keeps its identity.
+        let mut same = out.clone();
+        same.source_sha256 = None;
+        same.source_path = "/elsewhere/renamed.pcap".into();
+        assert_eq!(k1, delivery_key(&same, a));
+        // Another capture of the same host is a different delivery.
+        let mut other = out.clone();
+        other.summary.last_ts_ns = Some(42);
         assert_ne!(k1, delivery_key(&other, a));
         assert!(k1.starts_with("alert:1@") && k1.len() == "alert:1@".len() + 16);
     }
@@ -2102,6 +2117,16 @@ mod tests {
         assert_eq!(
             s.redact("no_service for services/T0/B0/s3cr3t"),
             "no_service for ***"
+        );
+        let q = |k: &str| {
+            (k == "PPCAP_SLACK_WEBHOOK_URL").then(|| {
+                "https://prod.example.org/workflows/run?api-version=1&sig=QuErYs3cr3t".into()
+            })
+        };
+        let t = resolve_target(&dest(DestinationKind::Slack), &q).unwrap();
+        assert_eq!(
+            t.redact("invalid signature QuErYs3cr3t"),
+            "invalid signature ***"
         );
         let h = resolve_target(&dest(DestinationKind::SplunkHec), &env).unwrap();
         assert_eq!(h.redact("bad token hec-token-123"), "bad token ***");
