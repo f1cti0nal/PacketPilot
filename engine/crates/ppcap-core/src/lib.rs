@@ -62,7 +62,7 @@ pub mod stats;
 pub mod timemachine;
 pub mod tls;
 
-pub use analyze::{run, run_source, run_source_visiting, PipelineConfig};
+pub use analyze::{run, run_source, run_source_visiting, sha256_hex, PipelineConfig};
 pub use baseline::{
     build_baseline, compare_to_baseline, compare_to_baseline_at, merge as merge_baselines,
     update_baseline, BaselineParams, BaselineProfile, CaptureProfile, Deviation, DeviationReport,

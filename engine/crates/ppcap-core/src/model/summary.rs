@@ -413,6 +413,10 @@ pub struct Summary {
     /// keeps older summaries readable.
     #[serde(default)]
     pub carved_files: Vec<CarvedFile>,
+    /// Every path `--carve-dir` extraction wrote this run, uncapped (`carved_files` is a top-k
+    /// projection for the UI). In-memory only, for the evidence manifest; never serialized.
+    #[serde(skip)]
+    pub extracted_paths: Vec<String>,
     /// Cross-flow behavioral findings (beaconing, sweeps, exfil) from the `detect` stage.
     /// `#[serde(default)]` keeps older summaries (written before this field existed) readable.
     #[serde(default)]
@@ -474,6 +478,7 @@ impl Summary {
             encrypted_dns: Vec::new(),
             tls_servers: Vec::new(),
             carved_files: Vec::new(),
+            extracted_paths: Vec::new(),
             findings: Vec::new(),
             incidents: Vec::new(),
             attack_chains: Vec::new(),

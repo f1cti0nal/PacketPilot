@@ -395,10 +395,14 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             // Key-log decryption: parse up front so a wrong path or an empty/foreign file fails
             // before the (possibly long) analysis pass rather than after it.
             let keylog_path = keylog.clone();
+            // SHA-256 + size of the exact key-log bytes parsed below, for the evidence manifest.
+            let mut keylog_digest: Option<(String, u64)> = None;
             let keylog = match keylog.as_ref() {
                 Some(path) => {
                     let text = std::fs::read_to_string(path)
                         .with_context(|| format!("reading key-log file {}", path.display()))?;
+                    keylog_digest =
+                        Some((ppcap_core::sha256_hex(text.as_bytes()), text.len() as u64));
                     let parsed = ppcap_core::KeyLog::parse(&text);
                     if parsed.is_empty() {
                         return Err(anyhow!(
@@ -776,10 +780,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if no_encrypted_analysis {
                     settings.push("--no-encrypted-analysis".to_string());
                 }
-                if let Some(p) = keylog_path.as_ref() {
-                    // The key-log is an input that shapes the output, so pin its contents too.
-                    let (sha, _) = ppcap_core::hash_file(p)
-                        .with_context(|| format!("hash key-log {}", p.display()))?;
+                if let (Some(p), Some((sha, _))) = (keylog_path.as_ref(), keylog_digest.as_ref()) {
                     settings.push(format!("--keylog {} (sha256 {sha})", p.display()));
                 }
 
@@ -847,14 +848,22 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if let Some(p) = update_baseline.as_ref() {
                     record("baseline_profile", p)?;
                 }
-                // Bodies extracted by --carve-dir are evidence too; one record per file.
-                let mut carved_seen = std::collections::HashSet::new();
-                for c in &out.summary.carved_files {
-                    if let Some(p) = c.extracted_path.as_deref() {
-                        if carved_seen.insert(p) {
-                            record("carved_file", std::path::Path::new(p))?;
-                        }
-                    }
+                // Bodies extracted by --carve-dir are evidence too; one record per file (the
+                // uncapped list, not the top-k `carved_files` projection).
+                for p in &out.summary.extracted_paths {
+                    record("carved_file", std::path::Path::new(p))?;
+                }
+                // The key-log is an input the output depends on: record it so `verify` checks it,
+                // with the digest of the exact bytes the run parsed.
+                if let (Some(p), Some((sha256, bytes))) =
+                    (keylog_path.as_ref(), keylog_digest.clone())
+                {
+                    artifacts.push(ppcap_core::ArtifactRecord {
+                        role: "keylog_input".to_string(),
+                        path: rel(p),
+                        sha256,
+                        bytes,
+                    });
                 }
 
                 let now = std::time::SystemTime::now()
@@ -1981,6 +1990,36 @@ mod reputation_cli_tests {
             assert!(m.settings.iter().any(|s| s == "--no-encrypted-analysis"));
             let verify = Cli::try_parse_from(["ppcap", "verify", "results/case.json"]).unwrap();
             dispatch(verify)?;
+
+            // A --keylog input is sealed as a file record, so verify notices it going missing.
+            let keylog = format!("CLIENT_RANDOM {} {}\n", "ab".repeat(32), "cd".repeat(48));
+            std::fs::write("keys.log", &keylog)?;
+            let analyze = Cli::try_parse_from([
+                "ppcap",
+                "analyze",
+                "in.pcap",
+                "--json",
+                "k.json",
+                "--keylog",
+                "keys.log",
+                "--evidence",
+                "k.evidence.json",
+                "--quiet",
+            ])
+            .unwrap();
+            dispatch(analyze)?;
+            let m = ppcap_core::EvidenceManifest::from_json_str(&std::fs::read_to_string(
+                "k.evidence.json",
+            )?)?;
+            let rec = m
+                .artifacts
+                .iter()
+                .find(|a| a.role == "keylog_input")
+                .expect("keylog record");
+            assert_eq!(rec.sha256, ppcap_core::sha256_hex(keylog.as_bytes()));
+            std::fs::remove_file("keys.log")?;
+            let verify = Cli::try_parse_from(["ppcap", "verify", "k.evidence.json"]).unwrap();
+            assert!(dispatch(verify).is_err());
             Ok(())
         })();
         std::env::set_current_dir(old_cwd).unwrap();

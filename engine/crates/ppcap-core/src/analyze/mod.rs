@@ -597,6 +597,12 @@ pub fn run_source_visiting<'a>(
             findings.push(f);
         }
     }
+    let mut extracted_paths: Vec<String> = carved
+        .iter()
+        .filter_map(|c| c.extracted_path.clone())
+        .collect();
+    extracted_paths.sort_unstable();
+    extracted_paths.dedup();
     // Surface the carved-file IOC list, known-bad first then largest, capped for the summary/UI.
     const TOP_K_CARVED: usize = 128;
     let mut carved_files: Vec<crate::model::summary::CarvedFile> = carved
@@ -718,6 +724,7 @@ pub fn run_source_visiting<'a>(
     // Materialize the summary (consumes stats) and finalize the Parquet file.
     let mut summary = stats.finish();
     summary.carved_files = carved_files;
+    summary.extracted_paths = extracted_paths;
     // Correlate the findings into per-host incidents (the "is this a real incident" view).
     summary.incidents = correlate_incidents(&findings);
     // Reconstruct the multi-host, temporally-ordered attack chains over the same finding set
@@ -1066,7 +1073,7 @@ pub(crate) fn hex_of(bytes: &[u8]) -> String {
 }
 
 /// One-shot SHA-256 hex of a byte slice (reuses the vendored streaming `Sha256`).
-pub(crate) fn sha256_hex(data: &[u8]) -> String {
+pub fn sha256_hex(data: &[u8]) -> String {
     hex_of(&sha256(data))
 }
 
