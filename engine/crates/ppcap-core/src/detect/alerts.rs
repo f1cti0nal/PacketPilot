@@ -1206,8 +1206,14 @@ fn truncate_with_overflow(alerts: Vec<Alert>, summary: &Summary) -> Vec<Alert> {
         indices.len(),
         if indices.len() == 1 { "" } else { "s" },
     );
+    // The id is derived from the folded alerts' own ids, so case fusion only merges two
+    // captures' overflow rows when they fold the same stories — a fixed id would credit
+    // unrelated overflow sets with recurrence.
+    let mut member_ids: Vec<&str> = dropped.iter().map(|a| a.id.as_str()).collect();
+    member_ids.sort_unstable();
+    let id_key = format!("rollup:overflow:{}", member_ids.join(","));
     let overflow = Alert {
-        id: format!("alert:{:016x}", fnv1a64(b"rollup:overflow")),
+        id: format!("alert:{:016x}", fnv1a64(id_key.as_bytes())),
         source: AlertSource::Rollup,
         // Inherits the WORST dropped row's rank so folded actionable rows stay visible at
         // their level instead of sinking below the hygiene tail.

@@ -680,8 +680,8 @@ impl StatsAccumulator {
                     ja3: f.ja3.clone(),
                     ja4: f.ja4.clone(),
                     ja4s: f.ja4s.clone(),
-                    hassh: f.hassh.clone(),
-                    hassh_server: f.hassh_server.clone(),
+                    hassh: f.hassh.clone().filter(|_| f.hassh_ioc),
+                    hassh_server: f.hassh_server.clone().filter(|_| f.hassh_server_ioc),
                     label: label.clone(),
                 };
                 const MAX_FP_PER_IP: usize = 6;
@@ -3703,6 +3703,42 @@ mod tests {
         assert_eq!(t.fingerprints[0].label, "CobaltStrike");
         assert_eq!(t.fingerprints[0].ja3.as_deref(), Some("aaa"));
         assert!(t.fingerprints[0].ja4.is_none());
+    }
+
+    #[test]
+    fn ip_threat_exports_only_the_matched_ssh_hash() {
+        // Only the client HASSH matched the feed; the server's clean HASSHServer must not be
+        // rolled up (STIX/MISP/Time Machine would otherwise mark it malicious).
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let mut f = flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 5),
+            ip4(10, 0, 0, 6),
+            Category::Web,
+            2,
+            100,
+        );
+        f.hassh = Some("aaaa".into());
+        f.hassh_server = Some("bbbb".into());
+        f.hassh_ioc = true;
+        f.fingerprint_label = Some("bad client".into());
+        let sc = ScoredFlow {
+            severity: Severity::High,
+            score: 80,
+            evidence: vec![],
+            attack: vec![],
+            terms: vec![],
+        };
+        acc.observe_flow(&f);
+        acc.observe_scored_flow(&f, &sc);
+        let summary = acc.finish();
+        let t = summary
+            .ip_threats
+            .iter()
+            .find(|t| t.ip == "10.0.0.5")
+            .expect("threat card present");
+        assert_eq!(t.fingerprints[0].hassh.as_deref(), Some("aaaa"));
+        assert!(t.fingerprints[0].hassh_server.is_none());
     }
 
     #[test]

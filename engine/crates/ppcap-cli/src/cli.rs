@@ -394,6 +394,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
 
             // Key-log decryption: parse up front so a wrong path or an empty/foreign file fails
             // before the (possibly long) analysis pass rather than after it.
+            let keylog_path = keylog.clone();
             let keylog = match keylog.as_ref() {
                 Some(path) => {
                     let text = std::fs::read_to_string(path)
@@ -772,6 +773,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if let Some(n) = forecast_min_bins {
                     settings.push(format!("--forecast-min-bins {n}"));
                 }
+                if no_encrypted_analysis {
+                    settings.push("--no-encrypted-analysis".to_string());
+                }
+                if let Some(p) = keylog_path.as_ref() {
+                    // The key-log is an input that shapes the output, so pin its contents too.
+                    let (sha, _) = ppcap_core::hash_file(p)
+                        .with_context(|| format!("hash key-log {}", p.display()))?;
+                    settings.push(format!("--keylog {} (sha256 {sha})", p.display()));
+                }
 
                 // Input hash: reuse the --hash pass's result when present, else hash now —
                 // an unhashed input is not evidence.
@@ -783,13 +793,32 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
 
                 // Hash every file artifact this run wrote (stdout streams are unverifiable
                 // and deliberately unrecorded).
+                // `verify` resolves relative paths against the manifest's own directory, so record
+                // each path relative to it (or absolute when it lives outside that directory).
+                let manifest_dir = match evidence_path.parent() {
+                    Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+                    _ => PathBuf::from("."),
+                };
+                let manifest_dir = manifest_dir
+                    .canonicalize()
+                    .with_context(|| format!("resolve {}", manifest_dir.display()))?;
+                let rel = |path: &std::path::Path| -> String {
+                    let abs = path
+                        .canonicalize()
+                        .or_else(|_| std::path::absolute(path))
+                        .unwrap_or_else(|_| path.to_path_buf());
+                    match abs.strip_prefix(&manifest_dir) {
+                        Ok(r) => r.display().to_string(),
+                        Err(_) => abs.display().to_string(),
+                    }
+                };
                 let mut artifacts: Vec<ppcap_core::ArtifactRecord> = Vec::new();
                 let mut record = |role: &str, path: &std::path::Path| -> anyhow::Result<()> {
                     let (sha256, bytes) = ppcap_core::hash_file(path)
                         .with_context(|| format!("hash artifact {}", path.display()))?;
                     artifacts.push(ppcap_core::ArtifactRecord {
                         role: role.to_string(),
-                        path: path.display().to_string(),
+                        path: rel(path),
                         sha256,
                         bytes,
                     });
@@ -818,6 +847,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if let Some(p) = update_baseline.as_ref() {
                     record("baseline_profile", p)?;
                 }
+                // Bodies extracted by --carve-dir are evidence too; one record per file.
+                let mut carved_seen = std::collections::HashSet::new();
+                for c in &out.summary.carved_files {
+                    if let Some(p) = c.extracted_path.as_deref() {
+                        if carved_seen.insert(p) {
+                            record("carved_file", std::path::Path::new(p))?;
+                        }
+                    }
+                }
 
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -827,7 +865,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     &out.engine_version,
                     now,
                     settings,
-                    &input.display().to_string(),
+                    &rel(&input),
                     &src_sha,
                     src_bytes,
                     &out.summary,
@@ -1919,6 +1957,30 @@ mod reputation_cli_tests {
             let verify = Cli::try_parse_from(["ppcap", "verify", "case.evidence.json"]).unwrap();
             let err = dispatch(verify).unwrap_err();
             assert!(err.to_string().contains("files failed"), "{err}");
+
+            // A manifest in a subdirectory, with the input outside it: paths are recorded
+            // relative to the manifest (or absolute), so the intact bundle still verifies.
+            std::fs::create_dir("results")?;
+            let analyze = Cli::try_parse_from([
+                "ppcap",
+                "analyze",
+                "in.pcap",
+                "--json",
+                "results/out.json",
+                "--evidence",
+                "results/case.json",
+                "--no-encrypted-analysis",
+                "--quiet",
+            ])
+            .unwrap();
+            dispatch(analyze)?;
+            let m = ppcap_core::EvidenceManifest::from_json_str(&std::fs::read_to_string(
+                "results/case.json",
+            )?)?;
+            assert_eq!(m.artifacts[0].path, "out.json");
+            assert!(m.settings.iter().any(|s| s == "--no-encrypted-analysis"));
+            let verify = Cli::try_parse_from(["ppcap", "verify", "results/case.json"]).unwrap();
+            dispatch(verify)?;
             Ok(())
         })();
         std::env::set_current_dir(old_cwd).unwrap();

@@ -396,18 +396,23 @@ pub fn run_source_visiting<'a>(
                     && meta.src_port != meta.dst_port
                 {
                     if let (Some(src), Some(dst)) = (meta.src_ip, meta.dst_ip) {
-                        let (client, server, server_port) = if meta.dst_port < meta.src_port {
+                        let from_client = meta.dst_port < meta.src_port;
+                        let (client, server, server_port) = if from_client {
                             (src, dst, meta.dst_port)
                         } else {
                             (dst, src, meta.src_port)
                         };
-                        tracker.observe_ssh_posture(
-                            client,
-                            server,
-                            server_port,
-                            meta.ssh_banner.as_deref(),
-                            &meta.ssh_issues,
-                        );
+                        // The finding is attributed to the server, so only the server's own
+                        // identification line and KEXINIT count: a legacy client's SSH-1 banner
+                        // or weak offer says nothing about what the server accepts.
+                        let issues: &[crate::ssh::SshIssue] =
+                            if from_client { &[] } else { &meta.ssh_issues };
+                        let banner = if from_client {
+                            None
+                        } else {
+                            meta.ssh_banner.as_deref()
+                        };
+                        tracker.observe_ssh_posture(client, server, server_port, banner, issues);
                     }
                 }
                 // ICMP tunneling: fold echo request/reply data sizes per (src, dst). Sustained
@@ -931,6 +936,8 @@ fn process_flow(
     record.threat_score = scored.score;
     record.ioc = fm.any();
     record.fingerprint_label = enr.fingerprint_label.clone();
+    record.hassh_ioc = enr.hassh_ioc;
+    record.hassh_server_ioc = enr.hassh_server_ioc;
 
     stats.observe_flow(record);
     stats.observe_scored_flow(record, &scored);
