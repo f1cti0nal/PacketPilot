@@ -1349,22 +1349,28 @@ pub fn resolve_target(
     if display_url != base_url {
         // The secret webhook URL's path and query (its token parts) may be echoed without the
         // host, or one piece at a time.
-        if let Some(rest) = base_url.splitn(4, '/').nth(3) {
-            secrets.push(rest.to_string());
-            let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
-            secrets.push(path.to_string());
-            secrets.extend(
-                path.split('/')
-                    .filter(|seg| seg.len() >= 8)
-                    .map(str::to_string),
-            );
-            secrets.push(query.to_string());
-            secrets.extend(
-                query
-                    .split('&')
-                    .filter_map(|kv| kv.split_once('=').map(|(_, v)| v.to_string())),
-            );
-        }
+        // Everything after the host: `https://host/path?query`, or `https://host?query`.
+        let after_scheme = base_url
+            .split_once("://")
+            .map_or(base_url.as_str(), |(_, r)| r);
+        let host_end = after_scheme
+            .find(['/', '?', '#'])
+            .unwrap_or(after_scheme.len());
+        let rest = after_scheme[host_end..].trim_start_matches('/');
+        let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
+        secrets.push(rest.to_string());
+        secrets.push(path.to_string());
+        secrets.extend(
+            path.split('/')
+                .filter(|seg| seg.len() >= 8)
+                .map(str::to_string),
+        );
+        secrets.push(query.to_string());
+        secrets.extend(
+            query
+                .split('&')
+                .filter_map(|kv| kv.split_once('=').map(|(_, v)| v.to_string())),
+        );
     }
     secrets.extend(token.iter().cloned());
     secrets.extend(user.iter().cloned());
@@ -2128,6 +2134,12 @@ mod tests {
             t.redact("invalid signature QuErYs3cr3t"),
             "invalid signature ***"
         );
+        let bare = |k: &str| {
+            (k == "PPCAP_SLACK_WEBHOOK_URL")
+                .then(|| "https://hooks.example.org?sig=secret123".into())
+        };
+        let b = resolve_target(&dest(DestinationKind::Slack), &bare).unwrap();
+        assert_eq!(b.redact("bad sig secret123"), "bad sig ***");
         let h = resolve_target(&dest(DestinationKind::SplunkHec), &env).unwrap();
         assert_eq!(h.redact("bad token hec-token-123"), "bad token ***");
         assert_eq!(
