@@ -1743,6 +1743,7 @@ mod reputation_cli_tests {
                 flows_parquet_path: None,
                 elapsed_ms: 0,
                 baseline: None,
+                keylog: None,
             }
         };
         let old_file = tempfile::NamedTempFile::new().unwrap();
@@ -1813,6 +1814,7 @@ mod reputation_cli_tests {
             flows_parquet_path: None,
             elapsed_ms: 0,
             baseline: None,
+            keylog: None,
         };
         let input = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(input.path(), out.to_json_pretty().unwrap()).unwrap();

@@ -114,6 +114,7 @@ fn is_weak_kind(kind: FindingKind) -> bool {
             | FindingKind::BaselineDeviation
             | FindingKind::TrafficAnomaly
             | FindingKind::MissingSni
+            | FindingKind::SshPosture
     )
 }
 
@@ -851,6 +852,9 @@ fn action_for(f: &Finding, peer: Option<&str>, port: Option<u16>, actor: &str) -
         }
         FindingKind::PortProtocolMismatch => {
             format!("Verify the service on {peer_disp}; block it if it is not sanctioned")
+        }
+        FindingKind::SshPosture => {
+            format!("Harden the SSH server on {peer_disp}: drop SSH-1, weak host keys and CBC")
         }
     }
 }
