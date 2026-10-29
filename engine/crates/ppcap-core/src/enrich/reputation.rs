@@ -340,6 +340,7 @@ mod apply_tests {
             encrypted_dns: Vec::new(),
             tls_servers: Vec::new(),
             carved_files: Vec::new(),
+            extracted_paths: Vec::new(),
             findings,
             incidents: vec![],
             attack_chains: vec![],

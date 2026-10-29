@@ -556,6 +556,30 @@ mod posture {
         assert!(ev.contains("SSH-2.0-OpenSSH_5.3"), "{ev}");
     }
 
+    /// A legacy client talking to a modern server: the finding names the server, so the client's
+    /// SSH-1 banner and weak offer must not indict it.
+    #[test]
+    fn legacy_client_does_not_flag_modern_server() {
+        let mut server_flight = b"SSH-2.0-OpenSSH_9.6p1\r\n".to_vec();
+        server_flight.extend_from_slice(&kexinit(&MODERN_LISTS));
+        let mut client_flight = b"SSH-1.99-oldclient\r\n".to_vec();
+        client_flight.extend_from_slice(&kexinit(&LEGACY_LISTS));
+        let frames = vec![
+            seg(CLIENT, SERVER, 51000, 22, TCP_SYN, &[]),
+            seg(SERVER, CLIENT, 22, 51000, TCP_SYN | TCP_ACK, &[]),
+            seg(SERVER, CLIENT, 22, 51000, TCP_PSH | TCP_ACK, &server_flight),
+            seg(CLIENT, SERVER, 51000, 22, TCP_PSH | TCP_ACK, &client_flight),
+        ];
+        let summary = analyze_frames("ssh_legacy_client", frames);
+        assert!(
+            !summary
+                .findings
+                .iter()
+                .any(|f| f.kind == FindingKind::SshPosture),
+            "a legacy client must not flag a modern server"
+        );
+    }
+
     /// A current OpenSSH handshake must stay silent — otherwise every capture with SSH alerts.
     #[test]
     fn modern_ssh_handshake_raises_no_ssh_posture() {

@@ -886,6 +886,9 @@ impl CarveState {
 pub(crate) struct HttpBodyCarver {
     states: HashMap<(IpAddr, u16, IpAddr, u16), CarveState>,
     observations: Vec<CarveObservation>,
+    /// Every path extraction committed to disk, including those past the `MAX_OBSERVATIONS` cap,
+    /// so the evidence manifest can seal each file the run wrote. Empty unless extracting.
+    extracted_paths: std::collections::BTreeSet<String>,
     /// Opt-in carve-to-disk. `None` (the default) retains no body bytes.
     extract: Option<Extractor>,
 }
@@ -895,6 +898,7 @@ impl HttpBodyCarver {
         HttpBodyCarver {
             states: HashMap::new(),
             observations: Vec::new(),
+            extracted_paths: std::collections::BTreeSet::new(),
             extract: None,
         }
     }
@@ -905,6 +909,7 @@ impl HttpBodyCarver {
         Ok(HttpBodyCarver {
             states: HashMap::new(),
             observations: Vec::new(),
+            extracted_paths: std::collections::BTreeSet::new(),
             extract: Some(Extractor::new(dir)?),
         })
     }
@@ -947,6 +952,9 @@ impl HttpBodyCarver {
         let done = if let Some(st) = self.states.get_mut(&key) {
             st.last_ts = meta.ts_ns;
             if let Some(obs) = st.feed_ex(seq, payload, self.extract.as_mut()) {
+                if let Some(p) = obs.extracted_path.as_ref() {
+                    self.extracted_paths.insert(p.clone());
+                }
                 if self.observations.len() < MAX_OBSERVATIONS {
                     self.observations.push(obs);
                 }
@@ -980,6 +988,13 @@ impl HttpBodyCarver {
     /// Drain the carved-file observations at end of capture.
     pub(crate) fn into_results(self) -> Vec<CarveObservation> {
         self.observations
+    }
+
+    /// Take every extracted file path (uncapped, sorted, deduped).
+    pub(crate) fn take_extracted_paths(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.extracted_paths)
+            .into_iter()
+            .collect()
     }
 }
 

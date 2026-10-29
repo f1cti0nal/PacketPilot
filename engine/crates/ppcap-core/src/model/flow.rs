@@ -246,6 +246,12 @@ pub struct FlowRecord {
     /// match). Set during the enrich pass; NOT written to Parquet / FlowDto.
     #[serde(default)]
     pub fingerprint_label: Option<String>,
+    /// Transient: which SSH side matched the feed (`bad_hassh` / `bad_hassh_server`), so the
+    /// fingerprint rollup exports only the matched hash, never its clean peer. Not persisted.
+    #[serde(skip)]
+    pub hassh_ioc: bool,
+    #[serde(skip)]
+    pub hassh_server_ioc: bool,
 }
 
 impl FlowRecord {
@@ -290,6 +296,8 @@ impl FlowRecord {
             threat_score: 0,
             ioc: false,
             fingerprint_label: None,
+            hassh_ioc: false,
+            hassh_server_ioc: false,
         }
     }
 
