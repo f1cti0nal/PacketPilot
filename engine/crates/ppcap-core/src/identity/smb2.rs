@@ -89,17 +89,34 @@ const SMB1_COM_NEGOTIATE: u8 = 0x72;
 /// SMB1 header flag (offset 9) set on a response.
 const SMB1_FLAGS_REPLY: u8 = 0x80;
 
+/// Did an SMB1 NEGOTIATE *response* actually select an SMB1 dialect? The 32-byte SMB1 header is
+/// followed by a WordCount byte (offset 32) and then the parameter words; the first word of a
+/// NEGOTIATE reply is `DialectIndex` (offset 33), where `0xFFFF` means the server accepted none of
+/// the offered dialects. A non-zero NTSTATUS (offset 5, NT-status mode) likewise marks a failed
+/// negotiation. Either case, or a truncated reply, is treated as no legacy session.
+fn negotiate_selected_smb1(msg: &[u8]) -> bool {
+    if u32le(msg, 5).is_none_or(|status| status != 0) {
+        return false;
+    }
+    matches!(u16le(msg, 33), Some(idx) if idx != 0xFFFF)
+}
+
 /// Parse one SMB message. Returns `(is_response, event)`.
 pub(crate) fn parse(msg: &[u8]) -> Option<(bool, SmbEvent<'_>)> {
     if msg.len() >= 5 && &msg[..4] == SMB1_SIG {
         let is_response = msg.get(9).is_some_and(|f| f & SMB1_FLAGS_REPLY != 0);
         // An SMB2-capable client offers SMB2 dialects in one SMB1-format NEGOTIATE *request*
-        // (command 0x72); that alone is not legacy use. But an SMB1-format NEGOTIATE *response*
-        // means the server actually selected an SMB1 dialect (an SMB2 server would answer in
-        // `\xfeSMB`), and any other SMB1 command is real SMB1 traffic — both are legacy use.
-        let only_a_dialect_offer = msg[4] == SMB1_COM_NEGOTIATE && !is_response;
-        let event = if only_a_dialect_offer {
-            SmbEvent::Other
+        // (command 0x72); that alone is not legacy use. An SMB1-format NEGOTIATE *response* means
+        // the server answered in the legacy wire format (an SMB2 server would reply in `\xfeSMB`),
+        // but it is only legacy *use* when the server actually accepted an SMB1 dialect — a reply
+        // that rejects every offered dialect establishes no SMB1 session. Any other SMB1 command
+        // is real SMB1 traffic.
+        let event = if msg[4] == SMB1_COM_NEGOTIATE {
+            if is_response && negotiate_selected_smb1(msg) {
+                SmbEvent::Smb1
+            } else {
+                SmbEvent::Other
+            }
         } else {
             SmbEvent::Smb1
         };
@@ -326,9 +343,24 @@ pub(crate) mod build {
         smb1(0x72, false)
     }
 
-    /// A server's SMB1 NEGOTIATE response (command 0x72, reply) — it selected an SMB1 dialect.
+    /// A server's SMB1 NEGOTIATE response (command 0x72, reply) selecting `dialect_index`
+    /// (`0xFFFF` means no offered dialect was accepted). Appends the WordCount byte and the
+    /// DialectIndex word that follow the 32-byte header.
+    fn smb1_negotiate_reply(dialect_index: u16) -> Vec<u8> {
+        let mut m = smb1(0x72, true);
+        m.push(17); // WordCount for the NT LM 0.12 parameter block
+        m.extend_from_slice(&dialect_index.to_le_bytes()); // DialectIndex (first response word)
+        m
+    }
+
+    /// A server's SMB1 NEGOTIATE response that selected an SMB1 dialect — legacy use.
     pub fn smb1_negotiate_resp() -> Vec<u8> {
-        smb1(0x72, true)
+        smb1_negotiate_reply(0)
+    }
+
+    /// A server's SMB1 NEGOTIATE response rejecting every offered dialect (0xFFFF) — not legacy use.
+    pub fn smb1_negotiate_rejected() -> Vec<u8> {
+        smb1_negotiate_reply(0xFFFF)
     }
 
     /// A genuine SMB1 request (SESSION_SETUP_ANDX, 0x73) — the legacy dialect actually in use.
@@ -399,6 +431,12 @@ mod tests {
         assert_eq!(
             parse(&build::smb1_negotiate_resp()).unwrap().1,
             SmbEvent::Smb1
+        );
+        // A NEGOTIATE response that rejects every offered dialect (0xFFFF) is a failed
+        // negotiation, not a legacy session.
+        assert_eq!(
+            parse(&build::smb1_negotiate_rejected()).unwrap().1,
+            SmbEvent::Other
         );
         // And any other SMB1 command is real SMB1 traffic.
         assert_eq!(

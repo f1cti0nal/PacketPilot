@@ -952,10 +952,12 @@ impl IdentityObserver {
             Some(i) => i,
             None => {
                 // Every SMB WRITE reaches here, including ordinary file transfers to ADMIN$/C$.
-                // Only reserve a handle slot when the data actually opens an RPC bind, so a burst
-                // of file writes can't exhaust the MAX_PIPES budget and crowd out a later \svcctl
-                // or \drsuapi pipe. A named-pipe RPC conversation always begins with a bind.
-                if !dcerpc::looks_like_bind(data) || s.pipes.len() >= MAX_PIPES {
+                // Only reserve a handle slot when the data opens (or could open) an RPC bind, so a
+                // burst of file writes can't exhaust the MAX_PIPES budget and crowd out a later
+                // \svcctl or \drsuapi pipe. `maybe_bind_prefix` also admits a bind whose first
+                // write is one or two bytes (`05` / `05 00`); a provisional slot that never
+                // completes a bind is reclaimed in the `Err(false)` arm below.
+                if !dcerpc::maybe_bind_prefix(data) || s.pipes.len() >= MAX_PIPES {
                     return;
                 }
                 s.pipes.push(PipeState {
@@ -993,7 +995,15 @@ impl IdentityObserver {
                 }
                 Err(true) => break,
                 Err(false) => {
-                    s.pipes[idx].buf.clear();
+                    // Not a DCE-RPC stream after all. If this handle never completed a bind (no
+                    // presentation contexts), drop the whole slot so a write that merely looked
+                    // like a bind prefix can't tie up a MAX_PIPES slot; a confirmed pipe that
+                    // later sees a stray fragment just clears its buffer.
+                    if s.pipes[idx].contexts.is_empty() {
+                        s.pipes.remove(idx);
+                    } else {
+                        s.pipes[idx].buf.clear();
+                    }
                     break;
                 }
             }

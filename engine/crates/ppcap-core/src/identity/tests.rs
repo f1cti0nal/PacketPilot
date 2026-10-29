@@ -853,3 +853,35 @@ fn file_writes_do_not_exhaust_named_pipe_tracking() {
     let f = h.findings();
     assert_eq!(kinds(&f), vec![FindingKind::RemoteServiceExec], "{f:#?}");
 }
+
+#[test]
+fn a_bind_split_so_the_first_write_is_tiny_still_registers_the_pipe() {
+    // A DCE-RPC bind can be split across SMB WRITEs. When the first write carries only one or two
+    // bytes it is still the opening of a bind (`05` / `05 00`): the pipe must register
+    // provisionally so the next write completes the bind and the \svcctl calls are detected.
+    for split in [1usize, 2] {
+        let mut h = Harness::new();
+        let mut c = Conn::new(ATTACKER, 41100 + split as u16, DC, 445);
+        let bind = rpc::bind(&[(0, Iface::Svcctl)]);
+        let pipe = [7u8; 16];
+        c.send(
+            &mut h,
+            &smb::nbss(&smb::write_req_h(pipe, &bind[..split])),
+            1460,
+        );
+        c.send(
+            &mut h,
+            &smb::nbss(&smb::write_req_h(pipe, &bind[split..])),
+            1460,
+        );
+        for pdu in [rpc::request(0, 12, 40), rpc::request(0, 19, 10)] {
+            c.send(&mut h, &smb::nbss(&smb::write_req_h(pipe, &pdu)), 1460);
+        }
+        let f = h.findings();
+        assert_eq!(
+            kinds(&f),
+            vec![FindingKind::RemoteServiceExec],
+            "bind split at offset {split}: {f:#?}"
+        );
+    }
+}
