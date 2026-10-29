@@ -370,8 +370,9 @@ pub struct Taught {
 }
 
 /// Turn "this alert is benign" into rules covering its member findings at `scope`.
-/// A destination-scoped verdict on a fan-out finding (no single destination) falls back to
-/// the source scope rather than producing a kind-wide wildcard.
+/// A destination-scoped verdict on a fan-out finding (no single destination) keys on the
+/// destination port instead — "sweeps on port 67 are DHCP" — and falls back to the source scope
+/// when there is no port either, so a verdict never becomes a kind-wide wildcard.
 pub fn rules_for_alert(
     summary: &Summary,
     alert_id: &str,
@@ -393,11 +394,12 @@ pub fn rules_for_alert(
             kept.push((i, why));
             continue;
         }
-        let scope = if scope == TeachScope::Destination && f.dst_ip.is_none() {
-            TeachScope::Source
-        } else {
-            scope
-        };
+        let scope =
+            if scope == TeachScope::Destination && f.dst_ip.is_none() && f.dst_port.is_none() {
+                TeachScope::Source
+            } else {
+                scope
+            };
         let rule = rule_for_finding(f, scope, meta);
         if !rules.iter().any(|r| r.id == rule.id) {
             rules.push(rule);
@@ -757,6 +759,27 @@ mod tests {
             rules_for_alert(&s, "alert:nope", TeachScope::Exact, &meta),
             Err(TeachError::UnknownAlert("alert:nope".into()))
         );
+    }
+
+    #[test]
+    fn destination_scope_on_fan_out_keys_on_the_port() {
+        let s = summary_with(vec![
+            finding(FindingKind::HostSweep, "10.0.8.10", None, Some(67)),
+            finding(FindingKind::HostSweep, "10.0.16.10", None, Some(67)),
+        ]);
+        let id = s.alerts[0].id.clone();
+        let taught =
+            rules_for_alert(&s, &id, TeachScope::Destination, &TeachMeta::default()).unwrap();
+        assert_eq!(taught.rules[0].src, None);
+        assert_eq!(taught.rules[0].dst, None);
+        assert_eq!(taught.rules[0].dst_port, Some(67));
+        let mut next = summary_with(vec![
+            finding(FindingKind::HostSweep, "10.0.99.10", None, Some(67)),
+            finding(FindingKind::HostSweep, "10.0.99.11", None, Some(445)),
+        ]);
+        apply_suppressions(&mut next, taught.rules);
+        assert_eq!(next.suppressions.len(), 1);
+        assert_eq!(next.suppressions[0].finding_index, 0);
     }
 
     #[test]

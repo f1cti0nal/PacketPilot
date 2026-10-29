@@ -282,7 +282,8 @@ pub enum SuppressAction {
         #[arg(long)]
         reason: String,
         /// How broadly the verdict generalizes: `exact` (same source, destination and port),
-        /// `source` (this host to anywhere), or `destination` (any host to this destination).
+        /// `source` (this host to anywhere), or `destination` (any host to this destination and
+        /// port; for scans and sweeps with no single destination, any host to this port).
         #[arg(long, value_enum, default_value_t = ScopeArg::Exact)]
         scope: ScopeArg,
         /// Who is teaching it (a name, handle or email).
