@@ -92,11 +92,13 @@ const SMB1_FLAGS_REPLY: u8 = 0x80;
 /// Parse one SMB message. Returns `(is_response, event)`.
 pub(crate) fn parse(msg: &[u8]) -> Option<(bool, SmbEvent<'_>)> {
     if msg.len() >= 5 && &msg[..4] == SMB1_SIG {
-        // An SMB2 client still sends one SMB1-format NEGOTIATE (command 0x72) to offer SMB2
-        // dialects; the server's response picks the real dialect. So the SMB1 signature alone is
-        // not legacy use — only an SMB1 command other than that NEGOTIATE is.
         let is_response = msg.get(9).is_some_and(|f| f & SMB1_FLAGS_REPLY != 0);
-        let event = if msg[4] == SMB1_COM_NEGOTIATE {
+        // An SMB2-capable client offers SMB2 dialects in one SMB1-format NEGOTIATE *request*
+        // (command 0x72); that alone is not legacy use. But an SMB1-format NEGOTIATE *response*
+        // means the server actually selected an SMB1 dialect (an SMB2 server would answer in
+        // `\xfeSMB`), and any other SMB1 command is real SMB1 traffic — both are legacy use.
+        let only_a_dialect_offer = msg[4] == SMB1_COM_NEGOTIATE && !is_response;
+        let event = if only_a_dialect_offer {
             SmbEvent::Other
         } else {
             SmbEvent::Smb1
@@ -263,13 +265,18 @@ pub(crate) mod build {
     }
 
     pub fn write_req(data: &[u8]) -> Vec<u8> {
+        write_req_h([0u8; 16], data)
+    }
+
+    /// A WRITE request on a specific file handle.
+    pub fn write_req_h(file_id: [u8; 16], data: &[u8]) -> Vec<u8> {
         let mut m = header(CMD_WRITE, 0, 0);
         let data_off = (HEADER_LEN + 48) as u16;
         m.extend_from_slice(&u16le(49)); // StructureSize
         m.extend_from_slice(&u16le(data_off)); // DataOffset
         m.extend_from_slice(&(data.len() as u32).to_le_bytes()); // Length
         m.extend_from_slice(&0u64.to_le_bytes()); // Offset
-        m.extend_from_slice(&[0u8; 16]); // FileId
+        m.extend_from_slice(&file_id); // FileId
         m.extend_from_slice(&0u32.to_le_bytes()); // Channel
         m.extend_from_slice(&0u32.to_le_bytes()); // RemainingBytes
         m.extend_from_slice(&u16le(0)); // WriteChannelInfoOffset
@@ -317,6 +324,11 @@ pub(crate) mod build {
     /// The multi-protocol NEGOTIATE an SMB2 client sends (command 0x72) — not legacy use.
     pub fn smb1_negotiate() -> Vec<u8> {
         smb1(0x72, false)
+    }
+
+    /// A server's SMB1 NEGOTIATE response (command 0x72, reply) — it selected an SMB1 dialect.
+    pub fn smb1_negotiate_resp() -> Vec<u8> {
+        smb1(0x72, true)
     }
 
     /// A genuine SMB1 request (SESSION_SETUP_ANDX, 0x73) — the legacy dialect actually in use.
@@ -381,9 +393,14 @@ mod tests {
 
     #[test]
     fn detects_smb1_use_but_not_the_smb2_negotiate() {
-        // An SMB2 client's multi-protocol NEGOTIATE (0x72) is not legacy use.
+        // An SMB2 client's multi-protocol NEGOTIATE *request* (0x72) is not legacy use.
         assert_eq!(parse(&build::smb1_negotiate()).unwrap().1, SmbEvent::Other);
-        // A real SMB1 command is.
+        // But a server's SMB1 NEGOTIATE *response* means it selected an SMB1 dialect.
+        assert_eq!(
+            parse(&build::smb1_negotiate_resp()).unwrap().1,
+            SmbEvent::Smb1
+        );
+        // And any other SMB1 command is real SMB1 traffic.
         assert_eq!(
             parse(&build::smb1_session_setup()).unwrap().1,
             SmbEvent::Smb1

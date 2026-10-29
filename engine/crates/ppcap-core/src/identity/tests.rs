@@ -821,3 +821,35 @@ fn raw_tcp_service_execution_is_not_labelled_smb_admin_shares() {
     assert!(f[0].attack.contains(&"T1569.002".to_string()));
     assert!(f[0].evidence.join(" ").contains("over RPC"));
 }
+
+#[test]
+fn file_writes_do_not_exhaust_named_pipe_tracking() {
+    // A deployment client writes many ordinary files (non-RPC) on distinct handles, then opens
+    // \svcctl and creates + starts a service. The file writes must not fill the pipe-handle
+    // budget: only data that opens an RPC bind reserves a handle, so the service calls are still
+    // detected.
+    let mut h = Harness::new();
+    let mut c = Conn::new(ATTACKER, 48000, DC, 445);
+    for i in 0..40u16 {
+        let mut fid = [0u8; 16];
+        fid[0..2].copy_from_slice(&i.to_le_bytes());
+        c.send(
+            &mut h,
+            &smb::nbss(&smb::write_req_h(
+                fid,
+                b"MZ\x90\x00 not rpc, just a file body",
+            )),
+            1460,
+        );
+    }
+    let pipe = [0xFFu8; 16];
+    for pdu in [
+        rpc::bind(&[(0, Iface::Svcctl)]),
+        rpc::request(0, 12, 40),
+        rpc::request(0, 19, 10),
+    ] {
+        c.send(&mut h, &smb::nbss(&smb::write_req_h(pipe, &pdu)), 1460);
+    }
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::RemoteServiceExec], "{f:#?}");
+}

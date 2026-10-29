@@ -951,7 +951,11 @@ impl IdentityObserver {
         let idx = match s.pipes.iter().position(|p| p.file_id == file_id) {
             Some(i) => i,
             None => {
-                if s.pipes.len() >= MAX_PIPES {
+                // Every SMB WRITE reaches here, including ordinary file transfers to ADMIN$/C$.
+                // Only reserve a handle slot when the data actually opens an RPC bind, so a burst
+                // of file writes can't exhaust the MAX_PIPES budget and crowd out a later \svcctl
+                // or \drsuapi pipe. A named-pipe RPC conversation always begins with a bind.
+                if !dcerpc::looks_like_bind(data) || s.pipes.len() >= MAX_PIPES {
                     return;
                 }
                 s.pipes.push(PipeState {
