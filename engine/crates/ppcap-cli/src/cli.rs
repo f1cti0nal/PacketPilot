@@ -223,6 +223,39 @@ pub enum Command {
         #[arg(long)]
         json: Option<String>,
     },
+    /// Agents: serve the loaded captures to an AI agent over the Model Context Protocol (stdio).
+    ///
+    /// Point an MCP host (Claude Desktop, Claude Code, Cursor, an Ollama-backed agent) at
+    /// `ppcap mcp <capture-or-summary>...`. Tools are read-only (alerts, timelines, host profiles,
+    /// flow queries, packets, indicator lookups) and offline; nothing listens on a socket.
+    Mcp {
+        /// Captures (.pcap / .pcapng, optionally .gz; analysed at launch) and/or `analyze --json`
+        /// outputs (served as is, with their recorded pcap and flows Parquet).
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Local IOC threat-feed JSON, used when analysing captures and by `lookup_indicator`.
+        #[arg(long = "threat-feed")]
+        threat_feed: Option<PathBuf>,
+        /// Teach it once: apply these suppression rule files (repeatable; first file wins on a
+        /// duplicate id). For a summary they replace the rules it carries.
+        #[arg(long = "suppress")]
+        suppress: Vec<PathBuf>,
+        /// Offer `carve_pcap`, which writes carved pcaps into this directory (and nowhere else).
+        /// Without it the server never writes a file.
+        #[arg(long = "allow-write")]
+        allow_write: Option<PathBuf>,
+        /// Let `lookup_indicator` query online reputation (AbuseIPDB / GreyNoise / VirusTotal,
+        /// keys from ABUSEIPDB_API_KEY / GREYNOISE_API_KEY / VIRUSTOTAL_API_KEY). Off by default:
+        /// without it nothing leaves the machine.
+        #[arg(long)]
+        online: bool,
+        /// Largest tool response, in bytes, before the server asks the agent to narrow its query.
+        #[arg(long = "max-response-bytes", default_value_t = crate::mcp::DEFAULT_MAX_RESPONSE_BYTES)]
+        max_response_bytes: usize,
+        /// Suppress stderr progress.
+        #[arg(long)]
+        quiet: bool,
+    },
     /// Generate a synthetic capture for testing.
     Gen {
         /// Output capture path.
@@ -439,7 +472,7 @@ fn alerts_summary_line(summary: &ppcap_core::Summary) -> String {
 }
 
 /// Seconds since the Unix epoch (a pre-epoch clock reads as 0).
-fn unix_now() -> i64 {
+pub(crate) fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -530,6 +563,80 @@ fn suppression_summary_line(summary: &ppcap_core::Summary) -> String {
         ));
     }
     line
+}
+
+/// `ppcap mcp`: load every input, then serve MCP on stdin/stdout until the client hangs up.
+fn dispatch_mcp(
+    inputs: &[PathBuf],
+    threat_feed: Option<PathBuf>,
+    suppress: &[PathBuf],
+    allow_write: Option<PathBuf>,
+    online: bool,
+    max_response_bytes: usize,
+    quiet: bool,
+) -> anyhow::Result<()> {
+    // Load the feed up front so a typo fails before any (possibly long) analysis.
+    let feed = match threat_feed.as_ref() {
+        Some(p) => ppcap_core::ThreatFeed::load(p)
+            .with_context(|| format!("load threat feed {}", p.display()))?,
+        None => ppcap_core::ThreatFeed::empty(),
+    };
+    let allow_write = match allow_write {
+        Some(dir) => {
+            std::fs::create_dir_all(&dir)
+                .with_context(|| format!("create export directory {}", dir.display()))?;
+            Some(
+                dir.canonicalize()
+                    .with_context(|| format!("resolve export directory {}", dir.display()))?,
+            )
+        }
+        None => None,
+    };
+    let rules = if suppress.is_empty() {
+        None
+    } else {
+        Some(load_suppression_rules(suppress, quiet)?)
+    };
+    let work = crate::mcp::capture::WorkDir::create()?;
+    let opts = crate::mcp::LoadOptions {
+        threat_feed,
+        suppress: rules,
+        work_dir: work.0.clone(),
+        quiet,
+    };
+    let mut captures: Vec<crate::mcp::Capture> = Vec::new();
+    for input in inputs {
+        let taken: Vec<String> = captures.iter().map(|c| c.id.clone()).collect();
+        let c = crate::mcp::capture::load(input, &opts, &taken)?;
+        if !quiet {
+            eprintln!(
+                "mcp: loaded {} as {:?} ({} alerts{}{})",
+                input.display(),
+                c.id,
+                c.out.summary.alerts.len(),
+                if c.pcap.is_none() { ", no pcap" } else { "" },
+                if c.flows.is_none() { ", no flows" } else { "" },
+            );
+        }
+        captures.push(c);
+    }
+    let mut server = crate::mcp::Server::new(
+        captures,
+        Some(feed),
+        crate::mcp::ServerOptions {
+            allow_write,
+            online,
+            max_response_bytes,
+        },
+    );
+    if !quiet {
+        eprintln!("mcp: serving on stdio (ctrl-d to stop)");
+    }
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    crate::mcp::serve(&mut server, stdin.lock(), stdout.lock()).context("MCP transport (stdio)")?;
+    drop(work);
+    Ok(())
 }
 
 /// `ppcap suppress …`.
@@ -1561,6 +1668,23 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 Ok(())
             }
         },
+        Command::Mcp {
+            inputs,
+            threat_feed,
+            suppress,
+            allow_write,
+            online,
+            max_response_bytes,
+            quiet,
+        } => dispatch_mcp(
+            &inputs,
+            threat_feed,
+            &suppress,
+            allow_write,
+            online,
+            max_response_bytes,
+            quiet,
+        ),
         Command::Alerts {
             summary,
             diff,
@@ -2028,7 +2152,7 @@ fn dispatch_batch(
 
 /// FNV-1a 64-bit hash of a byte slice. Used to derive a stable, non-zero capture id from the
 /// input path so distinct captures get distinct ids in the Parquet footer.
-fn fnv1a64(bytes: &[u8]) -> u64 {
+pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for &b in bytes {
         h ^= b as u64;

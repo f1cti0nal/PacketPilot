@@ -2,6 +2,7 @@
 //! is a one-line shell that returns the process exit code.
 
 mod cli;
+mod mcp;
 
 fn main() -> std::process::ExitCode {
     cli::run()

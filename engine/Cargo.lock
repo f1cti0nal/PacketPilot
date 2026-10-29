@@ -1221,9 +1221,11 @@ name = "ppcap-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "dirs",
  "ppcap-core",
+ "serde",
  "serde_json",
  "tempfile",
 ]
