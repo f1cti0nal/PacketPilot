@@ -720,8 +720,9 @@ pub fn apply_rules(bytes: &[u8], rules_text: &str, output_json: &str) -> Result<
     let parsed = ppcap_core::parse_rules(rules_text);
     let owned = bytes.to_vec();
     let len = Some(owned.len() as u64);
-    let rf = ppcap_core::apply_rules(std::io::Cursor::new(owned), len, &parsed.rules);
-    ppcap_core::fold_rule_findings(&mut out.summary, &rf);
+    let (rf, ctx) =
+        ppcap_core::apply_rules_with_context(std::io::Cursor::new(owned), len, &parsed.rules);
+    ppcap_core::fold_rule_findings_with_context(&mut out.summary, &rf, &ctx);
     let res = RuleApplyResult {
         matches: rf.len(),
         loaded: parsed.rules.len(),

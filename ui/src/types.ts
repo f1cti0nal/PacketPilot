@@ -363,6 +363,8 @@ export interface CarvedFile {
   extracted_path?: string;
   /** When the download started (ns since the Unix epoch); absent on older summaries. */
   first_seen_ns?: number | null;
+  /** When the body completed (ns since the Unix epoch); absent on older summaries. */
+  last_seen_ns?: number | null;
   /** VirusTotal file-hash verdict, attached client-side post-analysis (the engine never sets this). */
   reputation?: ReputationVerdict[];
 }

@@ -141,12 +141,12 @@ pub struct AlertTimeline {
     pub event_count: u32,
 }
 
-/// A DNS answer that mapped `ip` from `domain`, first seen at `first_seen_ns`.
+/// The first DNS answer that mapped `ip` from `domain` for `client`, at `first_seen_ns`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DnsAnswer {
     pub ip: String,
     pub domain: String,
-    /// The host the first answer was delivered to. `#[serde(default)]`.
+    /// The host the answer was delivered to. `#[serde(default)]`.
     #[serde(default)]
     pub client: Option<String>,
     pub first_seen_ns: i64,
@@ -168,7 +168,7 @@ pub struct FirstContact {
 /// timeline can be re-derived from a saved summary without the capture.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TimelineContext {
-    /// Ascending by `ip`. `#[serde(default)]`.
+    /// Ascending by `(ip, client)`. `#[serde(default)]`.
     #[serde(default)]
     pub dns_answers: Vec<DnsAnswer>,
     /// Ascending by `(initiator, responder)`. `#[serde(default)]`.
@@ -179,6 +179,47 @@ pub struct TimelineContext {
 impl TimelineContext {
     pub fn is_empty(&self) -> bool {
         self.dns_answers.is_empty() && self.first_contacts.is_empty()
+    }
+
+    /// Add `other`'s rows for keys this context lacks (an answer per `(ip, client)`, a contact
+    /// per unordered pair; existing rows win, so re-folding is idempotent), keeping both lists
+    /// in their documented order.
+    pub fn merge(&mut self, other: &TimelineContext) {
+        use std::collections::BTreeSet;
+        let pair = |c: &FirstContact| {
+            let (a, b) = (c.initiator.clone(), c.responder.clone());
+            if a <= b {
+                (a, b)
+            } else {
+                (b, a)
+            }
+        };
+        let answers: BTreeSet<(String, Option<String>)> = self
+            .dns_answers
+            .iter()
+            .map(|d| (d.ip.clone(), d.client.clone()))
+            .collect();
+        let contacts: BTreeSet<(String, String)> = self.first_contacts.iter().map(pair).collect();
+        self.dns_answers.extend(
+            other
+                .dns_answers
+                .iter()
+                .filter(|d| !answers.contains(&(d.ip.clone(), d.client.clone())))
+                .cloned(),
+        );
+        self.first_contacts.extend(
+            other
+                .first_contacts
+                .iter()
+                .filter(|c| !contacts.contains(&pair(c)))
+                .cloned(),
+        );
+        self.dns_answers
+            .sort_by(|a, b| (&a.ip, &a.client).cmp(&(&b.ip, &b.client)));
+        self.first_contacts.sort_by(|a, b| {
+            (a.initiator.as_str(), a.responder.as_str())
+                .cmp(&(b.initiator.as_str(), b.responder.as_str()))
+        });
     }
 }
 

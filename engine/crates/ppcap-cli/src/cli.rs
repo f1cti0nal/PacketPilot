@@ -1050,14 +1050,14 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 let text = std::fs::read_to_string(rules_path)
                     .with_context(|| format!("reading rules file {}", rules_path.display()))?;
                 let parsed = ppcap_core::parse_rules(&text);
-                let rf = match std::fs::File::open(&input) {
+                let (rf, ctx) = match std::fs::File::open(&input) {
                     Ok(f) => {
                         let len = std::fs::metadata(&input).ok().map(|m| m.len());
-                        ppcap_core::apply_rules(f, len, &parsed.rules)
+                        ppcap_core::apply_rules_with_context(f, len, &parsed.rules)
                     }
-                    Err(_) => Vec::new(),
+                    Err(_) => Default::default(),
                 };
-                ppcap_core::fold_rule_findings(&mut out.summary, &rf);
+                ppcap_core::fold_rule_findings_with_context(&mut out.summary, &rf, &ctx);
                 eprintln!(
                     "rules: {} loaded, {} skipped, {} matches",
                     parsed.rules.len(),

@@ -620,6 +620,7 @@ pub fn run_source_visiting<'a>(
             signatures: c.signatures.iter().map(|s| s.label.to_string()).collect(),
             extracted_path: c.extracted_path.clone(),
             first_seen_ns: Some(c.first_ts_ns),
+            last_seen_ns: Some(c.last_ts_ns),
         })
         .collect();
     carved_files.sort_by(|a, b| {

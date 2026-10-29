@@ -85,9 +85,13 @@ impl Default for StatsConfig {
 struct ResolvedStat {
     domain: String,
     count: u64,
-    first_ts: i64,
-    /// The host the first answer was delivered to.
-    client: IpAddr,
+}
+
+/// The first DNS answer one client received for one IP.
+#[derive(Debug, Clone)]
+struct ClientAnswerStat {
+    ts: i64,
+    domain: String,
 }
 
 /// The earliest flow between one endpoint pair.
@@ -238,9 +242,12 @@ pub struct StatsAccumulator {
     per_http_host: HashMap<String, u64>,
     /// Per-HTTP-request-`User-Agent` flow counts; bounded by `max_tracked_keys`.
     per_http_ua: HashMap<String, u64>,
-    /// Passive DNS: resolved-IP → first answer (domain, timestamp, receiving client) + resolution
-    /// count. Bounded by `max_tracked_keys`.
+    /// Passive DNS: resolved-IP → first domain + resolution count. Bounded by `max_tracked_keys`.
     resolved: HashMap<IpAddr, ResolvedStat>,
+    /// Incident-timeline DNS context: `(receiving client, resolved IP)` → the first answer that
+    /// client got, so a story only shows lookups its own host made. Insert-only, bounded by
+    /// `max_first_contacts`.
+    client_answers: HashMap<(IpAddr, IpAddr), ClientAnswerStat>,
     /// Incident-timeline first contact: unordered endpoint pair `(lo, hi)` → the earliest flow
     /// between them. Insert-only, bounded by `max_first_contacts`.
     first_contacts: HashMap<(IpAddr, IpAddr), FirstContactStat>,
@@ -348,6 +355,7 @@ impl StatsAccumulator {
             per_http_ua: HashMap::new(),
             resolved: HashMap::new(),
             first_contacts: HashMap::new(),
+            client_answers: HashMap::new(),
             arp_macs: HashMap::new(),
             dhcp: HashMap::new(),
             encrypted_dns: HashMap::new(),
@@ -546,8 +554,18 @@ impl StatsAccumulator {
                                 ResolvedStat {
                                     domain: domain.clone(),
                                     count: 1,
-                                    first_ts: p.ts_ns,
-                                    client: dst_ip,
+                                },
+                            );
+                        }
+                        let key = (dst_ip, ip);
+                        if !self.client_answers.contains_key(&key)
+                            && self.client_answers.len() < self.cfg.max_first_contacts
+                        {
+                            self.client_answers.insert(
+                                key,
+                                ClientAnswerStat {
+                                    ts: p.ts_ns,
+                                    domain: domain.clone(),
                                 },
                             );
                         }
@@ -708,10 +726,11 @@ impl StatsAccumulator {
         const MAX_VICTIMS: usize = 16;
         // Overall bounds on emitted context rows.
         const MAX_PAIRS: usize = 4096;
-        const MAX_IPS: usize = 4096;
+        const MAX_ANSWERS: usize = 4096;
 
         let parse = |s: &str| s.parse::<IpAddr>().ok();
-        let mut ips: BTreeSet<IpAddr> = BTreeSet::new();
+        // (actor, peer): the answer the finding's own host received for its peer.
+        let mut answers: BTreeSet<(IpAddr, IpAddr)> = BTreeSet::new();
         let mut pairs: BTreeSet<(IpAddr, IpAddr)> = BTreeSet::new();
         for f in findings {
             let Some(src) = parse(&f.src_ip) else {
@@ -723,8 +742,8 @@ impl StatsAccumulator {
                 .chain(f.victims.iter().take(MAX_VICTIMS))
                 .filter_map(|p| parse(p));
             for peer in peers {
-                if ips.len() < MAX_IPS {
-                    ips.insert(peer);
+                if answers.len() < MAX_ANSWERS {
+                    answers.insert((src, peer));
                 }
                 if pairs.len() < MAX_PAIRS && peer != src {
                     pairs.insert(if src <= peer {
@@ -736,17 +755,18 @@ impl StatsAccumulator {
             }
         }
 
-        let dns_answers = ips
+        let mut dns_answers: Vec<DnsAnswer> = answers
             .iter()
-            .filter_map(|ip| {
-                self.resolved.get(ip).map(|r| DnsAnswer {
-                    ip: ip.to_string(),
+            .filter_map(|key| {
+                self.client_answers.get(key).map(|r| DnsAnswer {
+                    ip: key.1.to_string(),
                     domain: r.domain.clone(),
-                    client: Some(r.client.to_string()),
-                    first_seen_ns: r.first_ts,
+                    client: Some(key.0.to_string()),
+                    first_seen_ns: r.ts,
                 })
             })
             .collect();
+        dns_answers.sort_by(|a, b| (&a.ip, &a.client).cmp(&(&b.ip, &b.client)));
         let mut first_contacts: Vec<FirstContact> = pairs
             .iter()
             .filter_map(|pair| {
@@ -3583,6 +3603,21 @@ mod tests {
             p.dns_answers = vec![c2];
             acc.observe_packet(&p);
         }
+        // Another client resolved the same C2 earlier: not this host's lookup.
+        let mut other = pkt(
+            0,
+            3,
+            100,
+            Transport::Udp,
+            Some(ip4(8, 8, 8, 8)),
+            Some(ip4(10, 0, 0, 50)),
+            53,
+            40000,
+            0,
+        );
+        other.dns_qname = Some("shared.example".to_string());
+        other.dns_answers = vec![c2];
+        acc.observe_packet(&other);
         // Two flows host -> c2: the later-starting one closes first (idle eviction order).
         for first in [50, 10] {
             let mut r = flow(Transport::Tcp, host, c2, Category::Web, 1, 100);

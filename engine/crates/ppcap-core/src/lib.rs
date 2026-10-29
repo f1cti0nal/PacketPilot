@@ -79,7 +79,9 @@ pub use custody::{
     EVIDENCE_SCHEMA_VERSION,
 };
 pub use detect::alerts::{derive_alerts, diff_alerts, refresh_alerts};
-pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
+pub use detect::rules::{
+    apply_rules, apply_rules_with_context, parse_rules, Rule, RuleParse, RuleProto, SkippedRule,
+};
 pub use detect::suppress::{
     apply_suppressions, expire_carried_rules, load_rules as load_suppression_rules,
     match_suppressions, merge_into_file as merge_suppression_rules, rules_for_alert,
@@ -87,11 +89,11 @@ pub use detect::suppress::{
 };
 pub use detect::timeline::derive_timelines;
 pub use detect::{
-    fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
-    CleartextCredsParams, CryptominingParams, DetectConfig, DgaParams, DisguisedDownloadParams,
-    DnsTunnelParams, ExfilParams, IcmpTunnelParams, IcsControlParams, LateralMovementParams,
-    PiiExposureParams, PortScanParams, SuspiciousUaParams, SweepParams, SynFloodParams,
-    TlsCertHealthParams, WeakTlsParams,
+    fold_rule_findings, fold_rule_findings_with_context, ArpSpoofParams, BeaconParams,
+    BehaviorTracker, BruteForceParams, CleartextCredsParams, CryptominingParams, DetectConfig,
+    DgaParams, DisguisedDownloadParams, DnsTunnelParams, ExfilParams, IcmpTunnelParams,
+    IcsControlParams, LateralMovementParams, PiiExposureParams, PortScanParams, SuspiciousUaParams,
+    SweepParams, SynFloodParams, TlsCertHealthParams, WeakTlsParams,
 };
 pub use enrich::{
     apply_domain_reputation, apply_reputation, attack_for, classify_ip, AttackTechnique, Enricher,

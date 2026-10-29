@@ -53,7 +53,8 @@ pub fn derive_timelines(summary: &Summary) -> Vec<AlertTimeline> {
 
 /// Lookups shared by every alert's timeline.
 struct Index<'a> {
-    dns: BTreeMap<&'a str, &'a DnsAnswer>,
+    /// `(receiving client, ip)` → answer; a clientless answer (hand-edited JSON) keys on `""`.
+    dns: BTreeMap<(&'a str, &'a str), &'a DnsAnswer>,
     /// Unordered `(min, max)` endpoint pair → first contact.
     contacts: BTreeMap<(&'a str, &'a str), &'a FirstContact>,
     chains: BTreeMap<&'a str, &'a AttackChain>,
@@ -65,7 +66,11 @@ impl<'a> Index<'a> {
     fn new(s: &'a Summary) -> Index<'a> {
         let c = &s.timeline_context;
         Index {
-            dns: c.dns_answers.iter().map(|d| (d.ip.as_str(), d)).collect(),
+            dns: c
+                .dns_answers
+                .iter()
+                .map(|d| ((d.client.as_deref().unwrap_or(""), d.ip.as_str()), d))
+                .collect(),
             contacts: c
                 .first_contacts
                 .iter()
@@ -127,15 +132,13 @@ fn timeline_for(alert: &Alert, s: &Summary, ix: &Index<'_>) -> AlertTimeline {
     let member_set: BTreeSet<u32> = members.iter().map(|(i, _)| *i).collect();
 
     let mut events: Vec<TimelineEvent> = Vec::new();
-    // Hosts the story's findings are attributed to, and every endpoint it touches.
-    let mut actors: BTreeSet<&str> = BTreeSet::new();
+    // Every endpoint the story touches.
     let mut endpoints: BTreeSet<&str> = BTreeSet::new();
     // (actor, peer) pairs in member order, deduped, capped.
     let mut pairs: Vec<(&str, &str)> = Vec::new();
     let mut seen_pairs: BTreeSet<(&str, &str)> = BTreeSet::new();
 
     for &(idx, f) in &members {
-        actors.insert(f.src_ip.as_str());
         endpoints.insert(f.src_ip.as_str());
         events.push(detection_event(idx, f, ix.capture));
         for peer in f.dst_ip.iter().chain(f.victims.iter().take(MAX_VICTIMS)) {
@@ -220,11 +223,16 @@ fn timeline_for(alert: &Alert, s: &Summary, ix: &Index<'_>) -> AlertTimeline {
         });
     }
 
-    // The DNS answer behind each peer the story names.
-    let peers: BTreeSet<&str> = pairs.iter().map(|&(_, p)| p).collect();
-    for peer in &peers {
-        let Some(d) = ix.dns.get(peer) else { continue };
-        let host = d.client.as_deref().unwrap_or(alert.actor.as_str());
+    // The DNS answer each actor itself received for its peer (never another host's lookup).
+    for &(actor, peer) in &pairs {
+        let Some(d) = ix
+            .dns
+            .get(&(actor, peer))
+            .or_else(|| ix.dns.get(&("", peer)))
+        else {
+            continue;
+        };
+        let host = actor;
         events.push(TimelineEvent {
             ts_ns: Some(d.first_seen_ns),
             end_ns: None,
@@ -233,10 +241,7 @@ fn timeline_for(alert: &Alert, s: &Summary, ix: &Index<'_>) -> AlertTimeline {
             peer: Some(d.ip.clone()),
             dst_port: None,
             title: format!("{} resolved to {}", d.domain, d.ip),
-            detail: d
-                .client
-                .as_ref()
-                .map(|c| format!("First answer delivered to {c}")),
+            detail: None,
             severity: Severity::Info,
             tactic: None,
             attack: Vec::new(),
@@ -251,14 +256,12 @@ fn timeline_for(alert: &Alert, s: &Summary, ix: &Index<'_>) -> AlertTimeline {
         });
     }
 
-    // Files the story's actors downloaded (or that one of its endpoints served to them).
+    // Files moved between the story's own endpoints (a host fetching from a peer its findings
+    // name) — never every file a host fetched, which would bury the one from the C2.
     let files = s
         .carved_files
         .iter()
-        .filter(|c| {
-            actors.contains(c.client.as_str())
-                || (endpoints.contains(c.client.as_str()) && endpoints.contains(c.server.as_str()))
-        })
+        .filter(|c| endpoints.contains(c.client.as_str()) && endpoints.contains(c.server.as_str()))
         .take(MAX_DOWNLOADS);
     for c in files {
         events.push(download_event(c, ix.capture));
@@ -300,8 +303,13 @@ fn download_event(c: &CarvedFile, capture: (i64, i64)) -> TimelineEvent {
     if !c.signatures.is_empty() {
         detail.push_str(&format!(" · {}", c.signatures.join(", ")));
     }
+    // The whole transfer (an older summary has no completion time: pad the start instead).
     let start = c.first_seen_ns.unwrap_or(capture.0);
-    let end = c.first_seen_ns.unwrap_or(capture.1);
+    let end = match (c.first_seen_ns, c.last_seen_ns) {
+        (_, Some(last)) => last.saturating_add(1_000_000_000),
+        (Some(first), None) => first.saturating_add(INSTANT_WINDOW_NS),
+        (None, None) => capture.1,
+    };
     TimelineEvent {
         ts_ns: c.first_seen_ns,
         end_ns: None,
@@ -321,13 +329,7 @@ fn download_event(c: &CarvedFile, capture: (i64, i64)) -> TimelineEvent {
         tactic: None,
         attack: Vec::new(),
         finding_index: None,
-        packets: scope(
-            &c.client,
-            Some(&c.server),
-            None,
-            start,
-            end.saturating_add(INSTANT_WINDOW_NS),
-        ),
+        packets: scope(&c.client, Some(&c.server), None, start, end),
     }
 }
 
@@ -486,6 +488,7 @@ mod tests {
             signatures: Vec::new(),
             extracted_path: None,
             first_seen_ns: Some(5 * S + 2),
+            last_seen_ns: Some(8 * S),
         }];
         refresh_alerts(&mut s);
         s
@@ -612,6 +615,85 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains(&s.carved_files[0].sha256));
+    }
+
+    #[test]
+    fn download_window_covers_the_whole_transfer() {
+        let mut s = summary();
+        let window = |s: &Summary| {
+            let p = chain_timeline(s)
+                .events
+                .iter()
+                .find(|e| e.kind == TimelineEventKind::FileDownload)
+                .and_then(|e| e.packets.clone())
+                .unwrap();
+            (p.start_ns, p.end_ns)
+        };
+        // Ends a second past the packet that completed the body (a 45 s download is not cut at 10 s).
+        s.carved_files[0].last_seen_ns = Some(50 * S);
+        refresh_alerts(&mut s);
+        assert_eq!(window(&s), (5 * S + 2, 51 * S));
+        // An older summary without the completion time falls back to a padded start.
+        s.carved_files[0].last_seen_ns = None;
+        refresh_alerts(&mut s);
+        assert_eq!(window(&s), (5 * S + 2, 15 * S + 2));
+    }
+
+    #[test]
+    fn only_downloads_between_story_endpoints_join() {
+        let mut s = summary();
+        // Large unrelated CDN files fetched by the beaconing host rank ahead of the C2's file.
+        let cdn = s.carved_files[0].clone();
+        let mut unrelated: Vec<CarvedFile> = (0..MAX_DOWNLOADS as u64 + 4)
+            .map(|i| CarvedFile {
+                server: "93.184.216.34".into(),
+                sha256: format!("{i:064x}"),
+                size: 1_000_000 + i,
+                known_bad: false,
+                ..cdn.clone()
+            })
+            .collect();
+        unrelated.push(cdn);
+        s.carved_files = unrelated;
+        refresh_alerts(&mut s);
+        let dls: Vec<_> = chain_timeline(&s)
+            .events
+            .iter()
+            .filter(|e| e.kind == TimelineEventKind::FileDownload)
+            .collect();
+        assert_eq!(dls.len(), 1, "{dls:#?}");
+        assert_eq!(dls[0].peer.as_deref(), Some("45.77.13.37"));
+    }
+
+    #[test]
+    fn another_hosts_dns_lookup_stays_out_of_the_story() {
+        let mut s = summary();
+        // A different host resolved the same C2 earlier; only 10.0.0.7's own answer is its story.
+        s.timeline_context.dns_answers.insert(
+            0,
+            DnsAnswer {
+                ip: "45.77.13.37".into(),
+                domain: "shared.example".into(),
+                client: Some("10.0.0.99".into()),
+                first_seen_ns: S / 2,
+            },
+        );
+        refresh_alerts(&mut s);
+        let dns: Vec<_> = chain_timeline(&s)
+            .events
+            .iter()
+            .filter(|e| e.kind == TimelineEventKind::DnsAnswer)
+            .collect();
+        assert_eq!(dns.len(), 1);
+        assert_eq!(dns[0].host, "10.0.0.7");
+        assert_eq!(dns[0].title, "c2.example resolved to 45.77.13.37");
+        // With no answer of its own, the row is omitted rather than borrowed.
+        s.timeline_context.dns_answers.remove(1);
+        refresh_alerts(&mut s);
+        assert!(!chain_timeline(&s)
+            .events
+            .iter()
+            .any(|e| e.kind == TimelineEventKind::DnsAnswer));
     }
 
     #[test]

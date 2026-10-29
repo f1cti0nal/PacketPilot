@@ -571,6 +571,9 @@ fn score_for_severity(sev: Severity) -> u16 {
     }
 }
 
+/// Endpoint pairs whose first frame the rules pass remembers (for the timeline's first contact).
+const MAX_RULE_CONTACTS: usize = 262_144;
+
 /// Stream `reader` once; for each matching `(rule, src_ip, dst_ip, dst_port)` tuple emit one
 /// [`Finding`] of kind [`FindingKind::RuleMatch`]. Duplicate hits on the same 4-tuple are
 /// deduped. Returns at most `MAX_RULE_FINDINGS` findings.
@@ -582,22 +585,36 @@ pub fn apply_rules<R: std::io::Read + 'static>(
     len: Option<u64>,
     rules: &[Rule],
 ) -> Vec<Finding> {
-    use std::collections::HashSet;
+    apply_rules_with_context(reader, len, rules).0
+}
+
+/// [`apply_rules`], plus the incident-timeline context for the matches: the first frame between
+/// each matched endpoint pair, so a rule-only alert's timeline still opens with its first
+/// contact. Fold both with [`crate::detect::fold_rule_findings_with_context`].
+pub fn apply_rules_with_context<R: std::io::Read + 'static>(
+    reader: R,
+    len: Option<u64>,
+    rules: &[Rule],
+) -> (Vec<Finding>, crate::model::timeline::TimelineContext) {
+    use std::collections::{BTreeSet, HashMap};
+    use std::net::IpAddr;
 
     let mut out: Vec<Finding> = Vec::new();
     if rules.is_empty() {
-        return out;
+        return (out, Default::default());
     }
 
     let mut src = match crate::reader::open_reader(reader, len) {
         Ok(s) => s,
-        Err(_) => return out,
+        Err(_) => return (out, Default::default()),
     };
 
-    // Dedup key: (sid, src_ip_string, dst_ip_string, dst_port)
-    let mut seen: HashSet<(u32, String, String, u16)> = HashSet::new();
+    // Dedup key: (sid, src_ip_string, dst_ip_string, dst_port) → index into `out`.
+    let mut seen: HashMap<(u32, String, String, u16), usize> = HashMap::new();
+    // Unordered pair → (first frame ts, its sender, its destination port).
+    let mut contacts: HashMap<(IpAddr, IpAddr), (i64, IpAddr, Option<u16>)> = HashMap::new();
 
-    loop {
+    'frames: loop {
         let frame = match src.next_frame() {
             Ok(Some(f)) => f,
             Ok(None) => break,
@@ -608,6 +625,24 @@ pub fn apply_rules<R: std::io::Read + 'static>(
             Ok(m) => m,
             Err(_) => continue,
         };
+
+        // First frame per pair, payload or not (a handshake opens the conversation).
+        if let (Some(s), Some(d)) = (meta.src_ip, meta.dst_ip) {
+            let key = if s <= d { (s, d) } else { (d, s) };
+            let port = meta.transport.has_ports().then_some(meta.dst_port);
+            let full = contacts.len() >= MAX_RULE_CONTACTS;
+            match contacts.entry(key) {
+                std::collections::hash_map::Entry::Occupied(mut c) => {
+                    if frame.ts_ns < c.get().0 {
+                        c.insert((frame.ts_ns, s, port));
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(v) if !full => {
+                    v.insert((frame.ts_ns, s, port));
+                }
+                std::collections::hash_map::Entry::Vacant(_) => {}
+            }
+        }
 
         let payload: &[u8] = crate::decode::l4_payload(&frame)
             .map(|x| x.payload)
@@ -628,16 +663,52 @@ pub fn apply_rules<R: std::io::Read + 'static>(
         for r in rules {
             if r.matches(meta.transport, sport, dport, payload) {
                 let key = (r.sid, src_str.clone(), dst_str.clone(), dport);
-                if seen.insert(key) {
-                    out.push(rule_finding(r, &src_str, &dst_str, dport));
+                if let Some(&i) = seen.get(&key) {
+                    out[i].last_seen_ns = Some(frame.ts_ns);
+                } else {
+                    seen.insert(key, out.len());
+                    let mut f = rule_finding(r, &src_str, &dst_str, dport);
+                    f.first_seen_ns = Some(frame.ts_ns);
+                    f.last_seen_ns = Some(frame.ts_ns);
+                    out.push(f);
                     if out.len() >= MAX_RULE_FINDINGS {
-                        return out;
+                        break 'frames;
                     }
                 }
             }
         }
     }
-    out
+
+    let pairs: BTreeSet<(IpAddr, IpAddr)> = out
+        .iter()
+        .filter_map(|f| {
+            let s = f.src_ip.parse::<IpAddr>().ok()?;
+            let d = f.dst_ip.as_deref()?.parse::<IpAddr>().ok()?;
+            Some(if s <= d { (s, d) } else { (d, s) })
+        })
+        .collect();
+    let mut first_contacts: Vec<crate::model::timeline::FirstContact> = pairs
+        .iter()
+        .filter_map(|pair| {
+            let &(ts, initiator, port) = contacts.get(pair)?;
+            let responder = if initiator == pair.0 { pair.1 } else { pair.0 };
+            Some(crate::model::timeline::FirstContact {
+                initiator: initiator.to_string(),
+                responder: responder.to_string(),
+                port,
+                first_seen_ns: ts,
+            })
+        })
+        .collect();
+    first_contacts.sort_by(|a, b| {
+        (a.initiator.as_str(), a.responder.as_str())
+            .cmp(&(b.initiator.as_str(), b.responder.as_str()))
+    });
+    let ctx = crate::model::timeline::TimelineContext {
+        dns_answers: Vec::new(),
+        first_contacts,
+    };
+    (out, ctx)
 }
 
 /// Build a `Finding` for a single rule match.
@@ -899,7 +970,7 @@ mod tests {
             443,
             frames::TCP_PSH | frames::TCP_ACK,
             b"abc again",
-            1_000_000_100,
+            1_250_000_000,
             &mut buf,
         );
         buf
@@ -942,5 +1013,39 @@ mod tests {
             .is_empty(),
             "non-matching rule must produce no findings"
         );
+    }
+
+    #[test]
+    fn rule_matches_carry_time_and_first_contact_into_their_timeline() {
+        let pcap = crafted_tcp_pcap_with_abc();
+        let rules =
+            parse_rules(r#"alert tcp any any -> any 443 (msg:"hit"; content:"abc"; sid:77;)"#)
+                .rules;
+        let (rf, ctx) = apply_rules_with_context(
+            std::io::Cursor::new(pcap.clone()),
+            Some(pcap.len() as u64),
+            &rules,
+        );
+        assert_eq!(rf.len(), 1);
+        assert_eq!(rf[0].first_seen_ns, Some(1_000_000_000));
+        assert_eq!(rf[0].last_seen_ns, Some(1_250_000_000));
+        assert_eq!(ctx.first_contacts.len(), 1);
+        let fc = &ctx.first_contacts[0];
+        assert_eq!(
+            (fc.initiator.as_str(), fc.responder.as_str(), fc.port),
+            ("10.0.0.1", "93.184.216.34", Some(443))
+        );
+
+        // Folded into a summary analyzed without that pair, the rule alert opens with the contact.
+        let mut summary = crate::model::summary::Summary::empty();
+        crate::detect::fold_rule_findings_with_context(&mut summary, &rf, &ctx);
+        let rows = &summary.timelines[0].events;
+        use crate::model::timeline::TimelineEventKind;
+        assert_eq!(rows[0].kind, TimelineEventKind::FirstContact, "{rows:#?}");
+        assert_eq!(rows[1].kind, TimelineEventKind::Detection);
+        // Re-folding the same context adds nothing.
+        let before = summary.timeline_context.clone();
+        summary.timeline_context.merge(&ctx);
+        assert_eq!(summary.timeline_context, before);
     }
 }

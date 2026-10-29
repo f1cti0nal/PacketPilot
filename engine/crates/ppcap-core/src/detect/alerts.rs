@@ -1928,6 +1928,7 @@ mod tests {
             signatures: Vec::new(),
             extracted_path: None,
             first_seen_ns: None,
+            last_seen_ns: None,
         }];
         let alerts = derive_alerts(&summary);
         assert!(alerts.iter().any(|a| a

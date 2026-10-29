@@ -326,6 +326,10 @@ pub struct CarvedFile {
     /// `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub first_seen_ns: Option<i64>,
+    /// When the body completed (ns; the packet that finished it), so the download's packet window
+    /// covers the whole transfer. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub last_seen_ns: Option<i64>,
 }
 
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.

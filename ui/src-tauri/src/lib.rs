@@ -205,8 +205,8 @@ fn apply_rules_to(path: String, rules_text: String, output_json: String) -> Resu
     let parsed = ppcap_core::parse_rules(&rules_text);
     let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
     let len = std::fs::metadata(&path).ok().map(|m| m.len());
-    let rf = ppcap_core::apply_rules(file, len, &parsed.rules);
-    ppcap_core::fold_rule_findings(&mut out.summary, &rf);
+    let (rf, ctx) = ppcap_core::apply_rules_with_context(file, len, &parsed.rules);
+    ppcap_core::fold_rule_findings_with_context(&mut out.summary, &rf, &ctx);
     let res = RuleApplyResult {
         matches: rf.len(),
         loaded: parsed.rules.len(),
