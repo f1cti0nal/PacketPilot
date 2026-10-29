@@ -328,3 +328,35 @@ fn zeek_command_takes_yara_rules() {
     let notice = std::fs::read_to_string(logs.join("notice.log")).unwrap();
     assert!(notice.contains("YARA Stage2_Loader"), "{notice}");
 }
+
+#[test]
+fn a_later_rule_file_can_reference_an_earlier_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let pcap = capture(dir.path());
+    let base = dir.path().join("base.yar");
+    std::fs::write(
+        &base,
+        "private rule IsPE { condition: uint16(0) == 0x5A4D }",
+    )
+    .unwrap();
+    let det = dir.path().join("det.yar");
+    std::fs::write(&det, "rule PE_Over_Wire { condition: IsPE }").unwrap();
+    let summary = dir.path().join("a.json");
+    ok(&[
+        "analyze",
+        &pcap,
+        "--json",
+        summary.to_str().unwrap(),
+        "--yara",
+        base.to_str().unwrap(),
+        "--yara",
+        det.to_str().unwrap(),
+        "--quiet",
+    ]);
+    let a: Value = serde_json::from_str(&std::fs::read_to_string(&summary).unwrap()).unwrap();
+    assert!(a["summary"]["carved_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|f| f["yara"] == serde_json::json!(["PE_Over_Wire"])));
+}

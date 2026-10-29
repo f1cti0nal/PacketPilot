@@ -87,8 +87,55 @@ struct Rule {
     tags: Vec<String>,
     meta: Vec<(String, String)>,
     private: bool,
-    strings: Vec<String>,
     cond: Expr,
+    /// Per string, the constant `at` / `in` windows its condition asks about. Matches in them are
+    /// remembered even past [`MAX_OFFSETS`], so a late `$a at 5000` is still answered.
+    windows: Vec<Vec<(i64, i64)>>,
+}
+
+/// The constant value of an offset expression (`100`, `0x40 + 2`, `4KB`), if it has one.
+fn const_int(e: &Expr) -> Option<i64> {
+    match e {
+        Expr::Int(i) => Some(*i),
+        Expr::Arith(op, a, b) => {
+            let (x, y) = (const_int(a)?, const_int(b)?);
+            match op {
+                '+' => Some(x.wrapping_add(y)),
+                '-' => Some(x.wrapping_sub(y)),
+                '*' => Some(x.wrapping_mul(y)),
+                '\\' if y != 0 => Some(x / y),
+                '%' if y != 0 => Some(x % y),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Collect the constant positional windows of `e` into `out[string]`.
+fn collect_windows(e: &Expr, out: &mut [Vec<(i64, i64)>]) {
+    match e {
+        Expr::At(s, o) => {
+            if let Some(v) = const_int(o) {
+                out[*s].push((v, v));
+            }
+            collect_windows(o, out);
+        }
+        Expr::In(s, lo, hi) => {
+            if let (Some(a), Some(b)) = (const_int(lo), const_int(hi)) {
+                out[*s].push((a, b));
+            }
+            collect_windows(lo, out);
+            collect_windows(hi, out);
+        }
+        Expr::Read(_, _, a) | Expr::Not(a) => collect_windows(a, out),
+        Expr::And(a, b) | Expr::Or(a, b) | Expr::Cmp(_, a, b) | Expr::Arith(_, a, b) => {
+            collect_windows(a, out);
+            collect_windows(b, out);
+        }
+        Expr::Of(Quant::N(n), _) => collect_windows(n, out),
+        _ => {}
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -147,45 +194,68 @@ impl Pattern {
                     w == bytes.as_slice()
                 })
             }
-            Pattern::Hex(toks) => hex_match(toks, buf, complete),
+            Pattern::Hex(toks) => {
+                // No match is longer than the pattern's longest form, so look no further.
+                let longest = self.max_len();
+                let w = &buf[..buf.len().min(longest)];
+                hex_match(toks, w, complete || buf.len() >= longest)
+            }
         }
     }
 }
 
-/// Backtracking hex matcher over bounded jumps.
+/// Hex matcher over bounded jumps: the set of reachable positions in `buf` is carried token by
+/// token, so the work is linear in the tokens times the window, however many jumps there are
+/// (backtracking would multiply the jump widths).
 fn hex_match(toks: &[HexTok], buf: &[u8], complete: bool) -> Option<bool> {
-    let Some((first, rest)) = toks.split_first() else {
-        return Some(true);
-    };
-    match *first {
-        HexTok::Byte { value, mask } => match buf.first() {
-            Some(&b) if b & mask == value => hex_match(rest, &buf[1..], complete),
-            Some(_) => Some(false),
-            None if complete => Some(false),
-            None => None,
-        },
-        HexTok::Jump { min, max } => {
-            let mut undecided = false;
-            for skip in min..=max {
-                if skip > buf.len() {
-                    if !complete {
-                        undecided = true;
+    let n = buf.len();
+    let mut at = vec![false; n + 1];
+    at[0] = true;
+    // A path ran past the end of `buf` while more bytes may still come.
+    let mut cut = false;
+    let mut next = vec![false; n + 1];
+    for tok in toks {
+        next.iter_mut().for_each(|x| *x = false);
+        let mut any = false;
+        match *tok {
+            HexTok::Byte { value, mask } => {
+                for p in (0..=n).filter(|&p| at[p]) {
+                    if p == n {
+                        cut |= !complete;
+                    } else if buf[p] & mask == value {
+                        next[p + 1] = true;
+                        any = true;
                     }
-                    break;
-                }
-                match hex_match(rest, &buf[skip..], complete) {
-                    Some(true) => return Some(true),
-                    Some(false) => {}
-                    None => undecided = true,
                 }
             }
-            if undecided {
-                None
-            } else {
-                Some(false)
+            HexTok::Jump { min, max } => {
+                // Mark every `p + min ..= p + max` with a running count of open ranges.
+                let mut delta = vec![0i32; n + 2];
+                for p in (0..=n).filter(|&p| at[p]) {
+                    if p + max > n {
+                        cut |= !complete;
+                    }
+                    if p + min <= n {
+                        delta[p + min] += 1;
+                        delta[(p + max).min(n) + 1] -= 1;
+                    }
+                }
+                let mut open = 0;
+                for (q, d) in delta.iter().take(n + 1).enumerate() {
+                    open += d;
+                    if open > 0 {
+                        next[q] = true;
+                        any = true;
+                    }
+                }
             }
         }
+        std::mem::swap(&mut at, &mut next);
+        if !any {
+            return if cut { None } else { Some(false) };
+        }
     }
+    Some(true)
 }
 
 // ── conditions ──────────────────────────────────────────────────────────────────────────────────
@@ -262,11 +332,37 @@ impl Val {
 #[derive(Debug, Clone, Default)]
 struct StrState {
     count: u64,
+    /// The first [`MAX_OFFSETS`] match offsets, ascending.
     offsets: Vec<u64>,
+    /// Whether a match fell in each of the rule's constant windows for this string.
+    window_hit: Vec<bool>,
+}
+
+impl StrState {
+    /// Whether some offset in `lo..=hi` matched: `None` when only offsets past the kept ones
+    /// could answer it.
+    fn any_in(&self, lo: i64, hi: i64, windows: &[(i64, i64)]) -> Option<bool> {
+        if self
+            .offsets
+            .iter()
+            .any(|&o| (o as i64) >= lo && (o as i64) <= hi)
+        {
+            return Some(true);
+        }
+        if let Some(w) = windows.iter().position(|&w| w == (lo, hi)) {
+            return Some(self.window_hit[w]);
+        }
+        let truncated = self.count > self.offsets.len() as u64;
+        match self.offsets.last() {
+            Some(&last) if truncated && hi > last as i64 => None,
+            _ => Some(false),
+        }
+    }
 }
 
 struct EvalCtx<'a> {
     strings: &'a [StrState],
+    windows: &'a [Vec<(i64, i64)>],
     filesize: u64,
     prefix: &'a [u8],
     rule_results: &'a [bool],
@@ -281,16 +377,15 @@ impl Expr {
             Expr::Matched(s) => Val::Bool(cx.strings[*s].count > 0),
             Expr::Count(s) => Val::Int(cx.strings[*s].count as i64),
             Expr::At(s, off) => match off.eval(cx).int() {
-                Some(o) => Val::Bool(o >= 0 && cx.strings[*s].offsets.contains(&(o as u64))),
+                Some(o) => cx.strings[*s]
+                    .any_in(o, o, &cx.windows[*s])
+                    .map_or(Val::Undef, Val::Bool),
                 None => Val::Undef,
             },
             Expr::In(s, lo, hi) => match (lo.eval(cx).int(), hi.eval(cx).int()) {
-                (Some(lo), Some(hi)) => Val::Bool(
-                    cx.strings[*s]
-                        .offsets
-                        .iter()
-                        .any(|&o| (o as i64) >= lo && (o as i64) <= hi),
-                ),
+                (Some(lo), Some(hi)) => cx.strings[*s]
+                    .any_in(lo, hi, &cx.windows[*s])
+                    .map_or(Val::Undef, Val::Bool),
                 _ => Val::Undef,
             },
             Expr::Read(size, be, off) => {
@@ -376,48 +471,22 @@ impl YaraRules {
         self.rules.is_empty()
     }
 
-    /// Append another set's rules (e.g. a second `--yara` file). A name already present keeps its
-    /// first definition and the duplicate is returned as skipped.
-    pub fn extend(&mut self, other: YaraRules) -> Vec<SkippedYaraRule> {
-        let mut skipped = Vec::new();
-        let offset = self.rules.len();
-        let mut remap: Vec<Option<usize>> = Vec::with_capacity(other.rules.len());
-        let mut next = offset;
-        for r in &other.rules {
-            if self.rules.iter().any(|x| x.name == r.name) {
-                skipped.push(SkippedYaraRule {
-                    name: r.name.clone(),
-                    reason: "duplicate rule name (the first definition wins)".into(),
-                });
-                remap.push(None);
-            } else {
-                remap.push(Some(next));
-                next += 1;
-            }
-        }
-        for (i, mut r) in other.rules.into_iter().enumerate() {
-            if remap[i].is_none() {
-                continue;
-            }
-            if !remap_rule_refs(&mut r.cond, &remap) {
-                skipped.push(SkippedYaraRule {
-                    name: r.name.clone(),
-                    reason: "references a rule that was skipped".into(),
-                });
-                // Keep indices dense: the rule stays but can never match.
-                r.cond = Expr::Bool(false);
-            }
-            self.rules.push(r);
-        }
-        let mut patterns = Vec::new();
-        for (ri, sp, p) in other.patterns {
-            if let Some(Some(new)) = remap.get(ri) {
-                patterns.push((*new, sp, p));
-            }
-        }
-        self.patterns.extend(patterns);
-        self.index();
-        skipped
+    /// Parse another rules file into this set (e.g. a second `--yara` file). Its rules may
+    /// reference rules already loaded; a name already present keeps its first definition and the
+    /// duplicate is reported as skipped, with every other rule the file couldn't take.
+    pub fn add(&mut self, text: &str) -> Vec<SkippedYaraRule> {
+        let mut p = Parser::new(text);
+        p.out = std::mem::take(self);
+        p.names = p
+            .out
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (r.name.clone(), Some(i)))
+            .collect();
+        let parsed = p.run();
+        *self = parsed.rules;
+        parsed.skipped
     }
 
     fn index(&mut self) {
@@ -431,26 +500,6 @@ impl YaraRules {
                 }
             }
         }
-    }
-}
-
-fn remap_rule_refs(e: &mut Expr, remap: &[Option<usize>]) -> bool {
-    match e {
-        Expr::RuleRef(r) => match remap.get(*r).copied().flatten() {
-            Some(n) => {
-                *r = n;
-                true
-            }
-            None => false,
-        },
-        Expr::At(_, a) | Expr::Read(_, _, a) | Expr::Not(a) => remap_rule_refs(a, remap),
-        Expr::In(_, a, b)
-        | Expr::And(a, b)
-        | Expr::Or(a, b)
-        | Expr::Cmp(_, a, b)
-        | Expr::Arith(_, a, b) => remap_rule_refs(a, remap) && remap_rule_refs(b, remap),
-        Expr::Of(Quant::N(n), _) => remap_rule_refs(n, remap),
-        _ => true,
     }
 }
 
@@ -471,7 +520,15 @@ impl YaraScanner {
         let states = rules
             .rules
             .iter()
-            .map(|r| vec![StrState::default(); r.strings.len()])
+            .map(|r| {
+                r.windows
+                    .iter()
+                    .map(|w| StrState {
+                        window_hit: vec![false; w.len()],
+                        ..StrState::default()
+                    })
+                    .collect()
+            })
             .collect();
         YaraScanner {
             rules,
@@ -509,17 +566,31 @@ impl YaraScanner {
         } else {
             self.window.len().saturating_sub(max - 1)
         };
+        // Strings already counted at this offset: an `ascii wide` string's two forms can both
+        // match at one offset, which is still one occurrence.
+        let mut counted: Vec<(usize, usize)> = Vec::new();
         let mut i = 0;
         while i < limit {
             let b = self.window[i];
+            counted.clear();
             for &pi in &self.rules.starters[usize::from(b)] {
                 let (ri, si, ref p) = self.rules.patterns[pi];
                 // Without `complete`, `limit` leaves `max` bytes after `i`, so this decides.
-                if p.matches(&self.window[i..], complete) == Some(true) {
-                    let st = &mut self.states[ri][si];
-                    st.count += 1;
-                    if st.offsets.len() < MAX_OFFSETS {
-                        st.offsets.push(self.window_start + i as u64);
+                if counted.contains(&(ri, si))
+                    || p.matches(&self.window[i..], complete) != Some(true)
+                {
+                    continue;
+                }
+                counted.push((ri, si));
+                let off = self.window_start + i as u64;
+                let st = &mut self.states[ri][si];
+                st.count += 1;
+                if st.offsets.len() < MAX_OFFSETS {
+                    st.offsets.push(off);
+                }
+                for (w, &(lo, hi)) in self.rules.rules[ri].windows[si].iter().enumerate() {
+                    if (off as i64) >= lo && (off as i64) <= hi {
+                        st.window_hit[w] = true;
                     }
                 }
             }
@@ -538,6 +609,7 @@ impl YaraScanner {
             // Each rule's string ids index into its own states.
             let cx = EvalCtx {
                 strings: &self.states[ri],
+                windows: &rule.windows,
                 filesize: self.size,
                 prefix: &self.prefix,
                 rule_results: &results,
@@ -1005,13 +1077,15 @@ impl Parser {
         for (si, p) in pats {
             self.out.patterns.push((ri, si, p));
         }
+        let mut windows = vec![Vec::new(); table.ids.len()];
+        collect_windows(&cond, &mut windows);
         self.out.rules.push(Rule {
             name,
             tags,
             meta,
             private,
-            strings: table.ids,
             cond,
+            windows,
         });
         Ok(())
     }
@@ -1433,20 +1507,58 @@ mod tests {
         assert!(hits.is_empty());
     }
 
+    fn hits(rules: YaraRules, data: &[u8]) -> Vec<String> {
+        let mut s = YaraScanner::new(Arc::new(rules));
+        s.feed(data);
+        s.finish().into_iter().map(|h| h.rule).collect()
+    }
+
     #[test]
-    fn a_second_file_extends_the_set_and_keeps_first_names() {
-        let mut a = YaraRules::parse("rule one { strings: $a = \"aa\" condition: $a }").rules;
-        let b = YaraRules::parse(
-            "rule one { condition: true } rule two { strings: $b = \"bb\" condition: $b }",
+    fn a_second_file_adds_rules_that_reference_the_first() {
+        let mut a = YaraRules::parse(
+            "private rule is_mz { condition: uint16(0) == 0x5A4D } rule one { strings: $a = \"aa\" condition: $a }",
         )
         .rules;
-        let skipped = a.extend(b);
-        assert_eq!(skipped.len(), 1);
-        assert_eq!(a.len(), 2);
-        let mut s = YaraScanner::new(Arc::new(a));
-        s.feed(b"zzbbzz");
-        let hits: Vec<String> = s.finish().into_iter().map(|h| h.rule).collect();
-        assert_eq!(hits, vec!["two"]);
+        let skipped = a.add(
+            "rule one { condition: true } rule two { strings: $b = \"bb\" condition: $b and is_mz }",
+        );
+        assert_eq!(skipped.len(), 1, "{skipped:?}");
+        assert_eq!(skipped[0].name, "one");
+        assert_eq!(a.len(), 3);
+        assert_eq!(hits(a, b"MZbbzz"), vec!["two"]);
+    }
+
+    #[test]
+    fn late_offsets_past_the_kept_list_are_still_answered() {
+        let data = vec![b'A'; 3000];
+        let r = YaraRules::parse(
+            r#"rule at_end { strings: $a = "A" condition: $a at 2999 and $a in (2500..2600) and #a == 3000 }
+               rule dyn_at { strings: $a = "A" condition: $a at (filesize - 1) }
+               rule early { strings: $a = "A" condition: $a at 10 }"#,
+        );
+        assert!(r.skipped.is_empty(), "{:?}", r.skipped);
+        // A non-constant offset past the kept matches is undefined, not a guess.
+        assert_eq!(hits(r.rules, &data), vec!["at_end", "early"]);
+    }
+
+    #[test]
+    fn an_ascii_wide_string_counts_one_occurrence_per_offset() {
+        let r = YaraRules::parse(r#"rule one { strings: $a = "A" ascii wide condition: #a == 1 }"#);
+        assert_eq!(hits(r.rules, b"A\0"), vec!["one"]);
+    }
+
+    #[test]
+    fn many_jumps_over_repeated_bytes_stay_fast() {
+        let r = YaraRules::parse(
+            "rule j { strings: $h = { 41 [0-1024] 41 [0-1024] 41 [0-1024] 42 } condition: $h }",
+        );
+        assert!(r.skipped.is_empty(), "{:?}", r.skipped);
+        let started = std::time::Instant::now();
+        let mut data = vec![b'A'; 8000];
+        assert!(hits(r.rules.clone(), &data).is_empty());
+        data.push(b'B');
+        assert_eq!(hits(r.rules, &data), vec!["j"]);
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
     }
 
     #[test]

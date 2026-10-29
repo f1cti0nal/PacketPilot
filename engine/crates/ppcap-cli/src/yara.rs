@@ -12,8 +12,9 @@ pub(crate) struct LoadedYara {
     pub files: Vec<(PathBuf, String, u64)>,
 }
 
-/// Load and merge `paths` in order (a rule name seen twice keeps its first definition). Rules the
-/// engine can't evaluate are listed on stderr and skipped; a set with no usable rule is an error.
+/// Load `paths` in order into one set: a later file may reference an earlier file's rules, and a
+/// rule name seen twice keeps its first definition. Rules the engine can't evaluate are listed on
+/// stderr and skipped; a set with no usable rule is an error.
 pub(crate) fn load(paths: &[PathBuf], quiet: bool) -> anyhow::Result<Option<LoadedYara>> {
     if paths.is_empty() {
         return Ok(None);
@@ -29,9 +30,8 @@ pub(crate) fn load(paths: &[PathBuf], quiet: bool) -> anyhow::Result<Option<Load
             ppcap_core::sha256_hex(text.as_bytes()),
             text.len() as u64,
         ));
-        let parsed = YaraRules::parse(&text);
-        let mut skips = parsed.skipped;
-        skips.extend(rules.extend(parsed.rules));
+        // Later files may reference rules from earlier ones.
+        let skips = rules.add(&text);
         skipped += skips.len();
         if !quiet {
             for s in &skips {

@@ -189,7 +189,8 @@ bytes. Besides HTTP downloads it carves FTP transfers (passive and active, `RETR
 directory listings are skipped), email attachments from SMTP and POP3 (nested MIME, base64 and
 quoted-printable; a part is carved when it has a filename, is an attachment, or is not text),
 and SMB2 files read or written from offset 0 to their end (named `\\server\share\path`; `IPC$`
-pipes and encrypted SMB3 are skipped). Each file gets its SHA-256, content signatures and YARA
+pipes, shares connected before the capture began, and encrypted SMB3 are skipped). An FTP `APPE`
+is not carved, since it carries only the end of a file. Each file gets its SHA-256, content signatures and YARA
 verdicts with nothing buffered; `--carve-dir` writes it to `<sha256>.<ext>`, with `.quarantine`
 added when anything flagged it. Traffic after `STARTTLS`, `STLS` or `AUTH TLS` is encrypted and
 not carved.

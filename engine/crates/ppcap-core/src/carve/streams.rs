@@ -555,7 +555,10 @@ impl FtpCtl {
                 };
                 match verb.as_str() {
                     "RETR" => *pending = xfer(false, true),
-                    "STOR" | "APPE" | "STOU" => *pending = xfer(true, true),
+                    "STOR" | "STOU" => *pending = xfer(true, true),
+                    // An append carries only the tail of a file the server already holds: its
+                    // hash would not be the file's.
+                    "APPE" => *pending = xfer(true, false),
                     "LIST" | "NLST" | "MLSD" => *pending = xfer(false, false),
                     "PORT" => {
                         if let Some(ep) = port_tuple(&arg) {
@@ -1198,13 +1201,14 @@ const CMD_CLOSE: u16 = 6;
 const CMD_READ: u16 = 8;
 const CMD_WRITE: u16 = 9;
 const STATUS_PENDING: u32 = 0x0000_0103;
+const SHARE_TYPE_DISK: u8 = 1;
 
 #[derive(Default)]
 struct Smb {
     dirs: [SmbDir; 2],
     /// Requests awaiting their response, by MessageId.
     pending: HashMap<u64, SmbReq>,
-    /// TreeId → share path; `None` for `IPC$`.
+    /// TreeId → share path; `None` for a pipe (`IPC$`) or printer share.
     trees: HashMap<u32, Option<String>>,
     files: HashMap<[u8; 16], SmbFile>,
     dead: bool,
@@ -1487,22 +1491,24 @@ impl Smb {
             (CMD_TREE_CONNECT, false) => {
                 if let (Some(o), Some(l)) = (u16_at(body, 4), u16_at(body, 6)) {
                     let path = utf16_at(msg, usize::from(o), usize::from(l));
-                    let ipc = path
-                        .as_deref()
-                        .is_some_and(|p| p.to_ascii_uppercase().ends_with("\\IPC$"));
-                    remember(&mut self.pending, SmbReq::Tree(path.filter(|_| !ipc)));
+                    remember(&mut self.pending, SmbReq::Tree(path));
                 }
             }
             (CMD_TREE_CONNECT, true) => {
                 if let Some(SmbReq::Tree(path)) = self.pending.remove(&id) {
                     if status == 0 && self.trees.len() < MAX_SMB_FILES {
-                        self.trees.insert(tree, path);
+                        // ShareType 1 is a disk share; pipes (IPC$) and printers carry no files.
+                        let disk = body.get(2) == Some(&SHARE_TYPE_DISK);
+                        self.trees
+                            .insert(tree, disk.then(|| path.unwrap_or_default()));
                     }
                 }
             }
             (CMD_CREATE, false) => {
-                if matches!(self.trees.get(&tree), Some(None)) {
-                    return; // a named pipe on IPC$
+                if !matches!(self.trees.get(&tree), Some(Some(_))) {
+                    // A pipe or printer share, or a tree connected before the capture began
+                    // (which may be IPC$): its bytes can't be told apart from a file's.
+                    return;
                 }
                 if let (Some(o), Some(l)) = (u16_at(body, 44), u16_at(body, 46)) {
                     let name = utf16_at(msg, usize::from(o), usize::from(l)).unwrap_or_default();
@@ -1516,6 +1522,7 @@ impl Smb {
                         if self.files.len() < MAX_SMB_FILES || self.files.contains_key(&fid) {
                             let name = match self.trees.get(&tree) {
                                 Some(Some(share)) if name.is_empty() => share.clone(),
+                                Some(Some(share)) if share.is_empty() => name,
                                 Some(Some(share)) => format!("{share}\\{name}"),
                                 _ => name,
                             };
@@ -1788,6 +1795,25 @@ mod tests {
     }
 
     #[test]
+    fn an_ftp_append_is_not_a_whole_file() {
+        let mut k = FileCarver::new();
+        let mut ctl = Conn::new((CLI, 50000), (SRV, 21));
+        ctl.open(&mut k);
+        ctl.send(&mut k, C2S, b"PASV\r\n");
+        ctl.send(
+            &mut k,
+            S2C,
+            b"227 Entering Passive Mode (203,0,113,9,19,137)\r\n",
+        );
+        let mut data = Conn::new((CLI, 50001), (SRV, 5001));
+        data.open(&mut k);
+        ctl.send(&mut k, C2S, b"APPE log.txt\r\n");
+        data.send(&mut k, C2S, b"appended tail");
+        data.fin(&mut k, C2S);
+        assert!(results(k).is_empty());
+    }
+
+    #[test]
     fn a_gap_or_a_missing_fin_drops_the_ftp_file() {
         let mut k = FileCarver::new();
         let mut ctl = Conn::new((CLI, 50000), (SRV, 21));
@@ -2018,13 +2044,16 @@ mod tests {
     }
 
     fn tree_connect(c: &mut Conn, k: &mut FileCarver, id: u64, tree: u32, path: &str) {
+        let share_type = if path.ends_with("IPC$") { 2 } else { 1 };
         let p = utf16(path);
         let mut body = vec![9, 0, 0, 0];
         body.extend_from_slice(&72u16.to_le_bytes());
         body.extend_from_slice(&(p.len() as u16).to_le_bytes());
         body.extend_from_slice(&p);
         c.send(k, C2S, &smb(CMD_TREE_CONNECT, false, id, 0, &body));
-        c.send(k, S2C, &smb(CMD_TREE_CONNECT, true, id, tree, &[0u8; 16]));
+        let mut resp = [0u8; 16];
+        resp[2] = share_type;
+        c.send(k, S2C, &smb(CMD_TREE_CONNECT, true, id, tree, &resp));
     }
 
     fn create(c: &mut Conn, k: &mut FileCarver, id: u64, tree: u32, name: &str, fid: u8, eof: u64) {
@@ -2103,6 +2132,18 @@ mod tests {
         create(&mut c, &mut k, 10, 1, "Users\\Public\\a.pdf", 9, 0);
         write(&mut c, &mut k, 11, 9, 0, &doc);
         close(&mut c, &mut k, 12, 9);
+
+        // A tree connected before the capture began may be IPC$: nothing on it is carved.
+        create(&mut c, &mut k, 20, 99, "srvsvc", 12, 0);
+        write(
+            &mut c,
+            &mut k,
+            21,
+            12,
+            0,
+            b"\x05\x00\x00\x03 dcerpc request",
+        );
+        close(&mut c, &mut k, 22, 12);
 
         // Reading only part of a file, or with a hole, emits nothing.
         create(&mut c, &mut k, 13, 1, "partial.bin", 10, 10_000);
