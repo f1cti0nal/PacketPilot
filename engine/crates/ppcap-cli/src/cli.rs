@@ -207,6 +207,57 @@ pub enum Command {
         #[arg(long)]
         out: Option<String>,
     },
+    /// Push integrations: send the alert queue to Slack, Teams, Jira, TheHive, Splunk HEC,
+    /// Elastic (ECS), an OCSF collector or a webhook, as listed in a destinations file.
+    ///
+    /// The destinations file is plain JSON, safe to commit and share: secrets are named by
+    /// environment variable (`url_env`, `token_env`, `user_env`), never written in it. A sent
+    /// ledger beside it keeps re-runs from opening duplicate tickets; an alert whose band rises
+    /// is sent again. `--dry-run` and `--out-dir` never touch the network.
+    Push {
+        /// The analysis-output JSON (from `analyze --json`). Not needed with `--example`.
+        #[arg(required_unless_present = "example")]
+        summary: Option<PathBuf>,
+        /// The destinations file.
+        #[arg(long, short = 'd', default_value = "destinations.json")]
+        destinations: PathBuf,
+        /// Only these destinations, by name (repeatable; may name a disabled one). Default:
+        /// every enabled destination.
+        #[arg(long = "to")]
+        to: Vec<String>,
+        /// Only alerts at or above this band: act_now, investigate, review, log, info. A
+        /// destination's own `min_band` still applies when it is stricter.
+        #[arg(long = "min-band", value_parser = crate::push::parse_band)]
+        min_band: Option<ppcap_core::PriorityBand>,
+        /// Only these alert id(s) (`alert:…`, as printed by `ppcap alerts`). Repeatable.
+        #[arg(long = "alert")]
+        alerts: Vec<String>,
+        /// Teach it once: re-derive the queue under these suppression rule files first.
+        #[arg(long = "suppress")]
+        suppress: Vec<PathBuf>,
+        /// Print every request that would be sent (secret URLs and tokens hidden) and send nothing.
+        #[arg(long = "dry-run", conflicts_with = "out_dir")]
+        dry_run: bool,
+        /// Write each request body into this directory instead of sending (offline hand-off of
+        /// ECS NDJSON, OCSF, HEC or webhook JSON). Needs no secrets and ignores the ledger.
+        #[arg(long = "out-dir")]
+        out_dir: Option<PathBuf>,
+        /// The sent ledger. Default: `push-ledger.json` beside the destinations file.
+        #[arg(long)]
+        ledger: Option<PathBuf>,
+        /// Send alerts the ledger says were already delivered.
+        #[arg(long)]
+        resend: bool,
+        /// Print a starter destinations file (every kind, all disabled) and exit.
+        #[arg(long)]
+        example: bool,
+        /// Write the per-destination report as JSON here ("-" => stdout).
+        #[arg(long)]
+        json: Option<String>,
+        /// Suppress stderr progress.
+        #[arg(long)]
+        quiet: bool,
+    },
     /// Teach it once: turn "this alert is benign" into reusable suppression rules, and inspect
     /// or test rule files. Rules are plain JSON, safe to commit and share.
     Suppress {
@@ -1804,6 +1855,90 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Push {
+            summary,
+            destinations,
+            to,
+            min_band,
+            alerts,
+            suppress,
+            dry_run,
+            out_dir,
+            ledger,
+            resend,
+            example,
+            json,
+            quiet,
+        } => {
+            if example {
+                let text = serde_json::to_string_pretty(
+                    &ppcap_core::export::push::DestinationFile::example(),
+                )?;
+                println!("{text}");
+                return Ok(());
+            }
+            let summary = summary.ok_or_else(|| anyhow!("push needs an analysis JSON"))?;
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            if !suppress.is_empty() {
+                out.summary.suppression_rules = load_suppression_rules(&suppress, quiet)?;
+            }
+            ppcap_core::refresh_alerts(&mut out.summary);
+            let today = ppcap_core::ymd_from_unix_secs(unix_now());
+            ppcap_core::expire_carried_rules(&mut out.summary, &today);
+
+            let dtext = std::fs::read_to_string(&destinations).with_context(|| {
+                format!(
+                    "read destinations {} (start one with `ppcap push --example`)",
+                    destinations.display()
+                )
+            })?;
+            let file = ppcap_core::export::push::DestinationFile::parse(&dtext)
+                .map_err(|e| anyhow!(e))
+                .with_context(|| format!("parse destinations {}", destinations.display()))?;
+            let ledger_path =
+                ledger.unwrap_or_else(|| crate::push::default_ledger_path(&destinations));
+            let mut book = crate::push::load_ledger(&ledger_path)?;
+            let mode = match (dry_run, out_dir) {
+                (true, _) => crate::push::Mode::DryRun,
+                (false, Some(d)) => crate::push::Mode::OutDir(d),
+                (false, None) => crate::push::Mode::Send,
+            };
+            let opts = crate::push::PushOptions {
+                to,
+                min_band,
+                alerts,
+                resend,
+                mode,
+                quiet,
+            };
+            let env = |k: &str| std::env::var(k).ok();
+            let report = crate::push::run_push(
+                &out,
+                &file,
+                &opts,
+                &mut book,
+                &crate::push::HttpSender,
+                &env,
+                unix_now(),
+                &mut |l| crate::push::save_ledger(&ledger_path, l),
+            )?;
+            if let Some(dest) = json.as_deref() {
+                let body = serde_json::to_string_pretty(&report)?;
+                if dest == "-" {
+                    println!("{body}");
+                } else {
+                    std::fs::write(dest, body + "\n")
+                        .with_context(|| format!("write push report to {dest}"))?;
+                }
+            }
+            match report.failed() {
+                0 => Ok(()),
+                n => Err(anyhow!("push: {n} alert(s) were not delivered")),
+            }
+        }
         Command::Timeline {
             summary,
             alerts,
@@ -2412,6 +2547,54 @@ mod reputation_cli_tests {
             }
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn push_subcommand_parses() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "push",
+            "out.json",
+            "-d",
+            "team/destinations.json",
+            "--to",
+            "jira",
+            "--to",
+            "soc-slack",
+            "--min-band",
+            "act-now",
+            "--dry-run",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Push {
+                summary,
+                destinations,
+                to,
+                min_band,
+                dry_run,
+                out_dir,
+                example,
+                ..
+            } => {
+                assert_eq!(summary, Some(PathBuf::from("out.json")));
+                assert_eq!(destinations, PathBuf::from("team/destinations.json"));
+                assert_eq!(to, ["jira", "soc-slack"]);
+                assert_eq!(min_band, Some(ppcap_core::PriorityBand::ActNow));
+                assert!(dry_run && out_dir.is_none() && !example);
+            }
+            _ => panic!("expected Push"),
+        }
+        assert!(Cli::try_parse_from(["ppcap", "push", "--example"]).is_ok());
+        assert!(
+            Cli::try_parse_from(["ppcap", "push"]).is_err(),
+            "summary required"
+        );
+        assert!(
+            Cli::try_parse_from(["ppcap", "push", "o.json", "--dry-run", "--out-dir", "x"])
+                .is_err()
+        );
+        assert!(Cli::try_parse_from(["ppcap", "push", "o.json", "--min-band", "urgent"]).is_err());
     }
 
     #[test]

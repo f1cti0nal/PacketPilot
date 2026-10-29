@@ -119,7 +119,38 @@ cargo run -p ppcap-cli --release -- suppress test next.json --suppress suppressi
 
 # AI agents: serve captures (or analyze --json outputs) to any MCP host over stdio
 cargo run -p ppcap-cli --release -- mcp sample.pcap out.json --threat-feed feed.json
+
+# Push integrations: send the alert queue to Slack / Teams / Jira / TheHive / Splunk HEC /
+# Elastic (ECS) / OCSF / a webhook. Start from the example file, enable what you use, export
+# the secrets it names, preview, then send (a ledger stops duplicate tickets on re-runs)
+cargo run -p ppcap-cli --release -- push --example > destinations.json
+cargo run -p ppcap-cli --release -- push out.json -d destinations.json --dry-run
+cargo run -p ppcap-cli --release -- push out.json -d destinations.json --min-band investigate
+# Offline hand-off: write the ECS / OCSF / HEC bodies to files instead of sending
+cargo run -p ppcap-cli --release -- push out.json -d destinations.json --to elastic --out-dir push-out
 ```
+
+A destination in `destinations.json` never holds a secret: it names the environment variable
+that does (`url_env` for Slack / Teams webhook URLs, `token_env`, and `user_env` for Jira Cloud or
+Elastic basic auth), and unknown keys are rejected, so the file is safe to commit for a team.
+
+```json
+{
+  "destinations": [
+    { "name": "soc-slack", "kind": "slack", "url_env": "PPCAP_SLACK_WEBHOOK_URL", "min_band": "investigate" },
+    { "name": "jira", "kind": "jira", "url": "https://acme.atlassian.net", "project": "SEC",
+      "user_env": "PPCAP_JIRA_USER", "token_env": "PPCAP_JIRA_TOKEN", "min_band": "investigate" },
+    { "name": "splunk", "kind": "splunk_hec", "url": "https://splunk.acme.org:8088",
+      "token_env": "PPCAP_SPLUNK_HEC_TOKEN", "index": "network" }
+  ]
+}
+```
+
+Slack and Teams get one digest per 10 alerts; Jira gets one issue and TheHive one alert per
+PacketPilot alert (with the narrative, next step and incident timeline, each row carrying its
+capture filter); Splunk HEC, Elastic `_bulk` and OCSF get batched events. Deliveries are recorded
+in `push-ledger.json` beside the destinations file (with the Jira key or TheHive id), so a re-run
+sends only new alerts, plus any whose band rose since; `--resend` overrides that.
 
 To connect an agent, add PacketPilot to its MCP config (Claude Desktop's
 `claude_desktop_config.json` shown; Claude Code: `claude mcp add packetpilot -- ppcap mcp <capture>`):
@@ -231,6 +262,10 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   host profiles, flow queries, the packets themselves and indicator lookups. It runs on the
   analyst's machine over stdio with no listener, every tool is read-only, and nothing leaves the
   machine unless the analyst opts in (`--online`) or points the agent at a remote model.
+- **Push integrations** — `ppcap push` sends the ranked, suppression-filtered alert queue to
+  Slack, Microsoft Teams, Jira, TheHive, Splunk HEC, Elastic (ECS) or any OCSF consumer, or a
+  plain webhook. Destinations are a shareable JSON file that names secrets by environment
+  variable; a sent ledger prevents duplicate tickets; `--dry-run` and `--out-dir` work offline.
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.

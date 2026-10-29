@@ -3,6 +3,7 @@
 
 mod cli;
 mod mcp;
+mod push;
 
 fn main() -> std::process::ExitCode {
     cli::run()
