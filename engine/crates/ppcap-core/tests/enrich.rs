@@ -63,6 +63,7 @@ fn demo_feed() -> ThreatFeed {
         bad_suffixes: vec![".evil.example".into()],
         bad_ja3: vec![],
         bad_ja4: vec![],
+        bad_ja4s: Vec::new(),
     })
     .expect("feed builds")
 }

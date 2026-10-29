@@ -127,6 +127,8 @@ export interface Summary {
   downloads?: DownloadEvent[];
   /** Encrypted DNS (DoH/DoT): hosts whose DNS is hidden from passive DNS; absent in older summaries. */
   encrypted_dns?: EncryptedDnsHost[];
+  /** Per-server TLS posture (version / cipher / JA3S / JA4S); absent in older summaries. */
+  tls_servers?: TlsServerPosture[];
   /** Carved HTTP downloads with their SHA-256 (IOC) + known-bad flag; absent in older summaries. */
   carved_files?: CarvedFile[];
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
@@ -164,6 +166,8 @@ export interface ReputationVerdict {
 export interface FingerprintHit {
   ja3: string | null;
   ja4: string | null;
+  /** Matched JA4S *server* fingerprint, when the hit came from the server side. */
+  ja4s?: string | null;
   label: string;
 }
 
@@ -229,6 +233,20 @@ export interface DhcpHost {
 }
 
 /** One encrypted-DNS row: a client host resolving via DoH/DoT, the resolver, and flow count. */
+/** One TLS server endpoint's negotiated posture, rolled up across its flows (keyless). */
+export interface TlsServerPosture {
+  server: string;
+  port: number;
+  tls_version?: string | null;
+  tls_cipher?: string | null;
+  ja3s?: string | null;
+  ja4s?: string | null;
+  sni?: string | null;
+  flows: number;
+  bytes: number;
+  clients: number;
+}
+
 export interface EncryptedDnsHost {
   host: string;
   resolver: string;
@@ -287,6 +305,9 @@ export type FindingKind =
   | "ics_control_command"
   | "baseline_deviation"
   | "traffic_anomaly"
+  | "encrypted_unknown_protocol"
+  | "missing_sni"
+  | "port_protocol_mismatch"
   | "ioc_match";
 
 /**
@@ -684,6 +705,9 @@ export const FLOW_COLUMNS = [
   "severity",
   "threat_score",
   "ioc",
+  "ja4s",
+  "entropy_c2s",
+  "entropy_s2c",
 ] as const;
 export type FlowColumn = (typeof FLOW_COLUMNS)[number];
 
@@ -731,6 +755,9 @@ export interface RawFlowRow {
   ja3: string | null;
   ja4: string | null;
   ja3s: string | null;
+  ja4s: string | null;
+  entropy_c2s: number | null;
+  entropy_s2c: number | null;
   http_host: string | null;
   http_ua: string | null;
   tls_version: string | null;
@@ -771,6 +798,9 @@ export interface WasmFlow {
   ja3: string | null;
   ja4: string | null;
   ja3s: string | null;
+  ja4s: string | null;
+  entropy_c2s: number | null;
+  entropy_s2c: number | null;
   http_host: string | null;
   http_ua: string | null;
   tls_version: string | null;
@@ -807,6 +837,9 @@ export interface FlowRow {
   ja3: string | null; // TLS JA3 fingerprint, if captured
   ja4: string | null; // TLS JA4 fingerprint, if captured
   ja3s: string | null; // TLS JA3S server fingerprint from the ServerHello, if captured
+  ja4s: string | null; // TLS JA4S server fingerprint (JA4 counterpart to ja3s), if captured
+  entropyC2s: number | null; // payload entropy bits/byte, initiator→responder; null unless sampled
+  entropyS2c: number | null; // payload entropy bits/byte, responder→initiator; null unless sampled
   httpHost: string | null; // HTTP request Host header, if captured
   httpUa: string | null; // HTTP request User-Agent header, if captured
   tlsVersion: string | null; // negotiated TLS version label from the ServerHello, if captured

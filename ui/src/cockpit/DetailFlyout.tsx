@@ -2,7 +2,7 @@
 // evidence[] rendered as a mono log, and a deep-link back to the flows table.
 import { useEffect, useRef } from "react";
 import { ArrowRight, X } from "lucide-react";
-import type { Incident, ScoreTerm } from "../types";
+import type { FingerprintHit, Incident, ScoreTerm } from "../types";
 import { sevColor } from "./viz";
 import { SeverityChip, SeverityDot, MitreTag, SectionLabel, OVERLAY_BACKDROP } from "./primitives";
 import { EvidenceList } from "../components/transparency/EvidenceList";
@@ -22,6 +22,7 @@ export function DetailFlyout({
   scoreTerms,
   resolvedDomain,
   mac,
+  fingerprints,
   captureKey,
 }: {
   incident: Incident | null;
@@ -32,6 +33,8 @@ export function DetailFlyout({
   scoreTerms?: ScoreTerm[];
   /** Passive-DNS domain this host's IP resolved from, if known. */
   resolvedDomain?: string;
+  /** Known-bad TLS fingerprints matched on this host (JA3 / JA4 / JA4S + family label). */
+  fingerprints?: FingerprintHit[];
   /** L2 MAC address claimed by this host's IP via ARP, if known. */
   mac?: string;
   captureKey?: string;
@@ -98,7 +101,7 @@ export function DetailFlyout({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <p className="t-body text-[var(--color-text-dim)]">{incident.narrative}</p>
 
-          {(resolvedDomain || mac) && (
+          {(resolvedDomain || mac || (fingerprints?.length ?? 0) > 0) && (
             <>
               <SectionLabel className="mb-2 mt-5">Identity</SectionLabel>
               <dl className="flex flex-col gap-1 text-xs">
@@ -126,6 +129,25 @@ export function DetailFlyout({
                     </dd>
                   </div>
                 )}
+                {(fingerprints ?? []).map((fp) => {
+                  const value = fp.ja4s ?? fp.ja4 ?? fp.ja3 ?? "";
+                  const kind = fp.ja4s ? "JA4S" : fp.ja4 ? "JA4" : "JA3";
+                  return (
+                    <div key={`${kind}-${value}`} className="flex items-baseline gap-2">
+                      <dt className="shrink-0 text-[var(--color-text-faint)]">{kind}</dt>
+                      <dd
+                        className="truncate text-[var(--color-text-dim)]"
+                        title={`${kind}: ${value}`}
+                      >
+                        <span className="text-[var(--color-text)]">{fp.label}</span>
+                        <span className="font-mono-num ml-1.5 text-[var(--color-text-faint)]">
+                          {value.slice(0, 20)}
+                          {value.length > 20 ? "…" : ""}
+                        </span>
+                      </dd>
+                    </div>
+                  );
+                })}
               </dl>
             </>
           )}

@@ -192,6 +192,7 @@ export function FlowsView({ state, initialFilter, activeSource, flowIdFilter, on
           (r.ja4 ?? "") +
           " " +
           (r.ja3s ?? "") +
+          (r.ja4s ?? "") +
           " " +
           (r.hassh ?? "") +
           " " +

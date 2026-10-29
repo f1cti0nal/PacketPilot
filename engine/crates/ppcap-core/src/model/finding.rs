@@ -81,6 +81,20 @@ pub enum FindingKind {
     /// so it catches temporal shape a per-capture aggregate baseline cannot. Appended last to keep
     /// existing variant ordinals stable.
     TrafficAnomaly,
+    /// A sustained, high-entropy channel that no payload sniffer can name — the signature of a
+    /// custom-crypto C2 channel or a hand-rolled tunnel. Keyless by construction: the verdict
+    /// comes from the byte *distribution* of an unidentified stream, never its content. Appended
+    /// last to keep existing variant ordinals stable.
+    EncryptedUnknownProtocol,
+    /// A TLS client that named no server: a completely-parsed ClientHello with no `server_name`.
+    /// Legitimate for IP-literal and embedded clients, but also how malware avoids naming its C2
+    /// in cleartext. Encrypted-Client-Hello flows are excluded (their outer SNI is absent by
+    /// design). Appended last to keep existing variant ordinals stable.
+    MissingSni,
+    /// The wire protocol and the port disagree: TLS on a port no service table names, or an
+    /// established non-TLS channel on 443. Either is ordinary misconfiguration or deliberate
+    /// evasion — the evidence says which. Appended last to keep existing variant ordinals stable.
+    PortProtocolMismatch,
 }
 
 impl FindingKind {
@@ -112,6 +126,9 @@ impl FindingKind {
             FindingKind::IcsControlCommand => "ics_control_command",
             FindingKind::BaselineDeviation => "baseline_deviation",
             FindingKind::TrafficAnomaly => "traffic_anomaly",
+            FindingKind::EncryptedUnknownProtocol => "encrypted_unknown_protocol",
+            FindingKind::MissingSni => "missing_sni",
+            FindingKind::PortProtocolMismatch => "port_protocol_mismatch",
         }
     }
 }

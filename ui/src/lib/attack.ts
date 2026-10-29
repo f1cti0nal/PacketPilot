@@ -54,6 +54,7 @@ const TECHNIQUES: Record<string, TechniqueMeta> = {
   "T1071.004": { name: "DNS", tactic: "Command & Control" },
   T1095: { name: "Non-Application Layer Protocol", tactic: "Command & Control" },
   "T1568.002": { name: "Domain Generation Algorithms", tactic: "Command & Control" },
+  T1571: { name: "Non-Standard Port", tactic: "Command & Control" },
   T1573: { name: "Encrypted Channel", tactic: "Command & Control" },
   T1105: { name: "Ingress Tool Transfer", tactic: "Command & Control" },
   T1048: { name: "Exfil Over Alternative Protocol", tactic: "Exfiltration" },

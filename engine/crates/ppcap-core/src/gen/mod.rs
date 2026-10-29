@@ -58,6 +58,11 @@ pub enum Scenario {
     /// tracks the flat baseline, then the spike bin lands far outside its prediction band. Needs
     /// `packets >= ~60` to exhibit the spike (below that it degrades to a flat, silent baseline).
     TrafficSpike,
+    /// An internal host running a two-way, **high-entropy** channel to an external peer on a port
+    /// no service table names — the Encrypted Traffic Analysis fixture. Payload bytes are
+    /// pseudo-random (real ciphertext-grade entropy), unlike every other scenario's constant-byte
+    /// filler, which measures ~0 bits/byte and would exercise the opposite of the intended signal.
+    EncryptedAnomaly,
 }
 
 impl Scenario {
@@ -72,6 +77,7 @@ impl Scenario {
             "bulk" | "bulk-transfer" | "bulktransfer" => Some(Scenario::BulkTransfer),
             "chain" | "attack-chain" | "attackchain" => Some(Scenario::AttackChain),
             "spike" | "traffic-spike" | "trafficspike" => Some(Scenario::TrafficSpike),
+            "eta" | "encrypted-anomaly" | "encryptedanomaly" => Some(Scenario::EncryptedAnomaly),
             _ => None,
         }
     }
@@ -87,6 +93,7 @@ impl Scenario {
             Scenario::BulkTransfer,
             Scenario::AttackChain,
             Scenario::TrafficSpike,
+            Scenario::EncryptedAnomaly,
         ]
     }
 }
@@ -389,6 +396,9 @@ impl SynthGen {
         if self.cfg.scenario == Scenario::TrafficSpike {
             return self.next_traffic_spike();
         }
+        if self.cfg.scenario == Scenario::EncryptedAnomaly {
+            return self.next_encrypted_anomaly();
+        }
         let kind = self.schedule.next_kind(&mut self.rng)?;
         let ts = self.cursor_ts;
 
@@ -566,6 +576,86 @@ impl SynthGen {
     ///
     /// Layout for `n = packets` frames (`spike = n − 40` when `n ≥ 40`, else no burst):
     /// secs `0..20` baseline · sec `20` the `spike` burst · secs `20..40` baseline.
+    /// Emit the Encrypted Traffic Analysis fixture: one internal host and one external peer
+    /// exchanging pseudo-random (ciphertext-grade) payload on a port no service table names.
+    ///
+    /// Shape: a TCP handshake (SYN, SYN-ACK) so the flow is `tcp_established` — the detector
+    /// refuses mid-capture flows, whose "unidentified" status has a benign explanation — then
+    /// alternating data segments in both directions so the payload-aware both-ways gate is met.
+    fn next_encrypted_anomaly(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
+        let i = self.emitted;
+        if i >= self.cfg.packets {
+            return None;
+        }
+        let a = 0u16; // internal client
+        let client_ip = host_ip(a);
+        let server_ip = ENCRYPTED_ANOMALY_PEER;
+        let ts = self.cfg.start_ts_ns.saturating_add(i as i64 * 10_000_000); // 10 ms apart
+
+        self.record_flow(
+            client_ip,
+            server_ip,
+            ENCRYPTED_ANOMALY_CLIENT_PORT,
+            ENCRYPTED_ANOMALY_PORT,
+            IP_PROTO_TCP,
+        );
+
+        // Frames 0/1 are the handshake; the rest are data, alternating direction.
+        let frame = match i {
+            0 => self.ip_tcp_frame(
+                a,
+                a,
+                client_ip,
+                server_ip,
+                ENCRYPTED_ANOMALY_CLIENT_PORT,
+                ENCRYPTED_ANOMALY_PORT,
+                TCP_SYN,
+                &[],
+            ),
+            1 => self.ip_tcp_frame(
+                a,
+                a,
+                server_ip,
+                client_ip,
+                ENCRYPTED_ANOMALY_PORT,
+                ENCRYPTED_ANOMALY_CLIENT_PORT,
+                TCP_SYN | TCP_ACK,
+                &[],
+            ),
+            _ => {
+                // Deterministic pseudo-random payload: SplitMix64 keyed by packet index, so the
+                // bytes are uniformly distributed (~8 bits/byte) and byte-reproducible per seed.
+                let payload = pseudo_random_payload(1200, self.cfg.seed ^ i);
+                let client_to_server = i % 2 == 0;
+                if client_to_server {
+                    self.ip_tcp_frame(
+                        a,
+                        a,
+                        client_ip,
+                        server_ip,
+                        ENCRYPTED_ANOMALY_CLIENT_PORT,
+                        ENCRYPTED_ANOMALY_PORT,
+                        TCP_PSH | TCP_ACK,
+                        &payload,
+                    )
+                } else {
+                    self.ip_tcp_frame(
+                        a,
+                        a,
+                        server_ip,
+                        client_ip,
+                        ENCRYPTED_ANOMALY_PORT,
+                        ENCRYPTED_ANOMALY_CLIENT_PORT,
+                        TCP_PSH | TCP_ACK,
+                        &payload,
+                    )
+                }
+            }
+        };
+        self.emitted += 1;
+        Some((ts, FrameKind::OtherTcp, frame))
+    }
+
     fn next_traffic_spike(&mut self) -> Option<(i64, FrameKind, Vec<u8>)> {
         let n = self.cfg.packets;
         let i = self.emitted;
@@ -1379,6 +1469,30 @@ fn beacon_rdp_victim() -> Ipv4Addr {
 }
 
 /// Deterministic per-host IPv4 in 10.0.0.0/8: 10.<hi>.<mid>.<lo+1>.
+/// External peer of the Encrypted Traffic Analysis fixture's opaque channel.
+pub(crate) const ENCRYPTED_ANOMALY_PEER: Ipv4Addr = Ipv4Addr::new(185, 220, 101, 77);
+/// Service port of that channel — deliberately one `category_for_port` does not name, so the
+/// flow is genuinely unidentified rather than explained by its port.
+pub(crate) const ENCRYPTED_ANOMALY_PORT: u16 = 41337;
+/// Client-side ephemeral port for the same channel.
+pub(crate) const ENCRYPTED_ANOMALY_CLIENT_PORT: u16 = 52000;
+
+/// Deterministic uniformly-distributed bytes (SplitMix64), for fixtures that must look like
+/// ciphertext. The engine's other synthetic payloads are constant bytes (~0 bits/byte entropy),
+/// which would exercise the opposite of an entropy signal.
+fn pseudo_random_payload(len: usize, seed: u64) -> Vec<u8> {
+    let mut x = seed | 1;
+    (0..len)
+        .map(|_| {
+            x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = x;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            ((z ^ (z >> 31)) & 0xff) as u8
+        })
+        .collect()
+}
+
 fn host_ip(idx: u16) -> Ipv4Addr {
     let i = idx as u32;
     Ipv4Addr::new(10, ((i >> 8) & 0xFF) as u8, (i & 0xFF) as u8, 10)
@@ -1447,7 +1561,7 @@ mod tests {
             Some(Scenario::TrafficSpike)
         );
         assert_eq!(Scenario::from_str_opt("nonsense"), None);
-        assert_eq!(Scenario::all().len(), 8);
+        assert_eq!(Scenario::all().len(), 9);
     }
 
     #[test]

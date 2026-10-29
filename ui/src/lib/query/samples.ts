@@ -113,4 +113,33 @@ WHERE ioc OR severity IN ('critical', 'high')
 ORDER BY threat_score DESC, bytes DESC
 LIMIT 500`,
   },
+  {
+    id: "ja4s_prevalence",
+    label: "Server fingerprints (JA4S) by prevalence",
+    sql: `-- Which TLS server stacks are out there, and how common is each?
+-- A rare JA4S shared by a handful of destinations is a classic C2-infrastructure lead.
+SELECT ja4s,
+       COUNT(*)                       AS flows,
+       COUNT(DISTINCT dst_ip)         AS servers,
+       MIN(tls_version)               AS tls_version
+FROM flow
+WHERE ja4s IS NOT NULL
+GROUP BY ja4s
+ORDER BY flows ASC`,
+  },
+  {
+    id: "high_entropy_unknown",
+    label: "High-entropy flows no protocol identifies",
+    // Returns flow_id so the result lifts back into the Flows tab.
+    sql: `-- Unidentified traffic whose payload measures as ciphertext (>= 7.2 bits/byte):
+-- custom-crypto C2 and hand-rolled tunnels look like this; ordinary protocols do not.
+SELECT flow_id, src_ip, dst_ip, dst_port,
+       entropy_c2s, entropy_s2c,
+       bytes_c2s + bytes_s2c AS bytes
+FROM flow
+WHERE app_proto IS NULL
+  AND (entropy_c2s >= 7.2 OR entropy_s2c >= 7.2)
+ORDER BY bytes DESC
+LIMIT 500`,
+  },
 ];

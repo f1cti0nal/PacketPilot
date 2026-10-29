@@ -16,8 +16,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arrow_array::builder::{
-    BooleanBuilder, StringBuilder, TimestampNanosecondBuilder, UInt16Builder, UInt64Builder,
-    UInt8Builder,
+    BooleanBuilder, Float32Builder, StringBuilder, TimestampNanosecondBuilder, UInt16Builder,
+    UInt64Builder, UInt8Builder,
 };
 use arrow_array::{ArrayRef, RecordBatch};
 use parquet::arrow::ArrowWriter;
@@ -113,6 +113,9 @@ struct Builders {
     severity: StringBuilder,
     threat_score: UInt16Builder,
     ioc: BooleanBuilder,
+    ja4s: StringBuilder,
+    entropy_c2s: Float32Builder,
+    entropy_s2c: Float32Builder,
 }
 
 impl Builders {
@@ -149,6 +152,9 @@ impl Builders {
             severity: StringBuilder::new(),
             threat_score: UInt16Builder::new(),
             ioc: BooleanBuilder::new(),
+            ja4s: StringBuilder::new(),
+            entropy_c2s: Float32Builder::new(),
+            entropy_s2c: Float32Builder::new(),
         }
     }
 
@@ -190,6 +196,9 @@ impl Builders {
             Arc::new(self.severity.finish()),
             Arc::new(self.threat_score.finish()),
             Arc::new(self.ioc.finish()),
+            Arc::new(self.ja4s.finish()),
+            Arc::new(self.entropy_c2s.finish()),
+            Arc::new(self.entropy_s2c.finish()),
         ];
         // `?` converts arrow_schema::ArrowError -> PpError::Columnar via the From impl.
         Ok(RecordBatch::try_new(flow_arrow_schema(), columns)?)
@@ -232,6 +241,7 @@ impl FlowParquetWriter {
             "hassh",
             "hassh_server",
             "ja3s",
+            "ja4s",
             "http_host",
             "http_ua",
             "severity",
@@ -372,6 +382,16 @@ impl FlowParquetWriter {
         b.severity.append_value(rec.severity.as_str());
         b.threat_score.append_value(rec.threat_score);
         b.ioc.append_value(rec.ioc);
+        // ja4s: modern server TLS fingerprint; present only for an observed ServerHello (TCP
+        // sniff or the keyless QUIC server-Initial path), NULL otherwise.
+        match &rec.ja4s {
+            Some(v) if !v.is_empty() => b.ja4s.append_value(v),
+            _ => b.ja4s.append_null(),
+        }
+        // Payload entropy (bits/byte), initiator-oriented; NULL for identified flows and for any
+        // flow the bounded sampler did not track.
+        b.entropy_c2s.append_option(o.entropy_c2s);
+        b.entropy_s2c.append_option(o.entropy_s2c);
 
         self.buffered_rows += 1;
         self.rows_written += 1;
@@ -536,11 +556,14 @@ mod tests {
             b.severity.append_value("info");
             b.threat_score.append_value(0);
             b.ioc.append_value(false);
+            b.ja4s.append_null();
+            b.entropy_c2s.append_null();
+            b.entropy_s2c.append_null();
             let _ = app.1;
         }
         let batch = b.finish().expect("finish");
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 31);
+        assert_eq!(batch.num_columns(), 34);
         // Schema must equal the canonical schema (column names, types incl. tz).
         assert_eq!(batch.schema(), flow_arrow_schema());
     }

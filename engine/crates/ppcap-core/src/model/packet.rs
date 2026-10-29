@@ -358,6 +358,21 @@ pub struct PacketMeta {
     /// TLS JA3S fingerprint of a ServerHello on this packet; `None` otherwise. The server-side
     /// counterpart to the client `ja3`. Derived flag.
     pub ja3s: Option<String>,
+    /// TLS JA4S fingerprint (modern FoxIO server fingerprint) of a ServerHello on this packet;
+    /// `None` otherwise. The server-side counterpart to the client `ja4`. Set from the TCP
+    /// ServerHello sniff and from the keyless QUIC server-Initial path. Derived flag.
+    /// `serde(default)` keeps older serialized `PacketMeta` readable.
+    #[serde(default)]
+    pub ja4s: Option<String>,
+    /// True when a COMPLETELY-parsed TLS ClientHello carried no `server_name` extension — the
+    /// client named no server. Distinct from `sni.is_none()`, which is also true for a truncated
+    /// or segment-split hello whose SNI lay beyond the captured bytes. Derived flag.
+    #[serde(default)]
+    pub tls_sni_absent: bool,
+    /// True when a TLS ClientHello carried the Encrypted Client Hello extension (0xfe0d) — its
+    /// outer SNI is absent or a cover name by design, so absence is not a finding. Derived flag.
+    #[serde(default)]
+    pub tls_ech: bool,
     /// First DNS question name, allocated only for a DNS packet with a parseable QNAME; `None`
     /// otherwise. Transient (folded into per-resolver stats, then dropped) — used for DNS
     /// tunneling / DGA detection.

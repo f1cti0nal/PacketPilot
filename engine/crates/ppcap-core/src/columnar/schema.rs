@@ -1,6 +1,6 @@
 //! The canonical flow Parquet/Arrow schema — the single source of truth.
 //!
-//! **31 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
+//! **34 columns.** Column order here == on-disk Parquet order == the DuckDB `flow` view's
 //! SELECT order. The `schema_drift` test (CI guard) asserts all three agree. Any column
 //! change MUST bump [`FLOW_PARQUET_VERSION`] and update the SQL view + `flow_columns_in_order`.
 //!
@@ -18,7 +18,10 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 // v10: src/dst + c2s/s2c columns are now oriented by the connection INITIATOR (SYN sender /
 // first packet) instead of the lo/hi sort order. No column added/removed/reordered — a
 // value-semantics bump only, so `flow_columns_in_order` + the schema_drift guard are unaffected.
-pub const FLOW_PARQUET_VERSION: u16 = 10;
+// v11: Encrypted Traffic Analysis — three appended columns: `ja4s` (modern server fingerprint,
+// the JA4 counterpart to `ja3s`) and the `entropy_c2s`/`entropy_s2c` pair (payload byte-entropy,
+// non-NULL only for flows whose protocol no payload sniffer identified).
+pub const FLOW_PARQUET_VERSION: u16 = 11;
 
 /// Canonical Arrow schema for the persisted flow Parquet table.
 pub fn flow_arrow_schema() -> Arc<Schema> {
@@ -55,11 +58,14 @@ pub fn flow_arrow_schema() -> Arc<Schema> {
         Field::new("severity", DataType::Utf8, false), // 29 lowercase token, never NULL ("info")
         Field::new("threat_score", DataType::UInt16, false), // 30 0..=100
         Field::new("ioc", DataType::Boolean, false), // 31 any feed match on this flow
+        Field::new("ja4s", DataType::Utf8, true),    // 32 TLS JA4S server fingerprint; NULL if none
+        Field::new("entropy_c2s", DataType::Float32, true), // 33 payload entropy bits/byte; NULL unless sampled
+        Field::new("entropy_s2c", DataType::Float32, true), // 34 payload entropy bits/byte; NULL unless sampled
     ]))
 }
 
 /// CI drift guard: exact column names in canonical order.
-pub fn flow_columns_in_order() -> [&'static str; 31] {
+pub fn flow_columns_in_order() -> [&'static str; 34] {
     [
         "flow_id",
         "capture_id",
@@ -92,5 +98,8 @@ pub fn flow_columns_in_order() -> [&'static str; 31] {
         "severity",
         "threat_score",
         "ioc",
+        "ja4s",
+        "entropy_c2s",
+        "entropy_s2c",
     ]
 }

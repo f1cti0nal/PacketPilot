@@ -113,6 +113,7 @@ fn is_weak_kind(kind: FindingKind) -> bool {
             | FindingKind::PortScan
             | FindingKind::BaselineDeviation
             | FindingKind::TrafficAnomaly
+            | FindingKind::MissingSni
     )
 }
 
@@ -841,6 +842,15 @@ fn action_for(f: &Finding, peer: Option<&str>, port: Option<u16>, actor: &str) -
         }
         FindingKind::TrafficAnomaly => {
             format!("Compare {actor}'s traffic window against scheduled jobs and backups")
+        }
+        FindingKind::EncryptedUnknownProtocol => {
+            format!("Isolate {actor}; identify the process behind the channel to {peer_disp}")
+        }
+        FindingKind::MissingSni => {
+            format!("Identify the client on {actor} that opened TLS to {peer_disp} without SNI")
+        }
+        FindingKind::PortProtocolMismatch => {
+            format!("Verify the service on {peer_disp}; block it if it is not sanctioned")
         }
     }
 }

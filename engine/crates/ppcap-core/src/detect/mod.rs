@@ -678,6 +678,95 @@ pub struct BehaviorTracker {
     /// Behavioral-baseline: per-source traffic-category histogram (13 slots, `Category` order) — the
     /// "first use of a category" novelty axis. Fixed-width per source; key-count bounded.
     category: HashMap<IpAddr, [u32; 13]>,
+    /// Encrypted-traffic analysis: per-`(client, server, port)` high-entropy unidentified channels.
+    /// Key-count bounded by `max_tracked_keys` (new-key-drop).
+    encrypted_unknown: HashMap<(IpAddr, IpAddr, u16), EncryptedChannelStat>,
+    /// Encrypted-traffic analysis: per-`(client, server)` TLS channels whose ClientHellos named no
+    /// server. Key-count bounded by `max_tracked_keys` (new-key-drop).
+    missing_sni: HashMap<(IpAddr, IpAddr), MissingSniStat>,
+    /// Encrypted-traffic analysis: per-`(client, server, port)` protocol/port disagreements.
+    /// Key-count bounded by `max_tracked_keys` (new-key-drop).
+    port_mismatch: HashMap<(IpAddr, IpAddr, u16), PortMismatchStat>,
+}
+
+/// TLS channel whose client named no server.
+#[derive(Debug, Clone, Default)]
+struct MissingSniStat {
+    /// Flows on this channel with a completely-parsed, SNI-less ClientHello.
+    flows: u64,
+    /// The server port most recently seen (channels are keyed per server, not per port, because
+    /// the posture belongs to the client/server pair).
+    server_port: u16,
+}
+
+/// Which way a channel's protocol and port disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MismatchKind {
+    /// TLS observed on a port no service table names.
+    TlsOnUncommonPort,
+    /// An established channel on 443 that carried payload but is not TLS.
+    NonTlsOn443,
+}
+
+/// One protocol/port disagreement channel.
+#[derive(Debug, Clone)]
+struct PortMismatchStat {
+    kind: MismatchKind,
+    bytes: u64,
+    flows: u64,
+    /// Whether the channel's ClientHello named no server (raises the TLS-on-odd-port arm a band).
+    sni_absent: bool,
+}
+
+/// A candidate SNI-less TLS channel.
+#[derive(Debug, Clone)]
+pub struct MissingSniCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub flows: u64,
+}
+
+/// A candidate protocol/port disagreement.
+#[derive(Debug, Clone)]
+pub struct PortMismatchCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub kind: MismatchKind,
+    pub bytes: u64,
+    pub flows: u64,
+    pub sni_absent: bool,
+}
+
+/// One unidentified, high-entropy channel: the worst entropy seen in each direction plus the
+/// volume behind it. First observation wins for the scalars; volume accumulates.
+#[derive(Debug, Clone, Default)]
+struct EncryptedChannelStat {
+    /// Peak client->server payload entropy (bits/byte) observed on this channel.
+    bits_c2s: f32,
+    /// Peak server->client payload entropy (bits/byte).
+    bits_s2c: f32,
+    /// Total wire bytes across the channel's flows.
+    bytes: u64,
+    /// Flows folded into this channel.
+    flows: u64,
+    /// Whether the service port is one the port table names (a named encrypted service is not an
+    /// "unknown protocol" — see `detect_encrypted_unknown`).
+    port_named: bool,
+}
+
+/// A candidate unidentified high-entropy channel, ready for `detect_encrypted_unknown`.
+#[derive(Debug, Clone)]
+pub struct EncryptedUnknownCandidate {
+    pub client: IpAddr,
+    pub server: IpAddr,
+    pub server_port: u16,
+    pub bits_c2s: f32,
+    pub bits_s2c: f32,
+    pub bytes: u64,
+    pub flows: u64,
+    pub port_named: bool,
 }
 
 /// Cap on distinct JA3 fingerprints tracked per source (bounded memory on a pathological capture).
@@ -788,6 +877,9 @@ impl BehaviorTracker {
             ja3: HashMap::new(),
             activity: HashMap::new(),
             category: HashMap::new(),
+            encrypted_unknown: HashMap::new(),
+            missing_sni: HashMap::new(),
+            port_mismatch: HashMap::new(),
         }
     }
 
@@ -903,6 +995,156 @@ impl BehaviorTracker {
             set.insert(ja3.to_string());
             self.ja3.insert(src, set);
         }
+    }
+
+    /// Encrypted-traffic analysis: fold one unidentified, high-entropy flow into its
+    /// `(client, server, port)` channel. Callers pass the *initiator-oriented* endpoints — the
+    /// smaller-port convention misattributes services on high ports, which is exactly the traffic
+    /// this detector targets. Bounded: key-count capped (new-key-drop).
+    #[allow(clippy::too_many_arguments)]
+    pub fn observe_encrypted_channel(
+        &mut self,
+        client: IpAddr,
+        server: IpAddr,
+        server_port: u16,
+        bits_c2s: Option<f32>,
+        bits_s2c: Option<f32>,
+        bytes: u64,
+        port_named: bool,
+    ) {
+        let key = (client, server, server_port);
+        if !self.encrypted_unknown.contains_key(&key)
+            && self.encrypted_unknown.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        let e = self.encrypted_unknown.entry(key).or_default();
+        // Keep the strongest evidence per direction across the channel's flows.
+        if let Some(b) = bits_c2s {
+            e.bits_c2s = e.bits_c2s.max(b);
+        }
+        if let Some(b) = bits_s2c {
+            e.bits_s2c = e.bits_s2c.max(b);
+        }
+        e.bytes = e.bytes.saturating_add(bytes);
+        e.flows = e.flows.saturating_add(1);
+        e.port_named = port_named;
+    }
+
+    /// Unidentified high-entropy channels, worst-entropy first (deterministic total order).
+    pub fn encrypted_unknown_candidates(&self) -> Vec<EncryptedUnknownCandidate> {
+        let mut out: Vec<EncryptedUnknownCandidate> = self
+            .encrypted_unknown
+            .iter()
+            .map(|((c, s, p), st)| EncryptedUnknownCandidate {
+                client: *c,
+                server: *s,
+                server_port: *p,
+                bits_c2s: st.bits_c2s,
+                bits_s2c: st.bits_s2c,
+                bytes: st.bytes,
+                flows: st.flows,
+                port_named: st.port_named,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            let pa = a.bits_c2s.max(a.bits_s2c);
+            let pb = b.bits_c2s.max(b.bits_s2c);
+            pb.partial_cmp(&pa)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(b.bytes.cmp(&a.bytes))
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+                .then(a.server_port.cmp(&b.server_port))
+        });
+        out
+    }
+
+    /// Encrypted-traffic analysis: fold one TLS flow whose ClientHello named no server. Callers
+    /// must pass only flows with a COMPLETELY-parsed hello and no ECH. Bounded: key-count capped.
+    pub fn observe_missing_sni(&mut self, client: IpAddr, server: IpAddr, server_port: u16) {
+        let key = (client, server);
+        if !self.missing_sni.contains_key(&key)
+            && self.missing_sni.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        let e = self.missing_sni.entry(key).or_default();
+        e.flows = e.flows.saturating_add(1);
+        e.server_port = server_port;
+    }
+
+    /// SNI-less TLS channels, busiest first (deterministic total order).
+    pub fn missing_sni_candidates(&self) -> Vec<MissingSniCandidate> {
+        let mut out: Vec<MissingSniCandidate> = self
+            .missing_sni
+            .iter()
+            .map(|((c, s), st)| MissingSniCandidate {
+                client: *c,
+                server: *s,
+                server_port: st.server_port,
+                flows: st.flows,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.flows
+                .cmp(&a.flows)
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+        });
+        out
+    }
+
+    /// Encrypted-traffic analysis: fold one protocol/port disagreement. Bounded: key-count capped.
+    pub fn observe_port_mismatch(
+        &mut self,
+        client: IpAddr,
+        server: IpAddr,
+        server_port: u16,
+        kind: MismatchKind,
+        bytes: u64,
+        sni_absent: bool,
+    ) {
+        let key = (client, server, server_port);
+        if !self.port_mismatch.contains_key(&key)
+            && self.port_mismatch.len() >= self.cfg.max_tracked_keys.max(1)
+        {
+            return;
+        }
+        let e = self.port_mismatch.entry(key).or_insert(PortMismatchStat {
+            kind,
+            bytes: 0,
+            flows: 0,
+            sni_absent: false,
+        });
+        e.bytes = e.bytes.saturating_add(bytes);
+        e.flows = e.flows.saturating_add(1);
+        e.sni_absent |= sni_absent;
+    }
+
+    /// Protocol/port disagreements, heaviest first (deterministic total order).
+    pub fn port_mismatch_candidates(&self) -> Vec<PortMismatchCandidate> {
+        let mut out: Vec<PortMismatchCandidate> = self
+            .port_mismatch
+            .iter()
+            .map(|((c, s, p), st)| PortMismatchCandidate {
+                client: *c,
+                server: *s,
+                server_port: *p,
+                kind: st.kind,
+                bytes: st.bytes,
+                flows: st.flows,
+                sni_absent: st.sni_absent,
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.bytes
+                .cmp(&a.bytes)
+                .then(a.client.cmp(&b.client))
+                .then(a.server.cmp(&b.server))
+                .then(a.server_port.cmp(&b.server_port))
+        });
+        out
     }
 
     /// Behavioral-baseline: fold one flow's traffic `category` for `src` into its per-source
@@ -3562,6 +3804,335 @@ pub struct WeakTlsParams {
     pub enabled: bool,
 }
 
+/// Tuning for [`detect_encrypted_unknown`].
+#[derive(Debug, Clone)]
+pub struct EncryptedUnknownParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Entropy (bits/byte) at or above which a sampled direction reads as ciphertext. 7.2 over a
+    /// ≥1 KiB sample sits comfortably above natural-language and binary-protocol text (~4-6) and
+    /// below only ciphertext/compressed data (~7.6-8.0).
+    pub min_entropy_bits: f32,
+    /// Minimum total bytes on the channel — screens probes and stray fragments.
+    pub min_payload_bytes: u64,
+    /// Channels to never report (sanctioned encrypted services on unnamed ports, VPN gateways…).
+    pub ignore_ips: Vec<IpAddr>,
+}
+
+impl Default for EncryptedUnknownParams {
+    fn default() -> Self {
+        EncryptedUnknownParams {
+            enabled: true,
+            min_entropy_bits: 7.2,
+            min_payload_bytes: 4096,
+            ignore_ips: Vec::new(),
+        }
+    }
+}
+
+/// Detect sustained high-entropy channels that no payload sniffer can name — the shape of a
+/// custom-crypto C2 channel or a hand-rolled tunnel.
+///
+/// Everything that *can* be named is already excluded upstream: the entropy substrate refuses to
+/// sample a flow once any evidence identifies its protocol (`app_proto`, an SSH HASSH, or a STUN
+/// handshake), and the analyze seam only folds flows whose service port the port table does not
+/// name as an encrypted-by-design service. What reaches here is genuinely unidentified.
+///
+/// Severity tops out at Medium on this signal alone — an unnamed encrypted channel is a strong
+/// lead, not a verdict. High/Critical comes from corroboration: an IOC floor, or a second finding
+/// kind on the same host escalating the incident. Deterministic order.
+/// Tuning for [`detect_missing_sni`].
+#[derive(Debug, Clone)]
+pub struct MissingSniParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Only report channels to EXTERNAL servers. Internal IP-literal management traffic is the
+    /// dominant benign case, so it is out of scope by default.
+    pub external_only: bool,
+    /// Minimum SNI-less flows on a channel. One hello can be a stack quirk; a *channel* of them
+    /// is a posture.
+    pub min_flows: u64,
+    /// Servers/clients to never report (known SNI-less infrastructure).
+    pub ignore_ips: Vec<IpAddr>,
+}
+
+impl Default for MissingSniParams {
+    fn default() -> Self {
+        MissingSniParams {
+            enabled: true,
+            external_only: true,
+            min_flows: 2,
+            ignore_ips: Vec::new(),
+        }
+    }
+}
+
+/// Detect TLS clients that name no server.
+///
+/// A ClientHello without `server_name` is legitimate for IP-literal clients, embedded devices,
+/// and mTLS service meshes — and is also how malware avoids putting its C2 hostname on the wire.
+/// So this reports at a flat **Low**: it is context for triage, never a verdict on its own.
+///
+/// Two gates keep it honest, both learned the hard way:
+/// * only a **completely-parsed** hello counts (see `PacketMeta::tls_sni_absent`) — a
+///   segment-split hello whose SNI lies beyond the captured bytes must not be flagged, and modern
+///   post-quantum ClientHellos routinely span segments;
+/// * **ECH flows are excluded** — Encrypted Client Hello omits the outer SNI by design, so as ECH
+///   adoption grows this detector's scope shrinks honestly rather than false-positiving.
+///
+/// Deterministic order.
+pub fn detect_missing_sni(tracker: &BehaviorTracker, params: &MissingSniParams) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.missing_sni_candidates() {
+        if c.flows < params.min_flows {
+            continue;
+        }
+        if params.external_only && !crate::enrich::classify_ip(c.server).is_external() {
+            continue;
+        }
+        if params.ignore_ips.contains(&c.server) || params.ignore_ips.contains(&c.client) {
+            continue;
+        }
+        findings.push(Finding {
+            kind: FindingKind::MissingSni,
+            severity: Severity::Low,
+            score: 28,
+            title: format!(
+                "TLS without SNI: {} -> {}:{} ({} flows)",
+                c.client, c.server, c.server_port, c.flows
+            ),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: Some(c.server_port),
+            attack: vec!["T1573".to_string()],
+            evidence: vec![
+                format!(
+                    "{} TLS flow(s) sent a fully-parsed ClientHello with no server_name extension",
+                    c.flows
+                ),
+                "no SNI means the requested hostname never appears in cleartext — normal for \
+                 IP-literal clients, also how C2 avoids naming its server"
+                    .to_string(),
+                "Encrypted Client Hello flows are excluded from this count (their outer SNI is \
+                 absent by design)"
+                    .to_string(),
+            ],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        });
+    }
+    findings
+}
+
+/// Tuning for [`detect_port_mismatch`].
+#[derive(Debug, Clone)]
+pub struct PortMismatchParams {
+    /// Master switch.
+    pub enabled: bool,
+    /// Bytes at or above which an established non-TLS channel on 443 reads as a *used* tunnel
+    /// rather than a probe, raising it to High.
+    pub high_bytes: u64,
+    /// Extra ports where TLS is unremarkable beyond those the service table already names
+    /// (defaults cover STARTTLS upgrades and the common alt-HTTPS port).
+    pub extra_allowed_ports: Vec<u16>,
+    /// Channels to never report — e.g. a sanctioned OpenVPN-over-TCP/443 gateway, the standard
+    /// firewall-traversal deployment, which would otherwise hit High on every capture.
+    pub ignore_ips: Vec<IpAddr>,
+}
+
+impl Default for PortMismatchParams {
+    fn default() -> Self {
+        PortMismatchParams {
+            enabled: true,
+            high_bytes: 1 << 20,
+            extra_allowed_ports: vec![25, 110, 143, 9443],
+            ignore_ips: Vec::new(),
+        }
+    }
+}
+
+/// Detect channels whose wire protocol and port disagree, in both directions of that mismatch.
+///
+/// * **TLS on an uncommon port** — Info-level context, not an alarm. "Uncommon" means the service
+///   table does not name the port at all: a port the engine itself names (8883 mqtts, 5061
+///   SIP-TLS, 5986 WinRM, 3389 RDP…) is by definition not unusual for TLS, which is why this rule
+///   replaces a hand-maintained allow-list that would inevitably miss some.
+/// * **Established non-TLS on 443** — tunnel-shaped, and the stronger signal. Requires an observed
+///   handshake (`tcp_established`), so a mid-capture TLS flow — whose handshake simply predates
+///   the capture — is never mistaken for one. UDP/443 is out of scope entirely: a mid-capture QUIC
+///   flow has no long header to identify, so "not identified as QUIC" is not evidence there.
+///
+/// Deterministic order.
+pub fn detect_port_mismatch(
+    tracker: &BehaviorTracker,
+    params: &PortMismatchParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.port_mismatch_candidates() {
+        if params.ignore_ips.contains(&c.server) || params.ignore_ips.contains(&c.client) {
+            continue;
+        }
+        let external = crate::enrich::classify_ip(c.server).is_external();
+        let (severity, score, title, mut evidence, attack) = match c.kind {
+            MismatchKind::TlsOnUncommonPort => {
+                if params.extra_allowed_ports.contains(&c.server_port) {
+                    continue;
+                }
+                // Context by default; a notch up when the client also refused to name the server.
+                let (sev, sc) = if external && c.sni_absent {
+                    (Severity::Low, 30)
+                } else {
+                    (Severity::Info, 10)
+                };
+                (
+                    sev,
+                    sc,
+                    format!(
+                        "TLS on an uncommon port: {} -> {}:{}",
+                        c.client, c.server, c.server_port
+                    ),
+                    vec![format!(
+                        "TLS handshake observed on port {}, which names no standard service",
+                        c.server_port
+                    )],
+                    vec!["T1571".to_string()],
+                )
+            }
+            MismatchKind::NonTlsOn443 => {
+                let (sev, sc) = if c.bytes >= params.high_bytes {
+                    (Severity::High, 65)
+                } else {
+                    (Severity::Medium, 48)
+                };
+                (
+                    sev,
+                    sc,
+                    format!(
+                        "Non-TLS traffic on 443: {} -> {} ({} bytes)",
+                        c.client, c.server, c.bytes
+                    ),
+                    vec![
+                        format!(
+                            "{} bytes over {} established connection(s) on port 443 with no TLS handshake",
+                            c.bytes, c.flows
+                        ),
+                        "port 443 is allowed outbound almost everywhere, so a non-TLS channel there is \
+                         the classic firewall-traversal tunnel"
+                            .to_string(),
+                    ],
+                    vec!["T1571".to_string(), "T1573".to_string()],
+                )
+            }
+        };
+        if c.sni_absent && c.kind == MismatchKind::TlsOnUncommonPort {
+            evidence.push("the ClientHello also named no server (no SNI)".to_string());
+        }
+        findings.push(Finding {
+            kind: FindingKind::PortProtocolMismatch,
+            severity,
+            score,
+            title,
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: Some(c.server_port),
+            attack,
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        });
+    }
+    findings
+}
+
+pub fn detect_encrypted_unknown(
+    tracker: &BehaviorTracker,
+    params: &EncryptedUnknownParams,
+) -> Vec<Finding> {
+    if !params.enabled {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    for c in tracker.encrypted_unknown_candidates() {
+        if c.bytes < params.min_payload_bytes {
+            continue;
+        }
+        let peak = c.bits_c2s.max(c.bits_s2c);
+        if peak < params.min_entropy_bits {
+            continue;
+        }
+        if params.ignore_ips.contains(&c.server) || params.ignore_ips.contains(&c.client) {
+            continue;
+        }
+        // A channel on a port the table names is a weaker story ("the port says what this is,
+        // the payload just isn't sniffable"), so it drops a band rather than being dropped.
+        let external = crate::enrich::classify_ip(c.server).is_external();
+        let severity = if c.port_named || !external {
+            Severity::Low
+        } else {
+            Severity::Medium
+        };
+        let score = match severity {
+            Severity::Medium => 50,
+            _ => 30,
+        };
+        let mut evidence = vec![format!(
+            "payload entropy {:.2} bits/byte outbound, {:.2} inbound (>= {:.1} reads as ciphertext)",
+            c.bits_c2s, c.bits_s2c, params.min_entropy_bits
+        )];
+        evidence.push(format!(
+            "{} bytes over {} flow(s) with no protocol identified by payload inspection",
+            c.bytes, c.flows
+        ));
+        if c.port_named {
+            evidence.push(
+                "service port is a named service, so the port — not the payload — explains this channel"
+                    .to_string(),
+            );
+        }
+        evidence.push(
+            "high-entropy traffic no dissector can name is the shape of custom-crypto C2 or a hand-rolled tunnel"
+                .to_string(),
+        );
+        findings.push(Finding {
+            kind: FindingKind::EncryptedUnknownProtocol,
+            severity,
+            score,
+            title: format!(
+                "Unidentified encrypted channel: {} -> {}:{} ({:.2} bits/byte)",
+                c.client, c.server, c.server_port, peak
+            ),
+            src_ip: c.client.to_string(),
+            dst_ip: Some(c.server.to_string()),
+            dst_port: Some(c.server_port),
+            // T1573 (Encrypted Channel) only: MITRE scopes T1095 to non-application-layer
+            // channels, and the flow-level Anomalous -> T1095 mapping in `enrich` is separate.
+            attack: vec!["T1573".to_string()],
+            evidence,
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        });
+    }
+    findings
+}
+
 impl Default for WeakTlsParams {
     fn default() -> Self {
         WeakTlsParams { enabled: true }
@@ -3794,31 +4365,34 @@ pub fn correlate_incidents(findings: &[Finding]) -> Vec<Incident> {
 /// Kill-chain stage of a finding kind (lower = earlier in the chain).
 fn stage_ordinal(kind: FindingKind) -> u8 {
     match kind {
-        FindingKind::HostSweep => 0,           // discovery
-        FindingKind::CleartextCreds => 1,      // credential access (exposure)
-        FindingKind::BruteForce => 1,          // credential access
-        FindingKind::LateralMovement => 2,     // lateral movement
-        FindingKind::PiiExposure => 3,         // collection (data at risk on the wire)
-        FindingKind::Beacon => 4,              // command-and-control
-        FindingKind::DataExfil => 5,           // exfiltration
-        FindingKind::DnsTunnel => 5,           // exfiltration / C2 over DNS
-        FindingKind::RuleMatch => 4,           // imported signature — treat as C2-stage by default
+        FindingKind::HostSweep => 0,                // discovery
+        FindingKind::CleartextCreds => 1,           // credential access (exposure)
+        FindingKind::BruteForce => 1,               // credential access
+        FindingKind::LateralMovement => 2,          // lateral movement
+        FindingKind::PiiExposure => 3,              // collection (data at risk on the wire)
+        FindingKind::Beacon => 4,                   // command-and-control
+        FindingKind::DataExfil => 5,                // exfiltration
+        FindingKind::DnsTunnel => 5,                // exfiltration / C2 over DNS
+        FindingKind::RuleMatch => 4, // imported signature — treat as C2-stage by default
         FindingKind::TlsCertHealth => 4, // command-and-control (suspicious C2 / interception cert)
-        FindingKind::WeakTls => 3,       // collection (weak crypto -> interceptable traffic)
-        FindingKind::IcmpTunnel => 5,    // exfiltration / C2 over a non-application protocol
-        FindingKind::Dga => 4,           // command-and-control (C2 domain rendezvous)
-        FindingKind::PortScan => 0,      // discovery (vertical service enumeration)
-        FindingKind::ArpSpoof => 3,      // collection (adversary-in-the-middle positioning)
-        FindingKind::SynFlood => 6,      // impact (service denial)
-        FindingKind::SuspiciousUa => 0,  // discovery (active scanning with a known tool)
+        FindingKind::WeakTls => 3,   // collection (weak crypto -> interceptable traffic)
+        FindingKind::IcmpTunnel => 5, // exfiltration / C2 over a non-application protocol
+        FindingKind::Dga => 4,       // command-and-control (C2 domain rendezvous)
+        FindingKind::PortScan => 0,  // discovery (vertical service enumeration)
+        FindingKind::ArpSpoof => 3,  // collection (adversary-in-the-middle positioning)
+        FindingKind::SynFlood => 6,  // impact (service denial)
+        FindingKind::SuspiciousUa => 0, // discovery (active scanning with a known tool)
         FindingKind::DisguisedDownload => 4, // command-and-control (malware payload delivery)
-        FindingKind::Cryptomining => 6,  // impact (resource hijacking)
+        FindingKind::Cryptomining => 6, // impact (resource hijacking)
         FindingKind::MalwareDownload => 4, // command-and-control (confirmed malware delivery)
         FindingKind::MalwareSignature => 4, // command-and-control (signature-matched payload)
         FindingKind::ExposedRemoteAccess => 2, // lateral movement / external remote services (pivot)
         FindingKind::IcsControlCommand => 6,   // impact (manipulation of an industrial process)
         FindingKind::BaselineDeviation => 4, // command-and-control (anomalous egress / drift; generic like RuleMatch)
         FindingKind::TrafficAnomaly => 5, // exfiltration/impact (a volume spike/drop/level-shift; generic egress-shape signal)
+        FindingKind::EncryptedUnknownProtocol => 4, // command & control (an unnamed encrypted channel)
+        FindingKind::MissingSni => 4, // command & control (a client hiding which server it wants)
+        FindingKind::PortProtocolMismatch => 4, // command & control (protocol/port disagreement)
     }
 }
 
@@ -3850,6 +4424,9 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::IcsControlCommand => "Impact",
         FindingKind::BaselineDeviation => "Command & Control",
         FindingKind::TrafficAnomaly => "Exfiltration",
+        FindingKind::EncryptedUnknownProtocol => "Command & Control",
+        FindingKind::MissingSni => "Command & Control",
+        FindingKind::PortProtocolMismatch => "Command & Control",
     }
 }
 
@@ -3881,6 +4458,11 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::IcsControlCommand => "issued a control command to an industrial device",
         FindingKind::BaselineDeviation => "deviated from its learned baseline",
         FindingKind::TrafficAnomaly => "showed a traffic pattern its own forecast did not predict",
+        FindingKind::EncryptedUnknownProtocol => {
+            "ran a high-entropy channel no protocol identifies"
+        }
+        FindingKind::MissingSni => "opened TLS sessions without naming a server",
+        FindingKind::PortProtocolMismatch => "spoke a protocol the port does not match",
     }
 }
 
@@ -3999,6 +4581,7 @@ pub fn technique_name(id: &str) -> &str {
         "T1071.004" => "Application Layer Protocol: DNS",
         "T1048" => "Exfiltration Over Alternative Protocol",
         "T1095" => "Non-Application Layer Protocol",
+        "T1571" => "Non-Standard Port",
         "T1568.002" => "Dynamic Resolution: DGA",
         "T1557" => "Adversary-in-the-Middle",
         "T1557.002" => "AiTM: ARP Cache Poisoning",
@@ -4762,6 +5345,185 @@ mod tests {
     /// Absolute-tolerance float compare for the statistical assertions.
     fn approx(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "expected ~{b}, got {a}");
+    }
+
+    // ── Encrypted Traffic Analysis detectors ─────────────────────────────────
+
+    #[test]
+    fn missing_sni_fires_on_a_repeated_sni_less_channel() {
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        for _ in 0..3 {
+            t.observe_missing_sni(client, server, 8443);
+        }
+        let f = detect_missing_sni(&t, &MissingSniParams::default());
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, FindingKind::MissingSni);
+        // Flat Low — this is triage context, never a verdict on its own.
+        assert_eq!(f[0].severity, Severity::Low);
+        assert!(f[0].score <= 34);
+        assert_eq!(f[0].src_ip, client.to_string());
+    }
+
+    #[test]
+    fn missing_sni_ignores_single_flows_internal_servers_and_allowlists() {
+        let p = MissingSniParams::default();
+        let (client, external) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+
+        // One flow is a stack quirk, not a posture.
+        let mut once = BehaviorTracker::new(DetectConfig::default());
+        once.observe_missing_sni(client, external, 443);
+        assert!(detect_missing_sni(&once, &p).is_empty());
+
+        // Internal IP-literal management traffic is the dominant benign case.
+        let mut internal = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..5 {
+            internal.observe_missing_sni(client, ip(10, 0, 0, 20), 443);
+        }
+        assert!(detect_missing_sni(&internal, &p).is_empty());
+
+        // Known SNI-less infrastructure can be allowlisted.
+        let mut allow = BehaviorTracker::new(DetectConfig::default());
+        for _ in 0..5 {
+            allow.observe_missing_sni(client, external, 443);
+        }
+        let params = MissingSniParams {
+            ignore_ips: vec![external],
+            ..MissingSniParams::default()
+        };
+        assert!(detect_missing_sni(&allow, &params).is_empty());
+    }
+
+    #[test]
+    fn non_tls_on_443_escalates_with_volume() {
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let p = PortMismatchParams::default();
+
+        // A small exchange is a Medium lead.
+        let mut small = BehaviorTracker::new(DetectConfig::default());
+        small.observe_port_mismatch(client, server, 443, MismatchKind::NonTlsOn443, 4096, false);
+        let f = detect_port_mismatch(&small, &p);
+        assert_eq!(f[0].severity, Severity::Medium);
+
+        // A *used* tunnel (>= 1 MiB) is a specific, parsed signal — High, like WeakTls.
+        let mut big = BehaviorTracker::new(DetectConfig::default());
+        big.observe_port_mismatch(
+            client,
+            server,
+            443,
+            MismatchKind::NonTlsOn443,
+            4 << 20,
+            false,
+        );
+        let f = detect_port_mismatch(&big, &p);
+        assert_eq!(f[0].severity, Severity::High);
+        assert!(f[0].attack.iter().any(|t| t == "T1571"));
+    }
+
+    /// OpenVPN-over-TCP/443 is the standard firewall-traversal deployment; a sanctioned gateway
+    /// must be silenceable or it hits High on every capture.
+    #[test]
+    fn non_tls_on_443_respects_the_gateway_allowlist() {
+        let (client, gateway) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_port_mismatch(
+            client,
+            gateway,
+            443,
+            MismatchKind::NonTlsOn443,
+            8 << 20,
+            false,
+        );
+        let params = PortMismatchParams {
+            ignore_ips: vec![gateway],
+            ..PortMismatchParams::default()
+        };
+        assert!(detect_port_mismatch(&t, &params).is_empty());
+    }
+
+    #[test]
+    fn tls_on_uncommon_port_is_context_not_an_alarm() {
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_port_mismatch(
+            client,
+            server,
+            44443,
+            MismatchKind::TlsOnUncommonPort,
+            9000,
+            false,
+        );
+        let f = detect_port_mismatch(&t, &PortMismatchParams::default());
+        assert_eq!(f[0].severity, Severity::Info);
+
+        // ... but a client that also refused to name the server is a notch more interesting.
+        let mut anon = BehaviorTracker::new(DetectConfig::default());
+        anon.observe_port_mismatch(
+            client,
+            server,
+            44443,
+            MismatchKind::TlsOnUncommonPort,
+            9000,
+            true,
+        );
+        let f2 = detect_port_mismatch(&anon, &PortMismatchParams::default());
+        assert_eq!(f2[0].severity, Severity::Low);
+    }
+
+    /// STARTTLS ports carry TLS legitimately after an upgrade, so they are allowlisted by default.
+    #[test]
+    fn starttls_ports_are_allowed_by_default() {
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        for port in [25u16, 110, 143] {
+            t.observe_port_mismatch(
+                client,
+                server,
+                port,
+                MismatchKind::TlsOnUncommonPort,
+                9000,
+                false,
+            );
+        }
+        assert!(detect_port_mismatch(&t, &PortMismatchParams::default()).is_empty());
+    }
+
+    #[test]
+    fn eta_detectors_are_disableable_and_deterministic() {
+        let (client, server) = (ip(10, 0, 0, 5), ip(185, 220, 101, 7));
+        let mut t = BehaviorTracker::new(DetectConfig::default());
+        t.observe_missing_sni(client, server, 443);
+        t.observe_missing_sni(client, server, 443);
+        t.observe_port_mismatch(
+            client,
+            server,
+            443,
+            MismatchKind::NonTlsOn443,
+            1 << 21,
+            false,
+        );
+
+        assert!(detect_missing_sni(
+            &t,
+            &MissingSniParams {
+                enabled: false,
+                ..Default::default()
+            }
+        )
+        .is_empty());
+        assert!(detect_port_mismatch(
+            &t,
+            &PortMismatchParams {
+                enabled: false,
+                ..Default::default()
+            }
+        )
+        .is_empty());
+
+        // Repeated runs over the same state are byte-identical.
+        let a = detect_port_mismatch(&t, &PortMismatchParams::default());
+        let b = detect_port_mismatch(&t, &PortMismatchParams::default());
+        assert_eq!(a, b);
     }
 
     #[test]

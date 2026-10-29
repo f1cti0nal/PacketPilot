@@ -33,6 +33,9 @@ export const KIND_STAGE: Record<FindingKind, string> = {
   ics_control_command: "Impact",
   baseline_deviation: "Command & Control",
   traffic_anomaly: "Exfiltration",
+  encrypted_unknown_protocol: "Command & Control",
+  missing_sni: "Command & Control",
+  port_protocol_mismatch: "Command & Control",
 };
 
 /** The noun for a finding kind's contributing count (e.g. "contacts", "hosts"). */
@@ -93,6 +96,7 @@ const TECHNIQUE_NAME: Record<string, string> = {
   T1105: "Ingress Tool Transfer",
   T1496: "Resource Hijacking",
   T1040: "Network Sniffing",
+  T1571: "Non-Standard Port",
   T1573: "Encrypted Channel",
   T1027: "Obfuscated Files or Information",
 };

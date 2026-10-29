@@ -116,6 +116,14 @@ pub struct PipelineConfig {
     /// needs no sidecar and no prior captures — a single capture is enough), so anomalies ride
     /// through the CLI/JSON/HTML/wasm output with no flag; set `forecast.enabled = false` to skip.
     pub forecast: ForecastParams,
+    /// Encrypted-traffic analysis: payload-entropy sampling for unidentified flows.
+    pub entropy: crate::entropy::EntropyConfig,
+    /// Encrypted-traffic analysis: the unidentified high-entropy channel detector.
+    pub encrypted_unknown: crate::detect::EncryptedUnknownParams,
+    /// Encrypted-traffic analysis: TLS clients that name no server.
+    pub missing_sni: crate::detect::MissingSniParams,
+    /// Encrypted-traffic analysis: protocol/port disagreements.
+    pub port_mismatch: crate::detect::PortMismatchParams,
 }
 
 impl Default for PipelineConfig {
@@ -160,6 +168,10 @@ impl Default for PipelineConfig {
             update_baseline: false,
             baseline: BaselineParams::default(),
             forecast: ForecastParams::default(),
+            entropy: crate::entropy::EntropyConfig::default(),
+            encrypted_unknown: crate::detect::EncryptedUnknownParams::default(),
+            missing_sni: crate::detect::MissingSniParams::default(),
+            port_mismatch: crate::detect::PortMismatchParams::default(),
         }
     }
 }
@@ -255,6 +267,14 @@ pub fn run_source_visiting<'a>(
     // Bounded server-TLS-handshake reassembler: reads the cleartext server Certificate (TLS ≤ 1.2)
     // out of band from the same packets, for the certificate-health detector. Drained at EOF.
     let mut cert_reasm = TlsCertReassembler::new();
+    // Bounded QUIC server-Initial tracker: remembers each connection's client DCID (a public,
+    // wire-visible value) so the server's Initial can be opened keylessly, giving QUIC flows the
+    // same server-side TLS metadata TCP flows get. Applies its results to `PacketMeta` inline.
+    let mut quic_server = crate::quic::QuicServerHelloTracker::new();
+    // Bounded payload-entropy sampler: measures the byte distribution of flows no protocol
+    // sniffer can name, so unknown *ciphertext* (custom-crypto C2 / hand-rolled tunnels) is
+    // distinguishable from unknown cleartext. Drained per flow at close.
+    let mut entropy = crate::entropy::EntropySampler::new(cfg.entropy.clone());
     // Bounded HTTP file carver: reassembles cleartext download bodies in TCP order and streams them
     // through SHA-256 (no body buffering), for file-hash IOC surfacing + known-bad detection. With
     // `carve_dir` set (opt-in) it also writes each decoded body to disk (`<sha256>.<ext>`).
@@ -294,12 +314,16 @@ pub fn run_source_visiting<'a>(
                 // FAILURE below can still count the frame in the headline totals — the header is
                 // valid even when dissection isn't (this is why Wireshark still shows the frame).
                 let hdr = (frame.wire_len, frame.cap_len, frame.ts_ns, frame.ts_known);
-                let decode_result = crate::decode::decode_frame(&frame);
-                // Feed the TLS cert reassembler while the frame is still borrowed (it needs the
-                // raw server payload bytes, which `PacketMeta` does not retain).
-                if let Ok(ref meta) = decode_result {
+                let mut decode_result = crate::decode::decode_frame(&frame);
+                // Feed the raw-frame observers while the frame is still borrowed (they need the
+                // payload bytes, which `PacketMeta` does not retain).
+                if let Ok(ref mut meta) = decode_result {
+                    // Runs FIRST because it *writes* the server-side TLS fields onto `meta`, and
+                    // every later stage (stats, flow fold, Parquet) must see them.
+                    quic_server.observe(meta, &frame);
                     cert_reasm.observe(meta, &frame);
                     body_carver.observe(meta, &frame);
+                    entropy.observe(meta, &frame);
                 }
                 (hdr, decode_result)
             }
@@ -414,6 +438,7 @@ pub fn run_source_visiting<'a>(
                 scan_threshold,
                 &mut stats,
                 &mut tracker,
+                &mut entropy,
                 &mut writer,
                 on_flow,
                 &mut sink_err,
@@ -434,6 +459,7 @@ pub fn run_source_visiting<'a>(
         scan_threshold,
         &mut stats,
         &mut tracker,
+        &mut entropy,
         &mut writer,
         on_flow,
         &mut sink_err,
@@ -489,6 +515,18 @@ pub fn run_source_visiting<'a>(
     findings.extend(detect_dns_tunnel(&tracker, &cfg.dns_tunnel));
     findings.extend(detect_tls_cert_health(&tracker, &cfg.tls_cert_health));
     findings.extend(detect_weak_tls(&tracker, &cfg.weak_tls));
+    findings.extend(crate::detect::detect_encrypted_unknown(
+        &tracker,
+        &cfg.encrypted_unknown,
+    ));
+    findings.extend(crate::detect::detect_missing_sni(
+        &tracker,
+        &cfg.missing_sni,
+    ));
+    findings.extend(crate::detect::detect_port_mismatch(
+        &tracker,
+        &cfg.port_mismatch,
+    ));
     findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
     findings.extend(detect_dga(&tracker, &cfg.dga));
     findings.extend(detect_port_scan(&tracker, &cfg.port_scan));
@@ -667,6 +705,26 @@ pub fn run_source_visiting<'a>(
     })
 }
 
+/// True for port-table tokens naming a service that is encrypted (or opaque media) *by design*.
+///
+/// High entropy on these is the protocol working as intended, so such channels are excluded from
+/// the encrypted-unknown detector entirely rather than merely down-banded: reporting a sanctioned
+/// WireGuard or QUIC endpoint as an "unidentified encrypted channel" would be noise, and
+/// self-contradictory for a port the engine itself names.
+fn is_encrypted_by_design(app_proto_token: &str) -> bool {
+    matches!(
+        app_proto_token,
+        // Tunnels / VPNs.
+        "wireguard" | "ipsec" | "openvpn" | "pptp" | "l2tp"
+        // TLS-wrapped and encrypted application services.
+        | "https" | "quic" | "dot" | "mqtts" | "smtps" | "imaps" | "pop3s" | "ftps" | "ldaps"
+        // Remote administration (encrypted or opaque).
+        | "ssh" | "rdp" | "vnc" | "winrm"
+        // Real-time media: SRTP payloads are ciphertext by design, and ICE/TURN carry opaque data.
+        | "rtp" | "stun" | "turn"
+    )
+}
+
 /// Classify, scan-uplift, count, and (optionally) persist one closed flow. Shared by both
 /// the periodic-eviction and EOF-drain sinks so the two paths stay identical.
 #[allow(clippy::too_many_arguments)]
@@ -678,10 +736,20 @@ fn process_flow(
     scan_threshold: u32,
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
+    entropy: &mut crate::entropy::EntropySampler,
     writer: &mut Option<FlowParquetWriter>,
     on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
 ) {
+    // Drain this flow's payload-entropy sample BEFORE classify, so the classifier's
+    // encrypted-unknown arm can read it (and the sampler's memory is reclaimed at flow close,
+    // not at EOF). `None` for identified flows and for anything past the sampler's caps.
+    let flow_entropy = entropy.take(&record.key);
+    if let Some(e) = flow_entropy {
+        record.entropy_fwd = e.fwd_bits;
+        record.entropy_rev = e.rev_bits;
+    }
+
     classifier.classify(record);
 
     // Behavioral substrate: fold this connection's directed contact (client -> server:port at
@@ -710,6 +778,87 @@ fn process_flow(
             tracker.observe_ja3(c.client, j);
         }
         tracker.observe_category(c.client, record.category);
+
+        // Encrypted-traffic analysis: a TLS client that named no server. ECH flows are excluded —
+        // their outer SNI is absent by design — and only completely-parsed hellos set the flag,
+        // so a segment-split hello is never mistaken for an SNI-less one.
+        if record.tls_sni_absent && !record.tls_ech {
+            tracker.observe_missing_sni(c.client, c.server, c.server_port);
+        }
+
+        // Encrypted-traffic analysis: protocol/port disagreement, in both directions.
+        {
+            use crate::model::packet::{AppProto, Transport};
+            let service_port = record.key.lo_port.min(record.key.hi_port);
+            let named =
+                crate::classify::Classifier::category_for_port(record.key.transport, service_port);
+            if record.observed_app_proto == AppProto::Tls && named.1.is_empty() {
+                // TLS where the service table names nothing: unremarkable-but-worth-noting.
+                tracker.observe_port_mismatch(
+                    c.client,
+                    c.server,
+                    c.server_port,
+                    crate::detect::MismatchKind::TlsOnUncommonPort,
+                    record.total_bytes(),
+                    record.tls_sni_absent,
+                );
+            } else if record.key.transport == Transport::Tcp
+                && service_port == 443
+                && record.observed_app_proto == AppProto::Unknown
+                && record.tcp_established()
+                && record.total_bytes() > 0
+            {
+                // Established, carried payload, yet never looked like TLS. The handshake gate is
+                // what keeps mid-capture TLS flows (whose handshake predates the capture) out.
+                tracker.observe_port_mismatch(
+                    c.client,
+                    c.server,
+                    c.server_port,
+                    crate::detect::MismatchKind::NonTlsOn443,
+                    record.total_bytes(),
+                    false,
+                );
+            }
+        }
+
+        // Encrypted-traffic analysis: fold an unidentified, high-entropy channel. Endpoints come
+        // from `contact_from_flow`, which resolves client/server from the flow's initiator.
+        //
+        // Excluded here rather than in the detector: channels whose service port the table names
+        // as an encrypted-by-design or media service (wireguard/ipsec/openvpn, https/quic/dot/
+        // mqtts, rtp/stun/turn, ssh/rdp/vnc/winrm). High entropy there is the protocol working as
+        // intended, and "no protocol identifies it" would be self-contradictory for a port the
+        // engine itself names. Named CLEARTEXT ports stay eligible at a reduced band — high
+        // entropy on those genuinely is odd.
+        if let Some(e) = flow_entropy {
+            let named = crate::classify::Classifier::category_for_port(
+                record.key.transport,
+                record.key.lo_port.min(record.key.hi_port),
+            );
+            if !e.compressed && !is_encrypted_by_design(named.1) {
+                // Payload-aware "both ways": raw packet counts are satisfied by pure ACKs.
+                let both_ways = e.sampled_fwd > 0 && e.sampled_rev > 0;
+                // A TCP flow whose handshake predates the capture is unidentified for a benign
+                // reason, so it is not evidence.
+                let saw_handshake = record.key.transport != crate::model::packet::Transport::Tcp
+                    || record.tcp_established();
+                if both_ways && saw_handshake {
+                    let (c2s, s2c) = match record.initiator {
+                        crate::model::flow::Direction::Forward => (e.fwd_bits, e.rev_bits),
+                        crate::model::flow::Direction::Reverse => (e.rev_bits, e.fwd_bits),
+                    };
+                    tracker.observe_encrypted_channel(
+                        c.client,
+                        c.server,
+                        c.server_port,
+                        c2s,
+                        s2c,
+                        record.total_bytes(),
+                        !named.1.is_empty(),
+                    );
+                }
+            }
+        }
     }
 
     // Single-pass scan uplift: promote an UNNAMED flow to Scan when either endpoint is a
@@ -764,6 +913,7 @@ fn evict(
     scan_threshold: u32,
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
+    entropy: &mut crate::entropy::EntropySampler,
     writer: &mut Option<FlowParquetWriter>,
     on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
@@ -777,6 +927,7 @@ fn evict(
             scan_threshold,
             stats,
             tracker,
+            entropy,
             writer,
             on_flow,
             sink_err,
@@ -794,6 +945,7 @@ fn drain(
     scan_threshold: u32,
     stats: &mut StatsAccumulator,
     tracker: &mut BehaviorTracker,
+    entropy: &mut crate::entropy::EntropySampler,
     writer: &mut Option<FlowParquetWriter>,
     on_flow: &mut dyn FnMut(&FlowRecord),
     sink_err: &mut Option<PpError>,
@@ -807,6 +959,7 @@ fn drain(
             scan_threshold,
             stats,
             tracker,
+            entropy,
             writer,
             on_flow,
             sink_err,

@@ -71,7 +71,10 @@ export function CertHealthPanel({
   onJump?: (ip: string) => void;
 }) {
   const tls = (findings ?? []).filter(
-    (f) => f.kind === "tls_cert_health" || f.kind === "weak_tls",
+    (f) => f.kind === "tls_cert_health" ||
+        f.kind === "weak_tls" ||
+        f.kind === "missing_sni" ||
+        f.kind === "port_protocol_mismatch",
   );
   if (tls.length === 0) return null;
   return (

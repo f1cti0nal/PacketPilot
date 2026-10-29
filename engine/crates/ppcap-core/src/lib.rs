@@ -42,6 +42,7 @@ pub mod custody;
 pub mod decode;
 pub mod detect;
 pub mod enrich;
+pub mod entropy;
 pub mod error;
 pub mod export;
 pub mod fingerprint;

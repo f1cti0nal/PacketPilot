@@ -10,7 +10,7 @@ CREATE TYPE severity_t  AS ENUM ('info','low','medium','high','critical');
 CREATE TYPE category_t  AS ENUM (
   'web','dns','email','file_transfer','remote_access','voip','iot_ot',
   'tunnel_vpn','scan','c2','anomalous','unknown');     -- matches Category::as_str()
-CREATE TYPE indicator_t AS ENUM ('ipv4','ipv6','domain','url','sha256','ja3','ja4','email_addr');
+CREATE TYPE indicator_t AS ENUM ('ipv4','ipv6','domain','url','sha256','ja3','ja4','ja4s','email_addr');
 
 CREATE TABLE capture (
   id UBIGINT PRIMARY KEY, path VARCHAR NOT NULL, sha256 VARCHAR NOT NULL,
@@ -23,7 +23,8 @@ CREATE VIEW flow AS
 SELECT flow_id, capture_id, src_ip, dst_ip, src_port, dst_port, proto, app_proto,
        bytes_c2s, bytes_s2c, pkts, start_ts, end_ts, tcp_flags_c2s, tcp_flags_s2c,
        ttl_min_c2s, category, app_proto_src, sni, ja3, ja4, tls_version, tls_cipher,
-       hassh, hassh_server, ja3s, http_host, http_ua, severity, threat_score, ioc
+       hassh, hassh_server, ja3s, http_host, http_ua, severity, threat_score, ioc,
+       ja4s, entropy_c2s, entropy_s2c
 FROM read_parquet('{CASE_DIR}/parquet/flow/*.parquet', union_by_name = true);
 
 -- packet_index VIEW (Phase 0 may emit zero parts; view still resolves once a part exists).

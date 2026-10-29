@@ -4,7 +4,7 @@
  * the NL→SQL prompt in a later phase).
  *
  * Column NAMES and ORDER come from {@link FLOW_COLUMNS} (canonical Parquet order,
- * engine schema v10). This module only attaches DuckDB types to them; the
+ * engine schema v11). This module only attaches DuckDB types to them; the
  * `Record<FlowColumn, …>` key type makes the compiler reject a missing or extra
  * column, and schema.test.ts guards order against the shared flow_columns.json
  * fixture (which the engine's `schema_drift` test also checks).
@@ -16,7 +16,7 @@ import { FLOW_COLUMNS, type FlowColumn } from "../../types";
  * Mirrors `FLOW_PARQUET_VERSION` in engine/crates/ppcap-core/src/columnar/schema.rs.
  * Bump in lockstep whenever the engine bumps (the fixture test enforces agreement).
  */
-export const FLOW_SCHEMA_VERSION = 10;
+export const FLOW_SCHEMA_VERSION = 11;
 
 /** DuckDB column types used by the browser `flow` table. */
 export type DuckDbType =
@@ -25,7 +25,8 @@ export type DuckDbType =
   | "UTINYINT"
   | "VARCHAR"
   | "TIMESTAMP"
-  | "BOOLEAN";
+  | "BOOLEAN"
+  | "FLOAT";
 
 export interface FlowColumnSpec {
   type: DuckDbType;
@@ -71,6 +72,9 @@ export const FLOW_COLUMN_TYPES: Record<FlowColumn, FlowColumnSpec> = {
   severity: { type: "VARCHAR", nullable: false, comment: "flow severity token (see severity list); never NULL ('info')" },
   threat_score: { type: "USMALLINT", nullable: false, comment: "explainable threat score, 0–100" },
   ioc: { type: "BOOLEAN", nullable: false, comment: "true when any threat-feed indicator matched this flow" },
+  ja4s: { type: "VARCHAR", nullable: true, comment: "TLS JA4S server fingerprint (the JA4 counterpart to ja3s)" },
+  entropy_c2s: { type: "FLOAT", nullable: true, comment: "payload byte-entropy (bits/byte) initiator\u2192responder; non-NULL only for flows no protocol sniffer identified (>=7.2 suggests encryption/compression)" },
+  entropy_s2c: { type: "FLOAT", nullable: true, comment: "payload byte-entropy (bits/byte) responder\u2192initiator; non-NULL only for flows no protocol sniffer identified" },
 };
 
 /** Engine `category` column tokens (snake_case, matches FlowCategory). */

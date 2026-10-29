@@ -186,7 +186,7 @@ fn write_then_read_flow_parquet() {
     let mut iocs: Vec<bool> = Vec::new();
     for batch in reader {
         let batch = batch.unwrap();
-        assert_eq!(batch.schema().fields().len(), 31);
+        assert_eq!(batch.schema().fields().len(), 34);
         total_rows += batch.num_rows();
 
         let src = batch
