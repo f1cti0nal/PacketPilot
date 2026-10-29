@@ -116,7 +116,31 @@ cargo run -p ppcap-cli --release -- suppress add out.json --alert alert:0123abcd
   --scope destination --reason "DHCP discovery on port 67" --author john --file suppressions.json
 cargo run -p ppcap-cli --release -- analyze next.pcap --json next.json --suppress suppressions.json
 cargo run -p ppcap-cli --release -- suppress test next.json --suppress suppressions.json
+
+# AI agents: serve captures (or analyze --json outputs) to any MCP host over stdio
+cargo run -p ppcap-cli --release -- mcp sample.pcap out.json --threat-feed feed.json
 ```
+
+To connect an agent, add PacketPilot to its MCP config (Claude Desktop's
+`claude_desktop_config.json` shown; Claude Code: `claude mcp add packetpilot -- ppcap mcp <capture>`):
+
+```json
+{
+  "mcpServers": {
+    "packetpilot": {
+      "command": "/path/to/ppcap",
+      "args": ["mcp", "/cases/incident-42/capture.pcap", "--suppress", "/cases/team/suppressions.json"]
+    }
+  }
+}
+```
+
+The server exposes `list_captures`, `capture_overview`, `list_alerts`, `get_alert` (narrative,
+findings, incident timeline), `host_profile`, `query_flows` (filter / group / sort over the flows
+Parquet), `get_packets` (a flow's packets with payload preview, so the agent checks its claims
+against the bytes) and `lookup_indicator`, plus a `triage` prompt that walks the investigation.
+Every tool is read-only and offline. `--allow-write <DIR>` adds `carve_pcap` (writes only into
+that directory, never overwrites); `--online` lets `lookup_indicator` use the reputation API keys.
 
 OT/ICS captures (Modbus / DNP3 / S7comm / BACnet / EtherNet-IP) are identified from packet
 structure — even on non-standard ports — and land in the **IoT/OT** category and the
@@ -202,6 +226,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   from its packets (the app carves a `.pcap` of just that host pair and time window; the report
   and exports carry the matching capture filter). It is in the app's Timeline tab, the HTML
   report, and `ppcap timeline <summary.json> --format markdown|csv|json` for tickets and hand-offs.
+- **Local MCP server for AI agents** — `ppcap mcp` lets Claude, Cursor or an Ollama-backed agent
+  triage a capture through the Model Context Protocol: the ranked alert queue, alert timelines,
+  host profiles, flow queries, the packets themselves and indicator lookups. It runs on the
+  analyst's machine over stdio with no listener, every tool is read-only, and nothing leaves the
+  machine unless the analyst opts in (`--online`) or points the agent at a remote model.
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.

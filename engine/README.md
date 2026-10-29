@@ -57,7 +57,19 @@ cargo run -p ppcap-cli --release -- gen out/mixed.pcap --scenario mixed --packet
 
 # Emit the embedded DuckDB DDL for the external sidecar / DuckDB-Wasm
 cargo run -p ppcap-cli --release -- init-db --out schema.sql --case-dir /abs/case/dir
+
+# Serve captures and/or analyze --json outputs to an AI agent over MCP (stdio JSON-RPC).
+# Read-only and offline by default; --allow-write <DIR> adds carve_pcap, --online adds reputation.
+cargo run -p ppcap-cli --release -- mcp capture.pcap out/summary.json --allow-write out/carves
 ```
+
+`ppcap mcp` is the one command whose stdout is not JSON for a human: it carries MCP protocol
+messages only (one JSON-RPC message per line), and all logging goes to stderr. Captures given
+as pcaps are analysed once at launch into a scratch directory removed on exit; a summary JSON is
+served with the pcap and flows Parquet it records (relative paths resolve against the summary's
+directory). The engine has no SQL engine (no DuckDB, by the C-compiler-free rule), so agents get
+`query_flows`, a structured filter / group / sort over the Parquet; `list_captures` returns the
+Parquet path and columns for agents that bring their own DuckDB.
 
 Conventions: progress is written to **stderr**, summary JSON to **stdout** (pipeable).
 Exit codes: `0` ok, `1` fatal engine error, `2` CLI usage error (clap).

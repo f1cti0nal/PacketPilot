@@ -9,7 +9,10 @@
 //! Memory stays bounded: at most one row group (`row_group_size` rows) is held in builders
 //! before being flushed and the builders reset.
 
+pub mod read;
 pub mod schema;
+
+pub use read::{scan_flows, FlowRow};
 
 use std::net::IpAddr;
 use std::path::Path;
