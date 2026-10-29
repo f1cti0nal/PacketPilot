@@ -868,8 +868,9 @@ impl Parser {
                     match self.rule() {
                         Ok(()) => {}
                         Err(reason) => {
+                            // A failed duplicate leaves the first definition referable.
                             if let Some(n) = &name {
-                                self.names.insert(n.clone(), None);
+                                self.names.entry(n.clone()).or_insert(None);
                             }
                             self.skipped.push(SkippedYaraRule {
                                 name: name.unwrap_or_default(),
@@ -1525,7 +1526,10 @@ mod tests {
         assert_eq!(skipped.len(), 1, "{skipped:?}");
         assert_eq!(skipped[0].name, "one");
         assert_eq!(a.len(), 3);
-        assert_eq!(hits(a, b"MZbbzz"), vec!["two"]);
+        // A later duplicate is skipped and references still reach the first definition.
+        let skipped = a.add("rule is_mz { condition: false } rule three { condition: is_mz }");
+        assert_eq!(skipped.len(), 1, "{skipped:?}");
+        assert_eq!(hits(a, b"MZbbzz"), vec!["two", "three"]);
     }
 
     #[test]
