@@ -66,9 +66,8 @@ PacketPilot/
 │   ├── crates/ppcap-core       #   reader · decode · flow · classify · stats · enrich · score
 │   │                           #   · columnar (Parquet) · report (HTML) · gen · metrics
 │   └── crates/ppcap-cli        #   `ppcap`: analyze / gen / init-db
-├── ui/                         # React 18 + Vite 5 + TS + Tailwind — the shared frontend
-│   └── src-tauri/              #   Tauri 2 desktop shell (ppcap-core as native backend)
-└── docs/PROJECT-SPEC.md        # full specification
+└── ui/                         # React 18 + Vite 5 + TS + Tailwind — the shared frontend
+    └── src-tauri/              #   Tauri 2 desktop shell (ppcap-core as native backend)
 ```
 
 The **same React frontend** powers both the browser build and the Tauri desktop app
@@ -157,12 +156,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   findings — an unnamed **high-entropy channel** (custom-crypto C2 / hand-rolled tunnels, and the
   first producer of the `anomalous` category), **TLS without SNI** (ECH-aware), and
   **port/protocol mismatch** (TLS on an odd port; non-TLS on 443). JA4S is feed-matchable
-  (`bad_ja4s`) and re-scannable by Time Machine. See [docs/encrypted-traffic-analysis.md](docs/encrypted-traffic-analysis.md).
+  (`bad_ja4s`) and re-scannable by Time Machine.
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
   indicators that were clean at capture time but are dirty now — no pcap re-read, fully offline.
-  See [docs/time-machine.md](docs/time-machine.md).
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.
@@ -170,15 +168,14 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - Native **Tauri desktop app** + browser build from one codebase.
 - **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
   AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
-  bare public IP strings leave the device, never packets or internal IPs). See [docs/reputation.md](docs/reputation.md).
+  bare public IP strings leave the device, never packets or internal IPs).
 - **Natural Language Querying** — a **Query** tab running read-only DuckDB SQL over the flow
   table *entirely in-browser* (lazy DuckDB-Wasm; nothing leaves the device), with bundled +
   saved queries, CSV export, and a flow_id cross-filter into the Flows view. With AI enabled,
   ask in plain English and the model writes the SQL (only the question text is sent — the SQL
-  always runs locally). See [docs/nlq.md](docs/nlq.md).
+  always runs locally).
 - **AI Analyst Assist** — opt-in NL executive brief + interactive chat over the *derived* summary
   (not raw packets). BYO endpoint — Anthropic/OpenAI/OpenRouter/Ollama/Custom. Privacy-preserving:
   only the engine's computed summary ever leaves; localhost endpoints stay fully on-device. Desktop
   stores the API key in the OS keychain; browser routes through a user-supplied streaming relay.
-  See [docs/ai-assist.md](docs/ai-assist.md).
 

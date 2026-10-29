@@ -7,7 +7,7 @@
 //! **manifest** records what was transformed — counts, options, and input/output
 //! SHA-256 — without ever containing an original value or the mapping key.
 //!
-//! Privacy model (documented for users in `docs/sharing-captures-safely.md`):
+//! Privacy model:
 //! - The per-run key exists only in memory; no reverse mapping is ever exported.
 //! - Same value → same pseudonym *within* a run; across runs mappings differ.
 //! - Default (`PayloadMode::Scrub`) zeroes every application payload byte, so

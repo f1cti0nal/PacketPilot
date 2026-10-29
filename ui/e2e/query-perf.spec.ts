@@ -4,8 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
  * Phase 4 performance benchmark for the query engine: synthetic FlowRow sets
  * at 100k and 1M rows, measuring table build (Arrow ingest + typed INSERT)
  * and four representative queries. Assertion ceilings are deliberately loose
- * (CI containers are slow); the real numbers are logged per run and recorded
- * in docs/nlq.md.
+ * (CI containers are slow); the real numbers are logged per run.
  *
  * Heavy (≈ 1–2 GB of browser heap at the 1M step), so it only runs when
  * PP_PERF=1 is set — it is a measurement harness, not a regression gate.
