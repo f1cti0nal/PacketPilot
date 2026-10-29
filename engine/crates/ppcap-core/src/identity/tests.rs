@@ -6,7 +6,13 @@ use super::dcerpc::build as rpc;
 use super::dcerpc::Iface;
 use super::kerberos::build as krb;
 use super::ldap::build as ldap;
+use super::ntlm::build as ntlm;
+use super::smb2::build as smb;
 use super::*;
+
+/// NTSTATUS values used in the SMB tests.
+const STATUS_OK: u32 = 0x0000_0000;
+const STATUS_LOGON_FAILURE: u32 = 0xC000_006D;
 use crate::gen::frames::{build_ipv4, build_udp, inet_checksum};
 use crate::reader::{LinkType, RawFrame};
 
@@ -613,4 +619,148 @@ fn user_spn_classification() {
     assert!(!is_user_spn("HOST/ws01"));
     assert!(!is_user_spn("WS01$"));
     assert!(!is_user_spn("cifs/"));
+}
+
+// ── SMB / NTLM ────────────────────────────────────────────────────────────────
+
+/// One SMB SESSION_SETUP exchange on its own connection: a type-3 NTLM AUTHENTICATE for
+/// `domain\user` (NT-response length `nt_len`, 24 = NTLMv1) answered with `status`.
+#[allow(clippy::too_many_arguments)]
+fn smb_logon(
+    h: &mut Harness,
+    client: Ipv4Addr,
+    cport: u16,
+    server: Ipv4Addr,
+    domain: &str,
+    user: &str,
+    nt_len: u16,
+    status: u32,
+) {
+    let mut c = Conn::new(client, cport, server, 445);
+    let auth = ntlm::authenticate(domain, user, "WS", 0, nt_len);
+    c.send(h, &smb::nbss(&smb::session_setup_req(&auth)), 1460);
+    c.reply(h, &smb::nbss(&smb::session_setup_resp(status)), 1460);
+}
+
+/// DCE-RPC PDUs carried to a named pipe over one SMB connection (pipe-transceive IOCTLs),
+/// cut into `mss`-sized TCP segments.
+fn smb_pipe_rpc(
+    h: &mut Harness,
+    client: Ipv4Addr,
+    cport: u16,
+    server: Ipv4Addr,
+    pdus: &[Vec<u8>],
+    mss: usize,
+) {
+    let mut c = Conn::new(client, cport, server, 445);
+    for pdu in pdus {
+        c.send(h, &smb::nbss(&smb::ioctl_transceive(pdu)), mss);
+    }
+}
+
+#[test]
+fn smb_logons_failing_across_many_accounts_are_a_password_spray() {
+    let mut h = Harness::new();
+    let users = ["alice", "bob", "carol", "dave", "erin", "frank"];
+    for (i, u) in users.iter().enumerate() {
+        smb_logon(
+            &mut h,
+            ATTACKER,
+            40000 + i as u16,
+            DC,
+            "CORP",
+            u,
+            220,
+            STATUS_LOGON_FAILURE,
+        );
+    }
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::PasswordSpray], "{f:#?}");
+    let s = &f[0];
+    assert_eq!(s.src_ip, "10.0.0.66");
+    assert_eq!(s.dst_ip.as_deref(), Some("10.0.0.10"));
+    assert_eq!(s.dst_port, Some(445));
+    assert_eq!(s.severity, Severity::Medium);
+    assert_eq!(s.attack, vec!["T1110.003"]);
+    let ev = s.evidence.join(" | ");
+    assert!(ev.contains("6 distinct accounts"), "{ev}");
+    assert!(ev.contains("CORP\\alice"), "{ev}");
+}
+
+#[test]
+fn psexec_style_service_creation_over_a_named_pipe_is_remote_execution() {
+    let mut h = Harness::new();
+    // Reach ADMIN$ (payload drop) then create + start a service over \svcctl, split small.
+    let mut c = Conn::new(ATTACKER, 41000, DC, 445);
+    c.send(
+        &mut h,
+        &smb::nbss(&smb::tree_connect_req("\\\\dc01\\ADMIN$")),
+        1460,
+    );
+    let pdus = [
+        rpc::bind(&[(0, Iface::Svcctl)]),
+        rpc::request(0, 12, 60), // RCreateServiceW
+        rpc::request(0, 19, 10), // RStartServiceW
+    ];
+    for pdu in &pdus {
+        c.send(&mut h, &smb::nbss(&smb::ioctl_transceive(pdu)), 16);
+    }
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::RemoteServiceExec], "{f:#?}");
+    let r = &f[0];
+    assert_eq!(r.src_ip, "10.0.0.66");
+    assert_eq!(r.dst_ip.as_deref(), Some("10.0.0.10"));
+    assert_eq!(r.severity, Severity::High);
+    assert!(r.attack.contains(&"T1021.002".to_string()));
+    assert!(r.attack.contains(&"T1569.002".to_string()));
+    let ev = r.evidence.join(" | ");
+    assert!(ev.contains("PsExec"), "{ev}");
+    assert!(ev.contains("ADMIN$"), "{ev}");
+}
+
+#[test]
+fn scheduled_task_registration_over_a_pipe_is_remote_execution() {
+    let mut h = Harness::new();
+    let pdus = [
+        rpc::bind(&[(0, Iface::TaskScheduler)]),
+        rpc::request(0, 1, 40), // SchRpcRegisterTask
+    ];
+    smb_pipe_rpc(&mut h, ATTACKER, 42000, WS, &pdus, 1460);
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::RemoteServiceExec], "{f:#?}");
+    assert!(f[0].attack.contains(&"T1053.005".to_string()));
+}
+
+#[test]
+fn dcsync_over_an_smb_named_pipe_is_detected() {
+    let mut h = Harness::new();
+    let pdus = [
+        rpc::bind(&[(0, Iface::Drsuapi)]),
+        rpc::request(0, 3, 120), // DRSGetNCChanges
+    ];
+    smb_pipe_rpc(&mut h, ATTACKER, 43000, DC, &pdus, 24);
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::DcSync], "{f:#?}");
+    assert_eq!(f[0].dst_port, Some(445));
+}
+
+#[test]
+fn ntlm_v1_logon_is_legacy_auth() {
+    let mut h = Harness::new();
+    smb_logon(&mut h, WS, 44000, DC, "CORP", "jdoe", 24, STATUS_OK);
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::LegacyAuth], "{f:#?}");
+    let l = &f[0];
+    assert_eq!(l.severity, Severity::High);
+    let ev = l.evidence.join(" | ");
+    assert!(ev.contains("NTLMv1"), "{ev}");
+    assert!(ev.contains("CORP\\jdoe"), "{ev}");
+}
+
+#[test]
+fn a_normal_ntlm_v2_smb_logon_is_silent() {
+    let mut h = Harness::new();
+    smb_logon(&mut h, WS, 45000, DC, "CORP", "jdoe", 220, STATUS_OK);
+    smb_logon(&mut h, WS, 45001, DC, "CORP", "jdoe", 220, STATUS_OK);
+    assert!(h.findings().is_empty());
 }

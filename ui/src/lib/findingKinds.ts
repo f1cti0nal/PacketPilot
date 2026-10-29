@@ -21,10 +21,12 @@ import {
   Pickaxe,
   VenetianMask,
   ScanSearch,
+  ServerCog,
   ShieldAlert,
   ShieldOff,
   Shuffle,
   Split,
+  SprayCan,
   Terminal,
   Ticket,
   TrendingUp,
@@ -79,7 +81,9 @@ export const KIND_META: Record<FindingKind, KindMeta> = {
   asrep_roasting: { label: "AS-REP Roasting", Icon: Ticket },
   dcsync: { label: "DCSync", Icon: DatabaseZap },
   ad_recon: { label: "AD Reconnaissance", Icon: UserSearch },
-  legacy_auth: { label: "Legacy Kerberos Crypto", Icon: KeyRound },
+  legacy_auth: { label: "Legacy Auth Crypto", Icon: KeyRound },
+  remote_service_exec: { label: "Remote Service Execution", Icon: ServerCog },
+  password_spray: { label: "Password Spray", Icon: SprayCan },
   ioc_match: { label: "IOC Match", Icon: Fingerprint },
 };
 

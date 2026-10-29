@@ -39,5 +39,7 @@ describe("techniqueName", () => {
     expect(techniqueName("T9999")).toBe("T9999");
     expect(techniqueName("T1558.003")).toBe("Kerberoasting");
     expect(techniqueName("T1003.006")).toBe("OS Credential Dumping: DCSync");
+    expect(techniqueName("T1110.003")).toBe("Brute Force: Password Spraying");
+    expect(techniqueName("T1569.002")).toBe("System Services: Service Execution");
   });
 });

@@ -44,6 +44,8 @@ const KIND_STAGE: Record<FindingKind, string> = {
   dcsync: "Credential Access",
   ad_recon: "Discovery",
   legacy_auth: "Credential Access",
+  remote_service_exec: "Lateral Movement",
+  password_spray: "Credential Access",
   ioc_match: "Detection",
 };
 
@@ -69,6 +71,8 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   dcsync: "replication calls",
   ad_recon: "queries",
   legacy_auth: "weak tickets",
+  remote_service_exec: "RPC calls",
+  password_spray: "accounts",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */

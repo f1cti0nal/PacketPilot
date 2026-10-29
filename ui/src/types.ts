@@ -360,6 +360,8 @@ export type FindingKind =
   | "dcsync"
   | "ad_recon"
   | "legacy_auth"
+  | "remote_service_exec"
+  | "password_spray"
   | "ioc_match";
 
 /**

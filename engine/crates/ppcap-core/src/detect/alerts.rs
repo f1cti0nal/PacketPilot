@@ -905,7 +905,13 @@ fn action_for(f: &Finding, peer: Option<&str>, port: Option<u16>, actor: &str) -
             format!("Identify the process enumerating AD on {actor}; watch for roasting next")
         }
         FindingKind::LegacyAuth => {
-            format!("Disable DES/RC4 on {actor}; give the listed service accounts AES keys")
+            format!("Disable DES/RC4/NTLMv1/SMB1 on {actor}; give the listed accounts AES keys")
+        }
+        FindingKind::RemoteServiceExec => {
+            format!("Isolate {actor} and {peer_disp}; confirm the service/task is authorized, else treat as compromise")
+        }
+        FindingKind::PasswordSpray => {
+            format!("Lock the sprayed accounts on {peer_disp}; block {actor}; review authentication logs")
         }
     }
 }
