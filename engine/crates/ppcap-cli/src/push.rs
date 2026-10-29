@@ -9,15 +9,17 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 use ppcap_core::export::push::{
-    build_payloads, resolve_target, response_ok, response_reference, select_alerts, Destination,
-    DestinationFile, PushLedger, SendDecision,
+    build_payloads, bulk_item_errors, delivery_key, escalation_payload, resolve_target,
+    response_ok, response_reference, select_alerts, Destination, DestinationFile, DestinationKind,
+    PushLedger, PushPayload, SendDecision,
 };
 use ppcap_core::{AnalysisOutput, PriorityBand};
 
 /// How one request leaves the machine.
 pub(crate) trait Sender {
-    fn post(
+    fn send(
         &self,
+        method: &str,
         url: &str,
         headers: &[(String, String)],
         content_type: &str,
@@ -29,14 +31,15 @@ pub(crate) trait Sender {
 pub(crate) struct HttpSender;
 
 impl Sender for HttpSender {
-    fn post(
+    fn send(
         &self,
+        method: &str,
         url: &str,
         headers: &[(String, String)],
         content_type: &str,
         body: &str,
     ) -> Result<(u16, String), String> {
-        ppcap_core::export::push::http_post(url, headers, content_type, body)
+        ppcap_core::export::push::http_send(method, url, headers, content_type, body)
     }
 }
 
@@ -97,12 +100,14 @@ impl PushReport {
 }
 
 /// The destinations this run addresses: every enabled one, or exactly those named by `--to`
-/// (which may name a disabled one).
+/// (which may name a disabled one), each once, in the order first named.
 fn chosen<'a>(file: &'a DestinationFile, to: &[String]) -> anyhow::Result<Vec<&'a Destination>> {
     if to.is_empty() {
         return Ok(file.destinations.iter().filter(|d| !d.disabled).collect());
     }
+    let mut seen = std::collections::BTreeSet::new();
     to.iter()
+        .filter(|name| seen.insert(name.as_str()))
         .map(|name| {
             file.destinations
                 .iter()
@@ -150,7 +155,7 @@ pub(crate) fn run_push(
         eprintln!("push: no enabled destinations (name one with --to, or set \"disabled\": false)");
     }
     let mut report = PushReport::default();
-    for dest in dests {
+    for (index, dest) in dests.into_iter().enumerate() {
         let mut row = DestinationReport {
             name: dest.name.clone(),
             kind: dest.kind.as_str().to_string(),
@@ -160,10 +165,14 @@ pub(crate) fn run_push(
         row.selected = selected.len();
         // The ledger decides what is new; an out-dir export renders the whole selection.
         let exporting = matches!(opts.mode, Mode::OutDir(_));
+        let keys: BTreeMap<&str, String> = selected
+            .iter()
+            .map(|a| (a.id.as_str(), delivery_key(out, a)))
+            .collect();
         let mut todo = Vec::new();
         let mut escalated = std::collections::BTreeSet::new();
         for a in selected {
-            let decision = ledger.decide(&dest.name, a);
+            let decision = ledger.decide(&dest.name, &keys[a.id.as_str()], a);
             match decision {
                 SendDecision::AlreadySent if !opts.resend && !exporting => {
                     row.already_sent += 1;
@@ -175,7 +184,23 @@ pub(crate) fn run_push(
                 _ => todo.push(a),
             }
         }
-        let payloads = build_payloads(out, dest, &todo, now_secs);
+        // An escalated alert that already has a ticket updates it (a Jira comment, a TheHive
+        // severity bump) instead of opening a second one; everything else is created.
+        let mut payloads: Vec<PushPayload> = Vec::new();
+        let mut create = Vec::new();
+        for a in &todo {
+            let update = (escalated.contains(&a.id) && !exporting)
+                .then(|| ledger.entry(&dest.name, &keys[a.id.as_str()]))
+                .flatten()
+                .and_then(|e| e.reference.as_deref())
+                .and_then(|r| escalation_payload(out, dest, a, r));
+            match update {
+                Some(p) => payloads.push(p),
+                None => create.push(*a),
+            }
+        }
+        let updates = payloads.len();
+        payloads.extend(build_payloads(out, dest, &create, now_secs));
         let by_id: BTreeMap<&str, &ppcap_core::Alert> =
             todo.iter().map(|a| (a.id.as_str(), *a)).collect();
 
@@ -184,8 +209,10 @@ pub(crate) fn run_push(
                 std::fs::create_dir_all(dir)
                     .with_context(|| format!("create {}", dir.display()))?;
                 for (i, p) in payloads.iter().enumerate() {
+                    // The destination's position keeps two names that slug alike apart.
                     let path = dir.join(format!(
-                        "{}-{:03}.{}",
+                        "{:02}-{}-{:03}.{}",
+                        index + 1,
                         slug(&dest.name),
                         i + 1,
                         p.extension()
@@ -208,9 +235,10 @@ pub(crate) fn run_push(
                     });
                 for p in &payloads {
                     println!(
-                        "### {} ({}) POST {}{} [{}] {} alert(s)",
+                        "### {} ({}) {} {}{} [{}] {} alert(s)",
                         dest.name,
                         dest.kind.as_str(),
+                        p.method,
                         shown,
                         p.path,
                         p.content_type,
@@ -235,40 +263,63 @@ pub(crate) fn run_push(
                         continue;
                     }
                 };
-                for p in &payloads {
+                for (i, p) in payloads.iter().enumerate() {
                     let url = format!("{}{}", target.base_url, p.path);
                     let result = sender
-                        .post(&url, &target.headers, &p.content_type, &p.body)
+                        .send(&p.method, &url, &target.headers, &p.content_type, &p.body)
                         .and_then(|(status, body)| {
                             response_ok(dest.kind, status, &body).map(|()| body)
-                        });
-                    match result {
-                        Ok(body) => {
-                            let reference = if dest.kind.per_alert() {
-                                response_reference(dest.kind, &body)
-                            } else {
-                                None
-                            };
-                            for id in &p.alert_ids {
-                                if let Some(a) = by_id.get(id.as_str()) {
-                                    ledger.record(&dest.name, a, now_secs, reference.clone());
-                                }
-                                if escalated.contains(id) {
-                                    row.escalated += 1;
-                                }
-                                if let Some(r) = &reference {
-                                    row.references.insert(id.clone(), r.clone());
-                                }
-                            }
-                            row.sent += p.alert_ids.len();
-                        }
+                        })
+                        // Errors can echo the secret URL or token back; never print or save it.
+                        .map_err(|e| target.redact(&e));
+                    let body = match result {
+                        Ok(body) => body,
                         Err(e) => {
                             row.failed += p.alert_ids.len();
                             row.errors.push(e);
+                            continue;
                         }
+                    };
+                    // A bulk request succeeds or fails item by item.
+                    let item_errors = if dest.kind == DestinationKind::Elastic {
+                        bulk_item_errors(&body, p.alert_ids.len())
+                    } else {
+                        vec![None; p.alert_ids.len()]
+                    };
+                    // Only a create returns a new ticket; an update keeps the recorded one.
+                    let reference = (dest.kind.per_alert() && i >= updates)
+                        .then(|| response_reference(dest.kind, &body))
+                        .flatten();
+                    for (id, err) in p.alert_ids.iter().zip(item_errors) {
+                        if let Some(e) = err {
+                            row.failed += 1;
+                            row.errors.push(target.redact(&format!("{id}: {e}")));
+                            continue;
+                        }
+                        if let Some(a) = by_id.get(id.as_str()) {
+                            ledger.record(
+                                &dest.name,
+                                &keys[id.as_str()],
+                                a,
+                                now_secs,
+                                reference.clone(),
+                            );
+                        }
+                        if escalated.contains(id) {
+                            row.escalated += 1;
+                        }
+                        if let Some(r) = ledger
+                            .entry(&dest.name, &keys[id.as_str()])
+                            .and_then(|e| e.reference.clone())
+                        {
+                            row.references.insert(id.clone(), r);
+                        }
+                        row.sent += 1;
                     }
+                    // Checkpoint after every request, so an interrupted run never re-sends
+                    // what already went out.
+                    save_ledger(ledger)?;
                 }
-                save_ledger(ledger)?;
             }
         }
         if !opts.quiet {
@@ -345,7 +396,7 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
-    /// One recorded request: URL, headers, body.
+    /// One recorded request: "METHOD url", headers, body.
     type Call = (String, Vec<(String, String)>, String);
     type Answer = Box<dyn Fn(&str) -> Result<(u16, String), String>>;
 
@@ -355,16 +406,19 @@ mod tests {
     }
 
     impl Sender for Recorder {
-        fn post(
+        fn send(
             &self,
+            method: &str,
             url: &str,
             headers: &[(String, String)],
             _ct: &str,
             body: &str,
         ) -> Result<(u16, String), String> {
-            self.calls
-                .borrow_mut()
-                .push((url.to_string(), headers.to_vec(), body.to_string()));
+            self.calls.borrow_mut().push((
+                format!("{method} {url}"),
+                headers.to_vec(),
+                body.to_string(),
+            ));
             (self.answer)(url)
         }
     }
@@ -399,8 +453,8 @@ mod tests {
         DestinationFile::parse(
             r#"{"destinations":[
               {"name":"jira","kind":"jira","url":"https://jira.example","project":"SEC",
-               "token_env":"JT"},
-              {"name":"hec","kind":"splunk_hec","url":"https://hec.example","token_env":"HT",
+               "token_env":"PPCAP_JT"},
+              {"name":"hec","kind":"splunk_hec","url":"https://hec.example","token_env":"PPCAP_HT",
                "min_band":"investigate"},
               {"name":"off","kind":"webhook","url":"https://w.example","disabled":true}
             ]}"#,
@@ -410,8 +464,8 @@ mod tests {
 
     fn env(k: &str) -> Option<String> {
         match k {
-            "JT" => Some("jt".into()),
-            "HT" => Some("ht".into()),
+            "PPCAP_JT" => Some("jt".into()),
+            "PPCAP_HT" => Some("ht".into()),
             _ => None,
         }
     }
@@ -462,23 +516,30 @@ mod tests {
             &mut save,
         )
         .unwrap();
-        assert_eq!(saves.get(), 2);
+        assert_eq!(
+            saves.get(),
+            3,
+            "the ledger is checkpointed after every request"
+        );
         let names: Vec<_> = r.destinations.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(names, ["jira", "hec"], "disabled destinations are skipped");
         assert_eq!(r.destinations[0].sent, 2);
         assert_eq!(r.destinations[1].sent, 1, "hec floor is investigate");
         let calls = sender.calls.borrow();
         assert_eq!(calls.len(), 3);
-        assert_eq!(calls[0].0, "https://jira.example/rest/api/2/issue");
+        assert_eq!(calls[0].0, "POST https://jira.example/rest/api/2/issue");
         assert_eq!(
             calls[0].1,
             vec![("Authorization".into(), "Bearer jt".into())]
         );
-        assert_eq!(calls[2].0, "https://hec.example/services/collector/event");
+        assert_eq!(
+            calls[2].0,
+            "POST https://hec.example/services/collector/event"
+        );
         assert_eq!(calls[2].1[0].1, "Splunk ht");
         assert_eq!(
             ledger
-                .entry("jira", "alert:a")
+                .entry("jira", &delivery_key(&out, &out.summary.alerts[0]))
                 .unwrap()
                 .reference
                 .as_deref(),
@@ -518,6 +579,24 @@ mod tests {
         .unwrap();
         assert_eq!(r3.destinations[0].sent, 1);
         assert_eq!(r3.destinations[0].escalated, 1);
+        // The escalation comments on the existing issue instead of opening a second one.
+        let jira_calls: Vec<String> = sender
+            .calls
+            .borrow()
+            .iter()
+            .map(|c| c.0.clone())
+            .filter(|u| u.contains("jira"))
+            .collect();
+        assert_eq!(
+            jira_calls.last().unwrap(),
+            "POST https://jira.example/rest/api/2/issue/SEC-1/comment"
+        );
+        let key = delivery_key(&worse, &worse.summary.alerts[1]);
+        let e = ledger.entry("jira", &key).unwrap();
+        assert_eq!(
+            (e.band, e.reference.as_deref()),
+            (PriorityBand::Investigate, Some("SEC-1"))
+        );
         assert_eq!(
             r3.destinations[1].sent, 1,
             "now above the hec floor, new there"
@@ -607,7 +686,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mode = Mode::OutDir(dir.path().join("out"));
         // Out-dir needs no secrets and ignores the ledger.
-        ledger.record("jira", &out.summary.alerts[0], 1, None);
+        let a = &out.summary.alerts[0];
+        ledger.record("jira", &delivery_key(&out, a), a, 1, None);
         let none = |_: &str| None;
         let r = run_push(
             &out,
@@ -623,8 +703,98 @@ mod tests {
         assert!(sender.calls.borrow().is_empty());
         assert_eq!(r.destinations[0].files.len(), 2);
         assert_eq!(r.destinations[1].files.len(), 1);
-        assert!(dir.path().join("out/jira-001.json").exists());
-        assert!(dir.path().join("out/hec-001.json").exists());
+        assert!(dir.path().join("out/01-jira-001.json").exists());
+        assert!(dir.path().join("out/02-hec-001.json").exists());
+    }
+
+    #[test]
+    fn repeated_to_names_send_once() {
+        let out = analysis();
+        let sender = ok_sender();
+        let mut o = opts(Mode::Send);
+        o.to = vec!["jira".into(), "jira".into()];
+        o.resend = true;
+        let r = run_push(
+            &out,
+            &file(),
+            &o,
+            &mut PushLedger::default(),
+            &sender,
+            &env,
+            1,
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(r.destinations.len(), 1);
+        assert_eq!(sender.calls.borrow().len(), 2);
+    }
+
+    #[test]
+    fn elastic_partial_bulk_records_only_accepted_items() {
+        let out = analysis();
+        let f = DestinationFile::parse(
+            r#"{"destinations":[{"name":"es","kind":"elastic","url":"https://es.example",
+                "token_env":"PPCAP_JT"}]}"#,
+        )
+        .unwrap();
+        let sender = Recorder {
+            calls: RefCell::new(Vec::new()),
+            answer: Box::new(|_| {
+                Ok((
+                    200,
+                    r#"{"errors":true,"items":[{"create":{"status":201}},
+                        {"create":{"status":400,"error":{"reason":"mapper_parsing_exception"}}}]}"#
+                        .into(),
+                ))
+            }),
+        };
+        let mut ledger = PushLedger::default();
+        let r = run_push(
+            &out,
+            &f,
+            &opts(Mode::Send),
+            &mut ledger,
+            &sender,
+            &env,
+            1,
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!((r.destinations[0].sent, r.destinations[0].failed), (1, 1));
+        assert!(r.destinations[0].errors[0].starts_with("alert:b: HTTP 400"));
+        let a = &out.summary.alerts;
+        assert!(ledger.entry("es", &delivery_key(&out, &a[0])).is_some());
+        assert!(ledger.entry("es", &delivery_key(&out, &a[1])).is_none());
+    }
+
+    #[test]
+    fn errors_never_carry_secret_urls_or_tokens() {
+        let out = analysis();
+        let f = DestinationFile::parse(
+            r#"{"destinations":[{"name":"s","kind":"slack","url_env":"PPCAP_SLACK"}]}"#,
+        )
+        .unwrap();
+        let env = |k: &str| {
+            (k == "PPCAP_SLACK").then(|| "https://hooks.slack.com/services/T0/B0/s3cr3t".into())
+        };
+        let sender = Recorder {
+            calls: RefCell::new(Vec::new()),
+            answer: Box::new(|url| Err(format!("{url}: Connection refused"))),
+        };
+        let r = run_push(
+            &out,
+            &f,
+            &opts(Mode::Send),
+            &mut PushLedger::default(),
+            &sender,
+            &env,
+            1,
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+        let err = &r.destinations[0].errors[0];
+        assert!(!err.contains("s3cr3t"), "{err}");
+        assert!(err.contains("$PPCAP_SLACK"), "{err}");
     }
 
     #[test]
@@ -660,7 +830,13 @@ mod tests {
         assert_eq!(p, dir.path().join("push-ledger.json"));
         assert_eq!(load_ledger(&p).unwrap(), PushLedger::default());
         let mut l = PushLedger::default();
-        l.record("x", &analysis().summary.alerts[0], 5, Some("T-1".into()));
+        l.record(
+            "x",
+            "alert:a@0",
+            &analysis().summary.alerts[0],
+            5,
+            Some("T-1".into()),
+        );
         save_ledger(&p, &l).unwrap();
         assert_eq!(load_ledger(&p).unwrap(), l);
         assert_eq!(

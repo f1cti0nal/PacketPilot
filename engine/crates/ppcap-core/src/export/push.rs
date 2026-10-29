@@ -30,6 +30,10 @@ pub const TICKET_TIMELINE_ROWS: usize = 15;
 /// Member findings listed in a webhook / HEC / ECS document.
 pub const DOC_FINDINGS: usize = 20;
 
+/// Every environment variable a destination names must start with this, so a shared or
+/// untrusted destinations file cannot read an unrelated secret from the analyst's shell.
+pub const SECRET_ENV_PREFIX: &str = "PPCAP_";
+
 /// The OCSF schema version the Detection Finding payloads follow.
 pub const OCSF_VERSION: &str = "1.3.0";
 /// The ECS version the Elastic documents follow.
@@ -51,7 +55,7 @@ pub enum DestinationKind {
     Teams,
     /// Jira REST API v2: one issue per alert.
     Jira,
-    /// TheHive 5 API: one alert per alert, `sourceRef` = the PacketPilot alert id.
+    /// TheHive 5 API: one alert per alert, `sourceRef` = its delivery key.
     Thehive,
     /// Splunk HTTP Event Collector: batched events.
     SplunkHec,
@@ -268,6 +272,14 @@ impl Destination {
                         "{who}: {field} must be an environment variable name, not {v:?}"
                     ));
                 }
+                // A shared file can only reach secrets set up for PacketPilot, never an
+                // unrelated credential (a cloud key, a CI token) that happens to be exported.
+                if !v.starts_with(SECRET_ENV_PREFIX) {
+                    return Err(format!(
+                        "{who}: {field} {v:?} must start with {SECRET_ENV_PREFIX} \
+                         (only PacketPilot-scoped variables can be read)"
+                    ));
+                }
             }
         }
         let needs_token = matches!(
@@ -338,10 +350,12 @@ pub fn select_alerts<'a>(
 
 // ─── Payloads ────────────────────────────────────────────────────────────────
 
-/// One HTTP request to make: POST `path` (appended to the destination's base URL).
+/// One HTTP request to make: `method` `path` (appended to the destination's base URL).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PushPayload {
-    /// The alerts this request delivers (ledger bookkeeping).
+    /// `POST`, or `PATCH` for an escalation that updates an existing TheHive alert.
+    pub method: String,
+    /// The alerts this request delivers (ledger bookkeeping), in body order.
     pub alert_ids: Vec<String>,
     /// Appended to the base URL (`""` for webhooks).
     pub path: String,
@@ -358,6 +372,33 @@ impl PushPayload {
             "json"
         }
     }
+}
+
+/// A stable identity for the analysed capture: the source SHA-256 when the run hashed it, else a
+/// digest of its path, size and packet time span. Re-running push on the same analysis keeps
+/// it; a different capture gets a different one.
+pub fn capture_id(out: &AnalysisOutput) -> String {
+    if let Some(h) = out.source_sha256.as_deref().filter(|h| h.len() >= 16) {
+        return h[..16].to_ascii_lowercase();
+    }
+    let seed = format!(
+        "{}|{}|{:?}|{:?}",
+        out.source_path, out.source_bytes, out.summary.first_ts_ns, out.summary.last_ts_ns
+    );
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in seed.as_bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01B3);
+    }
+    format!("{h:016x}")
+}
+
+/// The delivery key of one alert from one capture: `alert:…@<capture id>`. Alert ids are stable
+/// per story (a host alert is keyed by its host), so the capture is part of the key: the same
+/// host flagged again in a new capture is a new delivery, a re-run of the same analysis is not.
+/// Also the TheHive `sourceRef` and the Elastic document `_id`.
+pub fn delivery_key(out: &AnalysisOutput, a: &Alert) -> String {
+    format!("{}@{}", a.id, capture_id(out))
 }
 
 /// Render the requests that deliver `alerts` to `dest`. `now_secs` stamps untimed alerts.
@@ -377,6 +418,7 @@ pub fn build_payloads(
         DestinationKind::Webhook => alerts
             .iter()
             .map(|a| PushPayload {
+                method: "POST".into(),
                 alert_ids: vec![a.id.clone()],
                 path: String::new(),
                 content_type: "application/json".into(),
@@ -386,6 +428,7 @@ pub fn build_payloads(
         DestinationKind::Slack => alerts
             .chunks(CHAT_ALERTS_PER_MESSAGE)
             .map(|c| PushPayload {
+                method: "POST".into(),
                 alert_ids: ids(c),
                 path: String::new(),
                 content_type: "application/json".into(),
@@ -395,6 +438,7 @@ pub fn build_payloads(
         DestinationKind::Teams => alerts
             .chunks(CHAT_ALERTS_PER_MESSAGE)
             .map(|c| PushPayload {
+                method: "POST".into(),
                 alert_ids: ids(c),
                 path: String::new(),
                 content_type: "application/json".into(),
@@ -404,6 +448,7 @@ pub fn build_payloads(
         DestinationKind::Jira => alerts
             .iter()
             .map(|a| PushPayload {
+                method: "POST".into(),
                 alert_ids: vec![a.id.clone()],
                 path: "/rest/api/2/issue".into(),
                 content_type: "application/json".into(),
@@ -413,6 +458,7 @@ pub fn build_payloads(
         DestinationKind::Thehive => alerts
             .iter()
             .map(|a| PushPayload {
+                method: "POST".into(),
                 alert_ids: vec![a.id.clone()],
                 path: "/api/v1/alert".into(),
                 content_type: "application/json".into(),
@@ -422,6 +468,7 @@ pub fn build_payloads(
         DestinationKind::SplunkHec => alerts
             .chunks(BATCH_EVENTS_PER_REQUEST)
             .map(|c| PushPayload {
+                method: "POST".into(),
                 alert_ids: ids(c),
                 path: "/services/collector/event".into(),
                 content_type: "application/json".into(),
@@ -444,7 +491,10 @@ pub fn build_payloads(
                     let mut body = String::new();
                     for a in c {
                         // `create` works for both plain indices and data streams.
-                        body.push_str(&json_body(&json!({"create": {"_index": index}})));
+                        // A stable `_id` makes a retried item a 409 conflict, not a duplicate.
+                        body.push_str(&json_body(
+                            &json!({"create": {"_index": index, "_id": delivery_key(out, a)}}),
+                        ));
                         body.push('\n');
                         body.push_str(&json_body(&ecs_document(
                             out,
@@ -456,6 +506,7 @@ pub fn build_payloads(
                         body.push('\n');
                     }
                     PushPayload {
+                        method: "POST".into(),
                         alert_ids: ids(c),
                         path: "/_bulk".into(),
                         content_type: "application/x-ndjson".into(),
@@ -467,6 +518,7 @@ pub fn build_payloads(
         DestinationKind::Ocsf => alerts
             .chunks(BATCH_EVENTS_PER_REQUEST)
             .map(|c| PushPayload {
+                method: "POST".into(),
                 alert_ids: ids(c),
                 path: String::new(),
                 content_type: "application/json".into(),
@@ -904,6 +956,61 @@ fn jira_issue(
     })
 }
 
+/// Whether a ticket reference is safe to put in a URL path (Jira `SEC-12`, TheHive `~4096`).
+fn path_safe(r: &str) -> bool {
+    !r.is_empty()
+        && r.len() <= 128
+        && r.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '~' | '.'))
+}
+
+/// The request that escalates an alert already ticketed as `reference`: a comment on the Jira
+/// issue, or an update of the TheHive alert's severity, tags and description. `None` for other
+/// kinds, or a reference that cannot be addressed (the caller then creates a new ticket).
+pub fn escalation_payload(
+    out: &AnalysisOutput,
+    dest: &Destination,
+    a: &Alert,
+    reference: &str,
+) -> Option<PushPayload> {
+    if !path_safe(reference) {
+        return None;
+    }
+    let timeline = out.summary.timelines.iter().find(|t| t.alert_id == a.id);
+    let (method, path, body) = match dest.kind {
+        DestinationKind::Jira => {
+            let body = format!(
+                "*Escalated by PacketPilot to {}* (priority {}).\n\n{}",
+                band_label(a.band),
+                a.priority,
+                ticket_description(out, a, timeline, Markup::JiraWiki)
+            );
+            (
+                "POST",
+                format!("/rest/api/2/issue/{reference}/comment"),
+                json!({ "body": body }),
+            )
+        }
+        DestinationKind::Thehive => (
+            "PATCH",
+            format!("/api/v1/alert/{reference}"),
+            json!({
+                "severity": thehive_severity(a.severity),
+                "tags": tags_for(a, dest),
+                "description": ticket_description(out, a, timeline, Markup::Markdown),
+            }),
+        ),
+        _ => return None,
+    };
+    Some(PushPayload {
+        method: method.into(),
+        alert_ids: vec![a.id.clone()],
+        path,
+        content_type: "application/json".into(),
+        body: serde_json::to_string(&body).unwrap_or_else(|_| "{}".into()),
+    })
+}
+
 fn thehive_severity(s: Severity) -> u8 {
     match s {
         Severity::Info | Severity::Low => 1,
@@ -944,7 +1051,7 @@ fn thehive_alert(
     let mut v = json!({
         "type": "packetpilot",
         "source": "PacketPilot",
-        "sourceRef": a.id,
+        "sourceRef": delivery_key(out, a),
         "title": truncate(&a.title, 250),
         "description": ticket_description(out, a, timeline, Markup::Markdown),
         "severity": thehive_severity(a.severity),
@@ -1176,6 +1283,23 @@ pub struct ResolvedTarget {
     pub base_url: String,
     pub display_url: String,
     pub headers: Vec<(String, String)>,
+    /// Every secret value resolved from the environment, longest first, for [`Self::redact`].
+    secrets: Vec<String>,
+}
+
+impl ResolvedTarget {
+    /// `text` with every resolved secret (a secret URL, token, user, auth header) replaced, so an
+    /// error message or a server's echo can be printed or saved safely.
+    pub fn redact(&self, text: &str) -> String {
+        let mut out = text.to_string();
+        if self.display_url != self.base_url {
+            out = out.replace(&self.base_url, &self.display_url);
+        }
+        for s in &self.secrets {
+            out = out.replace(s.as_str(), "***");
+        }
+        out
+    }
 }
 
 /// Resolve `dest`'s URL and credentials through `env` (normally `std::env::var`). Errors name
@@ -1219,6 +1343,15 @@ pub fn resolve_target(
         }
         None => None,
     };
+    let mut secrets: Vec<String> = Vec::new();
+    if display_url != base_url {
+        // The secret webhook URL's path (its token part) may be echoed without the host.
+        if let Some(path) = base_url.splitn(4, '/').nth(3) {
+            secrets.push(path.to_string());
+        }
+    }
+    secrets.extend(token.iter().cloned());
+    secrets.extend(user.iter().cloned());
     let mut headers = Vec::new();
     if let Some(tok) = token {
         let value = match (dest.kind, user) {
@@ -1234,12 +1367,16 @@ pub fn resolve_target(
             (DestinationKind::Elastic, None) => format!("ApiKey {tok}"),
             (_, None) => format!("Bearer {tok}"),
         };
+        secrets.push(value.clone());
         headers.push(("Authorization".to_string(), value));
     }
+    secrets.retain(|s| s.len() >= 4);
+    secrets.sort_by_key(|s| std::cmp::Reverse(s.len()));
     Ok(ResolvedTarget {
         base_url,
         display_url,
         headers,
+        secrets,
     })
 }
 
@@ -1257,7 +1394,7 @@ pub struct LedgerEntry {
     pub reference: Option<String>,
 }
 
-/// Which alert went to which destination: `destination name → alert id → entry`. A plain JSON
+/// Which alert went to which destination: `destination name → delivery key → entry`. A plain JSON
 /// file a team can share alongside its destinations, so two analysts never double-ticket.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PushLedger {
@@ -1283,24 +1420,32 @@ impl PushLedger {
         serde_json::from_str(text).map_err(|e| e.to_string())
     }
 
-    pub fn decide(&self, dest: &str, a: &Alert) -> SendDecision {
-        match self.sent.get(dest).and_then(|m| m.get(&a.id)) {
+    /// `key` is the alert's [`delivery_key`].
+    pub fn decide(&self, dest: &str, key: &str, a: &Alert) -> SendDecision {
+        match self.sent.get(dest).and_then(|m| m.get(key)) {
             None => SendDecision::New,
             Some(e) if a.band > e.band => SendDecision::Escalated,
             Some(_) => SendDecision::AlreadySent,
         }
     }
 
-    pub fn entry(&self, dest: &str, alert_id: &str) -> Option<&LedgerEntry> {
-        self.sent.get(dest).and_then(|m| m.get(alert_id))
+    pub fn entry(&self, dest: &str, key: &str) -> Option<&LedgerEntry> {
+        self.sent.get(dest).and_then(|m| m.get(key))
     }
 
-    pub fn record(&mut self, dest: &str, a: &Alert, now_secs: i64, reference: Option<String>) {
+    pub fn record(
+        &mut self,
+        dest: &str,
+        key: &str,
+        a: &Alert,
+        now_secs: i64,
+        reference: Option<String>,
+    ) {
         let slot = self
             .sent
             .entry(dest.to_string())
             .or_default()
-            .entry(a.id.clone());
+            .entry(key.to_string());
         // Keep the first ticket reference across escalations: the ticket is the same story.
         let reference = reference.or_else(|| match &slot {
             std::collections::btree_map::Entry::Occupied(o) => o.get().reference.clone(),
@@ -1340,67 +1485,80 @@ pub fn response_reference(kind: DestinationKind, body: &str) -> Option<String> {
     }
 }
 
-/// Whether a response means the request was accepted. Splunk HEC and Elastic `_bulk` answer
-/// 200 even when individual events fail, so their bodies are checked too.
+/// Per-item outcome of an Elastic `_bulk` response for a request of `n` items, in order: `None`
+/// when the item was stored, or was already there (a 409 on `create` with our stable `_id` means
+/// an earlier, interrupted run delivered it), else the error reason.
+pub fn bulk_item_errors(body: &str, n: usize) -> Vec<Option<String>> {
+    let v: Option<Value> = serde_json::from_str(body).ok();
+    if v.as_ref()
+        .and_then(|v| v.get("errors"))
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        return vec![None; n];
+    }
+    let items = v
+        .as_ref()
+        .and_then(|v| v.get("items"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    (0..n)
+        .map(|i| {
+            let Some(item) = items
+                .get(i)
+                .and_then(|it| it.as_object()?.values().next().cloned())
+            else {
+                return Some("no result for this item".to_string());
+            };
+            let status = item.get("status").and_then(Value::as_u64).unwrap_or(0);
+            if (200..300).contains(&status) || status == 409 {
+                return None;
+            }
+            let reason = item
+                .get("error")
+                .and_then(|e| e.get("reason").or_else(|| e.get("type")))
+                .and_then(Value::as_str)
+                .unwrap_or("rejected");
+            Some(format!("HTTP {status}: {}", truncate(reason, 300)))
+        })
+        .collect()
+}
+
+/// Whether a response means the request was accepted. Splunk HEC answers 200 with an error
+/// code in some setups, so its body is checked too; Elastic `_bulk` items are checked one by
+/// one with [`bulk_item_errors`].
 pub fn response_ok(kind: DestinationKind, status: u16, body: &str) -> Result<(), String> {
     if !(200..300).contains(&status) {
         let snippet = truncate(body.trim(), 300);
         return Err(format!("HTTP {status}: {snippet}"));
     }
-    let v: Option<Value> = serde_json::from_str(body).ok();
-    match kind {
-        DestinationKind::Elastic => {
-            if v.as_ref()
-                .and_then(|v| v.get("errors"))
-                .and_then(Value::as_bool)
-                == Some(true)
-            {
-                let reason = v
-                    .as_ref()
-                    .and_then(|v| v.get("items"))
-                    .and_then(Value::as_array)
-                    .and_then(|items| {
-                        items.iter().find_map(|i| {
-                            i.as_object()?
-                                .values()
-                                .next()?
-                                .get("error")?
-                                .get("reason")?
-                                .as_str()
-                                .map(str::to_string)
-                        })
-                    })
-                    .unwrap_or_else(|| "some documents were rejected".into());
-                return Err(format!("bulk errors: {}", truncate(&reason, 300)));
-            }
-        }
-        DestinationKind::SplunkHec => {
-            if let Some(code) = v
+    if kind == DestinationKind::SplunkHec {
+        let v: Option<Value> = serde_json::from_str(body).ok();
+        let code = v
+            .as_ref()
+            .and_then(|v| v.get("code"))
+            .and_then(Value::as_i64);
+        if let Some(code) = code.filter(|&c| c != 0) {
+            let text = v
                 .as_ref()
-                .and_then(|v| v.get("code"))
-                .and_then(Value::as_i64)
-            {
-                if code != 0 {
-                    let text = v
-                        .as_ref()
-                        .and_then(|v| v.get("text"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("rejected");
-                    return Err(format!("HEC code {code}: {text}"));
-                }
-            }
+                .and_then(|v| v.get("text"))
+                .and_then(Value::as_str)
+                .unwrap_or("rejected");
+            return Err(format!("HEC code {code}: {text}"));
         }
-        _ => {}
     }
     Ok(())
 }
 
 // ─── HTTP ────────────────────────────────────────────────────────────────────
 
-/// POST `body` to `url` (pure-Rust `ureq` + rustls). Returns the status and body for any HTTP
-/// answer, including 4xx/5xx; `Err` only when no answer came back.
+/// Send `body` to `url` with `method` (pure-Rust `ureq` + rustls). Returns the status and body
+/// for any HTTP answer, including 4xx/5xx; `Err` only when no answer came back. Redirects are
+/// not followed, so credentials never reach a host the destination did not name.
 #[cfg(feature = "online")]
-pub fn http_post(
+pub fn http_send(
+    method: &str,
     url: &str,
     headers: &[(String, String)],
     content_type: &str,
@@ -1411,7 +1569,7 @@ pub fn http_post(
         .user_agent(concat!("PacketPilot/", env!("CARGO_PKG_VERSION"), " push"))
         .redirects(0)
         .build();
-    let mut req = agent.post(url).set("Content-Type", content_type);
+    let mut req = agent.request(method, url).set("Content-Type", content_type);
     for (k, v) in headers {
         req = req.set(k, v);
     }
@@ -1583,8 +1741,7 @@ mod tests {
         assert!(DestinationFile::parse(dup)
             .unwrap_err()
             .contains("duplicate"));
-        let jira =
-            r#"{"destinations":[{"name":"j","kind":"jira","url":"https://x","token_env":"T"}]}"#;
+        let jira = r#"{"destinations":[{"name":"j","kind":"jira","url":"https://x","token_env":"PPCAP_T"}]}"#;
         assert!(DestinationFile::parse(jira)
             .unwrap_err()
             .contains("project"));
@@ -1596,6 +1753,10 @@ mod tests {
         assert!(DestinationFile::parse(env)
             .unwrap_err()
             .contains("environment variable name"));
+        let foreign = r#"{"destinations":[{"name":"w","kind":"webhook","url":"https://x","token_env":"AWS_SECRET_ACCESS_KEY"}]}"#;
+        assert!(DestinationFile::parse(foreign)
+            .unwrap_err()
+            .contains("PPCAP_"));
         let http = r#"{"destinations":[{"name":"w","kind":"webhook","url":"http://siem.corp/x"}]}"#;
         assert!(DestinationFile::parse(http)
             .unwrap_err()
@@ -1740,7 +1901,7 @@ mod tests {
         let p = build_payloads(&out, &d, &[&out.summary.alerts[0]], 0);
         assert_eq!(p[0].path, "/api/v1/alert");
         let v: Value = serde_json::from_str(&p[0].body).unwrap();
-        assert_eq!(v["sourceRef"], "alert:1");
+        assert_eq!(v["sourceRef"], format!("alert:1@{}", "ab".repeat(8)));
         assert_eq!(v["severity"], 3);
         assert_eq!(v["date"], 1_700_000_000_000i64);
         let obs = v["observables"].as_array().unwrap();
@@ -1781,6 +1942,10 @@ mod tests {
             .lines()
             .map(|l| serde_json::from_str(l).unwrap())
             .collect();
+        assert_eq!(
+            lines[0]["create"]["_id"],
+            format!("alert:1@{}", "ab".repeat(8))
+        );
         assert_eq!(
             lines[0]["create"]["_index"],
             "logs-packetpilot.alert-default"
@@ -1857,15 +2022,16 @@ mod tests {
     fn ledger_skips_repeats_and_resends_escalations() {
         let out = output();
         let mut a = out.summary.alerts[1].clone();
+        let k = delivery_key(&out, &a);
         let mut l = PushLedger::default();
-        assert_eq!(l.decide("jira", &a), SendDecision::New);
-        l.record("jira", &a, 100, Some("SEC-7".into()));
-        assert_eq!(l.decide("jira", &a), SendDecision::AlreadySent);
-        assert_eq!(l.decide("slack", &a), SendDecision::New);
+        assert_eq!(l.decide("jira", &k, &a), SendDecision::New);
+        l.record("jira", &k, &a, 100, Some("SEC-7".into()));
+        assert_eq!(l.decide("jira", &k, &a), SendDecision::AlreadySent);
+        assert_eq!(l.decide("slack", &k, &a), SendDecision::New);
         a.band = PriorityBand::ActNow;
-        assert_eq!(l.decide("jira", &a), SendDecision::Escalated);
-        l.record("jira", &a, 200, None);
-        let e = l.entry("jira", &a.id).unwrap();
+        assert_eq!(l.decide("jira", &k, &a), SendDecision::Escalated);
+        l.record("jira", &k, &a, 200, None);
+        let e = l.entry("jira", &k).unwrap();
         assert_eq!((e.sent_at, e.band), (200, PriorityBand::ActNow));
         assert_eq!(
             e.reference.as_deref(),
@@ -1874,6 +2040,95 @@ mod tests {
         );
         let text = serde_json::to_string(&l).unwrap();
         assert_eq!(PushLedger::parse(&text).unwrap(), l);
+    }
+
+    #[test]
+    fn delivery_keys_separate_captures_and_survive_reruns() {
+        let out = output();
+        let a = &out.summary.alerts[0];
+        assert_eq!(capture_id(&out), "ab".repeat(8));
+        assert_eq!(delivery_key(&out, a), format!("alert:1@{}", "ab".repeat(8)));
+        // Without a hash the identity comes from path, size and time span: stable per analysis,
+        // different for another capture of the same host.
+        let mut unhashed = out.clone();
+        unhashed.source_sha256 = None;
+        let k1 = delivery_key(&unhashed, a);
+        assert_eq!(k1, delivery_key(&unhashed.clone(), a));
+        let mut other = unhashed.clone();
+        other.source_path = "/cases/acme/host5-day2.pcap".into();
+        assert_ne!(k1, delivery_key(&other, a));
+        assert!(k1.starts_with("alert:1@") && k1.len() == "alert:1@".len() + 16);
+    }
+
+    #[test]
+    fn escalations_update_the_existing_ticket() {
+        let out = output();
+        let a = &out.summary.alerts[0];
+        let j = escalation_payload(&out, &dest(DestinationKind::Jira), a, "SEC-7").unwrap();
+        assert_eq!(
+            (j.method.as_str(), j.path.as_str()),
+            ("POST", "/rest/api/2/issue/SEC-7/comment")
+        );
+        let body: Value = serde_json::from_str(&j.body).unwrap();
+        assert!(body["body"]
+            .as_str()
+            .unwrap()
+            .starts_with("*Escalated by PacketPilot to ACT NOW*"));
+        let t = escalation_payload(&out, &dest(DestinationKind::Thehive), a, "~4096").unwrap();
+        assert_eq!(
+            (t.method.as_str(), t.path.as_str()),
+            ("PATCH", "/api/v1/alert/~4096")
+        );
+        let body: Value = serde_json::from_str(&t.body).unwrap();
+        assert_eq!(body["severity"], 3);
+        // Kinds without tickets, and references that cannot go in a path, fall back to create.
+        assert!(escalation_payload(&out, &dest(DestinationKind::Slack), a, "x").is_none());
+        assert!(escalation_payload(&out, &dest(DestinationKind::Jira), a, "../admin").is_none());
+        assert!(escalation_payload(&out, &dest(DestinationKind::Jira), a, "").is_none());
+    }
+
+    #[test]
+    fn redact_hides_secret_urls_and_tokens() {
+        let env = |k: &str| match k {
+            "PPCAP_SLACK_WEBHOOK_URL" => {
+                Some("https://hooks.slack.com/services/T0/B0/s3cr3t".into())
+            }
+            "PPCAP_SPLUNK_HEC_TOKEN" => Some("hec-token-123".into()),
+            _ => None,
+        };
+        let s = resolve_target(&dest(DestinationKind::Slack), &env).unwrap();
+        let e = "https://hooks.slack.com/services/T0/B0/s3cr3t: Connection refused";
+        assert_eq!(s.redact(e), "$PPCAP_SLACK_WEBHOOK_URL: Connection refused");
+        assert_eq!(
+            s.redact("no_service for services/T0/B0/s3cr3t"),
+            "no_service for ***"
+        );
+        let h = resolve_target(&dest(DestinationKind::SplunkHec), &env).unwrap();
+        assert_eq!(h.redact("bad token hec-token-123"), "bad token ***");
+        assert_eq!(
+            h.redact("https://splunk.example.org:8088 down"),
+            "https://splunk.example.org:8088 down"
+        );
+    }
+
+    #[test]
+    fn bulk_items_are_judged_one_by_one() {
+        let body = r#"{"errors":true,"items":[
+            {"create":{"status":201}},
+            {"create":{"status":409,"error":{"type":"version_conflict_engine_exception"}}},
+            {"create":{"status":400,"error":{"reason":"mapper_parsing_exception"}}}]}"#;
+        let r = bulk_item_errors(body, 3);
+        assert_eq!(r[0], None);
+        assert_eq!(r[1], None, "already stored by an earlier run");
+        assert!(r[2]
+            .as_deref()
+            .unwrap()
+            .contains("mapper_parsing_exception"));
+        assert_eq!(
+            bulk_item_errors(r#"{"errors":false,"items":[]}"#, 2),
+            vec![None, None]
+        );
+        assert!(bulk_item_errors(r#"{"errors":true,"items":[]}"#, 1)[0].is_some());
     }
 
     #[test]
@@ -1891,10 +2146,6 @@ mod tests {
         assert!(response_ok(DestinationKind::Jira, 400, r#"{"errors":{}}"#)
             .unwrap_err()
             .starts_with("HTTP 400"));
-        let bulk = r#"{"errors":true,"items":[{"create":{"status":400,"error":{"reason":"mapper_parsing_exception"}}}]}"#;
-        assert!(response_ok(DestinationKind::Elastic, 200, bulk)
-            .unwrap_err()
-            .contains("mapper_parsing_exception"));
         assert!(response_ok(DestinationKind::Elastic, 200, r#"{"errors":false}"#).is_ok());
         assert!(response_ok(
             DestinationKind::SplunkHec,

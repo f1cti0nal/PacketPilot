@@ -133,6 +133,9 @@ cargo run -p ppcap-cli --release -- push out.json -d destinations.json --to elas
 A destination in `destinations.json` never holds a secret: it names the environment variable
 that does (`url_env` for Slack / Teams webhook URLs, `token_env`, and `user_env` for Jira Cloud or
 Elastic basic auth), and unknown keys are rejected, so the file is safe to commit for a team.
+Only variables starting with `PPCAP_` can be named, so a shared file can never read an unrelated
+credential from your shell. Review a destinations file you did not write before running it: its
+URLs decide where your `PPCAP_` tokens are sent.
 
 ```json
 {
@@ -149,8 +152,11 @@ Elastic basic auth), and unknown keys are rejected, so the file is safe to commi
 Slack and Teams get one digest per 10 alerts; Jira gets one issue and TheHive one alert per
 PacketPilot alert (with the narrative, next step and incident timeline, each row carrying its
 capture filter); Splunk HEC, Elastic `_bulk` and OCSF get batched events. Deliveries are recorded
-in `push-ledger.json` beside the destinations file (with the Jira key or TheHive id), so a re-run
-sends only new alerts, plus any whose band rose since; `--resend` overrides that.
+in `push-ledger.json` beside the destinations file (with the Jira key or TheHive id), keyed by
+alert and capture, after every request. A re-run of the same analysis sends only what has not gone
+yet; the same host flagged again in a new capture is a new delivery; an alert whose band rose
+since is sent again, and for Jira and TheHive that updates the existing ticket (a comment, a
+severity bump) instead of opening a second one. `--resend` overrides the ledger.
 
 To connect an agent, add PacketPilot to its MCP config (Claude Desktop's
 `claude_desktop_config.json` shown; Claude Code: `claude mcp add packetpilot -- ppcap mcp <capture>`):
