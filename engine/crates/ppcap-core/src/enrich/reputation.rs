@@ -331,6 +331,7 @@ mod apply_tests {
             severity_counts: SeverityCounts::default(),
             ip_threats: threats,
             ioc_ips: vec![],
+            ioc_ips_truncated: false,
             domain_threats: Vec::new(),
             http_hosts: Vec::new(),
             user_agents: Vec::new(),

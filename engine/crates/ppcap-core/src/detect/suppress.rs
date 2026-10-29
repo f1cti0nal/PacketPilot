@@ -286,8 +286,11 @@ fn block_reason(summary: &Summary, f: &Finding) -> Option<BlockReason> {
     let cards: Vec<_> = endpoints()
         .filter_map(|ip| summary.ip_threats.iter().find(|c| c.ip == ip))
         .collect();
-    // `ioc_ips` is uncapped; the cards are a top-K projection an IOC host can fall out of.
-    if cards.iter().any(|c| c.ioc) || endpoints().any(|ip| summary.ioc_ips.iter().any(|i| i == ip))
+    // `ioc_ips` survives the top-K card cut; if even it overflowed, fail closed — a rule may
+    // never hide a finding whose host could be an IOC hit we no longer know about.
+    if summary.ioc_ips_truncated
+        || cards.iter().any(|c| c.ioc)
+        || endpoints().any(|ip| summary.ioc_ips.iter().any(|i| i == ip))
     {
         return Some(BlockReason::ThreatIntel);
     }
@@ -629,6 +632,14 @@ mod tests {
             SuppressionOutcome::Blocked(BlockReason::ThreatIntel)
         );
         assert_eq!(s.alerts.len(), 1);
+        // An overflowed IOC set fails closed for every finding.
+        s.ioc_ips.clear();
+        s.ioc_ips_truncated = true;
+        apply_suppressions(&mut s, vec![rule("beacon", None, None, None)]);
+        assert_eq!(
+            s.suppressions[0].outcome,
+            SuppressionOutcome::Blocked(BlockReason::ThreatIntel)
+        );
     }
 
     #[test]

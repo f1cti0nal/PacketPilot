@@ -379,6 +379,10 @@ pub struct Summary {
     /// this. `#[serde(default)]` keeps older summaries readable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ioc_ips: Vec<String>,
+    /// `ioc_ips` hit its bound and is incomplete — the suppression guardrail then fails closed.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ioc_ips_truncated: bool,
     /// Top TLS SNI hosts by traffic. `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub domain_threats: Vec<DomainThreat>,
@@ -484,6 +488,7 @@ impl Summary {
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),
             ioc_ips: Vec::new(),
+            ioc_ips_truncated: false,
             domain_threats: Vec::new(),
             http_hosts: Vec::new(),
             user_agents: Vec::new(),
