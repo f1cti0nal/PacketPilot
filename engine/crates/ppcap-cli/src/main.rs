@@ -4,6 +4,7 @@
 mod cli;
 mod mcp;
 mod push;
+mod zeek;
 
 fn main() -> std::process::ExitCode {
     cli::run()

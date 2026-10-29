@@ -33,7 +33,7 @@ use crate::flow::{FlowConfig, FlowTable};
 use crate::forecast::{detect_traffic_anomalies, ForecastParams};
 use crate::model::flow::FlowRecord;
 use crate::model::output::AnalysisOutput;
-use crate::model::packet::Transport;
+use crate::model::packet::{PacketMeta, Transport};
 use crate::reader::PacketSource;
 use crate::score::score_flow;
 use crate::stats::{StatsAccumulator, StatsConfig};
@@ -195,6 +195,18 @@ pub fn run(
     cfg: &PipelineConfig,
     progress: impl FnMut(u64, u64, Option<u64>),
 ) -> Result<AnalysisOutput> {
+    struct NoVisitor;
+    impl CaptureVisitor for NoVisitor {}
+    run_observing(path, cfg, &mut NoVisitor, progress)
+}
+
+/// [`run`], showing the analysis pass to a [`CaptureVisitor`] (see [`run_source_observing`]).
+pub fn run_observing(
+    path: &Path,
+    cfg: &PipelineConfig,
+    visitor: &mut dyn CaptureVisitor,
+    progress: impl FnMut(u64, u64, Option<u64>),
+) -> Result<AnalysisOutput> {
     // 1. Provenance from the filesystem. `source_bytes` is the on-disk size; for a
     //    gzip-wrapped capture this is the compressed size, which is the correct on-disk
     //    figure to report (the decompressed byte count is not a file-level property).
@@ -212,7 +224,7 @@ pub fn run(
     // 3. Open the (possibly gunzip-wrapped) source and run the single analysis pass.
     let source = crate::reader::open(path)?;
     let label = path.display().to_string();
-    let mut out = run_source(source, &label, source_bytes, cfg, progress)?;
+    let mut out = run_source_observing(source, &label, source_bytes, cfg, visitor, progress)?;
 
     // 4. Decorate with provenance the streaming pass cannot know.
     out.source_sha256 = source_sha256;
@@ -260,6 +272,63 @@ pub fn run_source_visiting<'a>(
     source_bytes: u64,
     cfg: &PipelineConfig,
     on_flow: &mut dyn FnMut(&FlowRecord),
+    progress: impl FnMut(u64, u64, Option<u64>),
+) -> Result<AnalysisOutput> {
+    struct FlowFn<'f>(&'f mut dyn FnMut(&FlowRecord));
+    impl CaptureVisitor for FlowFn<'_> {
+        fn flow(&mut self, record: &FlowRecord) {
+            (self.0)(record)
+        }
+    }
+    run_source_observing(
+        source,
+        source_label,
+        source_bytes,
+        cfg,
+        &mut FlowFn(on_flow),
+        progress,
+    )
+}
+
+/// One decoded packet as a [`CaptureVisitor`] sees it, during the analysis pass.
+pub struct PacketView<'a> {
+    pub meta: &'a PacketMeta,
+    /// The L4 payload bytes (TCP/UDP data after the header); empty when there are none.
+    pub payload: &'a [u8],
+    /// The IP datagram length from the IP header (IPv4 total length, IPv6 payload length + 40),
+    /// which unlike `meta.wire_len` excludes the link header and padding; `None` for non-IP.
+    pub ip_len: Option<u32>,
+    /// The packet's flow, its direction relative to that key, and the flow instance's
+    /// [`FlowRecord::opened_ts_ns`]: `(key, opened_ts_ns)` is the same pair the visitor later
+    /// sees on the finalized record, so per-packet state can be joined to its flow.
+    pub flow: Option<(
+        crate::model::flow::FlowKey,
+        crate::model::flow::Direction,
+        i64,
+    )>,
+}
+
+/// Observes the analysis pass: every decoded packet (opt-in) and every finalized flow record.
+/// This is the seam for exporters that need more than the summary, such as Zeek logs.
+pub trait CaptureVisitor {
+    /// Whether [`CaptureVisitor::packet`] should be called. Off by default, so a flow-only
+    /// visitor costs nothing per packet.
+    fn wants_packets(&self) -> bool {
+        false
+    }
+    /// One decoded packet, before it is folded into its flow.
+    fn packet(&mut self, _packet: &PacketView<'_>) {}
+    /// One finalized flow record, after classify, enrich and score (see [`run_source_visiting`]).
+    fn flow(&mut self, _record: &FlowRecord) {}
+}
+
+/// [`run_source_visiting`] with a [`CaptureVisitor`] that can also see each packet.
+pub fn run_source_observing<'a>(
+    source: Box<dyn PacketSource + 'a>,
+    source_label: &str,
+    source_bytes: u64,
+    cfg: &PipelineConfig,
+    visitor: &mut dyn CaptureVisitor,
     mut progress: impl FnMut(u64, u64, Option<u64>),
 ) -> Result<AnalysisOutput> {
     if cfg.evict_interval_pkts == 0 {
@@ -321,6 +390,7 @@ pub fn run_source_visiting<'a>(
     let scan_threshold = cfg.classify.scan_port_threshold;
     let mut sink_err: Option<PpError> = None;
 
+    let wants_packets = visitor.wants_packets();
     let mut pkts: u64 = 0;
     let mut bytes: u64 = 0;
     // Monotonic high-water packet clock used to drive idle/active flow expiry. A single
@@ -350,6 +420,9 @@ pub fn run_source_visiting<'a>(
                     identity.observe(meta, &frame);
                     body_carver.observe(meta, &frame);
                     entropy.observe(meta, &frame);
+                    if wants_packets {
+                        visit_packet(visitor, meta, &frame, &flow);
+                    }
                 }
                 (hdr, decode_result)
             }
@@ -494,7 +567,7 @@ pub fn run_source_visiting<'a>(
                 &mut tracker,
                 &mut entropy,
                 &mut writer,
-                on_flow,
+                visitor,
                 &mut sink_err,
             );
             if let Some(e) = sink_err.take() {
@@ -515,7 +588,7 @@ pub fn run_source_visiting<'a>(
         &mut tracker,
         &mut entropy,
         &mut writer,
-        on_flow,
+        visitor,
         &mut sink_err,
     );
     if let Some(e) = sink_err.take() {
@@ -806,7 +879,7 @@ fn process_flow(
     tracker: &mut BehaviorTracker,
     entropy: &mut crate::entropy::EntropySampler,
     writer: &mut Option<FlowParquetWriter>,
-    on_flow: &mut dyn FnMut(&FlowRecord),
+    visitor: &mut dyn CaptureVisitor,
     sink_err: &mut Option<PpError>,
 ) {
     // Drain this flow's payload-entropy sample BEFORE classify, so the classifier's
@@ -969,7 +1042,38 @@ fn process_flow(
     }
 
     // Hand the finalized record to the in-memory visitor (no-op for the native path).
-    on_flow(record);
+    visitor.flow(record);
+}
+
+/// Build the [`PacketView`] for one decoded packet and hand it to the visitor.
+fn visit_packet(
+    visitor: &mut dyn CaptureVisitor,
+    meta: &PacketMeta,
+    frame: &crate::reader::RawFrame<'_>,
+    flow: &FlowTable,
+) {
+    let payload = crate::decode::l4_payload(frame)
+        .map(|l4| l4.payload)
+        .unwrap_or(&[]);
+    let ip_len =
+        crate::decode::l2::strip_to_l3(frame.link_type, frame.data).and_then(|l3| {
+            match l3.first().map(|b| b >> 4) {
+                Some(4) if l3.len() >= 4 => Some(u32::from(u16::from_be_bytes([l3[2], l3[3]]))),
+                Some(6) if l3.len() >= 6 => {
+                    Some(u32::from(u16::from_be_bytes([l3[4], l3[5]])) + 40)
+                }
+                _ => None,
+            }
+        });
+    // A packet with no open flow opens one at its own timestamp (see `FlowTable::observe`).
+    let flow = crate::model::flow::FlowKey::from_packet(meta)
+        .map(|(key, dir)| (key, dir, flow.opened_ts(&key).unwrap_or(meta.ts_ns)));
+    visitor.packet(&PacketView {
+        meta,
+        payload,
+        ip_len,
+        flow,
+    });
 }
 
 /// Drive periodic idle/active + cap eviction.
@@ -985,7 +1089,7 @@ fn evict(
     tracker: &mut BehaviorTracker,
     entropy: &mut crate::entropy::EntropySampler,
     writer: &mut Option<FlowParquetWriter>,
-    on_flow: &mut dyn FnMut(&FlowRecord),
+    visitor: &mut dyn CaptureVisitor,
     sink_err: &mut Option<PpError>,
 ) {
     flow.evict_expired(now_ns, |mut record| {
@@ -999,7 +1103,7 @@ fn evict(
             tracker,
             entropy,
             writer,
-            on_flow,
+            visitor,
             sink_err,
         );
     });
@@ -1017,7 +1121,7 @@ fn drain(
     tracker: &mut BehaviorTracker,
     entropy: &mut crate::entropy::EntropySampler,
     writer: &mut Option<FlowParquetWriter>,
-    on_flow: &mut dyn FnMut(&FlowRecord),
+    visitor: &mut dyn CaptureVisitor,
     sink_err: &mut Option<PpError>,
 ) {
     flow.drain_all(|mut record| {
@@ -1031,7 +1135,7 @@ fn drain(
             tracker,
             entropy,
             writer,
-            on_flow,
+            visitor,
             sink_err,
         );
     });

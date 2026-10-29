@@ -14,6 +14,7 @@
 //! many contacts a flow makes.
 
 pub mod alerts;
+pub mod eve;
 pub mod rules;
 pub mod suppress;
 pub mod timeline;

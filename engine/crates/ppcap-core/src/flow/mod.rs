@@ -257,6 +257,12 @@ impl FlowTable {
         Some(key)
     }
 
+    /// The opening timestamp ([`FlowRecord::opened_ts_ns`]) of the live flow for `key`, or `None`
+    /// when no flow is open for it (the next packet on `key` opens one at its own timestamp).
+    pub fn opened_ts(&self, key: &FlowKey) -> Option<i64> {
+        self.map.get(key).map(|live| live.record.opened_ts_ns)
+    }
+
     /// Whether a flow is expired relative to `now_ns` (idle OR active timeout).
     fn is_expired(&self, rec: &FlowRecord, now_ns: i64) -> bool {
         let idle = self.config.idle_timeout_ns;
