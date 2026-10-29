@@ -129,6 +129,16 @@ pub enum Command {
         /// metadata rather than detection and stays on.
         #[arg(long = "no-encrypted-analysis")]
         no_encrypted_analysis: bool,
+        /// Windows identity attacks: disable the Kerberos / DCE-RPC / LDAP parsers and their
+        /// detectors. They are ON by default, raising `kerberoasting`, `asrep_roasting`, `dcsync`,
+        /// `ad_recon`, and `legacy_auth` findings.
+        #[arg(long = "no-identity")]
+        no_identity: bool,
+        /// Windows identity attacks: known domain controllers (comma-separated IPs), in addition to
+        /// the ones inferred from the capture. Replication from a DC is never reported as DCSync —
+        /// list a directory-sync server here too if it should not be.
+        #[arg(long = "dc", value_delimiter = ',')]
+        dc: Vec<std::net::IpAddr>,
         /// Key-log decryption: an NSS `SSLKEYLOGFILE` (as written by browsers/curl/OpenSSL). TLS 1.2
         /// / 1.3 flows whose ClientHello random has secrets in it are decrypted in one extra bounded
         /// pass, and the cleartext HTTP transactions + carved files are reported under `keylog` in
@@ -691,6 +701,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             update_baseline,
             no_forecast,
             no_encrypted_analysis,
+            no_identity,
+            dc,
             forecast_z,
             forecast_min_bins,
             evidence,
@@ -799,6 +811,13 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     enabled: !no_encrypted_analysis,
                     ..Default::default()
                 },
+                // Windows identity attacks: on by default; `--no-identity` opts out, `--dc` adds
+                // domain controllers to the inferred set.
+                identity: ppcap_core::IdentityParams {
+                    enabled: !no_identity,
+                    domain_controllers: dc.clone(),
+                    ..Default::default()
+                },
                 keylog,
                 ..Default::default()
             };
@@ -897,6 +916,27 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         "encrypted-traffic: {n_eta} finding{}",
                         if n_eta == 1 { "" } else { "s" }
                     );
+                }
+            }
+
+            if !no_identity && !quiet {
+                let n = out
+                    .summary
+                    .findings
+                    .iter()
+                    .filter(|f| {
+                        matches!(
+                            f.kind,
+                            ppcap_core::FindingKind::Kerberoasting
+                                | ppcap_core::FindingKind::AsrepRoasting
+                                | ppcap_core::FindingKind::DcSync
+                                | ppcap_core::FindingKind::AdRecon
+                                | ppcap_core::FindingKind::LegacyAuth
+                        )
+                    })
+                    .count();
+                if n > 0 {
+                    eprintln!("identity: {n} finding{}", if n == 1 { "" } else { "s" });
                 }
             }
 
@@ -1124,6 +1164,13 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 }
                 if no_encrypted_analysis {
                     settings.push("--no-encrypted-analysis".to_string());
+                }
+                if no_identity {
+                    settings.push("--no-identity".to_string());
+                }
+                if !dc.is_empty() {
+                    let ips: Vec<String> = dc.iter().map(|i| i.to_string()).collect();
+                    settings.push(format!("--dc {}", ips.join(",")));
                 }
                 if let (Some(p), Some((sha, _))) = (keylog_path.as_ref(), keylog_digest.as_ref()) {
                     settings.push(format!("--keylog {} (sha256 {sha})", p.display()));
@@ -2007,6 +2054,42 @@ mod reputation_cli_tests {
             }
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn analyze_identity_flags_parse() {
+        let on = Cli::try_parse_from(["ppcap", "analyze", "x.pcap"]).unwrap();
+        match on.command {
+            Command::Analyze {
+                no_identity, dc, ..
+            } => {
+                assert!(!no_identity);
+                assert!(dc.is_empty());
+            }
+            _ => panic!("expected Analyze"),
+        }
+        let off = Cli::try_parse_from([
+            "ppcap",
+            "analyze",
+            "x.pcap",
+            "--no-identity",
+            "--dc",
+            "10.0.0.10,10.0.0.11",
+            "--dc",
+            "fd00::1",
+        ])
+        .unwrap();
+        match off.command {
+            Command::Analyze {
+                no_identity, dc, ..
+            } => {
+                assert!(no_identity);
+                let dc: Vec<String> = dc.iter().map(|i| i.to_string()).collect();
+                assert_eq!(dc, vec!["10.0.0.10", "10.0.0.11", "fd00::1"]);
+            }
+            _ => panic!("expected Analyze"),
+        }
+        assert!(Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--dc", "nope"]).is_err());
     }
 
     #[test]

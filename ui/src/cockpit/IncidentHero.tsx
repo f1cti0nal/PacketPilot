@@ -39,6 +39,11 @@ const KIND_STAGE: Record<FindingKind, string> = {
   missing_sni: "Command & Control",
   port_protocol_mismatch: "Command & Control",
   ssh_posture: "Credential Access",
+  kerberoasting: "Credential Access",
+  asrep_roasting: "Credential Access",
+  dcsync: "Credential Access",
+  ad_recon: "Discovery",
+  legacy_auth: "Credential Access",
   ioc_match: "Detection",
 };
 
@@ -59,6 +64,11 @@ const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   malware_download: "files",
   exposed_remote_access: "sessions",
   ics_control_command: "commands",
+  kerberoasting: "ticket requests",
+  asrep_roasting: "accounts",
+  dcsync: "replication calls",
+  ad_recon: "queries",
+  legacy_auth: "weak tickets",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */

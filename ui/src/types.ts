@@ -355,6 +355,11 @@ export type FindingKind =
   | "missing_sni"
   | "port_protocol_mismatch"
   | "ssh_posture"
+  | "kerberoasting"
+  | "asrep_roasting"
+  | "dcsync"
+  | "ad_recon"
+  | "legacy_auth"
   | "ioc_match";
 
 /**

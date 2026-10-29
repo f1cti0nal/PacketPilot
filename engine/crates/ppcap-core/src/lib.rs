@@ -49,6 +49,7 @@ pub mod fingerprint;
 pub mod flow;
 pub mod forecast;
 pub mod gen;
+pub mod identity;
 pub mod metrics;
 pub mod model;
 pub mod packets;
@@ -102,6 +103,7 @@ pub use forecast::{
     detect_traffic_anomalies, forecast_next, Anomaly, FlowDir, ForecastInput, ForecastNext,
     ForecastParams, ForecastReport, HostSeries,
 };
+pub use identity::IdentityParams;
 pub use model::alert::{
     Alert, AlertContext, AlertDiff, AlertDiffChange, AlertDiffEntry, AlertSource, ContextEntry,
     ContextKind, HostContext, PeerContext, PriorityBand,

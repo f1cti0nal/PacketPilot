@@ -37,5 +37,7 @@ describe("techniqueName", () => {
     expect(techniqueName("T1071")).toBe("Application Layer Protocol");
     expect(techniqueName("T1110")).toBe("Brute Force");
     expect(techniqueName("T9999")).toBe("T9999");
+    expect(techniqueName("T1558.003")).toBe("Kerberoasting");
+    expect(techniqueName("T1003.006")).toBe("OS Credential Dumping: DCSync");
   });
 });

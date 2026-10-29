@@ -37,6 +37,11 @@ export const KIND_STAGE: Record<FindingKind, string> = {
   missing_sni: "Command & Control",
   port_protocol_mismatch: "Command & Control",
   ssh_posture: "Credential Access",
+  kerberoasting: "Credential Access",
+  asrep_roasting: "Credential Access",
+  dcsync: "Credential Access",
+  ad_recon: "Discovery",
+  legacy_auth: "Credential Access",
 };
 
 /** The noun for a finding kind's contributing count (e.g. "contacts", "hosts"). */
@@ -57,6 +62,11 @@ export const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   malware_download: "files",
   exposed_remote_access: "sessions",
   ics_control_command: "commands",
+  kerberoasting: "ticket requests",
+  asrep_roasting: "accounts",
+  dcsync: "replication calls",
+  ad_recon: "queries",
+  legacy_auth: "weak tickets",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */
@@ -100,6 +110,12 @@ const TECHNIQUE_NAME: Record<string, string> = {
   T1571: "Non-Standard Port",
   T1573: "Encrypted Channel",
   T1027: "Obfuscated Files or Information",
+  T1558: "Steal or Forge Kerberos Tickets",
+  "T1558.003": "Kerberoasting",
+  "T1558.004": "AS-REP Roasting",
+  "T1003.006": "OS Credential Dumping: DCSync",
+  "T1087.002": "Account Discovery: Domain Account",
+  "T1069.002": "Permission Groups Discovery: Domain Groups",
 };
 
 /** Resolve a technique id to its name; unknown ids return the id itself (never throws). */

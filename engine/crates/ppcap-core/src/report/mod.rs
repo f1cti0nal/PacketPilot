@@ -630,6 +630,11 @@ pub(crate) fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::MissingSni => "TLS Without SNI",
         FindingKind::PortProtocolMismatch => "Port / Protocol Mismatch",
         FindingKind::SshPosture => "Weak SSH Posture",
+        FindingKind::Kerberoasting => "Kerberoasting",
+        FindingKind::AsrepRoasting => "AS-REP Roasting",
+        FindingKind::DcSync => "DCSync",
+        FindingKind::AdRecon => "AD Reconnaissance",
+        FindingKind::LegacyAuth => "Legacy Kerberos Crypto",
     }
 }
 
