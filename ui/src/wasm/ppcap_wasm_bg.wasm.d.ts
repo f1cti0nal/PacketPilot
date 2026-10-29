@@ -5,6 +5,7 @@ export const analyze: (a: number, b: number, c: number, d: number) => [number, n
 export const apply_domain_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const apply_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const apply_rules: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const apply_suppressions: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const build_baseline: (a: number, b: number, c: number, d: number, e: bigint) => [number, number, number, number];
 export const carve_pcap: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const compare_to_baseline: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -17,6 +18,7 @@ export const export_stix: (a: number, b: number, c: bigint) => [number, number, 
 export const extract_packets: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const render_report: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number, number];
 export const sanitize: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => [number, number, number, number];
+export const teach_alert: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

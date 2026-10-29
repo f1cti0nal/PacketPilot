@@ -101,6 +101,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn teach_then_apply_suppressions_round_trip() {
+        let mut summary = ppcap_core::Summary::empty();
+        summary.findings = vec![ppcap_core::Finding {
+            kind: ppcap_core::FindingKind::MissingSni,
+            severity: ppcap_core::Severity::Medium,
+            score: 45,
+            title: "missing SNI".into(),
+            src_ip: "10.0.0.5".into(),
+            dst_ip: Some("52.1.1.1".into()),
+            dst_port: Some(443),
+            attack: Vec::new(),
+            evidence: Vec::new(),
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        }];
+        ppcap_core::refresh_alerts(&mut summary);
+        let id = summary.alerts[0].id.clone();
+        let out = ppcap_core::AnalysisOutput {
+            summary,
+            ..Default::default()
+        };
+        let out_json = serde_json::to_string(&out).unwrap();
+        let taught: serde_json::Value = serde_json::from_str(
+            &teach_alert_impl(&out_json, &id, "source", r#"{"reason":"lab box"}"#).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(taught["rules"][0]["src"], "10.0.0.5");
+        let file = serde_json::json!({ "version": 1, "rules": taught["rules"] }).to_string();
+        let res: serde_json::Value =
+            serde_json::from_str(&apply_suppressions_impl(&out_json, &file, "2026-10-29").unwrap())
+                .unwrap();
+        assert_eq!(res["active"], 1);
+        assert_eq!(
+            res["output"]["summary"]["alerts"].as_array().unwrap().len(),
+            0
+        );
+        assert_eq!(
+            res["output"]["summary"]["suppressions"][0]["status"],
+            "suppressed"
+        );
+        assert!(teach_alert_impl(&out_json, &id, "everywhere", "{}").is_err());
+    }
+
+    #[test]
     fn carve_query_dto_maps_flow_and_host() {
         let flow = carve_query_from_dto(CarveQueryDto {
             host: None,
@@ -303,7 +351,10 @@ mod tests {
             .iter()
             .filter(|f| f["kind"] == "baseline_deviation")
             .count();
-        assert!(devs >= 1, "expected a baseline deviation vs the stale baseline");
+        assert!(
+            devs >= 1,
+            "expected a baseline deviation vs the stale baseline"
+        );
     }
 }
 
@@ -431,8 +482,9 @@ pub fn sanitize(
     let key: [u8; 32] = key
         .try_into()
         .map_err(|_| JsValue::from_str("sanitize key must be exactly 32 bytes"))?;
-    let (out, manifest) = ppcap_core::sanitize::sanitize_bytes(bytes, key, &opts, created_unix_secs)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let (out, manifest) =
+        ppcap_core::sanitize::sanitize_bytes(bytes, key, &opts, created_unix_secs)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     #[derive(Serialize)]
     struct SanitizeDto {
@@ -637,6 +689,85 @@ pub fn apply_reputation(output_json: &str, verdicts_json: &str) -> Result<String
         serde_json::from_str(verdicts_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
     ppcap_core::apply_reputation(&mut out.summary, &verdicts);
     serde_json::to_string(&out).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// The result of [`apply_suppressions`]: the re-queued analysis plus the rules that did not
+/// load (so the UI can say why a rule is not taking effect).
+#[derive(serde::Serialize)]
+struct SuppressionApplyResult {
+    output: ppcap_core::AnalysisOutput,
+    active: usize,
+    expired: Vec<ppcap_core::SuppressionRule>,
+    invalid: Vec<(ppcap_core::SuppressionRule, String)>,
+}
+
+fn apply_suppressions_impl(
+    output_json: &str,
+    rules_json: &str,
+    today: &str,
+) -> Result<String, String> {
+    let mut out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| e.to_string())?;
+    let file: ppcap_core::SuppressionFile =
+        serde_json::from_str(rules_json).map_err(|e| e.to_string())?;
+    let today = (!today.is_empty()).then_some(today);
+    let loaded = ppcap_core::load_suppression_rules(std::slice::from_ref(&file), today);
+    let active = loaded.active.len();
+    ppcap_core::apply_suppressions(&mut out.summary, loaded.active);
+    let res = SuppressionApplyResult {
+        output: out,
+        active,
+        expired: loaded.expired,
+        invalid: loaded.invalid,
+    };
+    serde_json::to_string(&res).map_err(|e| e.to_string())
+}
+
+/// "Teach it once": apply an analyst suppression rule file to a completed analysis.
+///
+/// `rules_json` is a `SuppressionFile` (`{ version, rules: [...] }`); `today` is `YYYY-MM-DD`
+/// (rules that expired before it are skipped; `""` disables expiry). The rules replace any the
+/// analysis already carries. Returns `{ output, active, expired, invalid }`. Pure + offline.
+#[wasm_bindgen]
+pub fn apply_suppressions(
+    output_json: &str,
+    rules_json: &str,
+    today: &str,
+) -> Result<String, JsValue> {
+    apply_suppressions_impl(output_json, rules_json, today).map_err(|e| JsValue::from_str(&e))
+}
+
+fn teach_alert_impl(
+    output_json: &str,
+    alert_id: &str,
+    scope: &str,
+    meta_json: &str,
+) -> Result<String, String> {
+    let out: ppcap_core::AnalysisOutput =
+        serde_json::from_str(output_json).map_err(|e| e.to_string())?;
+    let scope: ppcap_core::TeachScope =
+        serde_json::from_value(serde_json::Value::String(scope.to_string()))
+            .map_err(|e| e.to_string())?;
+    let meta: ppcap_core::TeachMeta = serde_json::from_str(meta_json).map_err(|e| e.to_string())?;
+    let taught = ppcap_core::rules_for_alert(&out.summary, alert_id, scope, &meta)
+        .map_err(|e| e.to_string())?;
+    serde_json::to_string(&taught).map_err(|e| e.to_string())
+}
+
+/// "Teach it once": turn "this alert is benign" into suppression rules.
+///
+/// `scope` is `exact` | `source` | `destination`; `meta_json` is `{ reason, author?, created?,
+/// expires? }` (dates `YYYY-MM-DD`). Returns `{ rules, kept }` where `kept` lists
+/// `[finding_index, reason]` members a guardrail keeps visible. Merging into the stored rule
+/// file is the caller's job. Pure + offline.
+#[wasm_bindgen]
+pub fn teach_alert(
+    output_json: &str,
+    alert_id: &str,
+    scope: &str,
+    meta_json: &str,
+) -> Result<String, JsValue> {
+    teach_alert_impl(output_json, alert_id, scope, meta_json).map_err(|e| JsValue::from_str(&e))
 }
 
 /// Apply VirusTotal domain reputation verdicts to a completed analysis. `output_json` is the
