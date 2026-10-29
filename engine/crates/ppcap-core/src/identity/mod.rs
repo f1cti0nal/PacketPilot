@@ -130,6 +130,19 @@ enum Proto {
 
 type StreamKey = (IpAddr, u16, IpAddr, u16);
 
+/// Named-pipe RPC state for one SMB file handle. Each pipe handle has its own presentation-context
+/// numbering, so they cannot share one table.
+#[derive(Debug)]
+struct PipeState {
+    file_id: [u8; 16],
+    contexts: Vec<(u16, Iface)>,
+    /// DCE-RPC bytes carried but not yet forming a complete PDU.
+    buf: Vec<u8>,
+}
+
+/// Named-pipe handles tracked per SMB connection.
+const MAX_PIPES: usize = 32;
+
 #[derive(Debug)]
 struct Stream {
     proto: Proto,
@@ -137,10 +150,10 @@ struct Stream {
     buf: Vec<u8>,
     /// Bytes still to discard (the rest of a message too large to buffer, or an RPC stub).
     skip: usize,
-    /// DCE-RPC presentation contexts bound on this connection (raw RPC, or an SMB named pipe).
+    /// DCE-RPC presentation contexts bound on a raw (ncacn_ip_tcp) RPC connection.
     contexts: Vec<(u16, Iface)>,
-    /// DCE-RPC bytes a named pipe has carried but not yet formed a complete PDU (SMB only).
-    pipe: Vec<u8>,
+    /// Per-file-handle named-pipe RPC state (SMB only).
+    pipes: Vec<PipeState>,
     /// Capture time of the last segment (for idle eviction).
     last_ts: i64,
 }
@@ -153,9 +166,15 @@ impl Stream {
             buf: Vec::new(),
             skip: 0,
             contexts: Vec::new(),
-            pipe: Vec::new(),
+            pipes: Vec::new(),
             last_ts: ts,
         }
+    }
+
+    /// Total bytes this stream holds against the global budget: its reassembly buffer plus every
+    /// named-pipe handle's buffer.
+    fn buffered_len(&self) -> usize {
+        self.buf.len() + self.pipes.iter().map(|p| p.buf.len()).sum::<usize>()
     }
 
     /// Append a segment in sequence order. Retransmissions are trimmed; a gap (lost or
@@ -332,6 +351,8 @@ struct RpcPair {
     bound: BTreeSet<Iface>,
     /// (interface, opnum) -> calls.
     ops: BTreeMap<(Iface, u16), u32>,
+    /// At least one PDU on this pair arrived over an SMB named pipe (vs raw ncacn_ip_tcp).
+    over_smb: bool,
 }
 
 /// Per (client, server, port) cleartext LDAP activity.
@@ -478,7 +499,7 @@ impl IdentityObserver {
             }
             for k in [key, (dst, dport, src, sport)] {
                 if let Some(s) = self.streams.remove(&k) {
-                    self.buffered = self.buffered.saturating_sub(s.buf.len());
+                    self.buffered = self.buffered.saturating_sub(s.buffered_len());
                 }
             }
             return;
@@ -528,7 +549,7 @@ impl IdentityObserver {
         self.streams.retain(|_, s| {
             let keep = now.saturating_sub(s.last_ts) < IDLE_EVICT_NS;
             if !keep {
-                freed += s.buf.len();
+                freed += s.buffered_len();
             }
             keep
         });
@@ -545,7 +566,7 @@ impl IdentityObserver {
         let Some(mut s) = self.streams.remove(&key) else {
             return;
         };
-        let before = s.buf.len();
+        let before = s.buffered_len();
         if self.buffered + info.payload.len() > MAX_TOTAL_BUFFERED {
             // Over the global budget: give this stream up rather than grow.
             self.buffered = self.buffered.saturating_sub(before);
@@ -554,7 +575,6 @@ impl IdentityObserver {
         s.last_ts = s.last_ts.max(meta.ts_ns);
         s.push(info.seq, info.payload);
         let units = drain_units(&mut s);
-        self.buffered = (self.buffered + s.buf.len()).saturating_sub(before);
         let (src, sport, dst, dport) = key;
         let ts = meta.ts_ns;
         for u in units {
@@ -564,10 +584,10 @@ impl IdentityObserver {
                 }
                 (Proto::Ldap, Unit::Msg(m)) => self.on_ldap(&m, src, dst, dport, ts),
                 (Proto::DceRpc, Unit::Msg(m)) => {
-                    self.on_rpc_pdu(&m, &mut s, src, dst, dport, ts);
+                    self.on_rpc_pdu(&m, &mut s.contexts, false, src, dst, dport, ts);
                 }
                 (Proto::DceRpc, Unit::RpcRequestHead(m)) => {
-                    self.on_rpc_pdu(&m, &mut s, src, dst, dport, ts);
+                    self.on_rpc_pdu(&m, &mut s.contexts, false, src, dst, dport, ts);
                 }
                 (Proto::Smb, Unit::Msg(m)) => {
                     self.on_smb(&m[4..], &mut s, src, sport, dst, dport, ts);
@@ -575,6 +595,9 @@ impl IdentityObserver {
                 _ => {}
             }
         }
+        // Account every buffer the stream now holds (reassembly + named-pipe handles); pipe
+        // buffers may have grown while handling the units above.
+        self.buffered = (self.buffered + s.buffered_len()).saturating_sub(before);
         self.streams.insert(key, s);
     }
 
@@ -730,10 +753,15 @@ impl IdentityObserver {
 
     // ---- DCE-RPC ----------------------------------------------------------------------------
 
+    /// Fold one DCE-RPC PDU. `contexts` is the presentation-context table for this channel: the
+    /// whole connection for raw RPC, or one named-pipe handle for `over_smb` RPC (so two pipes
+    /// on one SMB connection that both reuse context 0 do not shadow each other).
+    #[allow(clippy::too_many_arguments)]
     fn on_rpc_pdu(
         &mut self,
         pdu: &[u8],
-        s: &mut Stream,
+        contexts: &mut Vec<(u16, Iface)>,
+        over_smb: bool,
         client: IpAddr,
         server: IpAddr,
         port: u16,
@@ -750,8 +778,12 @@ impl IdentityObserver {
                     return;
                 }
                 for (id, iface) in &ctxs {
-                    if s.contexts.len() < 64 && !s.contexts.iter().any(|(c, _)| c == id) {
-                        s.contexts.push((*id, *iface));
+                    // A rebind of an existing context id replaces the mapping (an alter-context,
+                    // or a fresh bind reusing the id on this handle).
+                    if let Some(slot) = contexts.iter_mut().find(|(c, _)| c == id) {
+                        slot.1 = *iface;
+                    } else if contexts.len() < 64 {
+                        contexts.push((*id, *iface));
                     }
                     if *iface == Iface::Drsuapi && self.drs_servers.len() < MAX_KEYS {
                         self.drs_servers.insert(server);
@@ -762,13 +794,14 @@ impl IdentityObserver {
                 }
                 let p = self.rpc.entry(key).or_default();
                 p.span.see(ts);
+                p.over_smb |= over_smb;
                 p.bound.extend(ctxs.iter().map(|(_, i)| *i));
             }
             dcerpc::PTYPE_REQUEST => {
                 let Some((ctx, op)) = dcerpc::request_op(pdu, &h) else {
                     return;
                 };
-                let Some(&(_, iface)) = s.contexts.iter().find(|(c, _)| *c == ctx) else {
+                let Some(&(_, iface)) = contexts.iter().find(|(c, _)| *c == ctx) else {
                     return;
                 };
                 if !self.rpc.contains_key(&key) && self.rpc.len() >= MAX_KEYS {
@@ -776,6 +809,7 @@ impl IdentityObserver {
                 }
                 let p = self.rpc.entry(key).or_default();
                 p.span.see(ts);
+                p.over_smb |= over_smb;
                 if p.ops.len() < 256 || p.ops.contains_key(&(iface, op)) {
                     *p.ops.entry((iface, op)).or_default() += 1;
                 }
@@ -883,9 +917,9 @@ impl IdentityObserver {
                     }
                 }
             }
-            smb2::SmbEvent::PipeData(data) => {
+            smb2::SmbEvent::PipeData { file_id, data } => {
                 if !is_response {
-                    self.on_pipe_rpc(data, s, client, server, 445, ts);
+                    self.on_pipe_rpc(file_id, data, s, client, server, 445, ts);
                 }
             }
             smb2::SmbEvent::Other => {}
@@ -901,9 +935,12 @@ impl IdentityObserver {
         Some(self.smb.entry(key).or_default())
     }
 
-    /// Feed DCE-RPC bytes a named pipe carried into the same RPC logic as raw-port RPC.
+    /// Feed DCE-RPC bytes a named pipe carried into the same RPC logic as raw-port RPC, keyed by
+    /// the SMB file handle so two pipes on one connection keep separate context tables.
+    #[allow(clippy::too_many_arguments)]
     fn on_pipe_rpc(
         &mut self,
+        file_id: [u8; 16],
         data: &[u8],
         s: &mut Stream,
         client: IpAddr,
@@ -911,26 +948,48 @@ impl IdentityObserver {
         port: u16,
         ts: i64,
     ) {
-        if s.pipe.len() + data.len() > MAX_MSG {
-            s.pipe.clear();
+        let idx = match s.pipes.iter().position(|p| p.file_id == file_id) {
+            Some(i) => i,
+            None => {
+                if s.pipes.len() >= MAX_PIPES {
+                    return;
+                }
+                s.pipes.push(PipeState {
+                    file_id,
+                    contexts: Vec::new(),
+                    buf: Vec::new(),
+                });
+                s.pipes.len() - 1
+            }
+        };
+        if s.pipes[idx].buf.len() + data.len() > MAX_MSG {
+            s.pipes[idx].buf.clear();
             if data.len() > MAX_MSG {
                 return;
             }
         }
-        s.pipe.extend_from_slice(data);
+        s.pipes[idx].buf.extend_from_slice(data);
         loop {
-            match dcerpc::header(&s.pipe) {
+            match dcerpc::header(&s.pipes[idx].buf) {
                 Ok(h) => {
                     let n = usize::from(h.frag_len);
-                    if s.pipe.len() < n {
+                    if s.pipes[idx].buf.len() < n {
                         break;
                     }
-                    let pdu: Vec<u8> = s.pipe.drain(..n).collect();
-                    self.on_rpc_pdu(&pdu, s, client, server, port, ts);
+                    let pdu: Vec<u8> = s.pipes[idx].buf.drain(..n).collect();
+                    self.on_rpc_pdu(
+                        &pdu,
+                        &mut s.pipes[idx].contexts,
+                        true,
+                        client,
+                        server,
+                        port,
+                        ts,
+                    );
                 }
                 Err(true) => break,
                 Err(false) => {
-                    s.pipe.clear();
+                    s.pipes[idx].buf.clear();
                     break;
                 }
             }
@@ -1480,18 +1539,28 @@ fn remote_service_exec(
         return None;
     }
 
-    let mut attack = vec!["T1021.002"]; // SMB/Windows admin shares
+    // T1021.002 (SMB / Windows admin shares) applies only when the RPC rode an SMB named pipe;
+    // the same calls over raw ncacn_ip_tcp are service/task execution without an admin-share hop.
+    let mut attack = Vec::new();
+    if p.over_smb {
+        attack.push("T1021.002");
+    }
+    let channel = if p.over_smb {
+        "over a named pipe"
+    } else {
+        "over RPC"
+    };
     let mut evidence = Vec::new();
     if service_exec {
         attack.push("T1569.002"); // service execution
         evidence.push(format!(
-            "created a Windows service on {server} (SVCCTL RCreateService) and started it (RStartServiceW) — the PsExec execution pattern"
+            "created a Windows service on {server} {channel} (SVCCTL RCreateService) and started it (RStartServiceW) — the PsExec execution pattern"
         ));
     }
     if task_register > 0 {
         attack.push("T1053.005"); // scheduled task
         evidence.push(format!(
-            "registered a scheduled task on {server} over RPC ({task_register} call{}) — the at / schtasks execution pattern",
+            "registered a scheduled task on {server} {channel} ({task_register} call{}) — the at / schtasks execution pattern",
             if task_register == 1 { "" } else { "s" }
         ));
     }
@@ -1507,7 +1576,7 @@ fn remote_service_exec(
         ));
     }
     evidence.push(
-        "the interface and operation number are in the RPC header, so this is visible even over an encrypted pipe; a payload body is never read".to_string(),
+        "the interface and operation number are in the RPC header, so this is visible even when the call is encrypted; a payload body is never read".to_string(),
     );
     evidence.push(
         "benign for a software-deployment or remote-admin tool (SCCM, a configuration manager); mark it benign if that is what this host does".to_string(),

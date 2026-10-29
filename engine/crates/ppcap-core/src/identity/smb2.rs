@@ -62,9 +62,14 @@ pub(crate) enum SmbEvent<'a> {
     AuthResult(u32),
     /// TREE_CONNECT request: the UNC path reached (e.g. `\\host\ADMIN$`).
     TreeConnect(String),
-    /// WRITE / pipe-transceive request payload: DCE-RPC written to a named pipe.
-    PipeData(&'a [u8]),
-    /// An SMB1 message (legacy dialect still in use).
+    /// WRITE / pipe-transceive request payload: DCE-RPC written to a named pipe, tagged with the
+    /// SMB file handle it was written to (distinct pipes keep distinct RPC context tables).
+    PipeData {
+        file_id: [u8; 16],
+        data: &'a [u8],
+    },
+    /// An SMB1 message using a real command (not the multi-protocol NEGOTIATE an SMB2 client also
+    /// sends) — the legacy dialect actually in use.
     Smb1,
     Other,
 }
@@ -79,10 +84,24 @@ fn u32le(b: &[u8], off: usize) -> Option<u32> {
     Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
+/// SMB1 command byte that an SMB2-capable client uses for the multi-protocol NEGOTIATE.
+const SMB1_COM_NEGOTIATE: u8 = 0x72;
+/// SMB1 header flag (offset 9) set on a response.
+const SMB1_FLAGS_REPLY: u8 = 0x80;
+
 /// Parse one SMB message. Returns `(is_response, event)`.
 pub(crate) fn parse(msg: &[u8]) -> Option<(bool, SmbEvent<'_>)> {
-    if msg.len() >= 4 && &msg[..4] == SMB1_SIG {
-        return Some((false, SmbEvent::Smb1));
+    if msg.len() >= 5 && &msg[..4] == SMB1_SIG {
+        // An SMB2 client still sends one SMB1-format NEGOTIATE (command 0x72) to offer SMB2
+        // dialects; the server's response picks the real dialect. So the SMB1 signature alone is
+        // not legacy use — only an SMB1 command other than that NEGOTIATE is.
+        let is_response = msg.get(9).is_some_and(|f| f & SMB1_FLAGS_REPLY != 0);
+        let event = if msg[4] == SMB1_COM_NEGOTIATE {
+            SmbEvent::Other
+        } else {
+            SmbEvent::Smb1
+        };
+        return Some((is_response, event));
     }
     if msg.len() < HEADER_LEN || &msg[..4] != SMB2_SIG {
         return None;
@@ -101,15 +120,16 @@ pub(crate) fn parse(msg: &[u8]) -> Option<(bool, SmbEvent<'_>)> {
         (CMD_TREE_CONNECT, false) => tree_connect_path(msg, body)
             .map(SmbEvent::TreeConnect)
             .unwrap_or(SmbEvent::Other),
-        (CMD_WRITE, false) => write_data(msg)
-            .map(SmbEvent::PipeData)
-            .unwrap_or(SmbEvent::Other),
-        (CMD_IOCTL, false) => ioctl_pipe_input(msg)
-            .map(SmbEvent::PipeData)
-            .unwrap_or(SmbEvent::Other),
+        (CMD_WRITE, false) => write_data(msg).unwrap_or(SmbEvent::Other),
+        (CMD_IOCTL, false) => ioctl_pipe_input(msg).unwrap_or(SmbEvent::Other),
         _ => SmbEvent::Other,
     };
     Some((is_response, event))
+}
+
+/// A 16-byte SMB file handle at `off`.
+fn file_id_at(msg: &[u8], off: usize) -> Option<[u8; 16]> {
+    msg.get(off..off + 16)?.try_into().ok()
 }
 
 /// SESSION_SETUP request: security buffer at `SecurityBufferOffset` (from the header start).
@@ -133,23 +153,28 @@ fn tree_connect_path(msg: &[u8], body: &[u8]) -> Option<String> {
     ))
 }
 
-/// WRITE request: the data at `DataOffset`/`Length`.
-fn write_data(msg: &[u8]) -> Option<&[u8]> {
+/// WRITE request: the data at `DataOffset`/`Length`, tagged with its file handle (body offset 16).
+fn write_data(msg: &[u8]) -> Option<SmbEvent<'_>> {
     let body = msg.get(HEADER_LEN..)?;
     let off = usize::from(u16le(body, 2)?);
     let len = u32le(body, 4)? as usize;
-    msg.get(off..off.checked_add(len)?)
+    let data = msg.get(off..off.checked_add(len)?)?;
+    let file_id = file_id_at(body, 16)?;
+    Some(SmbEvent::PipeData { file_id, data })
 }
 
 /// IOCTL request: the input buffer, but only for FSCTL_PIPE_TRANSCEIVE (a pipe RPC round trip).
-fn ioctl_pipe_input(msg: &[u8]) -> Option<&[u8]> {
+/// The file handle is at body offset 8.
+fn ioctl_pipe_input(msg: &[u8]) -> Option<SmbEvent<'_>> {
     let body = msg.get(HEADER_LEN..)?;
     if u32le(body, 4)? != FSCTL_PIPE_TRANSCEIVE {
         return None;
     }
     let off = u32le(body, 24)? as usize;
     let len = u32le(body, 28)? as usize;
-    msg.get(off..off.checked_add(len)?)
+    let data = msg.get(off..off.checked_add(len)?)?;
+    let file_id = file_id_at(body, 8)?;
+    Some(SmbEvent::PipeData { file_id, data })
 }
 
 /// Is this UNC path an administrative share used for remote execution (`ADMIN$`, `C$`, …)?
@@ -255,12 +280,17 @@ pub(crate) mod build {
     }
 
     pub fn ioctl_transceive(data: &[u8]) -> Vec<u8> {
+        ioctl_transceive_h([0u8; 16], data)
+    }
+
+    /// A pipe-transceive IOCTL on a specific file handle.
+    pub fn ioctl_transceive_h(file_id: [u8; 16], data: &[u8]) -> Vec<u8> {
         let mut m = header(CMD_IOCTL, 0, 0);
         let in_off = (HEADER_LEN + 56) as u32;
         m.extend_from_slice(&u16le(57)); // StructureSize
         m.extend_from_slice(&u16le(0)); // Reserved
         m.extend_from_slice(&FSCTL_PIPE_TRANSCEIVE.to_le_bytes()); // CtlCode
-        m.extend_from_slice(&[0u8; 16]); // FileId
+        m.extend_from_slice(&file_id); // FileId
         m.extend_from_slice(&in_off.to_le_bytes()); // InputOffset
         m.extend_from_slice(&(data.len() as u32).to_le_bytes()); // InputCount
         m.extend_from_slice(&0u32.to_le_bytes()); // MaxInputResponse
@@ -273,12 +303,25 @@ pub(crate) mod build {
         m
     }
 
-    pub fn smb1_negotiate() -> Vec<u8> {
+    /// SMB1 with an arbitrary command byte and reply flag.
+    fn smb1(command: u8, reply: bool) -> Vec<u8> {
         let mut m = Vec::new();
         m.extend_from_slice(SMB1_SIG);
-        m.extend_from_slice(&[0x72]); // SMB_COM_NEGOTIATE
-        m.extend_from_slice(&[0u8; 28]);
+        m.push(command);
+        m.extend_from_slice(&[0, 0, 0, 0]); // NTStatus
+        m.push(if reply { 0x80 } else { 0 }); // Flags (offset 9)
+        m.extend_from_slice(&[0u8; 22]);
         m
+    }
+
+    /// The multi-protocol NEGOTIATE an SMB2 client sends (command 0x72) — not legacy use.
+    pub fn smb1_negotiate() -> Vec<u8> {
+        smb1(0x72, false)
+    }
+
+    /// A genuine SMB1 request (SESSION_SETUP_ANDX, 0x73) — the legacy dialect actually in use.
+    pub fn smb1_session_setup() -> Vec<u8> {
+        smb1(0x73, false)
     }
 }
 
@@ -319,15 +362,36 @@ mod tests {
     fn carries_pipe_rpc_over_write_and_ioctl() {
         let rpc = b"\x05\x00\x0b\x03rpc-bind";
         let w = build::write_req(rpc);
-        assert_eq!(parse(&w).unwrap().1, SmbEvent::PipeData(rpc));
+        assert_eq!(
+            parse(&w).unwrap().1,
+            SmbEvent::PipeData {
+                file_id: [0; 16],
+                data: rpc
+            }
+        );
         let i = build::ioctl_transceive(rpc);
-        assert_eq!(parse(&i).unwrap().1, SmbEvent::PipeData(rpc));
+        assert_eq!(
+            parse(&i).unwrap().1,
+            SmbEvent::PipeData {
+                file_id: [0; 16],
+                data: rpc
+            }
+        );
     }
 
     #[test]
-    fn detects_smb1_and_framing_rejects() {
-        let s = build::smb1_negotiate();
-        assert_eq!(parse(&s).unwrap().1, SmbEvent::Smb1);
+    fn detects_smb1_use_but_not_the_smb2_negotiate() {
+        // An SMB2 client's multi-protocol NEGOTIATE (0x72) is not legacy use.
+        assert_eq!(parse(&build::smb1_negotiate()).unwrap().1, SmbEvent::Other);
+        // A real SMB1 command is.
+        assert_eq!(
+            parse(&build::smb1_session_setup()).unwrap().1,
+            SmbEvent::Smb1
+        );
+    }
+
+    #[test]
+    fn framing_rejects_non_smb() {
         assert_eq!(record_len(b"GET "), Err(false));
         assert_eq!(record_len(&[0x00, 0x00]), Err(true));
         // NBSS session message whose body is not SMB: not ours.

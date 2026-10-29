@@ -764,3 +764,60 @@ fn a_normal_ntlm_v2_smb_logon_is_silent() {
     smb_logon(&mut h, WS, 45001, DC, "CORP", "jdoe", 220, STATUS_OK);
     assert!(h.findings().is_empty());
 }
+
+#[test]
+fn two_named_pipes_on_one_connection_keep_separate_rpc_contexts() {
+    // Over one SMB connection: pipe handle A binds context 0 to SAMR; pipe handle B reuses
+    // context 0 for SVCCTL and creates + starts a service. The second bind must not be shadowed
+    // by the first — otherwise the service calls would be miscounted as SAMR and go unreported.
+    let mut h = Harness::new();
+    let mut c = Conn::new(ATTACKER, 46000, DC, 445);
+    let a = [1u8; 16];
+    let b = [2u8; 16];
+    c.send(
+        &mut h,
+        &smb::nbss(&smb::ioctl_transceive_h(a, &rpc::bind(&[(0, Iface::Samr)]))),
+        1460,
+    );
+    c.send(
+        &mut h,
+        &smb::nbss(&smb::ioctl_transceive_h(
+            b,
+            &rpc::bind(&[(0, Iface::Svcctl)]),
+        )),
+        1460,
+    );
+    c.send(
+        &mut h,
+        &smb::nbss(&smb::ioctl_transceive_h(b, &rpc::request(0, 12, 40))),
+        1460,
+    );
+    c.send(
+        &mut h,
+        &smb::nbss(&smb::ioctl_transceive_h(b, &rpc::request(0, 19, 10))),
+        1460,
+    );
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::RemoteServiceExec], "{f:#?}");
+    assert!(f[0].attack.contains(&"T1021.002".to_string()));
+}
+
+#[test]
+fn raw_tcp_service_execution_is_not_labelled_smb_admin_shares() {
+    // The same SVCCTL create + start over a raw dynamic RPC port: service execution, but not via
+    // an SMB admin share, so no T1021.002.
+    let mut h = Harness::new();
+    let mut c = Conn::new(ATTACKER, 47000, WS, 49671);
+    c.send(&mut h, &rpc::bind(&[(0, Iface::Svcctl)]), 1460);
+    c.send(&mut h, &rpc::request(0, 12, 40), 1460);
+    c.send(&mut h, &rpc::request(0, 19, 10), 1460);
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::RemoteServiceExec], "{f:#?}");
+    assert!(
+        !f[0].attack.contains(&"T1021.002".to_string()),
+        "{:?}",
+        f[0].attack
+    );
+    assert!(f[0].attack.contains(&"T1569.002".to_string()));
+    assert!(f[0].evidence.join(" ").contains("over RPC"));
+}
