@@ -628,6 +628,7 @@ pub(crate) fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::EncryptedUnknownProtocol => "Encrypted Unknown Protocol",
         FindingKind::MissingSni => "TLS Without SNI",
         FindingKind::PortProtocolMismatch => "Port / Protocol Mismatch",
+        FindingKind::SshPosture => "Weak SSH Posture",
     }
 }
 

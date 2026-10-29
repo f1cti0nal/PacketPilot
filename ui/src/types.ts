@@ -168,6 +168,10 @@ export interface FingerprintHit {
   ja4: string | null;
   /** Matched JA4S *server* fingerprint, when the hit came from the server side. */
   ja4s?: string | null;
+  /** Matched HASSH *SSH client* fingerprint (MD5), when the hit came from SSH. */
+  hassh?: string | null;
+  /** Matched HASSHServer *SSH server* fingerprint (MD5). */
+  hassh_server?: string | null;
   label: string;
 }
 
@@ -308,6 +312,7 @@ export type FindingKind =
   | "encrypted_unknown_protocol"
   | "missing_sni"
   | "port_protocol_mismatch"
+  | "ssh_posture"
   | "ioc_match";
 
 /**
@@ -708,6 +713,7 @@ export const FLOW_COLUMNS = [
   "ja4s",
   "entropy_c2s",
   "entropy_s2c",
+  "ssh_banner",
 ] as const;
 export type FlowColumn = (typeof FLOW_COLUMNS)[number];
 
@@ -764,6 +770,7 @@ export interface RawFlowRow {
   tls_cipher: string | null;
   hassh: string | null;
   hassh_server: string | null;
+  ssh_banner: string | null;
   severity: string | null;
   threat_score: number;
   ioc: boolean;
@@ -807,6 +814,7 @@ export interface WasmFlow {
   tls_cipher: string | null;
   hassh: string | null;
   hassh_server: string | null;
+  ssh_banner: string | null;
   severity: string;
   threat_score: number;
   ioc: boolean;
@@ -846,6 +854,7 @@ export interface FlowRow {
   tlsCipher: string | null; // negotiated TLS cipher-suite label, if captured
   hassh: string | null; // SSH client HASSH (MD5) fingerprint, if captured
   hasshServer: string | null; // SSH server HASSHServer (MD5) fingerprint, if captured
+  sshBanner: string | null; // SSH identification line (names the build; hassh names the stack)
   bytesC2s: number;
   bytesS2c: number;
   bytesTotal: number; // derived

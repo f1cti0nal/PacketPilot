@@ -142,6 +142,14 @@ pub struct FingerprintHit {
     /// and MISP writers and the Time Machine harvest all read their indicators off this struct.
     #[serde(default)]
     pub ja4s: Option<String>,
+    /// The matched HASSH *SSH client* fingerprint (MD5 hex). Same reason as `ja4s`: the STIX and
+    /// MISP writers and the Time Machine harvest read their indicators off this struct, so a
+    /// `bad_hassh` hit that never lands here would label a flow and export nothing.
+    #[serde(default)]
+    pub hassh: Option<String>,
+    /// The matched HASSHServer *SSH server* fingerprint (MD5 hex).
+    #[serde(default)]
+    pub hassh_server: Option<String>,
     pub label: String,
 }
 

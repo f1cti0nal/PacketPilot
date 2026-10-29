@@ -16,7 +16,7 @@ import { FLOW_COLUMNS, type FlowColumn } from "../../types";
  * Mirrors `FLOW_PARQUET_VERSION` in engine/crates/ppcap-core/src/columnar/schema.rs.
  * Bump in lockstep whenever the engine bumps (the fixture test enforces agreement).
  */
-export const FLOW_SCHEMA_VERSION = 11;
+export const FLOW_SCHEMA_VERSION = 12;
 
 /** DuckDB column types used by the browser `flow` table. */
 export type DuckDbType =
@@ -75,6 +75,7 @@ export const FLOW_COLUMN_TYPES: Record<FlowColumn, FlowColumnSpec> = {
   ja4s: { type: "VARCHAR", nullable: true, comment: "TLS JA4S server fingerprint (the JA4 counterpart to ja3s)" },
   entropy_c2s: { type: "FLOAT", nullable: true, comment: "payload byte-entropy (bits/byte) initiator\u2192responder; non-NULL only for flows no protocol sniffer identified (>=7.2 suggests encryption/compression)" },
   entropy_s2c: { type: "FLOAT", nullable: true, comment: "payload byte-entropy (bits/byte) responder\u2192initiator; non-NULL only for flows no protocol sniffer identified" },
+  ssh_banner: { type: "VARCHAR", nullable: true, comment: "SSH identification line (RFC 4253 \u00a74.2), e.g. 'SSH-2.0-OpenSSH_8.9p1'; names the build, where hassh names the stack" },
 };
 
 /** Engine `category` column tokens (snake_case, matches FlowCategory). */
