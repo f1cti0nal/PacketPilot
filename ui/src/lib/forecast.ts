@@ -1,6 +1,5 @@
 // Client-side traffic forecaster — a faithful TypeScript port of the engine's Predictive Anomaly
-// Detection math (`engine/crates/ppcap-core/src/forecast/mod.rs`, documented in
-// `docs/predictive-anomaly-detection-plan.md` §3), used purely to *draw* a forecast band over the
+// Detection math (`engine/crates/ppcap-core/src/forecast/mod.rs`), used purely to *draw* a forecast band over the
 // timeline chart. It mirrors the engine's Holt double-exponential smoother (level + trend) with a
 // prediction band from an EWMA of the forecast residuals and a scale-relative σ floor.
 //

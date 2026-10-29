@@ -116,8 +116,9 @@ pub use model::summary::{
     TimeBucket, TopTalker,
 };
 pub use packets::{
-    carve_pcap, decrypt_tls_flow, extract_flow_packets, CarveQuery, CarveResult, CarveTarget,
-    FlowPackets, PacketCaps, PacketQuery, PacketRecord,
+    carve_pcap, decrypt_capture, decrypt_tls_flow, extract_flow_packets, CarveQuery, CarveResult,
+    CarveTarget, DecryptedFlow, FlowPackets, KeylogCaps, KeylogReport, PacketCaps, PacketQuery,
+    PacketRecord,
 };
 pub use report::{case_html, render_html};
 #[cfg(not(target_arch = "wasm32"))]
@@ -133,6 +134,7 @@ pub use timemachine::{
 };
 pub use tls::decrypt::{DecryptedCarvedFile, TlsDecryptRecord, TlsDecryptResult};
 pub use tls::decrypted_http::HttpTxn;
+pub use tls::keylog::KeyLog;
 
 #[cfg(feature = "online")]
 pub use crate::enrich::online::{

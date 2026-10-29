@@ -574,6 +574,7 @@ mod tests {
             flows_parquet_path: None,
             elapsed_ms: 0,
             baseline: None,
+            keylog: None,
         }
     }
 

@@ -49,6 +49,7 @@ fn sample() -> AnalysisOutput {
         flows_parquet_path: None,
         elapsed_ms: 42,
         baseline: None,
+        keylog: None,
     }
 }
 
