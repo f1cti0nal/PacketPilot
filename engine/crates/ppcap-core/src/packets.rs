@@ -227,6 +227,228 @@ pub fn decrypt_tls_flow(
     Ok(crate::tls::decrypt::decrypt_flow(&fwd, &rev, &keylog))
 }
 
+/// Bounds for whole-capture key-log decryption ([`decrypt_capture`]).
+#[derive(Clone, Copy, Debug)]
+pub struct KeylogCaps {
+    /// Ciphertext bytes buffered per direction of one keyed flow. A flow that outgrows this is
+    /// skipped (its buffers freed and it is reported un-decrypted), never silently truncated.
+    pub max_bytes_per_dir: usize,
+    /// Ciphertext bytes buffered across all keyed flows at once. A keyed flow whose next segment
+    /// would cross this budget is skipped the same way.
+    pub max_total_bytes: usize,
+}
+
+impl Default for KeylogCaps {
+    fn default() -> Self {
+        Self {
+            max_bytes_per_dir: MAX_TLS_DECRYPT_BYTES_PER_DIR,
+            max_total_bytes: 256 * 1024 * 1024,
+        }
+    }
+}
+
+/// One TLS flow whose ClientHello random had secrets in the key-log, and what decrypting it gave.
+#[derive(Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DecryptedFlow {
+    pub client_ip: String,
+    pub client_port: u16,
+    pub server_ip: String,
+    pub server_port: u16,
+    /// Timestamp of the ClientHello segment.
+    pub first_ts_ns: i64,
+    /// True when at least one record decrypted with the key-log secrets.
+    pub decrypted: bool,
+    /// Negotiated version word (`0x0304` = TLS 1.3, `0x0303` = TLS 1.2), when a ServerHello was seen.
+    pub version: Option<u16>,
+    pub cipher_name: Option<String>,
+    /// Application protocol of the cleartext (`http/1.1`, `http/2`, `unknown`, …).
+    pub app_proto: Option<String>,
+    /// Records decrypted (the plaintext itself is not kept in the summary).
+    pub records: usize,
+    /// True when the record list hit the per-flow cap.
+    pub truncated: bool,
+    /// Why the flow did not decrypt (unsupported suite, over the buffer cap, …).
+    pub reason: Option<String>,
+    /// HTTP transactions recovered from the cleartext.
+    pub http: Vec<crate::tls::decrypted_http::HttpTxn>,
+    /// Files carved from the decrypted server→client HTTP responses.
+    pub carved: Vec<crate::tls::decrypt::DecryptedCarvedFile>,
+}
+
+/// Capture-level outcome of `analyze --keylog`.
+#[derive(Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct KeylogReport {
+    /// Distinct TLS sessions (ClientHello randoms) in the supplied key-log.
+    pub keylog_sessions: usize,
+    /// Distinct key-log sessions that decrypted at least one flow in this capture.
+    pub keylog_sessions_used: usize,
+    /// TCP flows whose ClientHello random matched a key-log session.
+    pub flows_keyed: usize,
+    /// Keyed flows that decrypted.
+    pub flows_decrypted: usize,
+    /// Keyed flows skipped because they outgrew [`KeylogCaps`].
+    pub flows_skipped_over_cap: usize,
+    /// Every keyed flow in capture order, decrypted or not (never silently dropped).
+    pub flows: Vec<DecryptedFlow>,
+}
+
+/// Per-flow buffering state while streaming the capture.
+struct KeyedFlow {
+    client: (IpAddr, u16),
+    server: (IpAddr, u16),
+    random: [u8; 32],
+    first_ts_ns: i64,
+    c2s: Vec<u8>,
+    s2c: Vec<u8>,
+    over_cap: bool,
+}
+
+/// Stream `source` once and decrypt every TLS-over-TCP flow whose ClientHello random has secrets
+/// in `keylog`, using the same per-flow decryptor as [`decrypt_tls_flow`].
+///
+/// Memory stays bounded: only keyed flows are buffered (a flow is recognised from the ClientHello
+/// in its first payload segment; every other flow is never stored), each direction up to
+/// `caps.max_bytes_per_dir` and all of them together up to `caps.max_total_bytes`. A keyed flow
+/// that would cross either bound is dropped and reported with `decrypted = false`.
+pub fn decrypt_capture(
+    mut source: Box<dyn PacketSource>,
+    keylog: &crate::tls::keylog::KeyLog,
+    caps: &KeylogCaps,
+) -> Result<KeylogReport> {
+    let mut flows: Vec<KeyedFlow> = Vec::new();
+    let mut index: std::collections::HashMap<crate::model::flow::FlowKey, usize> =
+        std::collections::HashMap::new();
+    let mut buffered: usize = 0;
+
+    while let Some(frame) = source.next_frame()? {
+        let meta = match decode_frame(&frame) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.transport != Transport::Tcp {
+            continue;
+        }
+        let (s, d) = match (meta.src_ip, meta.dst_ip) {
+            (Some(s), Some(d)) => (s, d),
+            _ => continue,
+        };
+        let payload = match l4_payload(&frame) {
+            Some(x) if !x.payload.is_empty() => x.payload,
+            _ => continue,
+        };
+        let (key, _) = crate::model::flow::FlowKey::normalized(
+            s,
+            meta.src_port,
+            d,
+            meta.dst_port,
+            Transport::Tcp,
+        );
+
+        let i = match index.get(&key) {
+            Some(&i) => i,
+            None => {
+                // Not tracked yet: only a ClientHello whose random is in the key-log starts one.
+                if payload[0] != 22 {
+                    continue;
+                }
+                let Some(random) = crate::tls::decrypt::find_client_random(payload) else {
+                    continue;
+                };
+                if !keylog.has_session(&random) {
+                    continue;
+                }
+                flows.push(KeyedFlow {
+                    client: (s, meta.src_port),
+                    server: (d, meta.dst_port),
+                    random,
+                    first_ts_ns: frame.ts_ns,
+                    c2s: Vec::new(),
+                    s2c: Vec::new(),
+                    over_cap: false,
+                });
+                index.insert(key, flows.len() - 1);
+                flows.len() - 1
+            }
+        };
+
+        let f = &mut flows[i];
+        if f.over_cap {
+            continue;
+        }
+        let to_server = (s, meta.src_port) == f.client;
+        let dir_len = if to_server { f.c2s.len() } else { f.s2c.len() };
+        if dir_len + payload.len() > caps.max_bytes_per_dir
+            || buffered + payload.len() > caps.max_total_bytes
+        {
+            buffered -= f.c2s.len() + f.s2c.len();
+            f.c2s = Vec::new();
+            f.s2c = Vec::new();
+            f.over_cap = true;
+            continue;
+        }
+        if to_server {
+            f.c2s.extend_from_slice(payload);
+        } else {
+            f.s2c.extend_from_slice(payload);
+        }
+        buffered += payload.len();
+    }
+
+    let mut report = KeylogReport {
+        keylog_sessions: keylog.session_count(),
+        flows_keyed: flows.len(),
+        ..Default::default()
+    };
+    let mut used: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+    for f in flows {
+        let mut out = DecryptedFlow {
+            client_ip: f.client.0.to_string(),
+            client_port: f.client.1,
+            server_ip: f.server.0.to_string(),
+            server_port: f.server.1,
+            first_ts_ns: f.first_ts_ns,
+            decrypted: false,
+            version: None,
+            cipher_name: None,
+            app_proto: None,
+            records: 0,
+            truncated: false,
+            reason: None,
+            http: Vec::new(),
+            carved: Vec::new(),
+        };
+        if f.over_cap {
+            report.flows_skipped_over_cap += 1;
+            out.reason = Some(format!(
+                "flow exceeded the key-log decryption buffer cap ({} MiB per direction, {} MiB \
+                 total); skipped",
+                caps.max_bytes_per_dir / (1024 * 1024),
+                caps.max_total_bytes / (1024 * 1024)
+            ));
+        } else {
+            let res = crate::tls::decrypt::decrypt_flow(&f.c2s, &f.s2c, keylog);
+            out.decrypted = res.session_found && !res.records.is_empty();
+            out.version = res.version;
+            out.cipher_name = res.cipher_name;
+            out.app_proto = res.app_proto;
+            out.records = res.records.len();
+            out.truncated = res.truncated;
+            out.reason = res.reason;
+            out.http = res.http;
+            out.carved = res.carved;
+            if out.decrypted {
+                report.flows_decrypted += 1;
+                used.insert(f.random);
+            } else if out.reason.is_none() {
+                out.reason = Some("no records decrypted with the key-log secrets".to_string());
+            }
+        }
+        report.flows.push(out);
+    }
+    report.keylog_sessions_used = used.len();
+    Ok(report)
+}
+
 /// 64 MiB carve byte budget (matches the browser's retained-source cap).
 pub const MAX_CARVE_BYTES: usize = 64 * 1024 * 1024;
 
@@ -615,5 +837,237 @@ mod tests {
         let mut rd =
             open_reader(Cursor::new(res.pcap.clone()), Some(res.pcap.len() as u64)).unwrap();
         assert!(rd.next_frame().unwrap().is_none());
+    }
+
+    // ── whole-capture key-log decryption ──────────────────────────────────────────
+
+    use crate::quic::crypto::tls12_prf_sha256;
+    use crate::tls::decrypt::tests::{
+        ccs_record, client_hello_record, keylog_for, tls12_gcm_record, tls12_server_hello,
+    };
+
+    const KEYED_RANDOM: [u8; 32] = [0x11; 32];
+    const MASTER: [u8; 48] = [0x33; 48];
+
+    /// Append one Ethernet/IPv4/TCP segment carrying `payload`.
+    fn push_tcp(
+        buf: &mut Vec<u8>,
+        src: Ipv4Addr,
+        dst: Ipv4Addr,
+        sp: u16,
+        dp: u16,
+        ts: i64,
+        payload: &[u8],
+    ) {
+        let tcp = frames::build_tcp(src, dst, sp, dp, frames::TCP_PSH | frames::TCP_ACK, payload);
+        let ip = frames::build_ipv4(src, dst, 6, 64, tcp.len());
+        let eth = frames::build_ethernet([2; 6], [4; 6], 0x0800);
+        let frame: Vec<u8> = eth.into_iter().chain(ip).chain(tcp).collect();
+        container::write_legacy_record(buf, ts, frame.len() as u32, frame.len() as u32).unwrap();
+        buf.write_all(&frame).unwrap();
+    }
+
+    /// A capture with three TCP flows: a TLS 1.2 (AES-128-GCM) HTTPS session whose ClientHello
+    /// random is in the key-log, a TLS session whose random is not, and plain HTTP.
+    fn keyed_capture() -> Vec<u8> {
+        let client = Ipv4Addr::new(10, 0, 0, 5);
+        let server = Ipv4Addr::new(93, 184, 216, 34);
+        let server_random = [0x22u8; 32];
+        let mut seed = Vec::new();
+        seed.extend_from_slice(&server_random);
+        seed.extend_from_slice(&KEYED_RANDOM);
+        let kb = tls12_prf_sha256(&MASTER, b"key expansion", &seed, 40);
+        let (c_key, s_key, c_iv, s_iv) = (&kb[0..16], &kb[16..32], &kb[32..36], &kb[36..40]);
+        let fin = b"\x14\x00\x00\x0cFINISHEDxx";
+
+        let mut buf = Vec::new();
+        container::write_pcap_header(&mut buf, LinkType::Ethernet).unwrap();
+        let mut ts = 1_000_000_000i64;
+        let mut tick = || {
+            ts += 1_000;
+            ts
+        };
+
+        // Keyed TLS 1.2 flow, client port 50000.
+        push_tcp(
+            &mut buf,
+            client,
+            server,
+            50000,
+            443,
+            tick(),
+            &client_hello_record(&KEYED_RANDOM),
+        );
+        let mut sh = tls12_server_hello(&server_random, 0xC02F);
+        sh.extend_from_slice(&ccs_record());
+        sh.extend_from_slice(&tls12_gcm_record(22, 0, s_key, s_iv, fin));
+        push_tcp(&mut buf, server, client, 443, 50000, tick(), &sh);
+        let mut cf = ccs_record();
+        cf.extend_from_slice(&tls12_gcm_record(22, 0, c_key, c_iv, fin));
+        push_tcp(&mut buf, client, server, 50000, 443, tick(), &cf);
+        let req = b"GET /secret/report.txt HTTP/1.1\r\nHost: hidden.example\r\n\r\n";
+        push_tcp(
+            &mut buf,
+            client,
+            server,
+            50000,
+            443,
+            tick(),
+            &tls12_gcm_record(23, 1, c_key, c_iv, req),
+        );
+        let resp = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nhi";
+        push_tcp(
+            &mut buf,
+            server,
+            client,
+            443,
+            50000,
+            tick(),
+            &tls12_gcm_record(23, 1, s_key, s_iv, resp),
+        );
+
+        // Un-keyed TLS flow (random absent from the key-log), client port 50001.
+        push_tcp(
+            &mut buf,
+            client,
+            server,
+            50001,
+            443,
+            tick(),
+            &client_hello_record(&[0x99; 32]),
+        );
+        push_tcp(
+            &mut buf,
+            server,
+            client,
+            443,
+            50001,
+            tick(),
+            &tls12_server_hello(&[0x44; 32], 0xC02F),
+        );
+
+        // Plain HTTP, client port 50002.
+        push_tcp(
+            &mut buf,
+            client,
+            server,
+            50002,
+            80,
+            tick(),
+            b"GET / HTTP/1.1\r\nHost: a\r\n\r\n",
+        );
+        buf
+    }
+
+    fn keylog() -> crate::tls::keylog::KeyLog {
+        keylog_for(&KEYED_RANDOM, "CLIENT_RANDOM", &MASTER)
+    }
+
+    fn decrypt(caps: &KeylogCaps) -> KeylogReport {
+        let src = open_reader(Cursor::new(keyed_capture()), None).unwrap();
+        decrypt_capture(src, &keylog(), caps).unwrap()
+    }
+
+    #[test]
+    fn decrypt_capture_decrypts_only_keyed_flows() {
+        let r = decrypt(&KeylogCaps::default());
+        assert_eq!(r.keylog_sessions, 1);
+        assert_eq!(r.keylog_sessions_used, 1);
+        assert_eq!(
+            (r.flows_keyed, r.flows_decrypted, r.flows_skipped_over_cap),
+            (1, 1, 0)
+        );
+        assert_eq!(
+            r.flows.len(),
+            1,
+            "un-keyed TLS and plain HTTP are not reported"
+        );
+
+        let f = &r.flows[0];
+        assert!(f.decrypted, "{f:?}");
+        assert_eq!((f.client_ip.as_str(), f.client_port), ("10.0.0.5", 50000));
+        assert_eq!(
+            (f.server_ip.as_str(), f.server_port),
+            ("93.184.216.34", 443)
+        );
+        assert_eq!(f.version, Some(0x0303));
+        assert_eq!(f.app_proto.as_deref(), Some("http/1.1"));
+        assert_eq!(f.records, 2);
+        assert!(f.reason.is_none());
+        assert_eq!(f.http.len(), 1);
+        assert_eq!(f.http[0].method, "GET");
+        assert_eq!(f.http[0].target, "/secret/report.txt");
+        assert_eq!(f.http[0].host, "hidden.example");
+        assert_eq!(f.http[0].status, 200);
+    }
+
+    #[test]
+    fn decrypt_capture_skips_flows_over_the_per_direction_cap() {
+        let r = decrypt(&KeylogCaps {
+            max_bytes_per_dir: 64,
+            ..Default::default()
+        });
+        assert_eq!(
+            (r.flows_keyed, r.flows_decrypted, r.flows_skipped_over_cap),
+            (1, 0, 1)
+        );
+        assert_eq!(r.keylog_sessions_used, 0);
+        let f = &r.flows[0];
+        assert!(!f.decrypted && f.http.is_empty() && f.records == 0);
+        assert!(f.reason.as_deref().unwrap().contains("cap"), "{f:?}");
+    }
+
+    #[test]
+    fn decrypt_capture_skips_flows_over_the_total_budget() {
+        let r = decrypt(&KeylogCaps {
+            max_total_bytes: 64,
+            ..Default::default()
+        });
+        assert_eq!((r.flows_decrypted, r.flows_skipped_over_cap), (0, 1));
+    }
+
+    #[test]
+    fn decrypt_capture_reports_keyed_flow_it_cannot_decrypt() {
+        // Right session, wrong master secret: the flow is keyed but nothing authenticates.
+        let src = open_reader(Cursor::new(keyed_capture()), None).unwrap();
+        let wrong = keylog_for(&KEYED_RANDOM, "CLIENT_RANDOM", &[0x77; 48]);
+        let r = decrypt_capture(src, &wrong, &KeylogCaps::default()).unwrap();
+        assert_eq!((r.flows_keyed, r.flows_decrypted), (1, 0));
+        assert!(!r.flows[0].decrypted);
+        assert!(r.flows[0].reason.is_some());
+    }
+
+    #[test]
+    fn run_attaches_keylog_report_only_when_a_keylog_is_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keyed.pcap");
+        std::fs::write(&path, keyed_capture()).unwrap();
+
+        let off = crate::analyze::run(
+            &path,
+            &crate::analyze::PipelineConfig::default(),
+            |_, _, _| {},
+        )
+        .unwrap();
+        assert!(off.keylog.is_none());
+        assert!(
+            !off.to_json().unwrap().contains("\"keylog\""),
+            "output shape unchanged when off"
+        );
+
+        let cfg = crate::analyze::PipelineConfig {
+            keylog: Some(keylog()),
+            ..Default::default()
+        };
+        let on = crate::analyze::run(&path, &cfg, |_, _, _| {}).unwrap();
+        let k = on.keylog.as_ref().expect("keylog report");
+        assert_eq!(k.flows_decrypted, 1);
+        assert_eq!(k.flows[0].http[0].host, "hidden.example");
+        // The base analysis is identical either way.
+        assert_eq!(on.summary, off.summary);
+
+        // Round-trips through JSON.
+        let back: crate::AnalysisOutput = serde_json::from_str(&on.to_json().unwrap()).unwrap();
+        assert_eq!(back.keylog, on.keylog);
     }
 }

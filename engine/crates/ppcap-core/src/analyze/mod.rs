@@ -126,6 +126,10 @@ pub struct PipelineConfig {
     pub port_mismatch: crate::detect::PortMismatchParams,
     /// Encrypted-traffic analysis: weak SSH posture from the cleartext handshake.
     pub ssh_posture: crate::detect::SshPostureParams,
+    /// Key-log decryption: a parsed NSS `SSLKEYLOGFILE`. When set, [`run`] makes one extra bounded
+    /// pass that decrypts the keyed TLS flows into [`AnalysisOutput::keylog`]; `None` (the default)
+    /// leaves the pipeline and its output untouched.
+    pub keylog: Option<crate::tls::keylog::KeyLog>,
 }
 
 impl Default for PipelineConfig {
@@ -175,6 +179,7 @@ impl Default for PipelineConfig {
             missing_sni: crate::detect::MissingSniParams::default(),
             port_mismatch: crate::detect::PortMismatchParams::default(),
             ssh_posture: crate::detect::SshPostureParams::default(),
+            keylog: None,
         }
     }
 }
@@ -207,6 +212,16 @@ pub fn run(
 
     // 4. Decorate with provenance the streaming pass cannot know.
     out.source_sha256 = source_sha256;
+
+    // 5. Optionally decrypt the keyed TLS flows in their own bounded streaming pass.
+    if let Some(keylog) = cfg.keylog.as_ref() {
+        let source = crate::reader::open(path)?;
+        out.keylog = Some(crate::packets::decrypt_capture(
+            source,
+            keylog,
+            &crate::packets::KeylogCaps::default(),
+        )?);
+    }
     Ok(out)
 }
 
@@ -728,6 +743,7 @@ pub fn run_source_visiting<'a>(
         #[cfg(target_arch = "wasm32")]
         elapsed_ms: 0,
         baseline: baseline_snapshot,
+        keylog: None,
     })
 }
 

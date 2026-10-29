@@ -394,7 +394,7 @@ pub(crate) fn redact_cleartext_creds(
         let rel_end = payload[line_start..]
             .iter()
             .position(|&b| b == b'\n')
-            .map_or(payload.len() - line_start, |i| i);
+            .unwrap_or(payload.len() - line_start);
         let mut line_end = line_start + rel_end;
         if line_end > line_start && payload[line_end - 1] == b'\r' {
             line_end -= 1;

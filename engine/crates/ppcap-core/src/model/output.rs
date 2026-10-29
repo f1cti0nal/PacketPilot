@@ -28,6 +28,11 @@ pub struct AnalysisOutput {
     /// summaries readable and leaves the default output shape unchanged when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub baseline: Option<crate::baseline::CaptureProfile>,
+    /// Key-log decryption (`analyze --keylog`): which TLS flows the supplied key-log decrypted and
+    /// the cleartext HTTP / carved files recovered from them. `None` unless a key-log was given,
+    /// so the default output shape is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keylog: Option<crate::packets::KeylogReport>,
 }
 
 impl AnalysisOutput {
@@ -55,6 +60,7 @@ impl Default for AnalysisOutput {
             flows_parquet_path: None,
             elapsed_ms: 0,
             baseline: None,
+            keylog: None,
         }
     }
 }

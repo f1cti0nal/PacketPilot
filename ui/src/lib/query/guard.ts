@@ -1,6 +1,5 @@
 /**
- * Read-only guard for SQL destined for the in-browser DuckDB (see the NLQ plan,
- * docs/plans/2026-07-19-natural-language-querying.md §3.2). Generated or
+ * Read-only guard for SQL destined for the in-browser DuckDB. Generated or
  * hand-typed SQL is untrusted input; this is one of three defense layers
  * (alongside `SET enable_external_access = false` + `SET lock_configuration =
  * true` at engine init, and the row/time caps in engine.ts).

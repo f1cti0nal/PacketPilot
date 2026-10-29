@@ -48,6 +48,10 @@ cargo run -p ppcap-cli --release -- analyze capture.pcap --json - --parquet out/
 # Strict mode (abort on first malformed packet) + source hashing
 cargo run -p ppcap-cli --release -- analyze capture.pcapng --strict --hash
 
+# Decrypt TLS 1.2/1.3 flows with an NSS SSLKEYLOGFILE (read locally, never uploaded).
+# Keyed flows land under "keylog" in the JSON: decrypted HTTP requests + carved files.
+cargo run -p ppcap-cli --release -- analyze capture.pcapng --keylog sslkeys.log
+
 # Generate a deterministic synthetic capture (byte-identical for a given seed+count)
 cargo run -p ppcap-cli --release -- gen out/mixed.pcap --scenario mixed --packets 100000 --seed 0
 
