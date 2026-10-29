@@ -588,6 +588,7 @@ pub fn run_source_visiting<'a>(
     findings.extend(detect_ics_control(&tracker, &cfg.ics_control));
     // Carved HTTP files: surface each download's SHA-256 (IOC) and raise a finding for any whose
     // hash is in the embedded known-bad set.
+    let extracted_paths = body_carver.take_extracted_paths();
     let carved = body_carver.into_results();
     for c in carved.iter() {
         if c.known_bad {
@@ -597,12 +598,6 @@ pub fn run_source_visiting<'a>(
             findings.push(f);
         }
     }
-    let mut extracted_paths: Vec<String> = carved
-        .iter()
-        .filter_map(|c| c.extracted_path.clone())
-        .collect();
-    extracted_paths.sort_unstable();
-    extracted_paths.dedup();
     // Surface the carved-file IOC list, known-bad first then largest, capped for the summary/UI.
     const TOP_K_CARVED: usize = 128;
     let mut carved_files: Vec<crate::model::summary::CarvedFile> = carved
