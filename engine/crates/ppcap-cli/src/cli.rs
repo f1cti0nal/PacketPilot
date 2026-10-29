@@ -721,6 +721,11 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     hash,
                     strict,
                     quiet,
+                    ppcap_core::IdentityParams {
+                        enabled: !no_identity,
+                        domain_controllers: dc.clone(),
+                        ..Default::default()
+                    },
                 );
             }
 
@@ -1856,6 +1861,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
 /// Batch / case triage dispatch: analyze every capture under `dir` into a case directory and
 /// write `case.json` + `case.html`. Per-capture errors are skipped (recorded in the index) unless
 /// `strict`. Progress is one line per capture on stderr unless `quiet`.
+#[allow(clippy::too_many_arguments)]
 fn dispatch_batch(
     dir: &std::path::Path,
     recursive: bool,
@@ -1864,6 +1870,7 @@ fn dispatch_batch(
     hash: bool,
     strict: bool,
     quiet: bool,
+    identity: ppcap_core::IdentityParams,
 ) -> anyhow::Result<()> {
     use std::io::Write as _;
 
@@ -1882,6 +1889,7 @@ fn dispatch_batch(
     let base = ppcap_core::PipelineConfig {
         hash_source: hash,
         threat_feed: threat_feed.map(|p| p.to_path_buf()),
+        identity,
         ..Default::default()
     };
 

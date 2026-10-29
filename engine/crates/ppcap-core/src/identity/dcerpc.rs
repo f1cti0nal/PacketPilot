@@ -148,7 +148,18 @@ pub(crate) fn header(buf: &[u8]) -> Result<PduHeader, bool> {
 
 /// Cheap shape test: does this payload open with a bind / alter-context PDU? Used to pick up
 /// RPC on dynamic ports (the endpoint mapper hands DRSUAPI a high port).
+///
+/// A bind can span TCP segments, so a first segment shorter than the 16-byte header is accepted
+/// on the bytes it has (version 5.0/5.1, a bind / alter-context type, an NDR data representation);
+/// the stream framing validates the completed PDU before any context is read.
 pub(crate) fn looks_like_bind(payload: &[u8]) -> bool {
+    if payload.len() < HEADER_LEN {
+        return payload.len() >= 3
+            && payload[0] == 5
+            && payload[1] <= 1
+            && matches!(payload[2], PTYPE_BIND | PTYPE_ALTER_CONTEXT)
+            && payload.get(4).is_none_or(|d| d >> 4 <= 1);
+    }
     matches!(header(payload), Ok(h) if matches!(h.ptype, PTYPE_BIND | PTYPE_ALTER_CONTEXT)
         && usize::from(h.frag_len) >= 44)
 }
@@ -310,6 +321,10 @@ mod tests {
         assert_eq!(header(b"GET / HTTP/1.1\r\n"), Err(false));
         assert_eq!(header(&[5, 0, 11]), Err(true));
         assert!(!looks_like_bind(&request(0, 3, 10)));
+        // A bind split across segments is recognised from its first few bytes.
+        let b = bind(&[(0, Iface::Drsuapi)]);
+        assert!(looks_like_bind(&b[..3]) && looks_like_bind(&b[..12]));
+        assert!(!looks_like_bind(&b[..2]) && !looks_like_bind(b"\x05\x00\x00"));
         let b = bind(&[(0, Iface::Drsuapi)]);
         for cut in 0..b.len() {
             if let Ok(h) = header(&b[..cut]) {

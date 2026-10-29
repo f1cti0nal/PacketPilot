@@ -405,6 +405,46 @@ fn ldap_recon_then_roasting_escalates_the_recon() {
 }
 
 #[test]
+fn recon_seen_after_the_roast_is_not_escalated() {
+    let mut h = Harness::new();
+    for i in 0..3u16 {
+        tgs(
+            &mut h,
+            ATTACKER,
+            50400 + i,
+            &format!("HTTP/app{i}.corp.local"),
+            &[23],
+            23,
+        );
+    }
+    let mut c = Conn::new(ATTACKER, 50300, DC, 389);
+    let spn_filter = ldap::present("servicePrincipalName");
+    c.send(
+        &mut h,
+        &ldap::search(2, "DC=corp,DC=local", spn_filter, &[]),
+        1460,
+    );
+    let f = h.findings();
+    let recon = f
+        .iter()
+        .find(|x| x.kind == FindingKind::AdRecon)
+        .expect("recon");
+    assert_eq!(recon.severity, Severity::Medium, "{recon:#?}");
+}
+
+#[test]
+fn a_bind_split_across_segments_still_reveals_dcsync() {
+    let mut h = Harness::new();
+    let mut c = Conn::new(ATTACKER, 50700, DC, 49667);
+    let b = rpc::bind(&[(0, Iface::Drsuapi)]);
+    c.send(&mut h, &b[..20], 1460);
+    c.send(&mut h, &b[20..], 1460);
+    c.send(&mut h, &rpc::request(0, 3, 200), 1460);
+    let f = h.findings();
+    assert_eq!(kinds(&f), vec![FindingKind::DcSync], "{f:#?}");
+}
+
+#[test]
 fn kerberos_username_enumeration_is_recon() {
     let mut h = Harness::new();
     for i in 0..12u16 {

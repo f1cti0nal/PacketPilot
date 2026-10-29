@@ -52,8 +52,8 @@ const LDAP_PORTS: [u16; 2] = [389, 3268];
 const KERBEROS_PORT: u16 = 88;
 /// A stream or pending request idle this long (capture time) may be evicted to make room.
 const IDLE_EVICT_NS: i64 = 120 * 1_000_000_000;
-/// Smallest bind PDU worth parsing (header + context list with one entry).
-const MIN_BIND_LEN: u32 = 44;
+/// Fewest bytes a first segment needs to be recognised as the start of an RPC bind.
+const MIN_BIND_PREFIX: u32 = 3;
 const TCP_FIN: u8 = 0x01;
 const TCP_RST: u8 = 0x04;
 
@@ -438,7 +438,7 @@ impl IdentityObserver {
                 Proto::Ldap
             } else {
                 // DCE-RPC on any port, picked up at its bind (the client's first PDU).
-                if meta.payload_len < MIN_BIND_LEN {
+                if meta.payload_len < MIN_BIND_PREFIX {
                     return;
                 }
                 let Some(info) = crate::decode::l4_payload(frame) else {
@@ -806,21 +806,26 @@ impl IdentityObserver {
         }
 
         // Recon followed by a credential attack from the same host is one story: raise the recon.
-        let attackers: BTreeSet<String> = out
-            .iter()
-            .filter(|f| {
-                matches!(
-                    f.kind,
-                    FindingKind::Kerberoasting | FindingKind::AsrepRoasting | FindingKind::DcSync
-                )
-            })
-            .map(|f| f.src_ip.clone())
-            .collect();
+        // Only when the recon started before that attack activity ended — recon seen after the
+        // attack did not lead to it.
+        let mut attack_end: BTreeMap<String, i64> = BTreeMap::new();
+        for f in &out {
+            if matches!(
+                f.kind,
+                FindingKind::Kerberoasting | FindingKind::AsrepRoasting | FindingKind::DcSync
+            ) {
+                if let Some(last) = f.last_seen_ns {
+                    let e = attack_end.entry(f.src_ip.clone()).or_insert(last);
+                    *e = (*e).max(last);
+                }
+            }
+        }
         for f in out.iter_mut() {
-            if f.kind == FindingKind::AdRecon
-                && attackers.contains(&f.src_ip)
-                && f.severity < Severity::High
-            {
+            let led_to_attack = match (f.first_seen_ns, attack_end.get(&f.src_ip)) {
+                (Some(first), Some(end)) => first <= *end,
+                _ => false,
+            };
+            if f.kind == FindingKind::AdRecon && led_to_attack && f.severity < Severity::High {
                 f.severity = Severity::High;
                 f.score = f.score.max(64);
                 f.evidence.push(

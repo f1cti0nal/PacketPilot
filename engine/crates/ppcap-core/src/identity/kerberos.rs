@@ -186,9 +186,8 @@ fn principal(t: &Tlv) -> Option<String> {
     if parts.is_empty() {
         return None;
     }
-    let mut s = parts.join("/");
-    s.truncate(ber::MAX_STR);
-    Some(s)
+    // Character-bounded: a byte truncation could split a multibyte character and panic.
+    Some(parts.join("/").chars().take(ber::MAX_STR).collect())
 }
 
 /// `EncryptedData ::= SEQUENCE { etype [0] Int32, kvno [1] UInt32 OPTIONAL, cipher [2] OCTET STRING }`.
@@ -425,6 +424,30 @@ mod tests {
         );
         assert_eq!(r.ticket_etype, Some(23));
         assert_eq!(r.enc_etype, Some(18));
+    }
+
+    #[test]
+    fn multibyte_principal_past_the_cap_is_truncated_on_a_char_boundary() {
+        let long = format!("{}é", "a".repeat(255));
+        let m = kdc_rep(13, &long, "HTTP/web01", 18, 18);
+        let KrbMsg::TgsRep(r) = parse(&m).unwrap() else {
+            panic!()
+        };
+        let c = r.cname.unwrap();
+        assert_eq!(c.chars().count(), 256);
+        assert!(c.ends_with('é'));
+        // Several components joined past the cap.
+        let m = kdc_rep(
+            13,
+            "alice",
+            &format!("{}/{}é{}", "x".repeat(200), "y".repeat(54), "z".repeat(40)),
+            18,
+            18,
+        );
+        let KrbMsg::TgsRep(r) = parse(&m).unwrap() else {
+            panic!()
+        };
+        assert_eq!(r.ticket_sname.unwrap().chars().count(), 256);
     }
 
     #[test]
