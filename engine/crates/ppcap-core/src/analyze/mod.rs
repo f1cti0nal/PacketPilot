@@ -729,7 +729,7 @@ pub fn run_source_visiting<'a>(
     // Smart Alerting with Context: derive the ranked triage queue over the finished summary
     // (findings + incidents + chains + threat cards). Pure, idempotent, re-derived again by
     // `fold_rule_findings` / `apply_reputation` when post-hoc passes mutate their inputs.
-    summary.alerts = crate::detect::alerts::derive_alerts(&summary);
+    crate::detect::alerts::refresh_alerts(&mut summary);
     let flows_parquet_path = match writer {
         Some(w) => {
             w.close()?;

@@ -17,6 +17,7 @@ pub mod output;
 pub mod packet;
 pub mod severity;
 pub mod summary;
+pub mod suppression;
 
 pub use alert::{
     Alert, AlertContext, AlertSource, ContextEntry, ContextKind, HostContext, PeerContext,
@@ -33,4 +34,7 @@ pub use severity::Severity;
 pub use summary::{
     CategoryCount, IpThreat, PortCount, ProtoCount, ProtoCounts, SeverityCounts, Summary,
     TimeBucket, TopTalker,
+};
+pub use suppression::{
+    BlockReason, SuppressionFile, SuppressionHit, SuppressionOutcome, SuppressionRule,
 };

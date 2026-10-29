@@ -435,6 +435,16 @@ pub struct Summary {
     /// alert. `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub alerts: Vec<crate::model::alert::Alert>,
+    /// "Teach it once": the analyst suppression rules active for this analysis (expired rules
+    /// already filtered out at load). Carried in the summary so every alert re-derivation seam
+    /// honors them. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suppression_rules: Vec<crate::model::suppression::SuppressionRule>,
+    /// Every finding a suppression rule matched, with whether it was hidden from the alert
+    /// queue or kept by a guardrail. Ascending by finding index. `#[serde(default)]` keeps
+    /// older summaries readable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suppressions: Vec<crate::model::suppression::SuppressionHit>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -483,6 +493,8 @@ impl Summary {
             incidents: Vec::new(),
             attack_chains: Vec::new(),
             alerts: Vec::new(),
+            suppression_rules: Vec::new(),
+            suppressions: Vec::new(),
         }
     }
 

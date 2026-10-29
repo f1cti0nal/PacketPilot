@@ -77,8 +77,13 @@ pub use custody::{
     ArtifactCheck, ArtifactRecord, EvidenceManifest, VerifyOutcome, VerifyReport,
     EVIDENCE_SCHEMA_VERSION,
 };
-pub use detect::alerts::{derive_alerts, diff_alerts};
+pub use detect::alerts::{derive_alerts, diff_alerts, refresh_alerts};
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
+pub use detect::suppress::{
+    apply_suppressions, load_rules as load_suppression_rules, match_suppressions,
+    merge_into_file as merge_suppression_rules, rules_for_alert, LoadedRules, Taught, TeachMeta,
+    TeachScope, DEFAULT_RULE_TTL_DAYS,
+};
 pub use detect::{
     fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,
     CleartextCredsParams, CryptominingParams, DetectConfig, DgaParams, DisguisedDownloadParams,

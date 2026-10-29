@@ -156,7 +156,22 @@ pub fn derive_alerts(summary: &Summary) -> Vec<Alert> {
             .push(i as u32);
     }
 
+    // "Teach it once": findings an analyst rule hid are pre-claimed, so no tier tells them.
+    // They stay accounted for in `Summary.suppressions` (see `refresh_alerts`).
+    let suppressed = super::suppress::suppressed_indices(summary);
     let mut claimed = vec![false; n];
+    for &i in &suppressed {
+        if let Some(c) = claimed.get_mut(i as usize) {
+            *c = true;
+        }
+    }
+    // A host whose story lost members to suppression no longer matches its incident/chain
+    // score, so its alert rebases on what remains instead.
+    let suppressed_hosts: BTreeSet<&str> = suppressed
+        .iter()
+        .filter_map(|&i| findings.get(i as usize))
+        .map(|f| f.src_ip.as_str())
+        .collect();
     let mut alerts: Vec<Alert> = Vec::new();
 
     // Tier 1 — chain alerts. `attack_chains` is already sorted worst-first and its chains
@@ -170,6 +185,15 @@ pub fn derive_alerts(summary: &Summary) -> Vec<Alert> {
     let mut chain_hosts_all: BTreeSet<&str> = BTreeSet::new();
     for chain in &summary.attack_chains {
         if chain.host_count < 2 {
+            continue;
+        }
+        // A chain partly taught benign is no longer the story its score tells: its hosts fall
+        // through to host / rollup alerts over what remains.
+        if chain
+            .hosts
+            .iter()
+            .any(|h| suppressed_hosts.contains(h.as_str()))
+        {
             continue;
         }
         let step_set: BTreeSet<u32> = chain.steps.iter().map(|s| s.finding_index).collect();
@@ -290,7 +314,11 @@ pub fn derive_alerts(summary: &Summary) -> Vec<Alert> {
             claimed[i as usize] = true;
         }
         // One Incident exists per actor host; fall back to the worst member defensively.
-        let incident = summary.incidents.iter().find(|inc| inc.host == **host);
+        let incident = summary
+            .incidents
+            .iter()
+            .find(|inc| inc.host == **host)
+            .filter(|_| !suppressed_hosts.contains(*host));
         let (base, base_label, severity, title, narrative) = match incident {
             Some(inc) => (
                 inc.score as i32,
@@ -391,6 +419,13 @@ pub fn derive_alerts(summary: &Summary) -> Vec<Alert> {
     // Rank: strict total order (ids are unique by construction, so the sort is strict).
     sort_queue(&mut alerts);
     truncate_with_overflow(alerts, summary)
+}
+
+/// Re-derive the alert queue and the suppression ledger together — the one call every seam
+/// (analyze, rule fold, reputation, suppression) makes after mutating the summary.
+pub fn refresh_alerts(summary: &mut Summary) {
+    summary.suppressions = super::suppress::match_suppressions(summary);
+    summary.alerts = derive_alerts(summary);
 }
 
 /// The queue's total order: priority desc, severity desc, tier asc, first-seen asc

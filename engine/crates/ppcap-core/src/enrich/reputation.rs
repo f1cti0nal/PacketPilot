@@ -140,7 +140,7 @@ pub fn apply_reputation(
     // Reputation mutates the very cards the alert corroboration terms read (malicious floors
     // can un-cap an alert past Medium), so the alert queue re-derives here — the wasm
     // `apply_reputation` export calls this same fn, keeping browser parity for free.
-    summary.alerts = crate::detect::alerts::derive_alerts(summary);
+    crate::detect::alerts::refresh_alerts(summary);
 }
 
 /// Attach VirusTotal domain reputation verdicts to `summary.domain_threats`, keyed by host.
@@ -345,6 +345,8 @@ mod apply_tests {
             incidents: vec![],
             attack_chains: vec![],
             alerts: vec![],
+            suppression_rules: vec![],
+            suppressions: vec![],
         }
     }
 
