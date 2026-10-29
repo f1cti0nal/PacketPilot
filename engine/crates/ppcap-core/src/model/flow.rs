@@ -175,6 +175,11 @@ pub struct FlowRecord {
     /// its first real packet, not the fill (which could be epoch 0). Not persisted.
     #[serde(skip)]
     pub ts_window_set: bool,
+    /// Transient: the timestamp of the packet that opened this record (the `first_ts_ns` it was
+    /// created with). Unlike `first_ts_ns` it never moves, so it pairs with `key` as a stable
+    /// identity for one flow instance (a Zeek connection uid). Not persisted.
+    #[serde(skip)]
+    pub opened_ts_ns: i64,
     /// Most-specific payload-observed L7 hint across this flow's packets (`Unknown` until a
     /// packet carries one). Input to payload-aware classification; distinct from `app_proto`
     /// (the final label the classifier chooses from payload OR port).
@@ -274,6 +279,7 @@ impl FlowRecord {
             initiator: Direction::Forward,
             initiator_locked: false,
             ts_window_set: false,
+            opened_ts_ns: first_ts_ns,
             observed_app_proto: AppProto::Unknown,
             sni: None,
             ja3: None,

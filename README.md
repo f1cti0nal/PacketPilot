@@ -128,6 +128,16 @@ cargo run -p ppcap-cli --release -- push out.json -d destinations.json --dry-run
 cargo run -p ppcap-cli --release -- push out.json -d destinations.json --min-band investigate
 # Offline hand-off: write the ECS / OCSF / HEC bodies to files instead of sending
 cargo run -p ppcap-cli --release -- push out.json -d destinations.json --to elastic --out-dir push-out
+
+# Zeek logs out: conn / dns / http / ssl / ssh / files / notice logs sharing one connection uid
+# (tab-separated like Zeek, or --json for Zeek JSON), on their own or alongside an analysis
+cargo run -p ppcap-cli --release -- zeek sample.pcap -o zeek-logs
+cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --zeek zeek-logs --zeek-json
+
+# Suricata EVE in: sensor alerts become findings that rank and correlate with PacketPilot's own,
+# at analysis time or folded into a saved analysis (importing the same file twice adds nothing)
+cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --eve /var/log/suricata/eve.json
+cargo run -p ppcap-cli --release -- eve out.json eve.json --json out.json
 ```
 
 A destination in `destinations.json` never holds a secret: it names the environment variable
@@ -157,6 +167,21 @@ alert and capture, after every request. A re-run of the same analysis sends only
 yet; the same host flagged again in a new capture is a new delivery; an alert whose band rose
 since is sent again, and for Jira and TheHive that updates the existing ticket (a comment, a
 severity bump) instead of opening a second one. `--resend` overrides the ledger.
+
+The Zeek logs use Zeek's field names, types and header (a subset of Zeek's fields per log), so a
+pipeline that already parses Zeek logs can read them.
+Every row about one connection carries the same `uid`, and `notice.log` holds PacketPilot's findings
+(`note` is `PacketPilot::<kind>`, with severity, score and ATT&CK ids). Fields are filled from one
+pass without TCP reassembly beyond a segment: `conn_state` comes from each side's TCP flags,
+`history` is left unset, HTTP body lengths are the declared `Content-Length`, and `files.log`
+lists the HTTP downloads the analysis carved. An export first removes the Zeek logs an earlier export left in the same
+directory, so the folder only ever holds one capture's logs; `--evidence` records every log written
+and every `--eve` input.
+
+Suricata EVE import reads `alert` events and skips other event types. Each signature between the
+same two hosts becomes one `rule_match` finding with a hit count and first/last seen; Suricata
+severity 1/2/3 maps to High/Medium/Low and `mitre_technique_id` metadata to ATT&CK ids. The flow
+start of each alert opens the incident timeline.
 
 To connect an agent, add PacketPilot to its MCP config (Claude Desktop's
 `claude_desktop_config.json` shown; Claude Code: `claude mcp add packetpilot -- ppcap mcp <capture>`):
@@ -272,6 +297,10 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   Slack, Microsoft Teams, Jira, TheHive, Splunk HEC, Elastic (ECS) or any OCSF consumer, or a
   plain webhook. Destinations are a shareable JSON file that names secrets by environment
   variable; a sent ledger prevents duplicate tickets; `--dry-run` and `--out-dir` work offline.
+- **Zeek logs out, Suricata EVE in** — `ppcap zeek` (or `analyze --zeek`) writes Zeek-format
+  conn / dns / http / ssl / ssh / files logs plus a notice log of findings, linked by one `uid`,
+  for any SIEM pipeline that reads Zeek; `analyze --eve` and `ppcap eve` fold a Suricata sensor's
+  alerts into the alert queue so they rank and correlate with PacketPilot's detections.
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.

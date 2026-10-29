@@ -13,6 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod push;
+pub mod zeek;
 
 use crate::model::output::AnalysisOutput;
 

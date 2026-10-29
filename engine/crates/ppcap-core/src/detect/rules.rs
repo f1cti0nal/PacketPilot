@@ -561,7 +561,7 @@ const MAX_RULE_FINDINGS: usize = 5000;
 /// Map a `Severity` to a representative score in its band (mirrors the bands used across detectors).
 ///
 /// Bands: Info 0–14, Low 15–34, Medium 35–59, High 60–84, Critical 85–100.
-fn score_for_severity(sev: Severity) -> u16 {
+pub(crate) fn score_for_severity(sev: Severity) -> u16 {
     match sev {
         Severity::Info => 7,
         Severity::Low => 25,

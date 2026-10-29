@@ -63,7 +63,10 @@ pub mod stats;
 pub mod timemachine;
 pub mod tls;
 
-pub use analyze::{run, run_source, run_source_visiting, sha256_hex, PipelineConfig};
+pub use analyze::{
+    run, run_observing, run_source, run_source_observing, run_source_visiting, sha256_hex,
+    CaptureVisitor, PacketView, PipelineConfig,
+};
 pub use baseline::{
     build_baseline, compare_to_baseline, compare_to_baseline_at, merge as merge_baselines,
     update_baseline, BaselineParams, BaselineProfile, CaptureProfile, Deviation, DeviationReport,
@@ -79,6 +82,7 @@ pub use custody::{
     EVIDENCE_SCHEMA_VERSION,
 };
 pub use detect::alerts::{derive_alerts, diff_alerts, refresh_alerts};
+pub use detect::eve::{fold_eve, read_eve, EveImport};
 pub use detect::rules::{
     apply_rules, apply_rules_with_context, parse_rules, Rule, RuleParse, RuleProto, SkippedRule,
 };
@@ -100,6 +104,10 @@ pub use enrich::{
     FeedMatch, FlowEnrichment, IpClass, RepStatus, ReputationVerdict, ThreatFeed,
 };
 pub use error::{PpError, Result};
+pub use export::zeek::{
+    conn_uid, header_time as zeek_header_time, LogSink, MemorySink, ZeekFormat, ZeekLogger,
+    ZeekReport,
+};
 pub use export::{
     cef_records, findings_csv, misp_event, sigma_rules, stix_bundle, timeline_csv,
     timeline_markdown, timelines_text,

@@ -151,6 +151,54 @@ pub enum Command {
         /// listed under `suppressions` in the JSON. Expired rules are skipped.
         #[arg(long = "suppress", conflicts_with = "batch")]
         suppress: Vec<PathBuf>,
+        /// Suricata EVE in: fold the `alert` events of this `eve.json` into the analysis as
+        /// findings, so sensor hits rank and correlate with PacketPilot's own. Repeatable.
+        #[arg(long = "eve", conflicts_with = "batch")]
+        eve: Vec<PathBuf>,
+        /// Zeek logs out: also write conn/dns/http/ssl/ssh/files/notice logs to this directory,
+        /// from the same pass.
+        #[arg(long = "zeek", conflicts_with = "batch")]
+        zeek: Option<PathBuf>,
+        /// Write the `--zeek` logs as Zeek JSON (one object per line) instead of tab-separated.
+        #[arg(long = "zeek-json", requires = "zeek")]
+        zeek_json: bool,
+    },
+    /// Zeek logs out: analyze a capture and write Zeek-format logs (conn, dns, http, ssl, ssh,
+    /// files, plus notice for PacketPilot's findings) that share one connection uid, ready for a
+    /// SIEM pipeline that already reads Zeek.
+    Zeek {
+        /// The capture (pcap / pcapng, optionally .gz).
+        input: PathBuf,
+        /// Directory for the logs (created if missing).
+        #[arg(short = 'o', long = "out-dir", default_value = "zeek-logs")]
+        out_dir: PathBuf,
+        /// Zeek JSON (one object per line) instead of Zeek's tab-separated format.
+        #[arg(long)]
+        json: bool,
+        /// Suricata EVE files whose alerts join the findings in notice.log. Repeatable.
+        #[arg(long = "eve")]
+        eve: Vec<PathBuf>,
+        /// Also write the analysis JSON here.
+        #[arg(long)]
+        summary: Option<PathBuf>,
+        /// Suppress stderr progress.
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// Suricata EVE in: fold the `alert` events of one or more `eve.json` files into an existing
+    /// analysis, re-deriving its alert queue. Importing the same file twice adds nothing new.
+    Eve {
+        /// The analysis-output JSON (from `analyze --json`).
+        summary: PathBuf,
+        /// Suricata EVE files (one JSON event per line).
+        #[arg(required = true)]
+        eve: Vec<PathBuf>,
+        /// Write the updated analysis here ("-" => stdout; default: stdout).
+        #[arg(long)]
+        json: Option<String>,
+        /// Suppress the stderr summary.
+        #[arg(long)]
+        quiet: bool,
     },
     /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
     /// reporting indicators that were clean at capture time but are dirty now.
@@ -915,6 +963,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             evidence,
             keylog,
             suppress,
+            eve,
+            zeek,
+            zeek_json,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
             // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
@@ -1057,7 +1108,14 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 let _ = err.flush();
             };
 
-            let mut out = ppcap_core::run(&input, &cfg, progress)?;
+            let mut zeek_logger = zeek
+                .as_deref()
+                .map(|d| crate::zeek::logger(d, zeek_json))
+                .transpose()?;
+            let mut out = match zeek_logger.as_mut() {
+                Some(l) => ppcap_core::run_observing(&input, &cfg, l, progress)?,
+                None => ppcap_core::run(&input, &cfg, progress)?,
+            };
             if !quiet {
                 // Terminate the in-place progress line.
                 let _ = writeln!(std::io::stderr());
@@ -1224,6 +1282,8 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 );
             }
 
+            crate::zeek::fold_eve_files(&mut out.summary, &eve, quiet)?;
+
             // Teach it once: analyst suppression rules shape the queue last, after every pass
             // that adds findings or moves the cards their guardrails read.
             if !suppress.is_empty() {
@@ -1239,6 +1299,12 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             if !quiet && !out.summary.alerts.is_empty() {
                 eprintln!("{}", alerts_summary_line(&out.summary));
             }
+
+            // notice.log carries every finding, so the logs close after the passes that add them.
+            let zeek_report = match (zeek_logger, zeek.as_deref()) {
+                (Some(l), Some(dir)) => Some(crate::zeek::finish(l, &out, dir, quiet)?),
+                _ => None,
+            };
 
             let s = out.to_json_pretty()?;
             match json.as_deref() {
@@ -1387,6 +1453,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if let (Some(p), Some((sha, _))) = (keylog_path.as_ref(), keylog_digest.as_ref()) {
                     settings.push(format!("--keylog {} (sha256 {sha})", p.display()));
                 }
+                for p in &eve {
+                    settings.push(format!("--eve {}", p.display()));
+                }
+                if let Some(d) = zeek.as_ref() {
+                    settings.push(format!("--zeek {}", d.display()));
+                    if zeek_json {
+                        settings.push("--zeek-json".to_string());
+                    }
+                }
 
                 // Input hash: reuse the --hash pass's result when present, else hash now —
                 // an unhashed input is not evidence.
@@ -1456,6 +1531,16 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 // `verify` notices a rule file edited after the fact.
                 for p in &suppress {
                     record("suppression_rules", p)?;
+                }
+                // Suricata EVE files add findings, so they are inputs like the rule files.
+                for p in &eve {
+                    record("eve_input", p)?;
+                }
+                // Every Zeek log this run wrote.
+                if let (Some(dir), Some(report)) = (zeek.as_ref(), zeek_report.as_ref()) {
+                    for (log, _) in &report.logs {
+                        record("zeek_log", &dir.join(format!("{log}.log")))?;
+                    }
                 }
                 // Bodies extracted by --carve-dir are evidence too; one record per file (the
                 // uncapped list, not the top-k `carved_files` projection).
@@ -1851,6 +1936,55 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     "-" => println!("{s}"),
                     p => std::fs::write(p, &s)
                         .with_context(|| format!("write updated analysis JSON to {p}"))?,
+                }
+            }
+            Ok(())
+        }
+        Command::Zeek {
+            input,
+            out_dir,
+            json,
+            eve,
+            summary,
+            quiet,
+        } => {
+            let cfg = ppcap_core::PipelineConfig {
+                writer: ppcap_core::columnar::WriterConfig {
+                    capture_id: fnv1a64(input.to_string_lossy().as_bytes()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut logger = crate::zeek::logger(&out_dir, json)?;
+            let mut out = ppcap_core::run_observing(&input, &cfg, &mut logger, |_, _, _| {})?;
+            crate::zeek::fold_eve_files(&mut out.summary, &eve, quiet)?;
+            crate::zeek::finish(logger, &out, &out_dir, quiet)?;
+            if let Some(path) = summary.as_ref() {
+                std::fs::write(path, out.to_json_pretty()?)
+                    .with_context(|| format!("write JSON output to {}", path.display()))?;
+            }
+            Ok(())
+        }
+        Command::Eve {
+            summary,
+            eve,
+            json,
+            quiet,
+        } => {
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            crate::zeek::fold_eve_files(&mut out.summary, &eve, quiet)?;
+            if !quiet && !out.summary.alerts.is_empty() {
+                eprintln!("{}", alerts_summary_line(&out.summary));
+            }
+            let s = out.to_json_pretty()?;
+            match json.as_deref() {
+                None | Some("-") => println!("{s}"),
+                Some(path) => {
+                    std::fs::write(path, &s)
+                        .with_context(|| format!("write JSON output to {path}"))?;
                 }
             }
             Ok(())
@@ -2318,6 +2452,32 @@ mod reputation_cli_tests {
             Command::Analyze { reputation, .. } => assert!(reputation),
             _ => panic!("expected Analyze"),
         }
+    }
+
+    #[test]
+    fn zeek_and_eve_subcommands_parse() {
+        let cli =
+            Cli::try_parse_from(["ppcap", "zeek", "x.pcap", "--json", "--eve", "e.json"]).unwrap();
+        match cli.command {
+            Command::Zeek {
+                out_dir, json, eve, ..
+            } => {
+                assert_eq!(out_dir, PathBuf::from("zeek-logs"));
+                assert!(json);
+                assert_eq!(eve, vec![PathBuf::from("e.json")]);
+            }
+            _ => panic!("expected Zeek"),
+        }
+        let cli = Cli::try_parse_from(["ppcap", "eve", "s.json", "a.json", "b.json"]).unwrap();
+        assert!(matches!(cli.command, Command::Eve { ref eve, .. } if eve.len() == 2));
+        assert!(Cli::try_parse_from(["ppcap", "eve", "s.json"]).is_err());
+        // `--zeek-json` needs `--zeek`.
+        assert!(Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--zeek-json"]).is_err());
+        let cli = Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--zeek", "d", "--eve", "e"])
+            .unwrap();
+        assert!(
+            matches!(cli.command, Command::Analyze { zeek: Some(_), ref eve, .. } if eve.len() == 1)
+        );
     }
 
     #[test]
