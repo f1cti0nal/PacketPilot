@@ -171,6 +171,16 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   (SSH-1 support, deprecated host keys, CBC/`none` ciphers — all read from the cleartext
   identification line and KEXINIT, which precede key exchange). Server fingerprints are
   feed-matchable (`bad_ja4s`, `bad_hassh`, `bad_hassh_server`) and re-scannable by Time Machine.
+- **Windows identity attacks** — the cleartext envelopes of Kerberos, DCE-RPC and LDAP are parsed
+  (bounded reassembly; tickets, hashes and RPC stubs are never kept) to raise explainable
+  **Kerberoasting** (RC4-only or bulk service-ticket requests, T1558.003), **AS-REP roasting**
+  (an AS-REP issued without pre-authentication, T1558.004), **DCSync** (`DRSGetNCChanges` from a
+  host that is not a domain controller — visible even when the call is sealed, T1003.006),
+  **AD reconnaissance** (SPN / no-pre-auth / adminCount / delegation / LAPS LDAP queries, SAMR
+  enumeration, Kerberos username enumeration) and **legacy Kerberos crypto** (DES tickets, or RC4
+  for service accounts without AES keys) findings. Domain controllers are inferred from the
+  capture; add more with `--dc 10.0.0.10,10.0.0.11`, or turn the stage off with `--no-identity`.
+  Sealed LDAP (the Windows default) and LDAPS stay unread.
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S/HASSH), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags

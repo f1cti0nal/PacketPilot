@@ -9,6 +9,17 @@ describe("findingKinds", () => {
     expect(KIND_META.exposed_remote_access.Icon).not.toBe(Activity); // a dedicated, non-fallback icon
   });
 
+  it("labels the Windows identity-attack kinds with dedicated icons", () => {
+    expect(kindLabel("kerberoasting")).toBe("Kerberoasting");
+    expect(kindLabel("asrep_roasting")).toBe("AS-REP Roasting");
+    expect(kindLabel("dcsync")).toBe("DCSync");
+    expect(kindLabel("ad_recon")).toBe("AD Reconnaissance");
+    expect(kindLabel("legacy_auth")).toBe("Legacy Kerberos Crypto");
+    for (const k of ["kerberoasting", "asrep_roasting", "dcsync", "ad_recon", "legacy_auth"] as const) {
+      expect(KIND_META[k].Icon, k).not.toBe(Activity);
+    }
+  });
+
   it("every known kind has a non-empty label", () => {
     for (const [kind, meta] of Object.entries(KIND_META)) {
       expect(meta.label.length, kind).toBeGreaterThan(0);

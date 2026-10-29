@@ -115,6 +115,7 @@ fn is_weak_kind(kind: FindingKind) -> bool {
             | FindingKind::TrafficAnomaly
             | FindingKind::MissingSni
             | FindingKind::SshPosture
+            | FindingKind::LegacyAuth
     )
 }
 
@@ -890,6 +891,21 @@ fn action_for(f: &Finding, peer: Option<&str>, port: Option<u16>, actor: &str) -
         }
         FindingKind::SshPosture => {
             format!("Harden the SSH server on {peer_disp}: drop SSH-1, weak host keys and CBC")
+        }
+        FindingKind::Kerberoasting => {
+            format!("Rotate the roasted service-account passwords; find the tool on {actor}")
+        }
+        FindingKind::AsrepRoasting => {
+            format!("Enable pre-auth on the roasted accounts, rotate them; check {actor}")
+        }
+        FindingKind::DcSync => {
+            format!("Isolate {actor}; assume krbtgt and admin hashes are stolen; reset them")
+        }
+        FindingKind::AdRecon => {
+            format!("Identify the process enumerating AD on {actor}; watch for roasting next")
+        }
+        FindingKind::LegacyAuth => {
+            format!("Disable DES/RC4 on {actor}; give the listed service accounts AES keys")
         }
     }
 }

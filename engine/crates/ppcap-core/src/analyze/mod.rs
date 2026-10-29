@@ -126,6 +126,9 @@ pub struct PipelineConfig {
     pub port_mismatch: crate::detect::PortMismatchParams,
     /// Encrypted-traffic analysis: weak SSH posture from the cleartext handshake.
     pub ssh_posture: crate::detect::SshPostureParams,
+    /// Windows identity attacks (Kerberos / DCE-RPC / LDAP): Kerberoasting, AS-REP roasting,
+    /// DCSync, AD recon, legacy Kerberos crypto.
+    pub identity: crate::identity::IdentityParams,
     /// Key-log decryption: a parsed NSS `SSLKEYLOGFILE`. When set, [`run`] makes one extra bounded
     /// pass that decrypts the keyed TLS flows into [`AnalysisOutput::keylog`]; `None` (the default)
     /// leaves the pipeline and its output untouched.
@@ -179,6 +182,7 @@ impl Default for PipelineConfig {
             missing_sni: crate::detect::MissingSniParams::default(),
             port_mismatch: crate::detect::PortMismatchParams::default(),
             ssh_posture: crate::detect::SshPostureParams::default(),
+            identity: crate::identity::IdentityParams::default(),
             keylog: None,
         }
     }
@@ -285,6 +289,9 @@ pub fn run_source_visiting<'a>(
     // Bounded server-TLS-handshake reassembler: reads the cleartext server Certificate (TLS ≤ 1.2)
     // out of band from the same packets, for the certificate-health detector. Drained at EOF.
     let mut cert_reasm = TlsCertReassembler::new();
+    // Bounded identity-protocol reassembler (Kerberos / LDAP / DCE-RPC): reads the cleartext
+    // envelopes of Windows authentication and directory traffic for the identity detectors.
+    let mut identity = crate::identity::IdentityObserver::new(cfg.identity.enabled);
     // Bounded QUIC server-Initial tracker: remembers each connection's client DCID (a public,
     // wire-visible value) so the server's Initial can be opened keylessly, giving QUIC flows the
     // same server-side TLS metadata TCP flows get. Applies its results to `PacketMeta` inline.
@@ -340,6 +347,7 @@ pub fn run_source_visiting<'a>(
                     // every later stage (stats, flow fold, Parquet) must see them.
                     quic_server.observe(meta, &frame);
                     cert_reasm.observe(meta, &frame);
+                    identity.observe(meta, &frame);
                     body_carver.observe(meta, &frame);
                     entropy.observe(meta, &frame);
                 }
@@ -577,6 +585,7 @@ pub fn run_source_visiting<'a>(
         &tracker,
         &cfg.ssh_posture,
     ));
+    findings.extend(identity.into_findings(&cfg.identity));
     findings.extend(detect_icmp_tunnel(&tracker, &cfg.icmp_tunnel));
     findings.extend(detect_dga(&tracker, &cfg.dga));
     findings.extend(detect_port_scan(&tracker, &cfg.port_scan));

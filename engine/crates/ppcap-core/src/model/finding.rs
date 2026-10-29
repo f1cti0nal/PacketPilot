@@ -100,6 +100,24 @@ pub enum FindingKind {
     /// KEXINIT algorithm lists precede key exchange. Appended last to keep existing variant
     /// ordinals stable.
     SshPosture,
+    /// Kerberoasting: one client pulling service tickets for user-account SPNs in a crackable
+    /// form (RC4 requested or issued) or in bulk — offline password cracking prep (T1558.003).
+    /// Appended last to keep existing variant ordinals stable.
+    Kerberoasting,
+    /// AS-REP roasting: the KDC issued an AS-REP for an account that does not require Kerberos
+    /// pre-authentication, handing the requester material encrypted with the account's key
+    /// (T1558.004).
+    AsrepRoasting,
+    /// DCSync: a host that is not a domain controller asked a DC to replicate directory secrets
+    /// (DRSUAPI `DRSGetNCChanges`) — credential dumping (T1003.006).
+    DcSync,
+    /// Active Directory reconnaissance: recon-shaped LDAP searches (SPN holders, no-pre-auth
+    /// accounts, adminCount, delegation, LAPS), SAMR/LSA enumeration, or Kerberos username
+    /// enumeration (T1087.002 / T1069.002).
+    AdRecon,
+    /// Legacy authentication posture: a KDC issuing DES tickets, or RC4 tickets for services whose
+    /// clients asked for AES (the service account has no AES keys) — crackable material on the wire.
+    LegacyAuth,
 }
 
 impl FindingKind {
@@ -135,6 +153,11 @@ impl FindingKind {
             FindingKind::MissingSni => "missing_sni",
             FindingKind::PortProtocolMismatch => "port_protocol_mismatch",
             FindingKind::SshPosture => "ssh_posture",
+            FindingKind::Kerberoasting => "kerberoasting",
+            FindingKind::AsrepRoasting => "asrep_roasting",
+            FindingKind::DcSync => "dcsync",
+            FindingKind::AdRecon => "ad_recon",
+            FindingKind::LegacyAuth => "legacy_auth",
         }
     }
 }

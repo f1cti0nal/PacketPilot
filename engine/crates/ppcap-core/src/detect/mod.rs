@@ -4585,6 +4585,11 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::MissingSni => 4, // command & control (a client hiding which server it wants)
         FindingKind::PortProtocolMismatch => 4, // command & control (protocol/port disagreement)
         FindingKind::SshPosture => 2, // credential access (a weak admin channel is the way in)
+        FindingKind::Kerberoasting => 1, // credential access (crackable service tickets)
+        FindingKind::AsrepRoasting => 1, // credential access (crackable AS-REPs)
+        FindingKind::DcSync => 1,     // credential access (directory secrets replicated)
+        FindingKind::AdRecon => 0,    // discovery (directory enumeration)
+        FindingKind::LegacyAuth => 1, // credential access (weak Kerberos crypto)
     }
 }
 
@@ -4620,6 +4625,11 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::MissingSni => "Command & Control",
         FindingKind::PortProtocolMismatch => "Command & Control",
         FindingKind::SshPosture => "Credential Access",
+        FindingKind::Kerberoasting => "Credential Access",
+        FindingKind::AsrepRoasting => "Credential Access",
+        FindingKind::DcSync => "Credential Access",
+        FindingKind::AdRecon => "Discovery",
+        FindingKind::LegacyAuth => "Credential Access",
     }
 }
 
@@ -4657,6 +4667,11 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::MissingSni => "opened TLS sessions without naming a server",
         FindingKind::PortProtocolMismatch => "spoke a protocol the port does not match",
         FindingKind::SshPosture => "negotiated SSH with a weak or broken configuration",
+        FindingKind::Kerberoasting => "requested crackable Kerberos service tickets",
+        FindingKind::AsrepRoasting => "roasted accounts that skip Kerberos pre-authentication",
+        FindingKind::DcSync => "replicated directory secrets from a domain controller",
+        FindingKind::AdRecon => "enumerated Active Directory",
+        FindingKind::LegacyAuth => "issued Kerberos tickets with legacy encryption",
     }
 }
 
@@ -4786,6 +4801,12 @@ pub fn technique_name(id: &str) -> &str {
         "T1040" => "Network Sniffing",
         "T1573" => "Encrypted Channel",
         "T1027" => "Obfuscated Files or Information",
+        "T1558" => "Steal or Forge Kerberos Tickets",
+        "T1558.003" => "Kerberoasting",
+        "T1558.004" => "AS-REP Roasting",
+        "T1003.006" => "OS Credential Dumping: DCSync",
+        "T1087.002" => "Account Discovery: Domain Account",
+        "T1069.002" => "Permission Groups Discovery: Domain Groups",
         other => other,
     }
 }
