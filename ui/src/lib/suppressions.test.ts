@@ -72,12 +72,22 @@ describe("dates and signatures", () => {
     expect(isExpired(r(), "2026-10-29")).toBe(false);
   });
 
-  it("signature ignores ids, order, duplicates and expired rules, and normalizes wildcards", () => {
+  it("signature ignores ids, duplicates and expired rules, and normalizes wildcards", () => {
     const today = "2026-10-29";
     const a = [r(), r({ id: "", kind: "beacon", dst: "any" })];
-    const b = [r({ id: "x", kind: "BEACON", dst: undefined }), r({ id: "y" }), r({ id: "z" })];
+    const b = [r({ id: "y" }), r({ id: "z", reason: "shadowed" }), r({ id: "x", kind: "BEACON", dst: undefined })];
     expect(rulesSignature(a, today)).toBe(rulesSignature(b, today));
     expect(rulesSignature([r({ expires: "2026-01-01" })], today)).toBe("");
     expect(rulesSignature(undefined, today)).toBe("");
+    // "" means "nothing expires": the applied side of the comparison keeps expired rules.
+    expect(rulesSignature([r({ expires: "2026-01-01" })], "")).not.toBe("");
+  });
+
+  it("signature changes when a rule's provenance changes, so shown reasons never go stale", () => {
+    const today = "2026-10-29";
+    const base = rulesSignature([r()], today);
+    expect(rulesSignature([r({ reason: "re-taught" })], today)).not.toBe(base);
+    expect(rulesSignature([r({ author: "sam" })], today)).not.toBe(base);
+    expect(rulesSignature([r({ expires: "2027-01-01" })], today)).not.toBe(base);
   });
 });

@@ -192,5 +192,11 @@ describe("AlertsView", () => {
       await u.click(screen.getAllByRole("button", { name: /^Delete rule/ })[1]);
       expect(onRemoveRule).toHaveBeenCalledWith(expired);
     });
+
+    it("keeps the rules manager reachable on a capture with no alerts", () => {
+      render(<AlertsView alerts={[]} findings={[]} onImportRules={vi.fn()} storedRules={[rule]} />);
+      expect(screen.getByText("No alerts")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Suppression rules (1)" })).toBeInTheDocument();
+    });
   });
 });

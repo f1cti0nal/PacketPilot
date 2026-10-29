@@ -330,6 +330,7 @@ mod apply_tests {
             category_breakdown: vec![],
             severity_counts: SeverityCounts::default(),
             ip_threats: threats,
+            ioc_ips: vec![],
             domain_threats: Vec::new(),
             http_hosts: Vec::new(),
             user_agents: Vec::new(),

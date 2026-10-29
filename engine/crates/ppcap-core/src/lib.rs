@@ -80,9 +80,9 @@ pub use custody::{
 pub use detect::alerts::{derive_alerts, diff_alerts, refresh_alerts};
 pub use detect::rules::{apply_rules, parse_rules, Rule, RuleParse, RuleProto, SkippedRule};
 pub use detect::suppress::{
-    apply_suppressions, load_rules as load_suppression_rules, match_suppressions,
-    merge_into_file as merge_suppression_rules, rules_for_alert, ymd_from_unix_secs, LoadedRules,
-    Taught, TeachMeta, TeachScope, DEFAULT_RULE_TTL_DAYS,
+    apply_suppressions, expire_carried_rules, load_rules as load_suppression_rules,
+    match_suppressions, merge_into_file as merge_suppression_rules, rules_for_alert,
+    ymd_from_unix_secs, LoadedRules, Taught, TeachMeta, TeachScope, DEFAULT_RULE_TTL_DAYS,
 };
 pub use detect::{
     fold_rule_findings, ArpSpoofParams, BeaconParams, BehaviorTracker, BruteForceParams,

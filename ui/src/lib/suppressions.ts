@@ -128,7 +128,7 @@ export function ymdPlusDays(d: Date, days: number): string {
   return ymd(new Date(d.getTime() + days * 86_400_000));
 }
 
-/** Whether a rule's `expires` date is before `today` (`YYYY-MM-DD`). */
+/** Whether a rule's `expires` date is before `today` (`YYYY-MM-DD`; `""` = nothing expires). */
 export function isExpired(rule: SuppressionRule, today: string): boolean {
   return !!rule.expires && rule.expires < today;
 }
@@ -144,13 +144,22 @@ function matchKey(r: SuppressionRule): string {
 }
 
 /**
- * Signature of a rule set's unexpired match keys. Comparing the stored file's signature with the
- * one a summary carries tells whether the summary's queue already reflects the stored rules.
+ * Signature of a rule set's effective, unexpired rules: the first rule per match key, in order,
+ * with the provenance a suppression hit displays (reason, author, expiry). Comparing the stored
+ * file's signature with the one a summary carries tells whether the summary's queue — and the
+ * reasons shown on its suppressed findings — already reflect the stored rules.
  */
 export function rulesSignature(rules: SuppressionRule[] | undefined, today: string): string {
-  return [...new Set((rules ?? []).filter((r) => !isExpired(r, today)).map(matchKey))]
-    .sort()
-    .join(",");
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const r of rules ?? []) {
+    if (isExpired(r, today)) continue;
+    const key = matchKey(r);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(JSON.stringify([key, r.reason.trim(), r.author ?? "", r.expires ?? ""]));
+  }
+  return parts.join(",");
 }
 
 /** Live view of the stored rule file; re-reads on every write (any tab/component). */

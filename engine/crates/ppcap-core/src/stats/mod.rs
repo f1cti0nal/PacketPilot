@@ -1287,6 +1287,15 @@ impl StatsAccumulator {
                 .then(b.flows.cmp(&a.flows))
                 .then(a.ip.cmp(&b.ip))
         });
+        // The IOC set survives the top-K cut; sorted by address for deterministic output.
+        let mut ioc_addrs: Vec<IpAddr> = self
+            .per_ip_threat
+            .iter()
+            .filter(|(_, s)| s.ioc)
+            .map(|(ip, _)| *ip)
+            .collect();
+        ioc_addrs.sort_unstable();
+        let ioc_ips: Vec<String> = ioc_addrs.iter().map(IpAddr::to_string).collect();
         ip_threats.truncate(self.cfg.top_k_ip_threats);
 
         // Domain (SNI) rollups: desc by bytes, tie-break desc flows, then asc host. Top-N.
@@ -1502,6 +1511,7 @@ impl StatsAccumulator {
             category_breakdown,
             severity_counts: self.severity_counts,
             ip_threats,
+            ioc_ips,
             domain_threats,
             http_hosts,
             user_agents,

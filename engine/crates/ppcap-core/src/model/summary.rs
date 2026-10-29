@@ -374,6 +374,11 @@ pub struct Summary {
     pub severity_counts: SeverityCounts,
     /// desc by score; len <= top_k_ip_threats.
     pub ip_threats: Vec<IpThreat>,
+    /// Every IP that matched the offline IOC feed, uncapped and sorted — `ip_threats` is a top-K
+    /// projection, so guardrails that must never miss an IOC hit (analyst suppressions) read
+    /// this. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ioc_ips: Vec<String>,
     /// Top TLS SNI hosts by traffic. `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub domain_threats: Vec<DomainThreat>,
@@ -478,6 +483,7 @@ impl Summary {
             category_breakdown: Vec::new(),
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),
+            ioc_ips: Vec::new(),
             domain_threats: Vec::new(),
             http_hosts: Vec::new(),
             user_agents: Vec::new(),

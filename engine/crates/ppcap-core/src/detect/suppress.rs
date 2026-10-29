@@ -66,6 +66,33 @@ pub fn ymd_from_unix_secs(secs: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Whether `s` is a real `YYYY-MM-DD` calendar date (the only form expiry compares correctly).
+pub fn is_ymd(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    let num = |r: std::ops::Range<usize>| -> Option<u32> {
+        let part = &s[r];
+        part.bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| part.parse().ok())
+            .flatten()
+    };
+    let (Some(y), Some(m), Some(d)) = (num(0..4), num(5..7), num(8..10)) else {
+        return false;
+    };
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days = match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    (1..=days).contains(&d)
+}
+
 /// The stable id of a normalized match key.
 pub fn rule_id(kind: &str, src: Option<&str>, dst: Option<&str>, dst_port: Option<u16>) -> String {
     let key = format!(
@@ -228,6 +255,13 @@ pub fn load_rules(files: &[SuppressionFile], today: Option<&str>) -> LoadedRules
                 out.invalid.push((rule, "kind is required".to_string()));
                 continue;
             }
+            if let Some(exp) = rule.expires.as_deref() {
+                if !is_ymd(exp.trim()) {
+                    let why = format!("expires {exp:?} is not a YYYY-MM-DD date");
+                    out.invalid.push((rule, why));
+                    continue;
+                }
+            }
             if let (Some(today), Some(exp)) = (today, rule.expires.as_deref()) {
                 if exp.trim() < today {
                     out.expired.push(rule);
@@ -248,11 +282,13 @@ fn block_reason(summary: &Summary, f: &Finding) -> Option<BlockReason> {
     if is_protected_kind(f.kind) {
         return Some(BlockReason::ProtectedKind);
     }
-    let cards: Vec<_> = std::iter::once(f.src_ip.as_str())
-        .chain(f.dst_ip.as_deref())
+    let endpoints = || std::iter::once(f.src_ip.as_str()).chain(f.dst_ip.as_deref());
+    let cards: Vec<_> = endpoints()
         .filter_map(|ip| summary.ip_threats.iter().find(|c| c.ip == ip))
         .collect();
-    if cards.iter().any(|c| c.ioc) {
+    // `ioc_ips` is uncapped; the cards are a top-K projection an IOC host can fall out of.
+    if cards.iter().any(|c| c.ioc) || endpoints().any(|ip| summary.ioc_ips.iter().any(|i| i == ip))
+    {
         return Some(BlockReason::ThreatIntel);
     }
     if cards.iter().any(|c| {
@@ -301,6 +337,22 @@ pub fn suppressed_indices(summary: &Summary) -> BTreeSet<u32> {
         .filter(|h| h.outcome == SuppressionOutcome::Suppressed)
         .map(|h| h.finding_index)
         .collect()
+}
+
+/// Re-check the rules a saved analysis carries against `today` (`YYYY-MM-DD`): a rule that was
+/// active when the analysis ran may have expired since. Re-derives the queue only when a rule
+/// dropped; returns how many did.
+pub fn expire_carried_rules(summary: &mut Summary, today: &str) -> usize {
+    let carried = SuppressionFile {
+        version: crate::model::suppression::SUPPRESSION_FILE_VERSION,
+        rules: summary.suppression_rules.clone(),
+    };
+    let active = load_rules(std::slice::from_ref(&carried), Some(today)).active;
+    let dropped = summary.suppression_rules.len() - active.len();
+    if dropped > 0 {
+        apply_suppressions(summary, active);
+    }
+    dropped
 }
 
 /// Attach `rules` to the summary (replacing any earlier set) and re-derive the alert queue.
@@ -516,6 +568,67 @@ mod tests {
             "2027-01-27"
         );
         assert_eq!(ymd_from_unix_secs(-86_400), "1969-12-31");
+    }
+
+    #[test]
+    fn expiry_must_be_a_real_date() {
+        assert!(is_ymd("2026-10-29"));
+        assert!(is_ymd("2028-02-29"));
+        assert!(!is_ymd("2027-02-29"));
+        assert!(!is_ymd("2026-13-01"));
+        assert!(!is_ymd("not-a-date"));
+        assert!(!is_ymd("2026-1-01x"));
+        assert!(!is_ymd("+026-10-29"));
+        let file = SuppressionFile {
+            version: 1,
+            rules: vec![SuppressionRule {
+                expires: Some("not-a-date".into()),
+                ..rule("weak_tls", None, None, None)
+            }],
+        };
+        let loaded = load_rules(&[file], Some("2026-10-29"));
+        assert!(loaded.active.is_empty());
+        assert_eq!(loaded.invalid.len(), 1);
+    }
+
+    #[test]
+    fn carried_rules_expire_when_a_saved_analysis_is_reopened() {
+        let mut s = summary_with(vec![finding(
+            FindingKind::MissingSni,
+            "10.0.0.5",
+            Some("52.1.1.1"),
+            Some(443),
+        )]);
+        apply_suppressions(
+            &mut s,
+            vec![SuppressionRule {
+                expires: Some("2026-10-29".into()),
+                ..rule("missing_sni", None, None, None)
+            }],
+        );
+        assert!(s.alerts.is_empty());
+        assert_eq!(expire_carried_rules(&mut s, "2026-10-29"), 0);
+        assert!(s.alerts.is_empty());
+        assert_eq!(expire_carried_rules(&mut s, "2026-10-30"), 1);
+        assert_eq!(s.alerts.len(), 1);
+        assert!(s.suppressions.is_empty());
+    }
+
+    #[test]
+    fn ioc_guardrail_sees_hosts_evicted_from_the_top_k_cards() {
+        let mut s = summary_with(vec![finding(
+            FindingKind::Beacon,
+            "10.0.0.6",
+            Some("45.77.13.37"),
+            Some(443),
+        )]);
+        s.ioc_ips = vec!["45.77.13.37".into()];
+        apply_suppressions(&mut s, vec![rule("beacon", None, None, None)]);
+        assert_eq!(
+            s.suppressions[0].outcome,
+            SuppressionOutcome::Blocked(BlockReason::ThreatIntel)
+        );
+        assert_eq!(s.alerts.len(), 1);
     }
 
     #[test]

@@ -585,11 +585,27 @@ export function AlertsView({
   const showRules = !!(onTeach || onImportRules || storedRules.length > 0);
 
   if (alerts.length === 0 && suppressions.length === 0) {
-    return (
+    const empty = (
       <EmptyState
         title="No alerts"
         hint="The ranked triage queue appears once a capture is analyzed. Load a capture to get started."
       />
+    );
+    if (!showRules) return empty;
+    // Rules stay manageable (import a team file, delete one) even when this capture is quiet.
+    return (
+      <div data-component="AlertsView" className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
+        {empty}
+        <div className="mx-auto w-full max-w-4xl">
+          <RulesManager
+            rules={storedRules}
+            today={today}
+            onRemoveRule={onRemoveRule}
+            onImportRules={onImportRules}
+            onExportRules={onExportRules}
+          />
+        </div>
+      </div>
     );
   }
 

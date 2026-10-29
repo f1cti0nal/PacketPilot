@@ -790,12 +790,20 @@ export function App() {
   // engine rejects can never loop.
   const suppressionFile = useSuppressions();
   const suppressAttemptRef = useRef<string | null>(null);
+  // The calendar day rules expire against; re-checked hourly so a rule that expires while the
+  // app stays open stops applying without a reload.
+  const [today, setToday] = useState(() => ymd(new Date()));
+  useEffect(() => {
+    const t = window.setInterval(() => setToday(ymd(new Date())), 3_600_000);
+    return () => window.clearInterval(t);
+  }, []);
   useEffect(() => {
     if (summary.status !== "ready" || !summary.data) return;
     const data = summary.data;
-    const today = ymd(new Date());
     const wanted = rulesSignature(suppressionFile.rules, today);
-    if (rulesSignature(data.summary.suppression_rules, today) === wanted) return;
+    // The applied side is compared unfiltered: a rule the summary still carries after it
+    // expired (a restored analysis, or a day change) must trigger a re-apply.
+    if (rulesSignature(data.summary.suppression_rules, "") === wanted) return;
     const attempt = `${repCaptureKey(data) ?? ""}|${wanted}`;
     if (suppressAttemptRef.current === attempt) return;
     suppressAttemptRef.current = attempt;
@@ -812,7 +820,7 @@ export function App() {
       if (id) setRecent(updateRecentSummary(id, res.output));
     });
     repChainRef.current = run.catch(() => {});
-  }, [summary, suppressionFile]);
+  }, [summary, suppressionFile, today]);
 
   const teachAlert = useCallback(
     async (alertId: string, scope: TeachScope, reason: string): Promise<string> => {
@@ -929,7 +937,7 @@ export function App() {
           suppressions={summary.status === "ready" ? summary.data?.summary.suppressions ?? [] : []}
           appliedRules={summary.status === "ready" ? summary.data?.summary.suppression_rules ?? [] : []}
           storedRules={suppressionFile.rules}
-          today={ymd(new Date())}
+          today={today}
           onTeach={summary.status === "ready" && summary.data ? teachAlert : undefined}
           onRemoveRule={removeSuppressionRule}
           onImportRules={(f) => void importSuppressionFile(f)}

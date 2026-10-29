@@ -521,6 +521,10 @@ fn dispatch_suppress(action: SuppressAction) -> anyhow::Result<()> {
                 .with_context(|| format!("parse analysis output {}", summary.display()))?;
             ppcap_core::refresh_alerts(&mut out.summary);
             let now = unix_now();
+            ppcap_core::expire_carried_rules(
+                &mut out.summary,
+                &ppcap_core::ymd_from_unix_secs(now),
+            );
             let meta = ppcap_core::TeachMeta {
                 reason: reason.trim().to_string(),
                 author,
@@ -1473,11 +1477,17 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             } else {
                 Some(load_suppression_rules(&suppress, false)?)
             };
+            let today = ppcap_core::ymd_from_unix_secs(unix_now());
             if let Some(r) = rules.as_ref() {
                 out.summary.suppression_rules = r.clone();
             }
             // Idempotent pure re-derive over the loaded summary (same fn as the analyze seam).
             ppcap_core::refresh_alerts(&mut out.summary);
+            // Rules carried from the original run may have expired since.
+            let expired = ppcap_core::expire_carried_rules(&mut out.summary, &today);
+            if expired > 0 {
+                eprintln!("suppress: {expired} carried rule(s) have expired and no longer apply");
+            }
             if !out.summary.suppressions.is_empty() {
                 eprintln!("{}", suppression_summary_line(&out.summary));
             }
@@ -1495,6 +1505,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     old.summary.suppression_rules = r.clone();
                 }
                 ppcap_core::refresh_alerts(&mut old.summary);
+                ppcap_core::expire_carried_rules(&mut old.summary, &today);
                 let d = ppcap_core::diff_alerts(&old.summary.alerts, &out.summary.alerts);
                 eprintln!(
                     "alert diff: {} new, {} resolved, {} changed, {} unchanged (old: {} alerts, new: {})",
