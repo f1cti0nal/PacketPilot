@@ -60,6 +60,8 @@ pub struct FlowRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hassh: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub hassh_server: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_banner: Option<String>,
 }
 
@@ -130,6 +132,7 @@ pub fn scan_flows(path: &Path, mut visit: impl FnMut(FlowRow) -> bool) -> Result
         let ja4s = col::<StringArray>(&batch, "ja4s");
         let tls_version = col::<StringArray>(&batch, "tls_version");
         let hassh = col::<StringArray>(&batch, "hassh");
+        let hassh_server = col::<StringArray>(&batch, "hassh_server");
         let ssh_banner = col::<StringArray>(&batch, "ssh_banner");
 
         for i in 0..batch.num_rows() {
@@ -160,6 +163,7 @@ pub fn scan_flows(path: &Path, mut visit: impl FnMut(FlowRow) -> bool) -> Result
                 ja4s: opt_str(ja4s, i),
                 tls_version: opt_str(tls_version, i),
                 hassh: opt_str(hassh, i),
+                hassh_server: opt_str(hassh_server, i),
                 ssh_banner: opt_str(ssh_banner, i),
             };
             if !visit(row) {
@@ -195,6 +199,7 @@ mod tests {
         r.category = Category::Web;
         r.app_proto = app.to_string();
         r.sni = sni.map(str::to_string);
+        r.hassh_server = Some("0123456789abcdef0123456789abcdef".into());
         r
     }
 
@@ -220,6 +225,10 @@ mod tests {
         assert_eq!(rows[0].sni.as_deref(), Some("example.org"));
         assert_eq!(rows[0].bytes(), 1_000);
         assert_eq!(rows[0].proto, 6);
+        assert_eq!(
+            rows[0].hassh_server.as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
         assert_eq!(rows[0].category, "web");
         assert_eq!(rows[1].app_proto, None);
         assert_eq!(rows[1].start_ns, 1_000);

@@ -54,7 +54,15 @@ fn parse_iso(s: &str) -> Option<i64> {
     let y: i64 = dp.next()?.parse().ok()?;
     let m: u32 = dp.next()?.parse().ok()?;
     let d: u32 = dp.next()?.parse().ok()?;
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let month_days = match m {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        1..=12 => 31,
+        _ => return None,
+    };
+    if !(1..=month_days).contains(&d) {
         return None;
     }
     let mut ns = days_from_civil(y, m, d) * 86_400 * 1_000_000_000;
@@ -133,6 +141,10 @@ mod tests {
     fn rejects_garbage() {
         assert!(parse_time(&json!("yesterday")).is_err());
         assert!(parse_time(&json!("2024-13-01")).is_err());
+        assert!(parse_time(&json!("2024-02-30")).is_err());
+        assert!(parse_time(&json!("2023-02-29")).is_err());
+        assert!(parse_time(&json!("2024-04-31")).is_err());
+        assert!(parse_time(&json!("2024-02-29")).is_ok());
         assert!(parse_time(&json!("2024-05-01T25:00:00Z")).is_err());
         assert!(parse_time(&json!(true)).is_err());
     }

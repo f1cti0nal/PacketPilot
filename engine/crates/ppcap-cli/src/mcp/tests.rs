@@ -23,7 +23,7 @@ fn gen_capture(dir: &Path, name: &str) -> PathBuf {
 fn opts(dir: &Path) -> LoadOptions {
     LoadOptions {
         threat_feed: None,
-        suppress: Vec::new(),
+        suppress: None,
         work_dir: dir.to_path_buf(),
         quiet: true,
     }
@@ -469,4 +469,47 @@ fn triage_prompt_names_the_capture_and_focus() {
     assert!(text.contains("get_packets"));
     let r = rpc(&mut s, "prompts/get", json!({ "name": "nope" }));
     assert_eq!(r["error"]["code"], INVALID_PARAMS);
+}
+
+#[test]
+fn an_explicit_suppress_replaces_carried_rules_even_when_it_yields_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let pcap = gen_capture(dir.path(), "chain.pcap");
+    let mut out =
+        ppcap_core::run(&pcap, &ppcap_core::PipelineConfig::default(), |_, _, _| {}).unwrap();
+    let rule: ppcap_core::SuppressionRule = serde_json::from_value(json!({
+        "kind": "brute_force", "src": "10.13.37.7", "reason": "lab scanner"
+    }))
+    .unwrap();
+    ppcap_core::apply_suppressions(&mut out.summary, vec![rule]);
+    assert!(!out.summary.suppressions.is_empty());
+    let summary = dir.path().join("carried.json");
+    std::fs::write(&summary, out.to_json().unwrap()).unwrap();
+
+    let mut o = opts(dir.path());
+    let kept = load(&summary, &o, &[]).unwrap();
+    assert_eq!(kept.out.summary.suppression_rules.len(), 1);
+    assert!(!kept.out.summary.suppressions.is_empty());
+
+    // `--suppress` given, but every rule in it had expired: the carried rule must not survive.
+    o.suppress = Some(Vec::new());
+    let replaced = load(&summary, &o, &[]).unwrap();
+    assert!(replaced.out.summary.suppression_rules.is_empty());
+    assert!(replaced.out.summary.suppressions.is_empty());
+}
+
+#[test]
+fn work_dirs_are_fresh_and_private() {
+    let a = super::capture::WorkDir::create().unwrap();
+    let b = super::capture::WorkDir::create().unwrap();
+    assert_ne!(a.0, b.0);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&a.0).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+    let path = a.0.clone();
+    drop(a);
+    assert!(!path.exists());
 }

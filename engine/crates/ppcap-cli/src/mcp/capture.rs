@@ -22,9 +22,10 @@ pub struct Capture {
 /// Settings shared by every input of one session.
 pub struct LoadOptions {
     pub threat_feed: Option<PathBuf>,
-    /// Active suppression rules (already loaded and expiry-filtered); empty => none applied
-    /// to captures, and a summary keeps the rules it carries.
-    pub suppress: Vec<ppcap_core::SuppressionRule>,
+    /// `Some` when `--suppress` was given: its active rules (already loaded and expiry-filtered,
+    /// possibly none), which replace whatever a summary carries. `None` => a summary keeps its
+    /// own rules and captures get none.
+    pub suppress: Option<Vec<ppcap_core::SuppressionRule>>,
     /// Where analysed captures write their flows Parquet.
     pub work_dir: PathBuf,
     pub quiet: bool,
@@ -34,11 +35,44 @@ pub struct LoadOptions {
 pub struct WorkDir(pub PathBuf);
 
 impl WorkDir {
+    /// A fresh, private directory under the system temp dir. `create_dir` (not `_all`) fails if
+    /// the name already exists, so a directory or symlink planted at a guessable name is never
+    /// reused: a clash just moves on to the next name.
     pub fn create() -> anyhow::Result<WorkDir> {
-        let dir = std::env::temp_dir().join(format!("ppcap-mcp-{}", std::process::id()));
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("create scratch directory {}", dir.display()))?;
-        Ok(WorkDir(dir))
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let seed = crate::cli::fnv1a64(format!("{}:{nanos}", std::process::id()).as_bytes());
+        let mut last_err = None;
+        for attempt in 0u64..16 {
+            let dir = std::env::temp_dir().join(format!(
+                "ppcap-mcp-{}-{:016x}",
+                std::process::id(),
+                seed.wrapping_add(attempt.wrapping_mul(0x9e37_79b9_7f4a_7c15))
+            ));
+            match std::fs::create_dir(&dir) {
+                Ok(()) => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt as _;
+                        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+                            .with_context(|| format!("restrict {}", dir.display()))?;
+                    }
+                    return Ok(WorkDir(dir));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last_err = Some(e),
+                Err(e) => {
+                    return Err(anyhow::Error::new(e))
+                        .with_context(|| format!("create scratch directory {}", dir.display()))
+                }
+            }
+        }
+        Err(anyhow!(
+            "could not create a fresh scratch directory under {}: {}",
+            std::env::temp_dir().display(),
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        ))
     }
 }
 
@@ -67,17 +101,24 @@ fn looks_like_summary(path: &Path) -> bool {
         .is_some_and(|b| *b == b'{')
 }
 
-/// `path` as recorded, or relative to `base` when the recorded path does not exist from here.
+/// Where a path recorded in a summary points from here. An absolute path is taken as is. A
+/// relative one is tried beside the summary first (the bundle moved whole), then against the
+/// working directory (how `analyze` recorded it), so a same-named file elsewhere never wins over
+/// the one that travels with the summary.
 fn resolve(recorded: &str, base: Option<&Path>) -> Option<PathBuf> {
     if recorded.is_empty() {
         return None;
     }
     let p = PathBuf::from(recorded);
-    if p.is_file() {
-        return Some(p);
+    if p.is_absolute() {
+        return p.is_file().then_some(p);
     }
-    let alt = base?.join(&p);
-    alt.is_file().then_some(alt)
+    if let Some(alt) = base.map(|b| b.join(&p)) {
+        if alt.is_file() {
+            return Some(alt);
+        }
+    }
+    p.is_file().then_some(p)
 }
 
 /// A unique short id for `path` among `taken`.
@@ -138,8 +179,8 @@ pub fn load(path: &Path, opts: &LoadOptions, taken: &[String]) -> anyhow::Result
             .with_context(|| format!("read analysis output {}", path.display()))?;
         let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
             .with_context(|| format!("parse analysis output {}", path.display()))?;
-        if !opts.suppress.is_empty() {
-            out.summary.suppression_rules = opts.suppress.clone();
+        if let Some(rules) = &opts.suppress {
+            out.summary.suppression_rules = rules.clone();
         }
         // Same idempotent re-derive `ppcap alerts` runs, so older summaries gain alerts and
         // timelines, and carried rules that have since expired stop applying.
@@ -175,8 +216,8 @@ pub fn load(path: &Path, opts: &LoadOptions, taken: &[String]) -> anyhow::Result
     }
     let mut out = ppcap_core::run(path, &cfg, |_, _, _| {})
         .with_context(|| format!("analyse {}", path.display()))?;
-    if !opts.suppress.is_empty() {
-        ppcap_core::apply_suppressions(&mut out.summary, opts.suppress.clone());
+    if let Some(rules) = opts.suppress.as_ref().filter(|r| !r.is_empty()) {
+        ppcap_core::apply_suppressions(&mut out.summary, rules.clone());
     }
     Ok(Capture {
         id,
@@ -189,6 +230,21 @@ pub fn load(path: &Path, opts: &LoadOptions, taken: &[String]) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recorded_paths_prefer_the_summary_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("capture.pcap");
+        std::fs::write(&file, b"x").unwrap();
+        assert_eq!(
+            resolve("capture.pcap", Some(dir.path())),
+            Some(file.clone())
+        );
+        let abs = file.display().to_string();
+        assert_eq!(resolve(&abs, Some(Path::new("/elsewhere"))), Some(file));
+        assert_eq!(resolve("missing.pcap", Some(dir.path())), None);
+        assert_eq!(resolve("", Some(dir.path())), None);
+    }
 
     #[test]
     fn ids_strip_extensions_and_dedupe() {

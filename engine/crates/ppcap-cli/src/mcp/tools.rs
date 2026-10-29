@@ -955,7 +955,9 @@ fn lookup_indicator(s: &Server, args: &Value) -> Result<Value, String> {
                     let m = match kind {
                         IndicatorKind::Ip => r.src_ip == value || r.dst_ip == value,
                         IndicatorKind::Domain => lc(&r.sni) || lc(&r.http_host),
-                        IndicatorKind::Md5 => lc(&r.ja3) || lc(&r.ja3s) || lc(&r.hassh),
+                        IndicatorKind::Md5 => {
+                            lc(&r.ja3) || lc(&r.ja3s) || lc(&r.hassh) || lc(&r.hassh_server)
+                        }
                         IndicatorKind::Ja4 => lc(&r.ja4) || lc(&r.ja4s),
                         IndicatorKind::Sha256 => false,
                     };

@@ -593,9 +593,9 @@ fn dispatch_mcp(
         None => None,
     };
     let rules = if suppress.is_empty() {
-        Vec::new()
+        None
     } else {
-        load_suppression_rules(suppress, quiet)?
+        Some(load_suppression_rules(suppress, quiet)?)
     };
     let work = crate::mcp::capture::WorkDir::create()?;
     let opts = crate::mcp::LoadOptions {
