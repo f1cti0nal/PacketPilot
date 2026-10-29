@@ -1,6 +1,6 @@
 {
-  "comment": "Shared drift fixture: canonical flow columns (engine flow schema v11). Checked by engine/crates/ppcap-core/tests/schema_drift.rs AND ui/src/lib/query/schema.test.ts \u2014 update both sides together.",
-  "flow_schema_version": 11,
+  "comment": "Shared drift fixture: canonical flow columns (engine flow schema v12). Checked by engine/crates/ppcap-core/tests/schema_drift.rs AND ui/src/lib/query/schema.test.ts \u2014 update both sides together.",
+  "flow_schema_version": 12,
   "columns": [
     "flow_id",
     "capture_id",
@@ -35,6 +35,7 @@
     "ioc",
     "ja4s",
     "entropy_c2s",
-    "entropy_s2c"
+    "entropy_s2c",
+    "ssh_banner"
   ]
 }

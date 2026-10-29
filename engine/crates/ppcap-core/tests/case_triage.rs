@@ -309,3 +309,117 @@ fn recursive_discovers_nested_captures() {
         "recursive run should include sub/nested.pcap"
     );
 }
+
+/// Two captures with the SAME beacon story (same seed => same hosts => same stable alert ids)
+/// must merge into one recurrence-uplifted case alert.
+#[test]
+fn case_alerts_merge_recurring_story_across_captures() {
+    let input = tempfile::tempdir().expect("input dir");
+    let case_out = tempfile::tempdir().expect("case dir");
+    gen_capture(input.path(), "day1.pcap", Scenario::Beacon, 12_000, 1);
+    gen_capture(input.path(), "day2.pcap", Scenario::Beacon, 12_000, 1);
+    gen_capture(input.path(), "web.pcap", Scenario::WebOnly, 12_000, 2);
+
+    let case = run_case(
+        input.path(),
+        &cfg_for(case_out.path()),
+        &PipelineConfig::default(),
+        0,
+        |_, _, _| {},
+    )
+    .expect("run_case");
+
+    assert!(
+        !case.case_alerts.is_empty(),
+        "the beaconing captures must produce case alerts"
+    );
+    assert!(case.total_case_alerts >= case.case_alerts.len() as u64);
+
+    let recurring = case
+        .case_alerts
+        .iter()
+        .find(|a| a.capture_count == 2)
+        .expect("the same story in day1+day2 merges into one row");
+    assert_eq!(recurring.captures.len(), 2);
+    assert!(
+        recurring
+            .priority_terms
+            .iter()
+            .any(|t| t.label.starts_with("recurring: seen in 2 captures")),
+        "recurrence must be a visible ledger term: {:?}",
+        recurring.priority_terms
+    );
+    // The uplift raises the fused priority above the base term (unless already clamped at 100).
+    let base = recurring.priority_terms[0].points;
+    assert!(
+        recurring.priority as i32 > base || recurring.priority == 100,
+        "recurrence uplifts the rank (priority {} vs base {})",
+        recurring.priority,
+        base
+    );
+}
+
+/// Every case-alert ledger reconciles exactly, and the queue is worst-first + deterministic.
+#[test]
+fn case_alert_ledgers_reconcile_and_queue_is_deterministic() {
+    let (input, case_out) = build_case_dir();
+    let run_once = |out: &Path| {
+        run_case(
+            input.path(),
+            &cfg_for(out),
+            &PipelineConfig::default(),
+            0,
+            |_, _, _| {},
+        )
+        .expect("run_case")
+    };
+    let case = run_once(case_out.path());
+    for a in &case.case_alerts {
+        let sum: i32 = a.priority_terms.iter().map(|t| t.points).sum();
+        assert_eq!(sum, a.priority as i32, "ledger must reconcile for {}", a.id);
+        assert_eq!(a.capture_count as usize, a.captures.len());
+    }
+    for w in case.case_alerts.windows(2) {
+        assert!(w[0].priority >= w[1].priority, "queue must be worst-first");
+    }
+    // Deterministic: a second run over the same inputs yields the identical queue.
+    let case_out2 = tempfile::tempdir().expect("case dir 2");
+    let again = run_once(case_out2.path());
+    assert_eq!(case.case_alerts, again.case_alerts);
+    assert_eq!(case.total_case_alerts, again.total_case_alerts);
+}
+
+/// Older case.json files (written before the queue existed) still parse, and the case report
+/// renders the queue section only when there is one.
+#[test]
+fn case_json_back_compat_and_html_queue_section() {
+    let (input, case_out) = build_case_dir();
+    let case = run_case(
+        input.path(),
+        &cfg_for(case_out.path()),
+        &PipelineConfig::default(),
+        0,
+        |_, _, _| {},
+    )
+    .expect("run_case");
+
+    // Back-compat: strip the new keys and re-parse.
+    let mut v: serde_json::Value = serde_json::from_str(&case.to_json_pretty().unwrap()).unwrap();
+    let obj = v.as_object_mut().unwrap();
+    obj.remove("case_alerts");
+    obj.remove("total_case_alerts");
+    let old: ppcap_core::CaseSummary = serde_json::from_value(v).unwrap();
+    assert!(old.case_alerts.is_empty());
+    assert_eq!(old.total_case_alerts, 0);
+
+    // The case report renders the queue when present, omits it when absent.
+    let html = ppcap_core::case_html(&case, 0);
+    if case.case_alerts.is_empty() {
+        assert!(!html.contains("Case alert queue"));
+    } else {
+        assert!(html.contains("<h2>Case alert queue</h2>"));
+        assert!(html.contains(&case.case_alerts[0].priority.to_string()));
+    }
+    let html_old = ppcap_core::case_html(&old, 0);
+    assert!(!html_old.contains("Case alert queue"));
+}

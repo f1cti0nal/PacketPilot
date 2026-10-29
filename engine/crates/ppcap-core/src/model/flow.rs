@@ -224,6 +224,15 @@ pub struct FlowRecord {
     /// SSH server HASSHServer (MD5) fingerprint from a server KEXINIT; `None` if none seen. The SSH
     /// analogue of `ja3s` — first non-empty value seen wins (sticky).
     pub hassh_server: Option<String>,
+    /// First SSH identification line observed on this flow ("SSH-2.0-OpenSSH_9.6"); `None` if none.
+    /// Sticky first-non-empty, like every other handshake string.
+    ///
+    /// Direction-agnostic: both peers send an identification line (RFC 4253 §4.2) and whichever
+    /// segment the capture holds first wins. Preferring the *server*'s line would need a second
+    /// per-flow field, which the bounded-memory budget does not justify for one metadata column —
+    /// read `hassh` / `hassh_server` when you need a per-side answer.
+    #[serde(default)]
+    pub ssh_banner: Option<String>,
     /// Derivation of `app_proto`: `Some("payload")`, `Some("port")`, or `None` (unknown /
     /// shape-only). Set by the classify stage; written to the `app_proto_src` column.
     pub app_proto_src: Option<&'static str>,
@@ -275,6 +284,7 @@ impl FlowRecord {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            ssh_banner: None,
             app_proto_src: None,
             severity: crate::model::severity::Severity::Info,
             threat_score: 0,
@@ -405,6 +415,15 @@ impl FlowRecord {
             if let Some(v) = &p.hassh_server {
                 if !v.is_empty() {
                     self.hassh_server = Some(v.clone());
+                }
+            }
+        }
+        // ssh_banner: the cleartext identification line either peer sent before key exchange.
+        // Sticky first-non-empty; see the field doc for why it is not server-preferring.
+        if self.ssh_banner.is_none() {
+            if let Some(v) = &p.ssh_banner {
+                if !v.is_empty() {
+                    self.ssh_banner = Some(v.clone());
                 }
             }
         }
@@ -539,6 +558,8 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            ssh_banner: None,
+            ssh_issues: Vec::new(),
             arp: None,
             ja3s: None,
             ja4s: None,
@@ -610,6 +631,8 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            ssh_banner: None,
+            ssh_issues: Vec::new(),
             arp: None,
             ja3s: None,
             ja4s: None,

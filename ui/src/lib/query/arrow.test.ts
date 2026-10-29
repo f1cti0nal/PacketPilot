@@ -36,6 +36,7 @@ function makeFlowRow(overrides: Partial<FlowRow> = {}): FlowRow {
     tlsCipher: null,
     hassh: null,
     hasshServer: null,
+    sshBanner: null,
     bytesC2s: 1200,
     bytesS2c: 48000,
     bytesTotal: 49200,

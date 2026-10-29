@@ -59,9 +59,13 @@ function CertCard({ f, onJump }: { f: Finding; onJump?: (ip: string) => void }) 
 }
 
 /**
- * Consolidated read-only list of server-side TLS posture findings — suspicious certificates
- * (`tls_cert_health`: self-signed / expired / hostname-mismatched) and weak/deprecated negotiation
- * (`weak_tls`: SSLv3 / TLS 1.0-1.1 or a weak cipher). Hidden when none.
+ * Consolidated read-only list of *handshake posture* findings — everything an analyst can learn
+ * about a channel's crypto from the cleartext negotiation, with no decryption: suspicious
+ * certificates (`tls_cert_health`), weak/deprecated TLS (`weak_tls`), a client that named no
+ * server (`missing_sni`), a protocol/port disagreement (`port_protocol_mismatch`), and a broken
+ * SSH configuration (`ssh_posture`). Hidden when none.
+ *
+ * The component keeps its original name for import stability; its scope is the panel's labels.
  */
 export function CertHealthPanel({
   findings,
@@ -74,13 +78,14 @@ export function CertHealthPanel({
     (f) => f.kind === "tls_cert_health" ||
         f.kind === "weak_tls" ||
         f.kind === "missing_sni" ||
-        f.kind === "port_protocol_mismatch",
+        f.kind === "port_protocol_mismatch" ||
+        f.kind === "ssh_posture",
   );
   if (tls.length === 0) return null;
   return (
     <Panel
-      label="TLS POSTURE"
-      title="TLS issues"
+      label="HANDSHAKE POSTURE"
+      title="Handshake issues"
       count={`${humanNumber(tls.length)} flagged`}
       icon={<ShieldAlert size={14} style={{ color: "var(--color-sev-high)" }} />}
       accent="high"

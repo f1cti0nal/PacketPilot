@@ -95,4 +95,44 @@ describe("DetailFlyout identity", () => {
     render(<DetailFlyout incident={incident} onClose={() => {}} />);
     expect(screen.queryByText("Identity")).toBeNull();
   });
+
+  it("labels an SSH fingerprint hit as HASSH, not as a TLS fingerprint", () => {
+    render(
+      <DetailFlyout
+        incident={incident}
+        onClose={() => {}}
+        fingerprints={[
+          {
+            ja3: null,
+            ja4: null,
+            hassh: "0df0d56bc302d51d6f1e1c1e0b3e4a5b",
+            label: "SSH-Scanner",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("HASSH")).toBeInTheDocument();
+    expect(screen.getByText("SSH-Scanner")).toBeInTheDocument();
+    expect(screen.queryByText("JA3")).toBeNull();
+  });
+
+  it("prefers the server fingerprint — it names the infrastructure, not the client", () => {
+    render(
+      <DetailFlyout
+        incident={incident}
+        onClose={() => {}}
+        fingerprints={[
+          {
+            ja3: null,
+            ja4: null,
+            hassh: "0df0d56bc302d51d6f1e1c1e0b3e4a5b",
+            hassh_server: "b12f3a4c5d6e7f8091a2b3c4d5e6f701",
+            label: "Backdoored-SSHD",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("HASSHServer")).toBeInTheDocument();
+    expect(screen.queryByText("HASSH")).toBeNull();
+  });
 });

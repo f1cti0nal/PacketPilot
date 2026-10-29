@@ -401,6 +401,15 @@ pub struct PacketMeta {
     /// SSH server HASSHServer (MD5) fingerprint from a server KEXINIT; `None` otherwise. The SSH
     /// analogue of the server-side `ja3s`. Derived flag — no payload retained.
     pub hassh_server: Option<String>,
+    /// SSH identification line ("SSH-2.0-OpenSSH_9.6") when this packet carried one; `None`
+    /// otherwise. Cleartext by protocol design and the most useful single SSH triage datum.
+    #[serde(default)]
+    pub ssh_banner: Option<String>,
+    /// Weaknesses visible in this packet's cleartext SSH handshake (SSH-1 support, deprecated
+    /// host-key algorithms, CBC/none ciphers); empty on the common path. Derived verdicts only —
+    /// the algorithm lists themselves are not retained.
+    #[serde(default)]
+    pub ssh_issues: Vec<crate::ssh::SshIssue>,
     /// An ARP sender's IP→MAC claim for ARP-spoofing detection; `None` for non-ARP packets.
     pub arp: Option<ArpClaim>,
     /// HTTP request `Host` header (derived metadata, like `sni`); `None` otherwise.

@@ -142,6 +142,14 @@ pub struct FingerprintHit {
     /// and MISP writers and the Time Machine harvest all read their indicators off this struct.
     #[serde(default)]
     pub ja4s: Option<String>,
+    /// The matched HASSH *SSH client* fingerprint (MD5 hex). Same reason as `ja4s`: the STIX and
+    /// MISP writers and the Time Machine harvest read their indicators off this struct, so a
+    /// `bad_hassh` hit that never lands here would label a flow and export nothing.
+    #[serde(default)]
+    pub hassh: Option<String>,
+    /// The matched HASSHServer *SSH server* fingerprint (MD5 hex).
+    #[serde(default)]
+    pub hassh_server: Option<String>,
     pub label: String,
 }
 
@@ -417,6 +425,12 @@ pub struct Summary {
     /// (multi-host, campaign-clustered). `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub attack_chains: Vec<AttackChain>,
+    /// Smart Alerting with Context: the ranked, deduplicated, context-bundled triage queue
+    /// derived from findings / incidents / attack chains / threat cards (see
+    /// `docs/smart-alerting-context-plan.md`). Every finding index belongs to exactly one
+    /// alert. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub alerts: Vec<crate::model::alert::Alert>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -463,6 +477,7 @@ impl Summary {
             findings: Vec::new(),
             incidents: Vec::new(),
             attack_chains: Vec::new(),
+            alerts: Vec::new(),
         }
     }
 

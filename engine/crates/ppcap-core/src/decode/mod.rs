@@ -75,6 +75,8 @@ pub fn decode_frame(frame: &RawFrame<'_>) -> Result<PacketMeta> {
         tls_cipher: None,
         hassh: None,
         hassh_server: None,
+        ssh_banner: None,
+        ssh_issues: Vec::new(),
         arp: None,
         ja3s: None,
         ja4s: None,
@@ -305,6 +307,11 @@ pub fn decode_l3(bytes: &[u8], meta: &mut PacketMeta) -> Result<()> {
             crate::ssh::sniff_client_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
         meta.hassh_server =
             crate::ssh::sniff_server_hassh(meta.transport, meta.src_port, meta.dst_port, payload);
+        // SSH posture: the cleartext identification line, plus any weakness the handshake exposes
+        // (SSH-1 support, deprecated host keys, CBC/none ciphers). Derived verdicts only — the
+        // algorithm lists themselves are never retained.
+        meta.ssh_banner = crate::ssh::sniff_ssh_banner(meta.transport, payload);
+        meta.ssh_issues = crate::ssh::sniff_ssh_issues(meta.transport, payload);
         // Downloaded-file class from an HTTP response: response-body magic bytes (content-based)
         // where present, else the Content-Type / filename. Also flags a file-type masquerade (an
         // executable body served behind a benign Content-Type). `None`/false for requests, ordinary
@@ -1637,6 +1644,8 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            ssh_banner: None,
+            ssh_issues: Vec::new(),
             arp: None,
             ja3s: None,
             ja4s: None,

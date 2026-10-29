@@ -64,6 +64,8 @@ fn demo_feed() -> ThreatFeed {
         bad_ja3: vec![],
         bad_ja4: vec![],
         bad_ja4s: Vec::new(),
+        bad_hassh: Vec::new(),
+        bad_hassh_server: Vec::new(),
     })
     .expect("feed builds")
 }

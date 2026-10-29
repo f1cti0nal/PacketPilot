@@ -104,6 +104,11 @@ cargo run -p ppcap-cli --release -- rescan sample.index.json --threat-feed updat
 # Safe Share: write a sanitized copy + chain-of-custody manifest (scrubs payloads,
 # pseudonymizes IP/MAC, redacts DNS/HTTP/SNI/credentials, recomputes checksums)
 cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.pcap
+
+# Evidence mode: seal a chain-of-custody manifest over the run's artifacts, verify any time
+cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --html report.html \
+  --evidence case.evidence.json
+cargo run -p ppcap-cli --release -- verify case.evidence.json
 ```
 
 OT/ICS captures (Modbus / DNP3 / S7comm / BACnet / EtherNet-IP) are identified from packet
@@ -154,10 +159,12 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   **JA4S** server fingerprints (TCP *and* keyless QUIC, whose server Initial is opened with the
   RFC-published salt — no keys), a per-server **TLS posture** rollup, and three explainable
   findings — an unnamed **high-entropy channel** (custom-crypto C2 / hand-rolled tunnels, and the
-  first producer of the `anomalous` category), **TLS without SNI** (ECH-aware), and
-  **port/protocol mismatch** (TLS on an odd port; non-TLS on 443). JA4S is feed-matchable
-  (`bad_ja4s`) and re-scannable by Time Machine.
-- **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S), MITRE ATT&CK.
+  first producer of the `anomalous` category), **TLS without SNI** (ECH-aware),
+  **port/protocol mismatch** (TLS on an odd port; non-TLS on 443), and **weak SSH posture**
+  (SSH-1 support, deprecated host keys, CBC/`none` ciphers — all read from the cleartext
+  identification line and KEXINIT, which precede key exchange). Server fingerprints are
+  feed-matchable (`bad_ja4s`, `bad_hassh`, `bad_hassh_server`) and re-scannable by Time Machine.
+- **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S/HASSH), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
   indicators that were clean at capture time but are dirty now — no pcap re-read, fully offline.
@@ -169,6 +176,11 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - **Online reputation enrichment** — opt-in, bring-your-own-key corroboration of public IPs via
   AbuseIPDB / GreyNoise / VirusTotal; aggressively cached (local only), privacy-preserving (only
   bare public IP strings leave the device, never packets or internal IPs).
+- **Evidence Integrity & Chain of Custody** — `analyze --evidence` seals a tamper-evident
+  manifest over the run (input + every artifact SHA-256, tool version, exact settings, capture
+  window); `ppcap verify` re-checks the whole bundle offline with per-file intact/missing/
+  modified verdicts — court-ready custody for the analysis itself, generalizing Safe Share's
+  manifest.
 - **Natural Language Querying** — a **Query** tab running read-only DuckDB SQL over the flow
   table *entirely in-browser* (lazy DuckDB-Wasm; nothing leaves the device), with bundled +
   saved queries, CSV export, and a flow_id cross-filter into the Flows view. With AI enabled,

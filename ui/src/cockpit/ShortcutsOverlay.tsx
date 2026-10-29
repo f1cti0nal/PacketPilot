@@ -29,7 +29,9 @@ export function ShortcutsOverlay({
     {
       title: "Navigation",
       items: [
-        ...tabs.map((t, i) => ({ keys: [String(i + 1)], label: `Go to ${t.label}` })),
+        // (i + 1) % 10: the 10th tab is reached with "0" — must mirror AppShell's
+        // "1234567890" digit-shortcut map, which has no "10" key to press.
+        ...tabs.map((t, i) => ({ keys: [String((i + 1) % 10)], label: `Go to ${t.label}` })),
         { keys: [MOD, "K"], label: "Open command palette" },
       ],
     },

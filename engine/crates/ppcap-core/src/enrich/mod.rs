@@ -209,6 +209,17 @@ pub struct ThreatFeedFile {
     /// feed name malicious C2 *infrastructure* rather than only the client stack contacting it.
     #[serde(default)]
     pub bad_ja4s: Vec<String>,
+    /// Known-bad HASSH *client* fingerprints (MD5 hex) — the SSH counterpart to `bad_ja3`. Public
+    /// HASSH IOC lists name scripted SSH clients: scanners, brute-force tooling, and the SSH stacks
+    /// embedded in malware.
+    #[serde(default)]
+    pub bad_hassh: Vec<String>,
+    /// Known-bad HASSHServer *server* fingerprints (MD5 hex) — the SSH counterpart to `bad_ja4s`.
+    /// Kept a separate list from `bad_hassh` on purpose: a client HASSH and a server HASSHServer are
+    /// MD5s over *different* name-lists, so a server hash dropped into `bad_hassh` would silently
+    /// never match. Two lists, two matchers, no footgun.
+    #[serde(default)]
+    pub bad_hassh_server: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -231,41 +242,49 @@ struct BuiltinEntry {
     ja4: Option<String>,
     #[serde(default)]
     ja4s: Option<String>,
+    #[serde(default)]
+    hassh: Option<String>,
+    #[serde(default)]
+    hassh_server: Option<String>,
     label: String,
 }
 
-/// Seed a `(ja3, ja4, labels)` triple from the embedded builtin fingerprint set.
+/// The embedded builtin fingerprint set, split by fingerprint class plus one shared
+/// hash → family-label map. A struct rather than a tuple: there are five sets now, and a
+/// five-tuple's fields are positional at every call site.
+#[derive(Default)]
+struct BuiltinSeed {
+    ja3: HashSet<String>,
+    ja4: HashSet<String>,
+    ja4s: HashSet<String>,
+    hassh: HashSet<String>,
+    hassh_server: HashSet<String>,
+    labels: HashMap<String, String>,
+}
+
+/// Seed the fingerprint sets from the embedded builtin list.
 /// Panics at compile-time if the embedded JSON is malformed (programmer error).
-fn builtin_seed() -> (
-    HashSet<String>,
-    HashSet<String>,
-    HashSet<String>,
-    HashMap<String, String>,
-) {
+fn builtin_seed() -> BuiltinSeed {
     let file: BuiltinFile =
         serde_json::from_str(BUILTIN).expect("builtin_fingerprints.json must be valid JSON");
-    let mut ja3 = HashSet::new();
-    let mut ja4 = HashSet::new();
-    let mut ja4s = HashSet::new();
-    let mut labels: HashMap<String, String> = HashMap::new();
+    let mut s = BuiltinSeed::default();
     for e in file.entries {
-        if let Some(h) = e.ja3 {
-            let h = h.to_ascii_lowercase();
-            labels.entry(h.clone()).or_insert_with(|| e.label.clone());
-            ja3.insert(h);
-        }
-        if let Some(h) = e.ja4 {
-            let h = h.to_ascii_lowercase();
-            labels.entry(h.clone()).or_insert_with(|| e.label.clone());
-            ja4.insert(h);
-        }
-        if let Some(h) = e.ja4s {
-            let h = h.to_ascii_lowercase();
-            labels.entry(h.clone()).or_insert_with(|| e.label.clone());
-            ja4s.insert(h);
+        // Every class normalizes and labels identically; only the destination set differs.
+        for (value, set) in [
+            (e.ja3, &mut s.ja3),
+            (e.ja4, &mut s.ja4),
+            (e.ja4s, &mut s.ja4s),
+            (e.hassh, &mut s.hassh),
+            (e.hassh_server, &mut s.hassh_server),
+        ] {
+            if let Some(h) = value {
+                let h = h.to_ascii_lowercase();
+                s.labels.entry(h.clone()).or_insert_with(|| e.label.clone());
+                set.insert(h);
+            }
         }
     }
-    (ja3, ja4, ja4s, labels)
+    s
 }
 
 /// A parsed CIDR network (family + prefix length).
@@ -331,6 +350,8 @@ pub struct ThreatFeed {
     ja3: HashSet<String>,            // lowercased
     ja4: HashSet<String>,            // lowercased
     ja4s: HashSet<String>,           // lowercased (server fingerprints)
+    hassh: HashSet<String>,          // lowercased (SSH client fingerprints)
+    hassh_server: HashSet<String>,   // lowercased (SSH server fingerprints)
     labels: HashMap<String, String>, // fingerprint (lowercased) → family label
 }
 
@@ -338,17 +359,19 @@ impl ThreatFeed {
     /// An empty feed seeded with the embedded builtin fingerprint set.
     /// Used when no `--threat-feed` is supplied; builtins still match.
     pub fn empty() -> ThreatFeed {
-        let (ja3, ja4, ja4s, labels) = builtin_seed();
+        let s = builtin_seed();
         ThreatFeed {
             label: String::new(),
             ips: HashSet::new(),
             cidrs: Vec::new(),
             domains: HashSet::new(),
             suffixes: Vec::new(),
-            ja3,
-            ja4,
-            ja4s,
-            labels,
+            ja3: s.ja3,
+            ja4: s.ja4,
+            ja4s: s.ja4s,
+            hassh: s.hassh,
+            hassh_server: s.hassh_server,
+            labels: s.labels,
         }
     }
 
@@ -412,16 +435,18 @@ impl ThreatFeed {
         }
 
         // Seed from builtins first, then add user entries.
-        let (mut ja3, mut ja4, mut ja4s, labels) = builtin_seed();
+        let mut s = builtin_seed();
 
-        for j in &f.bad_ja3 {
-            ja3.insert(j.trim().to_ascii_lowercase());
-        }
-        for j in &f.bad_ja4 {
-            ja4.insert(j.trim().to_ascii_lowercase());
-        }
-        for j in &f.bad_ja4s {
-            ja4s.insert(j.trim().to_ascii_lowercase());
+        for (user, set) in [
+            (&f.bad_ja3, &mut s.ja3),
+            (&f.bad_ja4, &mut s.ja4),
+            (&f.bad_ja4s, &mut s.ja4s),
+            (&f.bad_hassh, &mut s.hassh),
+            (&f.bad_hassh_server, &mut s.hassh_server),
+        ] {
+            for j in user {
+                set.insert(j.trim().to_ascii_lowercase());
+            }
         }
 
         Ok(ThreatFeed {
@@ -430,10 +455,12 @@ impl ThreatFeed {
             cidrs,
             domains,
             suffixes,
-            ja3,
-            ja4,
-            ja4s,
-            labels,
+            ja3: s.ja3,
+            ja4: s.ja4,
+            ja4s: s.ja4s,
+            hassh: s.hassh,
+            hassh_server: s.hassh_server,
+            labels: s.labels,
         })
     }
 
@@ -445,6 +472,9 @@ impl ThreatFeed {
             && self.suffixes.is_empty()
             && self.ja3.is_empty()
             && self.ja4.is_empty()
+            && self.ja4s.is_empty()
+            && self.hassh.is_empty()
+            && self.hassh_server.is_empty()
     }
 
     /// The feed's free-text label (provenance).
@@ -487,6 +517,21 @@ impl ThreatFeed {
     /// Family label for a matched JA4S server fingerprint, if the feed named one.
     pub fn ja4s_label(&self, ja4s: &str) -> Option<String> {
         self.labels.get(&ja4s.to_ascii_lowercase()).cloned()
+    }
+
+    /// Exact HASSH (case-insensitive) match — the SSH *client* fingerprint.
+    pub fn matches_hassh(&self, hassh: &str) -> bool {
+        self.hassh.contains(&hassh.to_ascii_lowercase())
+    }
+
+    /// Exact HASSHServer (case-insensitive) match — the SSH *server* fingerprint.
+    pub fn matches_hassh_server(&self, hassh: &str) -> bool {
+        self.hassh_server.contains(&hassh.to_ascii_lowercase())
+    }
+
+    /// Family label for a matched SSH fingerprint (either role), if the feed named one.
+    pub fn hassh_label(&self, hassh: &str) -> Option<String> {
+        self.labels.get(&hassh.to_ascii_lowercase()).cloned()
     }
 
     /// Return the family label for a matched JA3 or JA4 fingerprint, if any.
@@ -621,6 +666,10 @@ pub struct FlowEnrichment {
     pub ja4_ioc: bool,
     /// True when the flow's JA4S *server* fingerprint is on the threat feed.
     pub ja4s_ioc: bool,
+    /// True when the flow's HASSH *client* SSH fingerprint is on the threat feed.
+    pub hassh_ioc: bool,
+    /// True when the flow's HASSHServer *server* SSH fingerprint is on the threat feed.
+    pub hassh_server_ioc: bool,
     /// Family label of the matched fingerprint (e.g. `"Cobalt-Strike"`), if any.
     pub fingerprint_label: Option<String>,
     /// Human-readable matched indicators, e.g. `["ip 10.0.5.10", "sni auth.bank.example"]`.
@@ -630,7 +679,12 @@ pub struct FlowEnrichment {
 impl FlowEnrichment {
     /// Whether any IOC matched this flow.
     pub fn any_ioc(&self) -> bool {
-        self.ip_ioc || self.domain_ioc || self.ja3_ioc || self.ja4_ioc || self.ja4s_ioc
+        self.ip_ioc || self.domain_ioc || self.any_fingerprint_ioc()
+    }
+
+    /// Whether any fingerprint class matched — TLS (JA3/JA4/JA4S) or SSH (HASSH/HASSHServer).
+    pub fn any_fingerprint_ioc(&self) -> bool {
+        self.ja3_ioc || self.ja4_ioc || self.ja4s_ioc || self.hassh_ioc || self.hassh_server_ioc
     }
 }
 
@@ -639,12 +693,14 @@ impl FlowEnrichment {
 pub struct FeedMatch {
     pub ip: bool,
     pub domain: bool,
-    /// True when the flow's JA3 or JA4 fingerprint is on the threat feed.
+    /// True when any of the flow's fingerprints is on the threat feed — TLS (JA3/JA4/JA4S) or
+    /// SSH (HASSH/HASSHServer). The scorer treats every class the same: a named stack is a named
+    /// stack regardless of which protocol named it.
     pub fingerprint: bool,
 }
 
 impl FeedMatch {
-    /// Whether any IOC dimension (IP, domain, or TLS fingerprint) matched.
+    /// Whether any IOC dimension (IP, domain, or a TLS/SSH fingerprint) matched.
     pub fn any(self) -> bool {
         self.ip || self.domain || self.fingerprint
     }
@@ -713,18 +769,47 @@ impl Enricher {
                 e.ja4s_ioc = true;
             }
         }
-        if e.ja3_ioc || e.ja4_ioc || e.ja4s_ioc {
-            let label = self
-                .feed
-                .fingerprint_label(rec.ja3.as_deref(), rec.ja4.as_deref())
-                .or_else(|| {
-                    rec.ja4s
-                        .as_deref()
-                        .and_then(|j| self.feed.labels.get(&j.to_ascii_lowercase()).cloned())
-                })
-                .unwrap_or_else(|| "tls fingerprint".to_string());
+        // SSH fingerprints. Each side is matched against its own list — a client HASSH and a
+        // server HASSHServer are MD5s over different name-lists and are never interchangeable.
+        if let Some(h) = &rec.hassh {
+            if self.feed.matches_hassh(h) {
+                e.hassh_ioc = true;
+            }
+        }
+        if let Some(h) = &rec.hassh_server {
+            if self.feed.matches_hassh_server(h) {
+                e.hassh_server_ioc = true;
+            }
+        }
+        if e.any_fingerprint_ioc() {
+            // A flow is TLS or SSH, never both, so one label field serves both protocols — but
+            // the evidence line must name the right one or the analyst reads a lie.
+            let ssh = e.hassh_ioc || e.hassh_server_ioc;
+            let matched: Option<String> = if ssh {
+                rec.hassh
+                    .as_deref()
+                    .filter(|_| e.hassh_ioc)
+                    .and_then(|h| self.feed.hassh_label(h))
+                    .or_else(|| {
+                        rec.hassh_server
+                            .as_deref()
+                            .filter(|_| e.hassh_server_ioc)
+                            .and_then(|h| self.feed.hassh_label(h))
+                    })
+            } else {
+                self.feed
+                    .fingerprint_label(rec.ja3.as_deref(), rec.ja4.as_deref())
+                    .or_else(|| {
+                        rec.ja4s
+                            .as_deref()
+                            .filter(|_| e.ja4s_ioc)
+                            .and_then(|j| self.feed.ja4s_label(j))
+                    })
+            };
+            let kind = if ssh { "ssh" } else { "tls" };
+            let label = matched.unwrap_or_else(|| format!("{kind} fingerprint"));
             e.fingerprint_label = Some(label.clone());
-            e.ioc_labels.push(format!("tls fingerprint {label}"));
+            e.ioc_labels.push(format!("{kind} fingerprint {label}"));
         }
         e
     }
@@ -734,7 +819,7 @@ impl Enricher {
         FeedMatch {
             ip: e.ip_ioc,
             domain: e.domain_ioc,
-            fingerprint: e.ja3_ioc || e.ja4_ioc || e.ja4s_ioc,
+            fingerprint: e.any_fingerprint_ioc(),
         }
     }
 }
@@ -809,6 +894,8 @@ mod tests {
             bad_ja3: vec![],
             bad_ja4: vec![],
             bad_ja4s: Vec::new(),
+            bad_hassh: Vec::new(),
+            bad_hassh_server: Vec::new(),
         })
         .unwrap()
     }
@@ -843,6 +930,8 @@ mod tests {
             bad_ja3: vec![],
             bad_ja4: vec![],
             bad_ja4s: Vec::new(),
+            bad_hassh: Vec::new(),
+            bad_hassh_server: Vec::new(),
         })
         .unwrap();
         assert!(g.matches_ip(ip("1.2.3.4")));
@@ -903,6 +992,8 @@ mod tests {
     fn user_feed_augments_ja4s_and_a_server_hit_scores_the_flow() {
         let feed = ThreatFeed::from_file(ThreatFeedFile {
             bad_ja4s: vec!["t130200_1301_ABCDEF012345".into()],
+            bad_hassh: Vec::new(),
+            bad_hassh_server: Vec::new(),
             ..Default::default()
         })
         .expect("feed");
@@ -931,11 +1022,128 @@ mod tests {
         );
     }
 
+    /// Build a TCP flow record for the fingerprint-matching tests.
+    fn ssh_flow() -> crate::model::flow::FlowRecord {
+        crate::model::flow::FlowRecord::new(
+            crate::model::flow::FlowKey::normalized(
+                "10.0.0.5".parse().unwrap(),
+                50000,
+                "185.220.101.9".parse().unwrap(),
+                22,
+                crate::model::packet::Transport::Tcp,
+            )
+            .0,
+            0,
+        )
+    }
+
+    #[test]
+    fn builtin_hassh_sentinels_match_and_label() {
+        let feed = ThreatFeed::empty();
+        assert!(feed.matches_hassh("11111111111111111111111111111111"));
+        assert!(feed.matches_hassh_server("22222222222222222222222222222222"));
+        // Case-insensitive, like every other indicator class.
+        assert!(feed.matches_hassh("11111111111111111111111111111111".to_uppercase().as_str()));
+        assert_eq!(
+            feed.hassh_label("11111111111111111111111111111111")
+                .as_deref(),
+            Some("test-sig-ssh-client")
+        );
+        assert_eq!(
+            feed.hassh_label("22222222222222222222222222222222")
+                .as_deref(),
+            Some("test-sig-ssh-server")
+        );
+        assert!(!feed.matches_hassh("0df0d56bc302d51d6f1e1c1e0b3e4a5b"));
+    }
+
+    /// The reason `bad_hassh` and `bad_hassh_server` are separate lists: a client HASSH and a
+    /// server HASSHServer are MD5s over different name-lists, so one list matching both roles
+    /// would let a mis-filed entry fire on the wrong side.
+    #[test]
+    fn client_and_server_ssh_lists_do_not_cross_match() {
+        let feed = ThreatFeed::from_file(ThreatFeedFile {
+            bad_hassh: vec!["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into()],
+            bad_hassh_server: vec!["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into()],
+            ..Default::default()
+        })
+        .expect("feed");
+        assert!(
+            feed.matches_hassh("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            "lowercased"
+        );
+        assert!(feed.matches_hassh_server("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+        assert!(!feed.matches_hassh_server("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        assert!(!feed.matches_hassh("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    }
+
+    #[test]
+    fn a_client_hassh_hit_scores_the_flow_and_is_labelled_as_ssh() {
+        let feed = ThreatFeed::from_file(ThreatFeedFile {
+            bad_hassh: vec!["0df0d56bc302d51d6f1e1c1e0b3e4a5b".into()],
+            ..Default::default()
+        })
+        .expect("feed");
+        let mut rec = ssh_flow();
+        rec.hassh = Some("0df0d56bc302d51d6f1e1c1e0b3e4a5b".into());
+
+        let enricher = Enricher::new(feed);
+        let e = enricher.enrich(&rec);
+        assert!(e.hassh_ioc && e.any_ioc());
+        assert!(
+            enricher.feed_match(&e).fingerprint,
+            "an SSH hit sets the same fingerprint dimension the scorer reads for TLS"
+        );
+        // The evidence must say SSH — an analyst reading "tls fingerprint" on port 22 is being
+        // told something false.
+        assert!(
+            e.ioc_labels
+                .iter()
+                .any(|l| l.starts_with("ssh fingerprint")),
+            "{:?}",
+            e.ioc_labels
+        );
+        assert!(!e
+            .ioc_labels
+            .iter()
+            .any(|l| l.starts_with("tls fingerprint")));
+    }
+
+    /// Naming a malicious SSH *server* build is the reason the server list exists.
+    #[test]
+    fn a_server_hassh_hit_alone_is_an_ioc() {
+        let feed = ThreatFeed::from_file(ThreatFeedFile {
+            bad_hassh_server: vec!["b12f3a4c5d6e7f8091a2b3c4d5e6f701".into()],
+            ..Default::default()
+        })
+        .expect("feed");
+        let mut rec = ssh_flow();
+        rec.hassh_server = Some("b12f3a4c5d6e7f8091a2b3c4d5e6f701".into());
+        let e = Enricher::new(feed).enrich(&rec);
+        assert!(e.hassh_server_ioc && e.any_ioc());
+        // Unlabelled in the feed, so the generic protocol-correct fallback is used.
+        assert_eq!(e.fingerprint_label.as_deref(), Some("ssh fingerprint"));
+    }
+
+    /// An SSH flow whose fingerprints are on no list must stay clean — the feed is additive,
+    /// not a blanket "SSH is suspicious" rule.
+    #[test]
+    fn an_unlisted_ssh_flow_is_not_an_ioc() {
+        let mut rec = ssh_flow();
+        rec.hassh = Some("0df0d56bc302d51d6f1e1c1e0b3e4a5b".into());
+        rec.hassh_server = Some("b12f3a4c5d6e7f8091a2b3c4d5e6f701".into());
+        let e = Enricher::offline().enrich(&rec);
+        assert!(!e.hassh_ioc && !e.hassh_server_ioc && !e.any_ioc());
+        assert!(e.fingerprint_label.is_none());
+    }
+
     #[test]
     fn user_feed_augments_ja4() {
         let f = ThreatFeed::from_file(ThreatFeedFile {
             bad_ja4: vec!["t13d1516h2_8daaf6152771_e5627efa2ab1".into()],
             bad_ja4s: Vec::new(),
+            bad_hassh: Vec::new(),
+            bad_hassh_server: Vec::new(),
             ..Default::default()
         })
         .unwrap();

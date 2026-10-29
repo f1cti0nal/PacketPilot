@@ -8,6 +8,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
+  BellRing,
   Share2,
   Terminal,
   ListChecks,
@@ -51,6 +52,7 @@ export function useIsMobile(query = "(max-width: 767px)"): boolean {
 /** Icon per tab — shared by the desktop SideNav and the mobile BottomTabBar. */
 export const TAB_ICON: Record<TabId, LucideIcon> = {
   dashboard: LayoutDashboard,
+  alerts: BellRing,
   flows: Share2,
   query: Terminal,
   findings: ListChecks,

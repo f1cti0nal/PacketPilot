@@ -449,6 +449,8 @@ mod tests {
             tls_cipher: None,
             hassh: None,
             hassh_server: None,
+            ssh_banner: None,
+            ssh_issues: Vec::new(),
             arp: None,
             ja3s: None,
             ja4s: None,

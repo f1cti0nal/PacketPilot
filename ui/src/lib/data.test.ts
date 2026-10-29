@@ -38,6 +38,7 @@ const rawRow: RawFlowRow = {
   tls_cipher: null,
   hassh: null,
   hassh_server: null,
+  ssh_banner: null,
   severity: null,
   threat_score: 0,
   ioc: false,
@@ -138,6 +139,7 @@ describe("flowRowFromWasm", () => {
     tls_cipher: null,
     hassh: null,
     hassh_server: null,
+    ssh_banner: null,
     severity: "info",
     threat_score: 0,
     ioc: false,
@@ -209,12 +211,14 @@ describe("ja3/ja4 passthrough", () => {
       tls_cipher: "TLS_AES_128_GCM_SHA256",
       hassh: "0df0d56bc302d51d6f1e1c1e0b3e4a5b",
       hassh_server: "b12f3a4c5d6e7f8091a2b3c4d5e6f701",
+      ssh_banner: "SSH-2.0-OpenSSH_9.6p1",
       severity: "info",
       threat_score: 0,
       ioc: false,
     };
     const r = flowRowFromWasm(w);
     expect(r.ja3).toBe("769,47,0,29,0");
+    expect(r.sshBanner).toBe("SSH-2.0-OpenSSH_9.6p1");
     expect(r.ja4).toBe("t13d0204h2_aaa_bbb");
     expect(r.ja3s).toBe("a1b2c3d4e5f60718293a4b5c6d7e8f90");
     expect(r.httpHost).toBe("api.example.com");
@@ -256,6 +260,7 @@ describe("ja3/ja4 passthrough", () => {
       tls_cipher: null,
       hassh: null,
       hassh_server: null,
+      ssh_banner: null,
       severity: null,
       threat_score: 0,
       ioc: false,

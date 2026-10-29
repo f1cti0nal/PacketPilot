@@ -49,6 +49,17 @@ pub enum IndicatorKind {
     /// parse (`from_json_str` has no unknown-variant tolerance) while `INDEX_SCHEMA_VERSION`
     /// stays 1. Accepted and documented, matching the `ThreatFeedFile` precedent for new keys.
     Ja4s,
+    /// A HASSH SSH *client* fingerprint (md5 hex). Appended last, same forward-compat note as
+    /// [`IndicatorKind::Ja4s`].
+    Hassh,
+    /// A HASSHServer SSH *server* fingerprint (md5 hex). Appended last, same note.
+    ///
+    /// Explicitly renamed: the container's `rename_all = "lowercase"` would emit `"hasshserver"`,
+    /// which would disagree with [`IndicatorKind::as_str`] and with the `indicator_t` SQL enum.
+    /// The wire token and the display token are the same string for every other variant; keep it
+    /// that way.
+    #[serde(rename = "hassh_server")]
+    HasshServer,
 }
 
 impl IndicatorKind {
@@ -60,6 +71,8 @@ impl IndicatorKind {
             IndicatorKind::Ja3 => "ja3",
             IndicatorKind::Ja4 => "ja4",
             IndicatorKind::Ja4s => "ja4s",
+            IndicatorKind::Hassh => "hassh",
+            IndicatorKind::HasshServer => "hassh_server",
         }
     }
 }
@@ -150,6 +163,12 @@ pub fn build_index(out: &AnalysisOutput, analyzed_unix_secs: i64) -> CaptureInde
             }
             if let Some(j) = fp.ja4s.as_ref().filter(|v| !v.is_empty()) {
                 add(&mut acc, IndicatorKind::Ja4s, j.clone(), flagged);
+            }
+            if let Some(h) = fp.hassh.as_ref().filter(|v| !v.is_empty()) {
+                add(&mut acc, IndicatorKind::Hassh, h.clone(), flagged);
+            }
+            if let Some(h) = fp.hassh_server.as_ref().filter(|v| !v.is_empty()) {
+                add(&mut acc, IndicatorKind::HasshServer, h.clone(), flagged);
             }
         }
     }
@@ -242,6 +261,11 @@ fn feed_matches(feed: &ThreatFeed, ind: &Indicator) -> (bool, Option<String>) {
             feed.fingerprint_label(None, Some(&ind.value)),
         ),
         IndicatorKind::Ja4s => (feed.matches_ja4s(&ind.value), feed.ja4s_label(&ind.value)),
+        IndicatorKind::Hassh => (feed.matches_hassh(&ind.value), feed.hassh_label(&ind.value)),
+        IndicatorKind::HasshServer => (
+            feed.matches_hassh_server(&ind.value),
+            feed.hassh_label(&ind.value),
+        ),
     }
 }
 
@@ -316,6 +340,8 @@ mod tests {
                         ja3: Some(j.to_string()),
                         ja4: None,
                         ja4s: None,
+                        hassh: None,
+                        hassh_server: None,
                         label: "test".to_string(),
                     }]
                 })
@@ -332,6 +358,8 @@ mod tests {
             ja3: None,
             ja4: None,
             ja4s: Some(ja4s.to_string()),
+            hassh: None,
+            hassh_server: None,
             label: "test-server".to_string(),
         }];
         t
@@ -375,6 +403,91 @@ mod tests {
         // Round-trips through serde by NAME, so old indices stay readable under the new engine.
         let json = serde_json::to_string(&IndicatorKind::Ja4s).unwrap();
         assert_eq!(json, "\"ja4s\"");
+    }
+
+    /// Every variant's serde wire token must equal its `as_str` display token — the SQL
+    /// `indicator_t` enum and the rescan report both assume one spelling, not two.
+    #[test]
+    fn every_indicator_kind_wire_token_matches_as_str() {
+        for k in [
+            IndicatorKind::Ip,
+            IndicatorKind::Domain,
+            IndicatorKind::Ja3,
+            IndicatorKind::Ja4,
+            IndicatorKind::Ja4s,
+            IndicatorKind::Hassh,
+            IndicatorKind::HasshServer,
+        ] {
+            let json = serde_json::to_string(&k).unwrap();
+            assert_eq!(json, format!("\"{}\"", k.as_str()), "{k:?}");
+            // ...and parses back to itself.
+            let back: IndicatorKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, k);
+        }
+    }
+
+    /// An IP threat carrying only SSH fingerprints — the shape a `bad_hassh` hit produces.
+    fn ip_threat_hassh(ip: &str, hassh: &str, hassh_server: &str) -> IpThreat {
+        let mut t = ip_threat(ip, false, None);
+        t.fingerprints = vec![FingerprintHit {
+            ja3: None,
+            ja4: None,
+            ja4s: None,
+            hassh: Some(hassh.to_string()),
+            hassh_server: Some(hassh_server.to_string()),
+            label: "test-ssh".to_string(),
+        }];
+        t
+    }
+
+    #[test]
+    fn ssh_fingerprints_are_harvested_and_rescannable() {
+        let mut out = sample_output();
+        out.summary.ip_threats = vec![ip_threat_hassh(
+            "185.220.101.9",
+            "0df0d56bc302d51d6f1e1c1e0b3e4a5b",
+            "b12f3a4c5d6e7f8091a2b3c4d5e6f701",
+        )];
+        let index = build_index(&out, 1_700_000_000);
+
+        for (kind, value) in [
+            (IndicatorKind::Hassh, "0df0d56bc302d51d6f1e1c1e0b3e4a5b"),
+            (
+                IndicatorKind::HasshServer,
+                "b12f3a4c5d6e7f8091a2b3c4d5e6f701",
+            ),
+        ] {
+            let ind = index
+                .indicators
+                .iter()
+                .find(|i| i.kind == kind)
+                .unwrap_or_else(|| panic!("a {kind:?} indicator"));
+            assert_eq!(ind.value, value);
+            assert!(!ind.flagged_at_capture, "clean at capture time");
+        }
+
+        // A later feed naming either SSH fingerprint flags it retroactively — and each side is
+        // matched against its own list, so a client hash on the server list must NOT fire.
+        let feed = ThreatFeed::from_file(crate::enrich::ThreatFeedFile {
+            bad_hassh_server: vec!["b12f3a4c5d6e7f8091a2b3c4d5e6f701".into()],
+            ..Default::default()
+        })
+        .expect("feed");
+        let report = rescan(&[index], &feed);
+        assert!(
+            report
+                .newly_flagged
+                .iter()
+                .any(|m| m.kind == IndicatorKind::HasshServer),
+            "a HASSHServer indicator must be re-scannable like ja3/ja4/ja4s"
+        );
+        assert!(
+            !report
+                .newly_flagged
+                .iter()
+                .any(|m| m.kind == IndicatorKind::Hassh),
+            "the client hash is not on the server list and must not fire"
+        );
     }
 
     fn sample_output() -> AnalysisOutput {

@@ -19,4 +19,16 @@ describe("AttackChainView", () => {
     render(<AttackChainView chains={[]} />);
     expect(screen.getByText(/No attack chains reconstructed/i)).toBeInTheDocument();
   });
+
+  it("highlights the focused chain card when focusId matches (Alerts pivot)", () => {
+    const { container } = render(<AttackChainView chains={chains()} focusId="chain:00ff" />);
+    const focused = container.querySelector('[data-focused="true"]');
+    expect(focused).not.toBeNull();
+    expect(focused!.textContent).toContain("Cross-host attack chain");
+  });
+
+  it("marks nothing focused without a focusId", () => {
+    const { container } = render(<AttackChainView chains={chains()} />);
+    expect(container.querySelector('[data-focused="true"]')).toBeNull();
+  });
 });
