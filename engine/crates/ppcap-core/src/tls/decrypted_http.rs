@@ -27,7 +27,7 @@ const METHODS: &[&[u8]] = &[
 
 /// One reconstructed HTTP/1.1 transaction (the request paired with the response at the same
 /// position in the stream — correct for the common non-pipelined keep-alive case).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct HttpTxn {
     pub method: String,
     pub target: String,

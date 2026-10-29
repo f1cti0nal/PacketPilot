@@ -122,6 +122,12 @@ pub enum Command {
         /// extraction (JA4S, QUIC server metadata) is metadata rather than detection and stays on.
         #[arg(long = "no-encrypted-analysis")]
         no_encrypted_analysis: bool,
+        /// Key-log decryption: an NSS `SSLKEYLOGFILE` (as written by browsers/curl/OpenSSL). TLS 1.2
+        /// / 1.3 flows whose ClientHello random has secrets in it are decrypted in one extra bounded
+        /// pass, and the cleartext HTTP transactions + carved files are reported under `keylog` in
+        /// the JSON. The key-log is read locally and never leaves the machine. Off by default.
+        #[arg(long, conflicts_with = "batch")]
+        keylog: Option<PathBuf>,
     },
     /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
     /// reporting indicators that were clean at capture time but are dirty now.
@@ -302,6 +308,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             no_encrypted_analysis,
             forecast_z,
             forecast_min_bins,
+            keylog,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
             // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
@@ -332,6 +339,25 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             //  - if json is None or Some("-") => println!("{s}") to stdout;
             //    else write s to the json path (anyhow context on io error).
             use std::io::Write as _;
+
+            // Key-log decryption: parse up front so a wrong path or an empty/foreign file fails
+            // before the (possibly long) analysis pass rather than after it.
+            let keylog = match keylog.as_ref() {
+                Some(path) => {
+                    let text = std::fs::read_to_string(path)
+                        .with_context(|| format!("reading key-log file {}", path.display()))?;
+                    let parsed = ppcap_core::KeyLog::parse(&text);
+                    if parsed.is_empty() {
+                        return Err(anyhow!(
+                            "key-log file {} has no NSS key-log entries (expected lines like \
+                             `CLIENT_RANDOM <hex> <hex>` or `CLIENT_TRAFFIC_SECRET_0 <hex> <hex>`)",
+                            path.display()
+                        ));
+                    }
+                    Some(parsed)
+                }
+                None => None,
+            };
 
             // Derive a stable capture id from the input path (cheap FNV-1a hash) so distinct
             // captures get distinct ids in the Parquet footer; falls back to 0 on empty path.
@@ -377,6 +403,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     enabled: !no_encrypted_analysis,
                     ..Default::default()
                 },
+                keylog,
                 ..Default::default()
             };
 
@@ -407,6 +434,23 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             if !quiet {
                 // Terminate the in-place progress line.
                 let _ = writeln!(std::io::stderr());
+            }
+
+            if let (Some(k), false) = (out.keylog.as_ref(), quiet) {
+                eprintln!(
+                    "keylog: decrypted {} of {} keyed TLS flow{} ({} of {} key-log session{} used{})",
+                    k.flows_decrypted,
+                    k.flows_keyed,
+                    if k.flows_keyed == 1 { "" } else { "s" },
+                    k.keylog_sessions_used,
+                    k.keylog_sessions,
+                    if k.keylog_sessions == 1 { "" } else { "s" },
+                    if k.flows_skipped_over_cap > 0 {
+                        format!(", {} skipped over the buffer cap", k.flows_skipped_over_cap)
+                    } else {
+                        String::new()
+                    }
+                );
             }
 
             if baseline.is_some() && !quiet {
@@ -1144,6 +1188,31 @@ mod reputation_cli_tests {
         ])
         .unwrap();
         assert!(dispatch(cli).is_err());
+    }
+
+    #[test]
+    fn keylog_flag_parses_and_defaults_off() {
+        let cli = Cli::try_parse_from(["ppcap", "analyze", "x.pcap"]).unwrap();
+        match cli.command {
+            Command::Analyze { keylog, .. } => assert!(keylog.is_none()),
+            _ => panic!("expected Analyze"),
+        }
+        let cli =
+            Cli::try_parse_from(["ppcap", "analyze", "x.pcap", "--keylog", "keys.log"]).unwrap();
+        match cli.command {
+            Command::Analyze { keylog, .. } => {
+                assert_eq!(keylog.as_deref(), Some(std::path::Path::new("keys.log")))
+            }
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn keylog_conflicts_with_batch() {
+        assert!(Cli::try_parse_from([
+            "ppcap", "analyze", "--batch", "dir", "--keylog", "keys.log"
+        ])
+        .is_err());
     }
 
     #[test]

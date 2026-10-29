@@ -80,6 +80,11 @@ impl KeyLog {
             .map(Vec::as_slice)
     }
 
+    /// True when the log carries any secret for this ClientHello random.
+    pub fn has_session(&self, client_random: &[u8; 32]) -> bool {
+        self.by_random.contains_key(client_random)
+    }
+
     /// Number of distinct TLS sessions (ClientHello randoms) in the log.
     pub fn session_count(&self) -> usize {
         self.by_random.len()

@@ -168,7 +168,7 @@ pub struct TlsDecryptRecord {
 
 /// A file carved from the decrypted server→client HTTP stream (key-log decryption re-analysis):
 /// a download that was hidden inside HTTPS, now hashed + signature-scanned like a cleartext one.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct DecryptedCarvedFile {
     pub sha256: String,
     pub size: u64,
@@ -957,7 +957,7 @@ fn find_hs_random(buf: &[u8], want: u8) -> Option<[u8; 32]> {
 }
 
 /// The ClientHello random (key-log lookup key).
-fn find_client_random(buf: &[u8]) -> Option<[u8; 32]> {
+pub(crate) fn find_client_random(buf: &[u8]) -> Option<[u8; 32]> {
     find_hs_random(buf, 1)
 }
 
@@ -989,7 +989,7 @@ fn scan_for_finished(msgs: &[u8], pos: &mut usize) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn hex(s: &str) -> Vec<u8> {
@@ -1071,7 +1071,7 @@ mod tests {
     }
 
     /// A minimal cleartext ClientHello record carrying `random` (one cipher suite, no extensions).
-    fn client_hello_record(random: &[u8; 32]) -> Vec<u8> {
+    pub(crate) fn client_hello_record(random: &[u8; 32]) -> Vec<u8> {
         let mut body = vec![0x03, 0x03]; // client_version (legacy TLS 1.2)
         body.extend_from_slice(random);
         body.push(0x00); // session_id length
@@ -1091,7 +1091,7 @@ mod tests {
         crate::tls::testcert::server_hello(0x0303, cipher, Some(0x0304))
     }
 
-    fn keylog_for(client_random: &[u8; 32], label: &str, secret: &[u8]) -> KeyLog {
+    pub(crate) fn keylog_for(client_random: &[u8; 32], label: &str, secret: &[u8]) -> KeyLog {
         let cr: String = client_random.iter().map(|b| format!("{b:02x}")).collect();
         let sec: String = secret.iter().map(|b| format!("{b:02x}")).collect();
         KeyLog::parse(&format!("{label} {cr} {sec}\n"))
@@ -1334,7 +1334,7 @@ mod tests {
 
     /// A TLS 1.2 ServerHello record carrying `server_random` and negotiating `cipher` (legacy
     /// version 0x0303, no extensions — so the parser reports TLS 1.2).
-    fn tls12_server_hello(server_random: &[u8; 32], cipher: u16) -> Vec<u8> {
+    pub(crate) fn tls12_server_hello(server_random: &[u8; 32], cipher: u16) -> Vec<u8> {
         let mut body = vec![0x03, 0x03];
         body.extend_from_slice(server_random);
         body.push(0x00); // session_id length
@@ -1352,7 +1352,7 @@ mod tests {
         rec
     }
 
-    fn ccs_record() -> Vec<u8> {
+    pub(crate) fn ccs_record() -> Vec<u8> {
         vec![20, 0x03, 0x03, 0, 1, 1] // ChangeCipherSpec
     }
 
@@ -1366,7 +1366,13 @@ mod tests {
     }
 
     /// Build a sealed TLS 1.2 GCM record (`explicit_nonce(8) || ct || tag`).
-    fn tls12_gcm_record(ctype: u8, seq: u64, key: &[u8], iv4: &[u8], pt: &[u8]) -> Vec<u8> {
+    pub(crate) fn tls12_gcm_record(
+        ctype: u8,
+        seq: u64,
+        key: &[u8],
+        iv4: &[u8],
+        pt: &[u8],
+    ) -> Vec<u8> {
         let explicit = seq.to_be_bytes();
         let mut nonce = [0u8; 12];
         nonce[..4].copy_from_slice(iv4);
