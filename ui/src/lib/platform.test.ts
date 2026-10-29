@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm } = vi.hoisted(() => ({
+const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm, exportTimelineWasm } = vi.hoisted(() => ({
   invoke: vi.fn(),
   save: vi.fn(),
   isTauri: vi.fn(),
@@ -11,15 +11,16 @@ const { invoke, save, isTauri, exportCsvWasm, exportStixWasm, exportMispWasm, ex
   exportSigmaWasm: vi.fn(),
   applyRulesWasm: vi.fn(),
   renderReportWasm: vi.fn(),
+  exportTimelineWasm: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save, open: vi.fn() }));
 vi.mock("./tauri-detect", () => ({ isTauri }));
-vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm }));
+vi.mock("./wasmEngine", () => ({ exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm, exportTimelineWasm }));
 vi.mock("./data", () => ({ loadFlows: vi.fn() }));
 
-import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef, exportSigma, copySigma, applyRules, exportReport } from "./platform";
+import { exportCsv, exportStix, copyCsv, copyStix, exportMisp, copyMisp, exportCef, copyCef, exportSigma, copySigma, applyRules, exportReport, exportTimeline, copyTimeline } from "./platform";
 import type { AnalysisOutput, ActiveSource } from "../types";
 
 const summary = { source_path: "cap.pcap", summary: { findings: [] } } as unknown as AnalysisOutput;
@@ -28,6 +29,49 @@ beforeEach(() => {
   invoke.mockReset(); save.mockReset(); isTauri.mockReset();
   exportCsvWasm.mockReset(); exportStixWasm.mockReset();
   exportMispWasm.mockReset(); exportCefWasm.mockReset(); exportSigmaWasm.mockReset(); renderReportWasm.mockReset();
+});
+
+describe("incident timeline export", () => {
+  const timelines = [{ alert_id: "alert:1", title: "t", hosts: [], first_ts_ns: null, last_ts_ns: null, events: [], event_count: 0 }];
+
+  it("saves on desktop through save_timeline with the chosen format", async () => {
+    isTauri.mockReturnValue(true);
+    save.mockResolvedValue("/tmp/cap-timeline.md");
+    const r = await exportTimeline(timelines, "markdown", "cap");
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "cap-timeline.md" }));
+    expect(invoke).toHaveBeenCalledWith("save_timeline", { timelines, format: "markdown", path: "/tmp/cap-timeline.md" });
+    expect(r.ok).toBe(true);
+  });
+
+  it("downloads in the browser, rendered by the wasm engine", async () => {
+    isTauri.mockReturnValue(false);
+    exportTimelineWasm.mockResolvedValue("alert_id,time_utc\n");
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:fake"), revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const r = await exportTimeline(timelines, "csv", "cap");
+    expect(exportTimelineWasm).toHaveBeenCalledWith(JSON.stringify(timelines), "csv");
+    expect(click).toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    click.mockRestore();
+  });
+
+  it("copies Markdown to the clipboard", async () => {
+    isTauri.mockReturnValue(false);
+    exportTimelineWasm.mockResolvedValue("## t");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const r = await copyTimeline(timelines, "markdown");
+    expect(writeText).toHaveBeenCalledWith("## t");
+    expect(r.ok).toBe(true);
+  });
+
+  it("a cancelled desktop save is a silent no-op", async () => {
+    isTauri.mockReturnValue(true);
+    save.mockResolvedValue(null);
+    const r = await exportTimeline(timelines, "csv", "cap");
+    expect(invoke).not.toHaveBeenCalled();
+    expect(r).toEqual({ ok: false, message: "" });
+  });
 });
 
 describe("platform structured export", () => {

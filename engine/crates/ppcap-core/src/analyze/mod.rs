@@ -619,6 +619,7 @@ pub fn run_source_visiting<'a>(
             known_bad: c.known_bad,
             signatures: c.signatures.iter().map(|s| s.label.to_string()).collect(),
             extracted_path: c.extracted_path.clone(),
+            first_seen_ns: Some(c.first_ts_ns),
         })
         .collect();
     carved_files.sort_by(|a, b| {
@@ -724,11 +725,15 @@ pub fn run_source_visiting<'a>(
     }
 
     stats.apply_findings(&findings);
+    // Timestamped context (DNS answers, first contacts) for the endpoints the findings name —
+    // the incident timeline joins it at every alert re-derive seam.
+    let timeline_context = stats.timeline_context(&findings);
 
     // Materialize the summary (consumes stats) and finalize the Parquet file.
     let mut summary = stats.finish();
     summary.carved_files = carved_files;
     summary.extracted_paths = extracted_paths;
+    summary.timeline_context = timeline_context;
     // Correlate the findings into per-host incidents (the "is this a real incident" view).
     summary.incidents = correlate_incidents(&findings);
     // Reconstruct the multi-host, temporally-ordered attack chains over the same finding set
@@ -1105,8 +1110,8 @@ fn malware_download_finding(c: &crate::carve::CarveObservation) -> crate::model:
         interval_ns: None,
         jitter_cv: None,
         contacts: None,
-        first_seen_ns: None,
-        last_seen_ns: None,
+        first_seen_ns: Some(c.first_ts_ns),
+        last_seen_ns: Some(c.last_ts_ns),
         victims: Vec::new(),
     }
 }
@@ -1175,8 +1180,8 @@ fn malware_signature_finding(
         interval_ns: None,
         jitter_cv: None,
         contacts: None,
-        first_seen_ns: None,
-        last_seen_ns: None,
+        first_seen_ns: Some(c.first_ts_ns),
+        last_seen_ns: Some(c.last_ts_ns),
         victims: Vec::new(),
     })
 }
@@ -1374,6 +1379,8 @@ mod tests {
             known_bad: false,
             signatures: sigs,
             extracted_path: None,
+            first_ts_ns: 0,
+            last_ts_ns: 0,
         };
         let hit = |label, technique, suspicious, exec_gated, tier, executable| SigHit {
             label,

@@ -93,6 +93,12 @@ fn extract_flow_packets(
 #[derive(serde::Deserialize)]
 struct CarveQueryArg {
     host: Option<String>,
+    /// With `host`: narrow to frames exchanged with this peer (incident-timeline row scope).
+    #[serde(default)]
+    peer: Option<String>,
+    /// With `host`: narrow to frames carrying this port on either side.
+    #[serde(default)]
+    port: Option<u16>,
     src_ip: Option<String>,
     dst_ip: Option<String>,
     src_port: Option<u16>,
@@ -105,7 +111,20 @@ struct CarveQueryArg {
 fn carve_query_from_arg(arg: CarveQueryArg) -> Result<ppcap_core::CarveQuery, String> {
     let target = if let Some(h) = arg.host {
         let ip: std::net::IpAddr = h.parse().map_err(|_| "bad host ip".to_string())?;
-        ppcap_core::CarveTarget::Host { ip }
+        if arg.peer.is_none() && arg.port.is_none() {
+            ppcap_core::CarveTarget::Host { ip }
+        } else {
+            let peer = arg
+                .peer
+                .map(|p| p.parse::<std::net::IpAddr>())
+                .transpose()
+                .map_err(|_| "bad peer ip".to_string())?;
+            ppcap_core::CarveTarget::Scope {
+                host: ip,
+                peer,
+                port: arg.port,
+            }
+        }
     } else {
         let src_ip = arg
             .src_ip
@@ -381,6 +400,28 @@ fn save_stix(summary: AnalysisOutput, path: String) -> Result<(), String> {
     std::fs::write(&path, stix).map_err(|e| format!("write stix: {e}"))
 }
 
+/// Write incident timelines as `"markdown"` or `"csv"` to `path`.
+#[tauri::command]
+fn save_timeline(
+    timelines: Vec<ppcap_core::AlertTimeline>,
+    format: String,
+    path: String,
+) -> Result<(), String> {
+    let text = ppcap_core::timelines_text(&timelines, &format)
+        .ok_or_else(|| format!("unknown timeline format {format:?}"))?;
+    std::fs::write(&path, text).map_err(|e| format!("write timeline: {e}"))
+}
+
+/// Return incident timelines rendered as `"markdown"` or `"csv"` (used for copy-to-clipboard).
+#[tauri::command]
+fn export_timeline(
+    timelines: Vec<ppcap_core::AlertTimeline>,
+    format: String,
+) -> Result<String, String> {
+    ppcap_core::timelines_text(&timelines, &format)
+        .ok_or_else(|| format!("unknown timeline format {format:?}"))
+}
+
 /// Return the findings CSV string for `summary` (used for copy-to-clipboard).
 #[tauri::command]
 fn export_csv(summary: AnalysisOutput) -> Result<String, String> {
@@ -443,6 +484,8 @@ pub fn run() {
             save_misp,
             save_cef,
             save_sigma,
+            save_timeline,
+            export_timeline,
             export_csv,
             export_stix,
             export_misp,

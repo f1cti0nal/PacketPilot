@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { ActiveSource, AnalysisOutput, FlowRow, SanitizeManifest, SanitizeOptions, WireFlowPackets } from "../types";
+import type { ActiveSource, AlertTimeline, AnalysisOutput, FlowRow, SanitizeManifest, SanitizeOptions, TimelineExportFormat, WireFlowPackets } from "../types";
 import { loadFlows } from "./data";
 import { isTauri } from "./tauri-detect";
 export { isTauri } from "./tauri-detect";
-import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm, sanitizeCaptureWasm } from "./wasmEngine";
+import { exportCsvWasm, exportStixWasm, exportMispWasm, exportCefWasm, exportSigmaWasm, applyRulesWasm, renderReportWasm, sanitizeCaptureWasm, exportTimelineWasm } from "./wasmEngine";
 export type { RuleApplyResult } from "./wasmEngine";
 
 interface AnalyzeDto {
@@ -193,6 +193,51 @@ async function copyText(text: string): Promise<ExportResult> {
   try {
     await navigator.clipboard.writeText(text);
     return { ok: true, message: "Copied to clipboard" };
+  } catch (e) {
+    return { ok: false, message: `Copy failed: ${e}` };
+  }
+}
+
+/**
+ * Save incident timelines as Markdown (`.md`, a ticket-ready table) or CSV, rendered by the
+ * engine so the app, the CLI (`ppcap timeline`) and the report never disagree.
+ */
+export async function exportTimeline(
+  timelines: AlertTimeline[],
+  format: TimelineExportFormat,
+  baseName: string,
+): Promise<ExportResult> {
+  const ext = format === "markdown" ? "md" : "csv";
+  const name = `${baseName}-timeline.${ext}`;
+  if (isTauri()) {
+    try {
+      const path = await save({
+        defaultPath: name,
+        filters: [{ name: format === "markdown" ? "Markdown" : "CSV", extensions: [ext] }],
+      });
+      if (!path) return { ok: false, message: "" };
+      await invoke("save_timeline", { timelines, format, path });
+      return { ok: true, message: "Timeline saved" };
+    } catch (e) {
+      return { ok: false, message: `Save failed: ${e}` };
+    }
+  }
+  try {
+    const text = await exportTimelineWasm(JSON.stringify(timelines), format);
+    downloadText(text, name, format === "markdown" ? "text/markdown" : "text/csv");
+    return { ok: true, message: "Downloaded" };
+  } catch (e) {
+    return { ok: false, message: `Export failed: ${e}` };
+  }
+}
+
+/** Copy incident timelines to the clipboard as Markdown or CSV. */
+export async function copyTimeline(timelines: AlertTimeline[], format: TimelineExportFormat): Promise<ExportResult> {
+  try {
+    const text = isTauri()
+      ? await invoke<string>("export_timeline", { timelines, format })
+      : await exportTimelineWasm(JSON.stringify(timelines), format);
+    return copyText(text);
   } catch (e) {
     return { ok: false, message: `Copy failed: ${e}` };
   }

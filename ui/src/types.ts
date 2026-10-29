@@ -144,6 +144,56 @@ export interface Summary {
   suppression_rules?: SuppressionRule[];
   /** Findings a suppression rule matched (hidden, or kept by a guardrail); absent when none. */
   suppressions?: SuppressionHit[];
+  /** One chronological, cross-host incident timeline per alert, in queue order; absent when none. */
+  timelines?: AlertTimeline[];
+}
+
+/** What one timeline row records (wire tokens). */
+export type TimelineEventKind = "first_contact" | "dns_answer" | "pivot" | "file_download" | "detection";
+
+/** The packets behind a timeline row: frames touching `host` (and `peer` / `port`) in the window. */
+export interface PacketScope {
+  host: string;
+  peer?: string | null;
+  port?: number | null;
+  start_ns: number;
+  end_ns: number;
+}
+
+/** One row of an incident timeline. */
+export interface TimelineEvent {
+  /** ns since the Unix epoch; null for an untimed detection (sorted last). */
+  ts_ns: number | null;
+  end_ns?: number | null;
+  kind: TimelineEventKind;
+  /** The host this row belongs to (its lane). */
+  host: string;
+  peer?: string | null;
+  dst_port?: number | null;
+  title: string;
+  detail?: string | null;
+  severity: Severity;
+  tactic?: string | null;
+  attack?: string[];
+  /** Back-ref into `summary.findings` for detection / hop rows. */
+  finding_index?: number | null;
+  /** Absent only when `host` is not an IP address. */
+  packets?: PacketScope | null;
+}
+
+/** Text formats the timeline export renders (the engine's `timelines_text` tokens). */
+export type TimelineExportFormat = "markdown" | "csv";
+
+/** One alert told as a single chronological story across every host it touches. */
+export interface AlertTimeline {
+  alert_id: string;
+  title: string;
+  hosts: string[];
+  first_ts_ns: number | null;
+  last_ts_ns: number | null;
+  events: TimelineEvent[];
+  /** Rows before the engine's per-timeline cap (>= events.length). */
+  event_count: number;
 }
 
 /** One analyst "benign" verdict as a match rule. A missing host/port field is a wildcard. */
@@ -311,6 +361,8 @@ export interface CarvedFile {
   /** Local path the decoded body was written to when opt-in extraction (`--carve-dir`) is enabled;
    *  absent otherwise (the default — no bytes retained). */
   extracted_path?: string;
+  /** When the download started (ns since the Unix epoch); absent on older summaries. */
+  first_seen_ns?: number | null;
   /** VirusTotal file-hash verdict, attached client-side post-analysis (the engine never sets this). */
   reputation?: ReputationVerdict[];
 }
@@ -921,7 +973,7 @@ export interface FlowRow {
 }
 
 // ---------- load state ----------
-export const TAB_IDS = ["dashboard", "alerts", "flows", "query", "findings", "threats", "attackchain", "baseline", "recent", "compare"] as const;
+export const TAB_IDS = ["dashboard", "alerts", "flows", "query", "findings", "threats", "attackchain", "timeline", "baseline", "recent", "compare"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
 /** How a capture entered the app — drives whether it can be re-analyzed in place. */
@@ -1066,6 +1118,10 @@ export type ActiveSource = { kind: "path"; path: string } | { kind: "bytes"; byt
 /** Query passed to carve_pcap / carve_pcap_to — either a host (IP) or a 5-tuple flow, plus a time window. */
 export interface CarveQuery {
   host?: string;
+  /** With `host`: only frames exchanged with this peer. */
+  peer?: string;
+  /** With `host`: only frames carrying this port on either side. */
+  port?: number;
   src_ip?: string;
   dst_ip?: string;
   src_port?: number;

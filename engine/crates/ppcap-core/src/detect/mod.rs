@@ -16,6 +16,7 @@
 pub mod alerts;
 pub mod rules;
 pub mod suppress;
+pub mod timeline;
 
 /// Streaming mean/variance over a stream of `i64` samples using Welford's online algorithm.
 ///

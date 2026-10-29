@@ -38,6 +38,12 @@ struct QueryDto {
 #[derive(serde::Deserialize)]
 struct CarveQueryDto {
     host: Option<String>,
+    /// With `host`: narrow to frames exchanged with this peer (incident-timeline row scope).
+    #[serde(default)]
+    peer: Option<String>,
+    /// With `host`: narrow to frames carrying this port on either side.
+    #[serde(default)]
+    port: Option<u16>,
     src_ip: Option<String>,
     dst_ip: Option<String>,
     src_port: Option<u16>,
@@ -50,7 +56,20 @@ struct CarveQueryDto {
 fn carve_query_from_dto(dto: CarveQueryDto) -> Result<ppcap_core::CarveQuery, String> {
     let target = if let Some(h) = dto.host {
         let ip: std::net::IpAddr = h.parse().map_err(|_| "bad host ip".to_string())?;
-        ppcap_core::CarveTarget::Host { ip }
+        if dto.peer.is_none() && dto.port.is_none() {
+            ppcap_core::CarveTarget::Host { ip }
+        } else {
+            let peer = dto
+                .peer
+                .map(|p| p.parse::<std::net::IpAddr>())
+                .transpose()
+                .map_err(|_| "bad peer ip".to_string())?;
+            ppcap_core::CarveTarget::Scope {
+                host: ip,
+                peer,
+                port: dto.port,
+            }
+        }
     } else {
         let src_ip = dto
             .src_ip
@@ -149,9 +168,27 @@ mod tests {
     }
 
     #[test]
+    fn export_timeline_renders_markdown_and_csv() {
+        let json = r#"[{"alert_id":"alert:1","title":"t","hosts":["10.0.0.1"],
+            "first_ts_ns":null,"last_ts_ns":null,"event_count":1,"events":[{"ts_ns":null,
+            "kind":"detection","host":"10.0.0.1","title":"beacon","severity":"high"}]}]"#;
+        assert!(export_timeline_impl(json, "markdown")
+            .unwrap()
+            .contains("| untimed | 10.0.0.1 | Detection | beacon | high |"));
+        assert_eq!(
+            export_timeline_impl(json, "csv").unwrap().lines().count(),
+            2
+        );
+        assert!(export_timeline_impl(json, "pdf").is_err());
+        assert!(export_timeline_impl("{", "csv").is_err());
+    }
+
+    #[test]
     fn carve_query_dto_maps_flow_and_host() {
         let flow = carve_query_from_dto(CarveQueryDto {
             host: None,
+            peer: None,
+            port: None,
             src_ip: Some("1.1.1.1".into()),
             dst_ip: Some("2.2.2.2".into()),
             src_port: Some(1),
@@ -165,6 +202,8 @@ mod tests {
 
         let host = carve_query_from_dto(CarveQueryDto {
             host: Some("9.9.9.9".into()),
+            peer: None,
+            port: None,
             src_ip: None,
             dst_ip: None,
             src_port: None,
@@ -175,6 +214,21 @@ mod tests {
         })
         .unwrap();
         assert!(matches!(host.target, ppcap_core::CarveTarget::Host { .. }));
+
+        // The incident timeline's row scope: host + peer + port, from JSON (peer/port optional).
+        let dto: CarveQueryDto = serde_json::from_str(
+            r#"{"host":"10.0.0.5","peer":"45.77.13.37","port":443,"start_ns":0,"end_ns":1}"#,
+        )
+        .unwrap();
+        let scoped = carve_query_from_dto(dto).unwrap();
+        assert!(matches!(
+            scoped.target,
+            ppcap_core::CarveTarget::Scope {
+                peer: Some(_),
+                port: Some(443),
+                ..
+            }
+        ));
     }
 
     /// Build a minimal classic pcap with a TCP/443 data packet carrying "abc" in the payload.
@@ -870,6 +924,20 @@ pub fn export_cef(output_json: &str) -> Result<String, JsValue> {
     let out: ppcap_core::AnalysisOutput =
         serde_json::from_str(output_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(ppcap_core::export::cef_records(&out))
+}
+
+/// Render incident timelines (`timelines_json`: an `AlertTimeline[]`, e.g. one alert's) as
+/// `"markdown"` or `"csv"` for a ticket or hand-off.
+#[wasm_bindgen]
+pub fn export_timeline(timelines_json: &str, format: &str) -> Result<String, JsValue> {
+    export_timeline_impl(timelines_json, format).map_err(|e| JsValue::from_str(&e))
+}
+
+fn export_timeline_impl(timelines_json: &str, format: &str) -> Result<String, String> {
+    let timelines: Vec<ppcap_core::AlertTimeline> =
+        serde_json::from_str(timelines_json).map_err(|e| e.to_string())?;
+    ppcap_core::timelines_text(&timelines, format)
+        .ok_or_else(|| format!("unknown timeline format {format:?}"))
 }
 
 /// Export the analysis findings as Sigma detection rules (multi-document YAML).

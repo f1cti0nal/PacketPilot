@@ -95,6 +95,15 @@ describe("AlertsView", () => {
     expect(onOpenChain).toHaveBeenCalledWith("chain:00ff");
   });
 
+  it("the timeline pivot fires onOpenTimeline with the alert id, on every alert", async () => {
+    const u = userEvent.setup();
+    const onOpenTimeline = vi.fn();
+    render(<AlertsView alerts={alerts} findings={findings} onOpenTimeline={onOpenTimeline} />);
+    await u.click(screen.getByRole("button", { name: `${alerts[1].title}, Review` }));
+    await u.click(screen.getByRole("button", { name: /open timeline/i }));
+    expect(onOpenTimeline).toHaveBeenCalledWith(alerts[1].id);
+  });
+
   it("offers no chain pivot on a rollup alert (no chain_id)", async () => {
     const u = userEvent.setup();
     render(<AlertsView alerts={alerts} findings={findings} onOpenChain={vi.fn()} />);

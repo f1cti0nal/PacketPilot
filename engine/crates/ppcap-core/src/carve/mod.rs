@@ -82,6 +82,10 @@ pub(crate) struct CarveObservation {
     /// Local filesystem path the decoded body was written to, when opt-in extraction
     /// (`--carve-dir`) is enabled; `None` otherwise (the default — no bytes retained).
     pub extracted_path: Option<String>,
+    /// Capture timestamp of the response's first packet (the `HTTP/` status line).
+    pub first_ts_ns: i64,
+    /// Capture timestamp of the packet that completed the body.
+    pub last_ts_ns: i64,
 }
 
 /// Embedded known-bad SHA-256 set. Deliberately tiny and curated (the EICAR anti-malware test file
@@ -711,6 +715,8 @@ struct CarveState {
     /// Capture timestamp of the last packet on this flow — drives idle eviction so a stalled
     /// response cannot hold a slot for the whole capture.
     last_ts: i64,
+    /// Capture timestamp of the status-line packet — when the download started.
+    start_ts: i64,
 }
 
 impl CarveState {
@@ -724,6 +730,7 @@ impl CarveState {
             body: None,
             aborted: false,
             last_ts: ts,
+            start_ts: ts,
         }
     }
 
@@ -878,6 +885,8 @@ impl CarveState {
             known_bad: kb,
             signatures,
             extracted_path,
+            first_ts_ns: self.start_ts,
+            last_ts_ns: self.last_ts,
         })
     }
 }

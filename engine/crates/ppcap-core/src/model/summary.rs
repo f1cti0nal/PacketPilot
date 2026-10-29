@@ -322,6 +322,10 @@ pub struct CarvedFile {
     /// summaries without the field still deserialize.
     #[serde(default)]
     pub extracted_path: Option<String>,
+    /// When the download started (ns since the capture epoch; the response's first packet).
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default)]
+    pub first_seen_ns: Option<i64>,
 }
 
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.
@@ -454,6 +458,19 @@ pub struct Summary {
     /// older summaries readable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suppressions: Vec<crate::model::suppression::SuppressionHit>,
+    /// Timestamped context the incident timeline joins (DNS answers and first contacts for the
+    /// hosts the findings name). Recorded once by the streaming pass. `#[serde(default)]` keeps
+    /// older summaries readable.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::model::timeline::TimelineContext::is_empty"
+    )]
+    pub timeline_context: crate::model::timeline::TimelineContext,
+    /// One chronological, cross-host incident timeline per alert, in queue order (see
+    /// [`crate::detect::timeline::derive_timelines`]). Re-derived with the alert queue.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub timelines: Vec<crate::model::timeline::AlertTimeline>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -506,6 +523,8 @@ impl Summary {
             alerts: Vec::new(),
             suppression_rules: Vec::new(),
             suppressions: Vec::new(),
+            timeline_context: Default::default(),
+            timelines: Vec::new(),
         }
     }
 

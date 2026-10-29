@@ -420,3 +420,48 @@ fn renders_suppressed_findings_with_their_rule() {
         "the only finding was suppressed"
     );
 }
+
+#[test]
+fn incident_timeline_section_lists_rows_with_packet_filters_escaped() {
+    let mut out = sample();
+    let s = &mut out.summary;
+    s.findings = vec![Finding {
+        kind: FindingKind::Beacon,
+        severity: Severity::High,
+        score: 75,
+        title: "beacon <b>to</b> c2".into(),
+        src_ip: "10.0.0.7".into(),
+        dst_ip: Some("45.77.13.37".into()),
+        dst_port: Some(443),
+        attack: vec!["T1071".into()],
+        evidence: vec!["every 30s".into()],
+        interval_ns: None,
+        jitter_cv: None,
+        contacts: None,
+        first_seen_ns: Some(1_700_000_010_000_000_000),
+        last_seen_ns: Some(1_700_000_070_000_000_000),
+        victims: Vec::new(),
+    }];
+    s.timeline_context.dns_answers = vec![ppcap_core::DnsAnswer {
+        ip: "45.77.13.37".into(),
+        domain: "<img src=x>.example".into(),
+        client: Some("10.0.0.7".into()),
+        first_seen_ns: 1_700_000_005_000_000_000,
+    }];
+    ppcap_core::refresh_alerts(s);
+    assert!(!s.timelines.is_empty());
+
+    let html = render_html(&out, 1_700_000_000, None);
+    let at = html
+        .find("<h2>Incident timeline</h2>")
+        .expect("timeline section");
+    let section = &html[at..];
+    assert!(section.contains("host 10.0.0.7 and host 45.77.13.37 and port 443"));
+    assert!(section.contains("DNS answer"));
+    assert!(section.contains("2023-11-14 22:13:25 UTC")); // the DNS answer, first
+    assert!(section.contains("&lt;img src=x&gt;.example"));
+    assert!(!html.contains("<img src=x>"));
+    assert!(!html.contains("<b>to</b>"));
+    // The DNS answer precedes the beacon it explains.
+    assert!(section.find("DNS answer").unwrap() < section.find("beacon &lt;b&gt;").unwrap());
+}

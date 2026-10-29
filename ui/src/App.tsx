@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ActiveSource,
+  AlertTimeline,
+  TimelineEvent,
+  TimelineExportFormat,
   AnalysisOutput,
   BaselineProfile,
   FlowRow,
@@ -38,6 +41,7 @@ import { QueryView } from "./views/QueryView";
 import { FindingsView } from "./views/FindingsView";
 import { ThreatsView } from "./views/ThreatsView";
 import { AttackChainView } from "./views/AttackChainView";
+import { TimelineView } from "./views/TimelineView";
 import { RecentView } from "./components/recent/RecentView";
 import { CompareView } from "./views/CompareView";
 import { BaselineView } from "./views/BaselineView";
@@ -67,8 +71,11 @@ import {
   copySigma,
   applyRules,
   downloadText,
+  exportTimeline,
+  copyTimeline,
 } from "./lib/platform";
-import { packetsAvailable } from "./lib/packets";
+import { carveSubPcap, packetsAvailable } from "./lib/packets";
+import { carveQueryFor, carveFileName } from "./lib/timeline";
 import {
   analyzeViaWasm,
   applyReputationWasm,
@@ -256,6 +263,9 @@ export function App() {
   const [activeIp, setActiveIp] = useState<string | null>(null);
   // Alerts → Chains pivot: the chain to scroll to / highlight when the Chains tab opens.
   const [focusChainId, setFocusChainId] = useState<string | null>(null);
+  // Alerts → Timeline pivot (and the Timeline tab's own alert picker): the alert whose story shows.
+  const [focusTimelineId, setFocusTimelineId] = useState<string | null>(null);
+  const [timelineNotice, setTimelineNotice] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   // Consent prompt state: set when a newly-loaded capture has public IPs but consent hasn't
@@ -726,6 +736,28 @@ export function App() {
     setTab("flows");
   }, []);
 
+  // Timeline row → packets: carve just that row's host pair / port / window into a .pcap.
+  const carveTimelineRow = useCallback(
+    async (e: TimelineEvent) => {
+      if (!e.packets) return;
+      const res = await carveSubPcap(carveQueryFor(e.packets), activeSource, carveFileName(e));
+      setTimelineNotice(res.message || null);
+    },
+    [activeSource],
+  );
+  const timelineExportBase = (summary.data?.source_path ?? "").split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || "packetpilot";
+  const exportTimelineFile = useCallback(
+    async (t: AlertTimeline, format: TimelineExportFormat) => {
+      const res = await exportTimeline([t], format, timelineExportBase);
+      setTimelineNotice(res.message || null);
+    },
+    [timelineExportBase],
+  );
+  const copyTimelineText = useCallback(async (t: AlertTimeline, format: TimelineExportFormat) => {
+    const res = await copyTimeline([t], format);
+    setTimelineNotice(res.message || null);
+  }, []);
+
   const openThreat = useCallback((ip: string) => {
     setActiveIp(ip);
     const inc = (summary.data?.summary.incidents ?? []).find((i) => i.host === ip);
@@ -934,6 +966,11 @@ export function App() {
             setFocusChainId(id);
             setTab("attackchain");
           }}
+          onOpenTimeline={(id) => {
+            setFocusTimelineId(id);
+            setTimelineNotice(null);
+            setTab("timeline");
+          }}
           suppressions={summary.status === "ready" ? summary.data?.summary.suppressions ?? [] : []}
           appliedRules={summary.status === "ready" ? summary.data?.summary.suppression_rules ?? [] : []}
           storedRules={suppressionFile.rules}
@@ -973,6 +1010,22 @@ export function App() {
             const f = summary.status === "ready" ? summary.data?.summary.findings?.[idx] : undefined;
             if (f) jumpToFlows({ ip: f.src_ip });
           }}
+        />
+      ) : tab === "timeline" ? (
+        <TimelineView
+          timelines={summary.status === "ready" ? summary.data?.summary.timelines ?? [] : []}
+          alerts={summary.status === "ready" ? summary.data?.summary.alerts ?? [] : []}
+          focusId={focusTimelineId}
+          onFocus={(id) => {
+            setFocusTimelineId(id);
+            setTimelineNotice(null);
+          }}
+          canCarve={packetsAvailable(activeSource)}
+          onCarve={(e) => void carveTimelineRow(e)}
+          onJumpToFlows={(ip) => jumpToFlows({ ip })}
+          onExport={(t, f) => void exportTimelineFile(t, f)}
+          onCopy={(t, f) => void copyTimelineText(t, f)}
+          notice={timelineNotice}
         />
       ) : tab === "baseline" ? (
         <BaselineView

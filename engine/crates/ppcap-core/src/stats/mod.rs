@@ -57,6 +57,10 @@ pub struct StatsConfig {
     /// it saturates sooner under load and simply stops extending peer series rather than distorting
     /// them. ~64 B/cell (default ~8 MiB).
     pub max_forecast_subcells: usize,
+    /// Upper bound on distinct endpoint pairs whose first flow is remembered for the incident
+    /// timeline's "first contact" rows. Insert-only (a pair seen after the cap has no first-contact
+    /// row; nothing else degrades). ~80 B/pair (default ~20 MiB worst case).
+    pub max_first_contacts: usize,
 }
 
 impl Default for StatsConfig {
@@ -71,8 +75,28 @@ impl Default for StatsConfig {
             max_time_buckets: 1_000,
             max_forecast_cells: 131_072,
             max_forecast_subcells: 131_072,
+            max_first_contacts: 262_144,
         }
     }
+}
+
+/// First passive-DNS answer for one resolved IP.
+#[derive(Debug, Clone)]
+struct ResolvedStat {
+    domain: String,
+    count: u64,
+    first_ts: i64,
+    /// The host the first answer was delivered to.
+    client: IpAddr,
+}
+
+/// The earliest flow between one endpoint pair.
+#[derive(Debug, Clone, Copy)]
+struct FirstContactStat {
+    ts: i64,
+    initiator: IpAddr,
+    /// The responder's port (`None` for portless transports).
+    port: Option<u16>,
 }
 
 /// Per-IP rollup for top-talker tracking.
@@ -214,8 +238,12 @@ pub struct StatsAccumulator {
     per_http_host: HashMap<String, u64>,
     /// Per-HTTP-request-`User-Agent` flow counts; bounded by `max_tracked_keys`.
     per_http_ua: HashMap<String, u64>,
-    /// Passive DNS: resolved-IP → (first domain seen, resolution count). Bounded by `max_tracked_keys`.
-    resolved: HashMap<IpAddr, (String, u64)>,
+    /// Passive DNS: resolved-IP → first answer (domain, timestamp, receiving client) + resolution
+    /// count. Bounded by `max_tracked_keys`.
+    resolved: HashMap<IpAddr, ResolvedStat>,
+    /// Incident-timeline first contact: unordered endpoint pair `(lo, hi)` → the earliest flow
+    /// between them. Insert-only, bounded by `max_first_contacts`.
+    first_contacts: HashMap<(IpAddr, IpAddr), FirstContactStat>,
     /// L2 host identity: IP → first MAC seen claiming it via ARP. Bounded by `max_tracked_keys`.
     arp_macs: HashMap<IpAddr, [u8; 6]>,
     /// DHCP passive identity: client MAC → (hostname, vendor class); first non-empty value per MAC
@@ -319,6 +347,7 @@ impl StatsAccumulator {
             per_http_host: HashMap::new(),
             per_http_ua: HashMap::new(),
             resolved: HashMap::new(),
+            first_contacts: HashMap::new(),
             arp_macs: HashMap::new(),
             dhcp: HashMap::new(),
             encrypted_dns: HashMap::new(),
@@ -509,10 +538,18 @@ impl StatsAccumulator {
                 let domain = raw.trim().to_ascii_lowercase();
                 if valid_domain(&domain) {
                     for &ip in &p.dns_answers {
-                        if let Some((_, count)) = self.resolved.get_mut(&ip) {
-                            *count += 1;
+                        if let Some(r) = self.resolved.get_mut(&ip) {
+                            r.count += 1;
                         } else if self.resolved.len() < self.cfg.max_tracked_keys {
-                            self.resolved.insert(ip, (domain.clone(), 1));
+                            self.resolved.insert(
+                                ip,
+                                ResolvedStat {
+                                    domain: domain.clone(),
+                                    count: 1,
+                                    first_ts: p.ts_ns,
+                                    client: dst_ip,
+                                },
+                            );
                         }
                     }
                 }
@@ -638,6 +675,104 @@ impl StatsAccumulator {
         // flow with an evicted endpoint does not silently reintroduce it unbounded.
         self.bump_ip_flows(f.key.lo_ip);
         self.bump_ip_flows(f.key.hi_ip);
+
+        // Incident-timeline first contact: keep the earliest flow per endpoint pair. Flows close
+        // out of start order (idle eviction), so an existing pair still takes an earlier start.
+        let o = f.oriented();
+        let port = f.key.transport.has_ports().then_some(o.dst_port);
+        let first = FirstContactStat {
+            ts: f.first_ts_ns,
+            initiator: o.src_ip,
+            port,
+        };
+        let pair = (f.key.lo_ip, f.key.hi_ip);
+        if let Some(cur) = self.first_contacts.get_mut(&pair) {
+            if first.ts < cur.ts {
+                *cur = first;
+            }
+        } else if self.first_contacts.len() < self.cfg.max_first_contacts {
+            self.first_contacts.insert(pair, first);
+        }
+    }
+
+    /// The timestamped context the incident timeline joins, restricted to the endpoints `findings`
+    /// name (actors, peers, a bounded slice of victims), so the summary stays small however large
+    /// the capture. Read-only — called at EOF before [`finish`](Self::finish).
+    pub fn timeline_context(
+        &self,
+        findings: &[crate::model::finding::Finding],
+    ) -> crate::model::timeline::TimelineContext {
+        use crate::model::timeline::{DnsAnswer, FirstContact, TimelineContext};
+        use std::collections::BTreeSet;
+        // Victims per finding considered for first-contact rows (a sweep can name hundreds).
+        const MAX_VICTIMS: usize = 16;
+        // Overall bounds on emitted context rows.
+        const MAX_PAIRS: usize = 4096;
+        const MAX_IPS: usize = 4096;
+
+        let parse = |s: &str| s.parse::<IpAddr>().ok();
+        let mut ips: BTreeSet<IpAddr> = BTreeSet::new();
+        let mut pairs: BTreeSet<(IpAddr, IpAddr)> = BTreeSet::new();
+        for f in findings {
+            let Some(src) = parse(&f.src_ip) else {
+                continue;
+            };
+            let peers = f
+                .dst_ip
+                .iter()
+                .chain(f.victims.iter().take(MAX_VICTIMS))
+                .filter_map(|p| parse(p));
+            for peer in peers {
+                if ips.len() < MAX_IPS {
+                    ips.insert(peer);
+                }
+                if pairs.len() < MAX_PAIRS && peer != src {
+                    pairs.insert(if src <= peer {
+                        (src, peer)
+                    } else {
+                        (peer, src)
+                    });
+                }
+            }
+        }
+
+        let dns_answers = ips
+            .iter()
+            .filter_map(|ip| {
+                self.resolved.get(ip).map(|r| DnsAnswer {
+                    ip: ip.to_string(),
+                    domain: r.domain.clone(),
+                    client: Some(r.client.to_string()),
+                    first_seen_ns: r.first_ts,
+                })
+            })
+            .collect();
+        let mut first_contacts: Vec<FirstContact> = pairs
+            .iter()
+            .filter_map(|pair| {
+                self.first_contacts.get(pair).map(|c| {
+                    let responder = if c.initiator == pair.0 {
+                        pair.1
+                    } else {
+                        pair.0
+                    };
+                    FirstContact {
+                        initiator: c.initiator.to_string(),
+                        responder: responder.to_string(),
+                        port: c.port,
+                        first_seen_ns: c.ts,
+                    }
+                })
+            })
+            .collect();
+        first_contacts.sort_by(|a, b| {
+            (a.initiator.as_str(), a.responder.as_str())
+                .cmp(&(b.initiator.as_str(), b.responder.as_str()))
+        });
+        TimelineContext {
+            dns_answers,
+            first_contacts,
+        }
     }
 
     /// Fold a scored, closed flow. Called from `analyze::process_flow` AFTER
@@ -1361,13 +1496,11 @@ impl StatsAccumulator {
         let mut resolved_ips: Vec<crate::model::summary::ResolvedDomain> = self
             .resolved
             .iter()
-            .map(
-                |(ip, (domain, count))| crate::model::summary::ResolvedDomain {
-                    ip: ip.to_string(),
-                    domain: domain.clone(),
-                    resolutions: *count,
-                },
-            )
+            .map(|(ip, r)| crate::model::summary::ResolvedDomain {
+                ip: ip.to_string(),
+                domain: r.domain.clone(),
+                resolutions: r.count,
+            })
             .collect();
         resolved_ips.sort_by(|a, b| b.resolutions.cmp(&a.resolutions).then(a.ip.cmp(&b.ip)));
         resolved_ips.truncate(TOP_K_RESOLVED);
@@ -1548,6 +1681,8 @@ impl StatsAccumulator {
             alerts: Vec::new(),
             suppression_rules: Vec::new(),
             suppressions: Vec::new(),
+            timeline_context: Default::default(),
+            timelines: Vec::new(),
         }
     }
 
@@ -3166,6 +3301,7 @@ mod tests {
             max_time_buckets: 1_000,
             max_forecast_cells: 131_072,
             max_forecast_subcells: 131_072,
+            max_first_contacts: 262_144,
         };
         let mut acc = StatsAccumulator::new(cfg);
         // Talkers are tracked per IP endpoint, so a packet needs BOTH a src and dst IP
@@ -3423,6 +3559,76 @@ mod tests {
         assert_eq!(s.http_hosts[1].host, "b.example");
         assert_eq!(s.user_agents[0].user_agent, "curl/8");
         assert_eq!(s.user_agents[0].flows, 2);
+    }
+
+    #[test]
+    fn timeline_context_records_earliest_contact_and_first_dns_answer() {
+        let mut acc = StatsAccumulator::new(StatsConfig::default());
+        let host = ip4(10, 0, 0, 9);
+        let c2 = ip4(45, 77, 13, 37);
+        // The DNS answer for the C2, delivered to the host at t=7, then again later.
+        for ts in [7, 70] {
+            let mut p = pkt(
+                0,
+                ts,
+                100,
+                Transport::Udp,
+                Some(ip4(8, 8, 8, 8)),
+                Some(host),
+                53,
+                40000,
+                0,
+            );
+            p.dns_qname = Some("C2.Example".to_string());
+            p.dns_answers = vec![c2];
+            acc.observe_packet(&p);
+        }
+        // Two flows host -> c2: the later-starting one closes first (idle eviction order).
+        for first in [50, 10] {
+            let mut r = flow(Transport::Tcp, host, c2, Category::Web, 1, 100);
+            r.first_ts_ns = first;
+            acc.observe_flow(&r);
+        }
+        // An unrelated pair is never emitted.
+        acc.observe_flow(&flow(
+            Transport::Tcp,
+            ip4(10, 0, 0, 1),
+            ip4(1, 1, 1, 1),
+            Category::Web,
+            1,
+            1,
+        ));
+
+        let finding = crate::model::finding::Finding {
+            kind: crate::model::finding::FindingKind::Beacon,
+            severity: crate::model::severity::Severity::High,
+            score: 70,
+            title: "beacon".into(),
+            src_ip: host.to_string(),
+            dst_ip: Some(c2.to_string()),
+            dst_port: Some(80),
+            attack: Vec::new(),
+            evidence: Vec::new(),
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            victims: Vec::new(),
+        };
+        let ctx = acc.timeline_context(std::slice::from_ref(&finding));
+        assert_eq!(ctx.first_contacts.len(), 1);
+        let fc = &ctx.first_contacts[0];
+        assert_eq!(fc.first_seen_ns, 10);
+        assert_eq!(
+            (fc.initiator.as_str(), fc.responder.as_str()),
+            ("10.0.0.9", "45.77.13.37")
+        );
+        assert_eq!(fc.port, Some(80));
+        assert_eq!(ctx.dns_answers.len(), 1);
+        let d = &ctx.dns_answers[0];
+        assert_eq!((d.domain.as_str(), d.first_seen_ns), ("c2.example", 7));
+        assert_eq!(d.client.as_deref(), Some("10.0.0.9"));
     }
 
     #[test]
