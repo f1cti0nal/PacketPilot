@@ -164,6 +164,20 @@ pub(crate) fn looks_like_bind(payload: &[u8]) -> bool {
         && usize::from(h.frag_len) >= 44)
 }
 
+/// Could these first bytes be the opening of a bind, including a one- or two-byte fragment?
+/// A WRITE that carries only `05` or `05 00` is a legitimate start for a bind split across
+/// writes; accepting it lets a pipe register provisionally so the next write can complete the
+/// bind. Once three bytes are present this is exactly [`looks_like_bind`], so ordinary file
+/// writes (which do not start `05 00 0b`) are still rejected.
+pub(crate) fn maybe_bind_prefix(payload: &[u8]) -> bool {
+    match payload.len() {
+        0 => false,
+        1 => payload[0] == 5,
+        2 => payload[0] == 5 && payload[1] <= 1,
+        _ => looks_like_bind(payload),
+    }
+}
+
 fn u16_at(b: &[u8], off: usize, le: bool) -> Option<u16> {
     let s = b.get(off..off + 2)?;
     Some(if le {

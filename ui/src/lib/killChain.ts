@@ -42,6 +42,8 @@ export const KIND_STAGE: Record<FindingKind, string> = {
   dcsync: "Credential Access",
   ad_recon: "Discovery",
   legacy_auth: "Credential Access",
+  remote_service_exec: "Lateral Movement",
+  password_spray: "Credential Access",
 };
 
 /** The noun for a finding kind's contributing count (e.g. "contacts", "hosts"). */
@@ -67,6 +69,8 @@ export const CONTACT_NOUN: Partial<Record<FindingKind, string>> = {
   dcsync: "replication calls",
   ad_recon: "queries",
   legacy_auth: "weak tickets",
+  remote_service_exec: "RPC calls",
+  password_spray: "accounts",
 };
 
 /** The load-bearing metric for a finding (what makes it real). */
@@ -116,6 +120,10 @@ const TECHNIQUE_NAME: Record<string, string> = {
   "T1003.006": "OS Credential Dumping: DCSync",
   "T1087.002": "Account Discovery: Domain Account",
   "T1069.002": "Permission Groups Discovery: Domain Groups",
+  "T1110.003": "Brute Force: Password Spraying",
+  "T1021.002": "Remote Services: SMB/Windows Admin Shares",
+  "T1569.002": "System Services: Service Execution",
+  "T1053.005": "Scheduled Task/Job: Scheduled Task",
 };
 
 /** Resolve a technique id to its name; unknown ids return the id itself (never throws). */

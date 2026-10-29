@@ -4589,7 +4589,9 @@ fn stage_ordinal(kind: FindingKind) -> u8 {
         FindingKind::AsrepRoasting => 1, // credential access (crackable AS-REPs)
         FindingKind::DcSync => 1,     // credential access (directory secrets replicated)
         FindingKind::AdRecon => 0,    // discovery (directory enumeration)
-        FindingKind::LegacyAuth => 1, // credential access (weak Kerberos crypto)
+        FindingKind::LegacyAuth => 1, // credential access (weak Kerberos/SMB crypto)
+        FindingKind::RemoteServiceExec => 2, // lateral movement (remote service/task execution)
+        FindingKind::PasswordSpray => 1, // credential access (spraying accounts)
     }
 }
 
@@ -4630,6 +4632,8 @@ fn stage_label(kind: FindingKind) -> &'static str {
         FindingKind::DcSync => "Credential Access",
         FindingKind::AdRecon => "Discovery",
         FindingKind::LegacyAuth => "Credential Access",
+        FindingKind::RemoteServiceExec => "Lateral Movement",
+        FindingKind::PasswordSpray => "Credential Access",
     }
 }
 
@@ -4671,7 +4675,9 @@ fn kind_phrase(kind: FindingKind) -> &'static str {
         FindingKind::AsrepRoasting => "roasted accounts that skip Kerberos pre-authentication",
         FindingKind::DcSync => "replicated directory secrets from a domain controller",
         FindingKind::AdRecon => "enumerated Active Directory",
-        FindingKind::LegacyAuth => "issued Kerberos tickets with legacy encryption",
+        FindingKind::LegacyAuth => "authenticated with legacy, crackable encryption",
+        FindingKind::RemoteServiceExec => "executed a service or task on a remote host",
+        FindingKind::PasswordSpray => "sprayed passwords across many accounts",
     }
 }
 
@@ -4807,6 +4813,10 @@ pub fn technique_name(id: &str) -> &str {
         "T1003.006" => "OS Credential Dumping: DCSync",
         "T1087.002" => "Account Discovery: Domain Account",
         "T1069.002" => "Permission Groups Discovery: Domain Groups",
+        "T1110.003" => "Brute Force: Password Spraying",
+        "T1021.002" => "Remote Services: SMB/Windows Admin Shares",
+        "T1569.002" => "System Services: Service Execution",
+        "T1053.005" => "Scheduled Task/Job: Scheduled Task",
         other => other,
     }
 }

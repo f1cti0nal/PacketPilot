@@ -634,7 +634,9 @@ pub(crate) fn kind_label(k: FindingKind) -> &'static str {
         FindingKind::AsrepRoasting => "AS-REP Roasting",
         FindingKind::DcSync => "DCSync",
         FindingKind::AdRecon => "AD Reconnaissance",
-        FindingKind::LegacyAuth => "Legacy Kerberos Crypto",
+        FindingKind::LegacyAuth => "Legacy Auth Crypto",
+        FindingKind::RemoteServiceExec => "Remote Service Execution",
+        FindingKind::PasswordSpray => "Password Spray",
     }
 }
 

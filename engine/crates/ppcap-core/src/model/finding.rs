@@ -118,6 +118,13 @@ pub enum FindingKind {
     /// Legacy authentication posture: a KDC issuing DES tickets, or RC4 tickets for services whose
     /// clients asked for AES (the service account has no AES keys) — crackable material on the wire.
     LegacyAuth,
+    /// Remote service / task execution: a host created and started a Windows service, or
+    /// registered a scheduled task, on another host over a named-pipe RPC — the PsExec / schtasks
+    /// lateral-execution pattern (T1021.002 / T1569.002 / T1053.005).
+    RemoteServiceExec,
+    /// Password spraying: SMB logons failing across many distinct accounts from one host, staying
+    /// under each account's lockout threshold (T1110.003).
+    PasswordSpray,
 }
 
 impl FindingKind {
@@ -158,6 +165,8 @@ impl FindingKind {
             FindingKind::DcSync => "dcsync",
             FindingKind::AdRecon => "ad_recon",
             FindingKind::LegacyAuth => "legacy_auth",
+            FindingKind::RemoteServiceExec => "remote_service_exec",
+            FindingKind::PasswordSpray => "password_spray",
         }
     }
 }

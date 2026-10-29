@@ -171,16 +171,21 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   (SSH-1 support, deprecated host keys, CBC/`none` ciphers — all read from the cleartext
   identification line and KEXINIT, which precede key exchange). Server fingerprints are
   feed-matchable (`bad_ja4s`, `bad_hassh`, `bad_hassh_server`) and re-scannable by Time Machine.
-- **Windows identity attacks** — the cleartext envelopes of Kerberos, DCE-RPC and LDAP are parsed
-  (bounded reassembly; tickets, hashes and RPC stubs are never kept) to raise explainable
-  **Kerberoasting** (RC4-only or bulk service-ticket requests, T1558.003), **AS-REP roasting**
-  (an AS-REP issued without pre-authentication, T1558.004), **DCSync** (`DRSGetNCChanges` from a
-  host that is not a domain controller — visible even when the call is sealed, T1003.006),
-  **AD reconnaissance** (SPN / no-pre-auth / adminCount / delegation / LAPS LDAP queries, SAMR
-  enumeration, Kerberos username enumeration) and **legacy Kerberos crypto** (DES tickets, or RC4
-  for service accounts without AES keys) findings. Domain controllers are inferred from the
-  capture; add more with `--dc 10.0.0.10,10.0.0.11`, or turn the stage off with `--no-identity`.
-  Sealed LDAP (the Windows default) and LDAPS stay unread.
+- **Windows identity attacks** — the cleartext envelopes of Kerberos, DCE-RPC, LDAP, SMB2/3 and
+  NTLM are parsed (bounded reassembly; tickets, hashes, NTLM responses and RPC/file payloads are
+  never kept) to raise explainable **Kerberoasting** (RC4-only or bulk service-ticket requests,
+  T1558.003), **AS-REP roasting** (an AS-REP issued without pre-authentication, T1558.004),
+  **DCSync** (`DRSGetNCChanges` from a host that is not a domain controller — visible even when
+  the call is sealed, T1003.006), **remote service execution** (a service created and started, or
+  a task registered, over a named pipe — the PsExec / schtasks pattern, T1021.002 / T1569.002 /
+  T1053.005), **password spraying** (SMB logons failing across many accounts from one host,
+  T1110.003), **AD reconnaissance** (SPN / no-pre-auth / adminCount / delegation / LAPS LDAP
+  queries, SAMR enumeration, Kerberos username enumeration) and **legacy auth** (DES/RC4 Kerberos
+  tickets, NTLMv1 responses, or the SMB1 dialect) findings. DCE-RPC carried on SMB named pipes is
+  analysed the same as raw-port RPC, so DCSync and service execution are seen on 445 too. Domain
+  controllers are inferred from the capture; add more with `--dc 10.0.0.10,10.0.0.11`, or turn the
+  stage off with `--no-identity`. Sealed LDAP (the Windows default), LDAPS and encrypted SMB3 stay
+  unread.
 - **Threat intel**: IP classification, local IOC feed (IP/CIDR/domain/JA3/JA4/JA4S/HASSH), MITRE ATT&CK.
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags

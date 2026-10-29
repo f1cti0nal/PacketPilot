@@ -457,3 +457,207 @@ fn synthetic_benign_traffic_raises_no_identity_findings() {
         .collect();
     assert!(noisy.is_empty(), "{noisy:#?}");
 }
+
+// ── SMB2 / NTLM ───────────────────────────────────────────────────────────────
+
+const SVCCTL_UUID_LE: [u8; 16] = [
+    0x81, 0xbb, 0x7a, 0x36, 0x44, 0x98, 0xf1, 0x35, 0xad, 0x32, 0x98, 0xf0, 0x38, 0x00, 0x10, 0x03,
+];
+
+fn nbss(msg: &[u8]) -> Vec<u8> {
+    let n = msg.len() as u32;
+    let mut v = vec![0x00, (n >> 16) as u8, (n >> 8) as u8, n as u8];
+    v.extend_from_slice(msg);
+    v
+}
+
+fn smb2_header(command: u16, flags: u32, status: u32) -> Vec<u8> {
+    let mut h = Vec::new();
+    h.extend_from_slice(b"\xfeSMB");
+    h.extend_from_slice(&64u16.to_le_bytes());
+    h.extend_from_slice(&0u16.to_le_bytes());
+    h.extend_from_slice(&status.to_le_bytes());
+    h.extend_from_slice(&command.to_le_bytes());
+    h.extend_from_slice(&0u16.to_le_bytes());
+    h.extend_from_slice(&flags.to_le_bytes());
+    h.extend_from_slice(&0u32.to_le_bytes()); // NextCommand
+    h.extend_from_slice(&0u64.to_le_bytes()); // MessageId
+    h.extend_from_slice(&0u32.to_le_bytes()); // Reserved
+    h.extend_from_slice(&0u32.to_le_bytes()); // TreeId
+    h.extend_from_slice(&0u64.to_le_bytes()); // SessionId
+    h.extend_from_slice(&[0u8; 16]); // Signature
+    h
+}
+
+/// A type-3 NTLM AUTHENTICATE for `domain\user` with the given NT-response length.
+fn ntlm_auth(domain: &str, user: &str, nt_len: u16) -> Vec<u8> {
+    let u16le = |s: &str| -> Vec<u8> { s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect() };
+    let desc = |len: u16, off: u32| -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&len.to_le_bytes());
+        v.extend_from_slice(&len.to_le_bytes());
+        v.extend_from_slice(&off.to_le_bytes());
+        v
+    };
+    let d = u16le(domain);
+    let us = u16le(user);
+    let nt_off = 64u32;
+    let dom_off = nt_off + u32::from(nt_len);
+    let usr_off = dom_off + d.len() as u32;
+    let mut m = Vec::new();
+    m.extend_from_slice(b"NTLMSSP\0");
+    m.extend_from_slice(&3u32.to_le_bytes());
+    m.extend_from_slice(&desc(0, nt_off)); // LM
+    m.extend_from_slice(&desc(nt_len, nt_off)); // NT
+    m.extend_from_slice(&desc(d.len() as u16, dom_off)); // domain
+    m.extend_from_slice(&desc(us.len() as u16, usr_off)); // user
+    m.extend_from_slice(&desc(0, usr_off)); // workstation
+    m.extend_from_slice(&desc(0, usr_off)); // session key
+    m.extend_from_slice(&1u32.to_le_bytes()); // flags: unicode
+    m.extend(std::iter::repeat_n(0xBBu8, usize::from(nt_len)));
+    m.extend_from_slice(&d);
+    m.extend_from_slice(&us);
+    m
+}
+
+fn smb_session_setup_req(blob: &[u8]) -> Vec<u8> {
+    let mut m = smb2_header(1, 0, 0);
+    let sec_off = 64u16 + 24;
+    m.extend_from_slice(&25u16.to_le_bytes());
+    m.extend_from_slice(&[0, 0]); // Flags, SecurityMode
+    m.extend_from_slice(&0u32.to_le_bytes()); // Capabilities
+    m.extend_from_slice(&0u32.to_le_bytes()); // Channel
+    m.extend_from_slice(&sec_off.to_le_bytes());
+    m.extend_from_slice(&(blob.len() as u16).to_le_bytes());
+    m.extend_from_slice(&0u64.to_le_bytes()); // PreviousSessionId
+    m.extend_from_slice(blob);
+    nbss(&m)
+}
+
+fn smb_session_setup_resp(status: u32) -> Vec<u8> {
+    let mut m = smb2_header(1, 0x0000_0001, status);
+    m.extend_from_slice(&9u16.to_le_bytes());
+    m.extend_from_slice(&[0u8; 6]);
+    nbss(&m)
+}
+
+fn smb_ioctl_transceive(data: &[u8]) -> Vec<u8> {
+    let mut m = smb2_header(11, 0, 0);
+    let in_off = 64u32 + 56;
+    m.extend_from_slice(&57u16.to_le_bytes());
+    m.extend_from_slice(&0u16.to_le_bytes());
+    m.extend_from_slice(&0x0011_C017u32.to_le_bytes()); // FSCTL_PIPE_TRANSCEIVE
+    m.extend_from_slice(&[0u8; 16]); // FileId
+    m.extend_from_slice(&in_off.to_le_bytes()); // InputOffset
+    m.extend_from_slice(&(data.len() as u32).to_le_bytes()); // InputCount
+    m.extend_from_slice(&0u32.to_le_bytes()); // MaxInputResponse
+    m.extend_from_slice(&0u32.to_le_bytes()); // OutputOffset
+    m.extend_from_slice(&0u32.to_le_bytes()); // OutputCount
+    m.extend_from_slice(&0u32.to_le_bytes()); // MaxOutputResponse
+    m.extend_from_slice(&0u32.to_le_bytes()); // Flags
+    m.extend_from_slice(&0u32.to_le_bytes()); // Reserved2
+    m.extend_from_slice(data);
+    nbss(&m)
+}
+
+fn svcctl_bind() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&4280u16.to_le_bytes());
+    b.extend_from_slice(&4280u16.to_le_bytes());
+    b.extend_from_slice(&0u32.to_le_bytes());
+    b.extend_from_slice(&[1, 0, 0, 0]);
+    b.extend_from_slice(&0u16.to_le_bytes());
+    b.extend_from_slice(&[1, 0]);
+    b.extend_from_slice(&SVCCTL_UUID_LE);
+    b.extend_from_slice(&4u32.to_le_bytes());
+    b.extend_from_slice(&[0x04, 0x5d, 0x88, 0x8a, 0xeb, 0x1c, 0xc9, 0x11]);
+    b.extend_from_slice(&[0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60]);
+    b.extend_from_slice(&2u32.to_le_bytes());
+    rpc_pdu(11, &b)
+}
+
+/// One attacker over SMB: password spray (six failing logons) and a PsExec-style service
+/// creation + start over the \svcctl named pipe.
+fn smb_attack() -> Vec<Vec<u8>> {
+    let mut c = Conv::new();
+    for (i, user) in ["alice", "bob", "carol", "dave", "erin", "frank"]
+        .iter()
+        .enumerate()
+    {
+        c.exchange(
+            ATTACKER,
+            52000 + i as u16,
+            DC,
+            445,
+            &smb_session_setup_req(&ntlm_auth("CORP", user, 220)),
+            &smb_session_setup_resp(0xC000_006D), // STATUS_LOGON_FAILURE
+        );
+    }
+    // Bind \svcctl, create a service (op 12), start it (op 19) — each PDU in its own
+    // pipe-transceive IOCTL.
+    let mut rpc_frames = Vec::new();
+    for p in [svcctl_bind(), rpc_request(12, 60), rpc_request(19, 10)] {
+        rpc_frames.push(smb_ioctl_transceive(&p));
+    }
+    c.exchange(ATTACKER, 52100, DC, 445, &rpc_frames.concat(), &[]);
+    c.frames
+}
+
+#[test]
+fn smb_spray_and_psexec_are_detected_and_suppressible() {
+    let mut s = analyze_frames("smb", &smb_attack(), &PipelineConfig::default());
+    let of = |k: FindingKind| s.findings.iter().filter(move |f| f.kind == k);
+
+    let spray: Vec<_> = of(FindingKind::PasswordSpray).collect();
+    assert_eq!(spray.len(), 1, "{:#?}", s.findings);
+    assert_eq!(spray[0].src_ip, "10.0.0.66");
+    assert_eq!(spray[0].dst_port, Some(445));
+    assert_eq!(spray[0].attack, vec!["T1110.003".to_string()]);
+    assert!(spray[0].evidence.iter().any(|e| e.contains("CORP\\alice")));
+
+    let exec: Vec<_> = of(FindingKind::RemoteServiceExec).collect();
+    assert_eq!(exec.len(), 1, "{:#?}", s.findings);
+    assert_eq!(exec[0].severity, Severity::High);
+    assert!(exec[0].attack.contains(&"T1569.002".to_string()));
+
+    // Both reach the alert queue.
+    let alerted: std::collections::BTreeSet<u32> = s
+        .alerts
+        .iter()
+        .flat_map(|a| a.finding_indices.iter().copied())
+        .collect();
+    for (i, f) in s.findings.iter().enumerate() {
+        if matches!(
+            f.kind,
+            FindingKind::PasswordSpray | FindingKind::RemoteServiceExec
+        ) {
+            assert!(alerted.contains(&(i as u32)), "{} not alerted", f.title);
+        }
+    }
+
+    // A deployment host can be taught benign for remote service execution.
+    let rule = SuppressionRule {
+        id: String::new(),
+        kind: "remote_service_exec".to_string(),
+        src: Some("10.0.0.66".to_string()),
+        dst: Some("10.0.0.10".to_string()),
+        dst_port: None,
+        reason: "SCCM software deployment".to_string(),
+        author: Some("soc".to_string()),
+        created: None,
+        expires: None,
+    };
+    let loaded = ppcap_core::load_suppression_rules(
+        &[ppcap_core::SuppressionFile {
+            version: 1,
+            rules: vec![rule],
+        }],
+        None,
+    );
+    apply_suppressions(&mut s, loaded.active);
+    let hit = s
+        .suppressions
+        .iter()
+        .find(|h| s.findings[h.finding_index as usize].kind == FindingKind::RemoteServiceExec);
+    assert_eq!(hit.map(|h| h.outcome), Some(SuppressionOutcome::Suppressed));
+}

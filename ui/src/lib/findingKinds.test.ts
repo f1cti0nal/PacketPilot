@@ -14,8 +14,18 @@ describe("findingKinds", () => {
     expect(kindLabel("asrep_roasting")).toBe("AS-REP Roasting");
     expect(kindLabel("dcsync")).toBe("DCSync");
     expect(kindLabel("ad_recon")).toBe("AD Reconnaissance");
-    expect(kindLabel("legacy_auth")).toBe("Legacy Kerberos Crypto");
-    for (const k of ["kerberoasting", "asrep_roasting", "dcsync", "ad_recon", "legacy_auth"] as const) {
+    expect(kindLabel("legacy_auth")).toBe("Legacy Auth Crypto");
+    expect(kindLabel("remote_service_exec")).toBe("Remote Service Execution");
+    expect(kindLabel("password_spray")).toBe("Password Spray");
+    for (const k of [
+      "kerberoasting",
+      "asrep_roasting",
+      "dcsync",
+      "ad_recon",
+      "legacy_auth",
+      "remote_service_exec",
+      "password_spray",
+    ] as const) {
       expect(KIND_META[k].Icon, k).not.toBe(Activity);
     }
   });
