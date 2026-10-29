@@ -1155,6 +1155,8 @@ fn build_context(
         let short: String = c.sha256.chars().take(12).collect();
         let verdict = if c.known_bad {
             "known-bad".to_string()
+        } else if !c.yara.is_empty() {
+            format!("YARA {}", c.yara.join(", "))
         } else if !c.signatures.is_empty() {
             c.signatures.join(", ")
         } else {
@@ -1163,8 +1165,10 @@ fn build_context(
         entry(
             ContextKind::CarvedFile,
             format!(
-                "carved: {} byte file sha256 {short}… ({verdict}) from {}",
-                c.size, c.server
+                "carved: {} byte file sha256 {short}… ({verdict}) {} {}",
+                c.size,
+                if c.upload { "to" } else { "from" },
+                c.server
             ),
             None,
             Some(c.server.clone()),
@@ -1929,6 +1933,7 @@ mod tests {
             extracted_path: None,
             first_seen_ns: None,
             last_seen_ns: None,
+            ..Default::default()
         }];
         let alerts = derive_alerts(&summary);
         assert!(alerts.iter().any(|a| a

@@ -293,6 +293,8 @@ fn detection_event(idx: u32, f: &Finding, capture: (i64, i64)) -> TimelineEvent 
 fn download_event(c: &CarvedFile, capture: (i64, i64)) -> TimelineEvent {
     let severity = if c.known_bad {
         Severity::Critical
+    } else if !c.yara.is_empty() {
+        Severity::High
     } else if !c.signatures.is_empty() {
         Severity::Medium
     } else {
@@ -303,6 +305,20 @@ fn download_event(c: &CarvedFile, capture: (i64, i64)) -> TimelineEvent {
     if !c.signatures.is_empty() {
         detail.push_str(&format!(" · {}", c.signatures.join(", ")));
     }
+    if !c.yara.is_empty() {
+        detail.push_str(&format!(" · YARA {}", c.yara.join(", ")));
+    }
+    if c.protocol != "http" {
+        detail.push_str(&format!(" · {}", c.protocol.to_ascii_uppercase()));
+    }
+    if let Some(name) = &c.filename {
+        detail.push_str(&format!(" · {name}"));
+    }
+    let (verb, dir) = if c.upload {
+        ("sent", "to")
+    } else {
+        ("downloaded", "from")
+    };
     // The whole transfer (an older summary has no completion time: pad the start instead).
     let start = c.first_seen_ns.unwrap_or(capture.0);
     let end = match (c.first_seen_ns, c.last_seen_ns) {
@@ -318,7 +334,7 @@ fn download_event(c: &CarvedFile, capture: (i64, i64)) -> TimelineEvent {
         peer: Some(c.server.clone()),
         dst_port: None,
         title: format!(
-            "{} downloaded {} from {} (sha256 {}…){flag}",
+            "{} {verb} {} {dir} {} (sha256 {}…){flag}",
             c.client,
             human_bytes(c.size),
             c.server,
@@ -489,6 +505,7 @@ mod tests {
             extracted_path: None,
             first_seen_ns: Some(5 * S + 2),
             last_seen_ns: Some(8 * S),
+            ..Default::default()
         }];
         refresh_alerts(&mut s);
         s

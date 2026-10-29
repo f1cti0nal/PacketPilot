@@ -361,6 +361,14 @@ export interface CarvedFile {
   /** Local path the decoded body was written to when opt-in extraction (`--carve-dir`) is enabled;
    *  absent otherwise (the default — no bytes retained). */
   extracted_path?: string;
+  /** Protocol that carried the file: `http` (default), `ftp`, `smtp`, `pop3` or `smb`. */
+  protocol?: string;
+  /** Name the protocol gave the file (FTP path, attachment name, SMB share path). Sender-supplied. */
+  filename?: string;
+  /** The client sent the file to the server (FTP upload, outgoing mail, SMB write). */
+  upload?: boolean;
+  /** YARA rules (`--yara`) the file matched. */
+  yara?: string[];
   /** When the download started (ns since the Unix epoch); absent on older summaries. */
   first_seen_ns?: number | null;
   /** When the body completed (ns since the Unix epoch); absent on older summaries. */

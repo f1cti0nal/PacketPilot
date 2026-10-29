@@ -20,9 +20,15 @@
 //!   chunked or compressed. Malformed framing/compression aborts the carve (never a wrong hash).
 //! - **Bounded** — capped tracked flows, a maximum carved size, and a bounded chunk-line buffer.
 
+mod streams;
+pub mod yara;
+
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use self::yara::{YaraHit, YaraRules, YaraScanner};
 
 use crate::analyze::Sha256 as Sha256Stream;
 use crate::model::packet::{PacketMeta, Transport};
@@ -68,12 +74,22 @@ pub(crate) struct SigHit {
     pub executable: bool,
 }
 
-/// One carved file: the downloading client, the serving host, the body's SHA-256, its size,
-/// whether the hash matched the embedded known-bad set, and any content signatures it matched.
+/// One carved file: the connection's client and server, the body's SHA-256, its size, whether the
+/// hash matched the embedded known-bad set, and any content signatures it matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CarveObservation {
+    /// The host that opened the connection (the HTTP/FTP/SMTP/POP3/SMB client).
     pub client: IpAddr,
     pub server: IpAddr,
+    /// `"http"`, `"ftp"`, `"smtp"`, `"pop3"` or `"smb"`.
+    pub protocol: &'static str,
+    /// The name the protocol gave the file (FTP path, attachment filename, SMB share path,
+    /// HTTP `Content-Disposition`), when it gave one.
+    pub filename: Option<String>,
+    /// The file moved client → server (FTP STOR, SMTP, SMB write) rather than server → client.
+    pub upload: bool,
+    /// User YARA rules (`--yara`) the file matched.
+    pub yara: Vec<YaraHit>,
     pub sha256: [u8; 32],
     pub size: u64,
     pub known_bad: bool,
@@ -453,16 +469,19 @@ struct CarveSink {
     overflow: bool,
     /// Opt-in carve-to-disk target; `None` (the default) retains no bytes.
     extract: Option<ExtractSink>,
+    /// User YARA rules streaming over the same bytes; `None` without `--yara`.
+    yara: Option<YaraScanner>,
 }
 
 impl CarveSink {
-    fn with_extract(extract: Option<ExtractSink>) -> CarveSink {
+    fn new(extract: Option<ExtractSink>, yara: Option<YaraScanner>) -> CarveSink {
         CarveSink {
             hasher: Sha256Stream::new(),
             scanner: SigScanner::new(),
             size: 0,
             overflow: false,
             extract,
+            yara,
         }
     }
     fn feed(&mut self, bytes: &[u8]) {
@@ -473,6 +492,9 @@ impl CarveSink {
         let take = bytes.len().min(room);
         self.hasher.update(&bytes[..take]);
         self.scanner.feed(&bytes[..take]);
+        if let Some(y) = self.yara.as_mut() {
+            y.feed(&bytes[..take]);
+        }
         if let Some(es) = self.extract.as_mut() {
             es.write(&bytes[..take]);
         }
@@ -502,10 +524,10 @@ struct Inflate {
 }
 
 impl Inflate {
-    fn new(extract: Option<ExtractSink>) -> Inflate {
+    fn new(sink: CarveSink) -> Inflate {
         Inflate {
             dec: flate2::Decompress::new(true), // expect a zlib header (HTTP "deflate")
-            sink: CarveSink::with_extract(extract),
+            sink,
             ended: false,
             errored: false,
         }
@@ -557,13 +579,11 @@ enum Decode {
 }
 
 impl Decode {
-    fn new(enc: Encoding, extract: Option<ExtractSink>) -> Decode {
+    fn new(enc: Encoding, sink: CarveSink) -> Decode {
         match enc {
-            Encoding::Identity => Decode::Plain(CarveSink::with_extract(extract)),
-            Encoding::Gzip => Decode::Gzip(flate2::write::GzDecoder::new(CarveSink::with_extract(
-                extract,
-            ))),
-            Encoding::Deflate => Decode::Deflate(Inflate::new(extract)),
+            Encoding::Identity => Decode::Plain(sink),
+            Encoding::Gzip => Decode::Gzip(flate2::write::GzDecoder::new(sink)),
+            Encoding::Deflate => Decode::Deflate(Inflate::new(sink)),
         }
     }
     /// Feed de-framed body bytes. Returns `false` if the decoder errored (malformed compression).
@@ -587,6 +607,99 @@ impl Decode {
             Decode::Deflate(inf) => (inf.ended && !inf.errored).then_some(inf.sink),
         }
     }
+}
+
+/// What a newly opened file tees into besides the hash and signature scan: the opt-in extraction
+/// directory and the user's YARA rules. Every carver opens its files through one of these.
+pub(crate) struct Opener<'a> {
+    extract: Option<&'a mut Extractor>,
+    yara: Option<&'a Arc<YaraRules>>,
+}
+
+impl Opener<'_> {
+    #[cfg(test)]
+    fn none() -> Opener<'static> {
+        Opener {
+            extract: None,
+            yara: None,
+        }
+    }
+
+    #[cfg(test)]
+    fn extracting(ex: &mut Extractor) -> Opener<'_> {
+        Opener {
+            extract: Some(ex),
+            yara: None,
+        }
+    }
+
+    fn sink(&mut self) -> CarveSink {
+        CarveSink::new(
+            self.extract.as_deref_mut().and_then(Extractor::open_tmp),
+            self.yara.map(|r| YaraScanner::new(Arc::clone(r))),
+        )
+    }
+}
+
+/// Who moved a finished file and what it was called.
+struct FileInfo {
+    client: IpAddr,
+    server: IpAddr,
+    protocol: &'static str,
+    filename: Option<String>,
+    upload: bool,
+    first_ts_ns: i64,
+    last_ts_ns: i64,
+}
+
+/// Close a complete file: hash, signatures, YARA verdicts, and (when extracting) the rename of its
+/// temp file to `<sha256>.<ext>`, quarantine-suffixed when anything flagged it. `None` for an empty
+/// or oversized file (never a hash of a truncated prefix); its temp file, if any, is removed on drop.
+fn finish_file(mut sink: CarveSink, info: FileInfo) -> Option<CarveObservation> {
+    if sink.overflow || sink.size == 0 {
+        return None;
+    }
+    let sha256 = sink.hasher.finalize_bytes();
+    let signatures = sink.scanner.hits();
+    let yara = sink
+        .yara
+        .take()
+        .map(YaraScanner::finish)
+        .unwrap_or_default();
+    let kb = known_bad(&sha256);
+    let quarantine = kb || signatures.iter().any(|s| s.suspicious) || !yara.is_empty();
+    let ext = match file_ext_for(&signatures) {
+        "bin" => info.filename.as_deref().and_then(name_ext).unwrap_or("bin"),
+        e => e,
+    };
+    let extracted_path = sink
+        .extract
+        .take()
+        .and_then(|es| es.commit(&crate::analyze::hex_of(&sha256), ext, quarantine));
+    Some(CarveObservation {
+        client: info.client,
+        server: info.server,
+        protocol: info.protocol,
+        filename: info.filename,
+        upload: info.upload,
+        yara,
+        sha256,
+        size: sink.size,
+        known_bad: kb,
+        signatures,
+        extracted_path,
+        first_ts_ns: info.first_ts_ns,
+        last_ts_ns: info.last_ts_ns,
+    })
+}
+
+/// A safe extension from a sender-supplied name: 1–8 ASCII alphanumerics after the last dot of the
+/// last path component, so it can never steer the extracted file's path.
+fn name_ext(name: &str) -> Option<&str> {
+    let base = name.rsplit(['/', '\\']).next()?;
+    let (_, ext) = base.rsplit_once('.')?;
+    (!ext.is_empty() && ext.len() <= 8 && ext.bytes().all(|b| b.is_ascii_alphanumeric()))
+        .then_some(ext)
 }
 
 /// How the response body is framed on the wire.
@@ -697,6 +810,8 @@ impl ChunkDec {
 struct BodyPlan {
     framing: Framing,
     decode: Option<Decode>,
+    /// `Content-Disposition` filename, when the server named the download.
+    filename: Option<String>,
 }
 
 /// One in-flight response carve, keyed by `(server, server_port, client, client_port)`.
@@ -743,7 +858,7 @@ impl CarveState {
     /// extraction); [`CarveState::feed_ex`] is the extraction-aware variant.
     #[cfg(test)]
     fn feed(&mut self, seq: u32, payload: &[u8]) -> Option<CarveObservation> {
-        self.feed_ex(seq, payload, None)
+        self.feed_ex(seq, payload, &mut Opener::none())
     }
 
     /// As [`feed`], but tees each completed download's decoded body to a local file when `extract`
@@ -752,7 +867,7 @@ impl CarveState {
         &mut self,
         seq: u32,
         payload: &[u8],
-        extract: Option<&mut Extractor>,
+        open: &mut Opener<'_>,
     ) -> Option<CarveObservation> {
         if self.done() || payload.is_empty() {
             return None;
@@ -777,22 +892,18 @@ impl CarveState {
         let skip = (self.consumed - off) as usize;
         let fresh = &payload[skip..];
         self.consumed = end;
-        self.consume(fresh, extract)
+        self.consume(fresh, open)
     }
 
     /// Route in-order fresh bytes: into the header buffer until the CRLFCRLF terminator, then into
     /// the body hasher. `extract` is consumed at header-parse time to open the carve-to-disk temp
     /// file (only for a response that actually carries a body).
-    fn consume(
-        &mut self,
-        bytes: &[u8],
-        extract: Option<&mut Extractor>,
-    ) -> Option<CarveObservation> {
+    fn consume(&mut self, bytes: &[u8], open: &mut Opener<'_>) -> Option<CarveObservation> {
         if self.body.is_none() {
             self.head.extend_from_slice(bytes);
             match find_crlfcrlf(&self.head) {
                 Some(pos) => {
-                    let plan = parse_response_headers(&self.head[..pos], extract);
+                    let plan = parse_response_headers(&self.head[..pos], open);
                     // Any bytes already past the header terminator are the start of the body.
                     let body_head: Vec<u8> = self.head[pos + 4..].to_vec();
                     self.head = Vec::new();
@@ -850,94 +961,108 @@ impl CarveState {
         if !framing_done {
             return None;
         }
-        // Body complete — flush the decoder and recover the hash + size + signatures.
-        let mut sink = match p.decode.take()?.finish() {
-            Some(s) => s,
-            None => {
-                self.aborted = true;
-                return None;
-            }
-        };
-        if sink.overflow {
-            self.aborted = true; // decoded body exceeded MAX_BODY — skip, don't hash a prefix
+        // Body complete — flush the decoder and recover the hash + size + signatures. An oversized
+        // or empty decoded body yields nothing (the carve is done either way).
+        let Some(sink) = p.decode.take()?.finish() else {
+            self.aborted = true;
             return None;
-        }
-        if sink.size == 0 {
-            return None; // an empty decoded body is not a file
-        }
-        let sha256 = sink.hasher.finalize_bytes();
-        let signatures = sink.scanner.hits();
-        let kb = known_bad(&sha256);
-        // Commit the extracted file (if extraction was enabled): rename the temp to <sha256>.<ext>,
-        // quarantine-suffixed when known-bad or signature-suspicious. `None` (extraction off, or an
-        // I/O failure) leaves no path — the temp, if any, is removed on drop.
-        let quarantine = kb || signatures.iter().any(|s| s.suspicious);
-        let ext = file_ext_for(&signatures);
-        let extracted_path = sink
-            .extract
-            .take()
-            .and_then(|es| es.commit(&crate::analyze::hex_of(&sha256), ext, quarantine));
-        Some(CarveObservation {
-            client: self.client,
-            server: self.server,
-            sha256,
-            size: sink.size,
-            known_bad: kb,
-            signatures,
-            extracted_path,
-            first_ts_ns: self.start_ts,
-            last_ts_ns: self.last_ts,
-        })
+        };
+        finish_file(
+            sink,
+            FileInfo {
+                client: self.client,
+                server: self.server,
+                protocol: "http",
+                filename: p.filename.take(),
+                upload: false,
+                first_ts_ns: self.start_ts,
+                last_ts_ns: self.last_ts,
+            },
+        )
     }
 }
 
-/// The streaming HTTP file carver. One instance per analysis pass.
-pub(crate) struct HttpBodyCarver {
+/// The streaming file carver: cleartext HTTP downloads plus FTP, SMTP/POP3 and SMB2 transfers
+/// (see [`streams`]). One instance per analysis pass.
+pub(crate) struct FileCarver {
     states: HashMap<(IpAddr, u16, IpAddr, u16), CarveState>,
+    /// FTP, SMTP, POP3 and SMB2 sessions.
+    streams: streams::StreamCarver,
     observations: Vec<CarveObservation>,
     /// Every path extraction committed to disk, including those past the `MAX_OBSERVATIONS` cap,
     /// so the evidence manifest can seal each file the run wrote. Empty unless extracting.
     extracted_paths: std::collections::BTreeSet<String>,
     /// Opt-in carve-to-disk. `None` (the default) retains no body bytes.
     extract: Option<Extractor>,
+    /// User YARA rules matched over every carved file.
+    yara: Option<Arc<YaraRules>>,
 }
 
-impl HttpBodyCarver {
-    pub(crate) fn new() -> HttpBodyCarver {
-        HttpBodyCarver {
+impl FileCarver {
+    pub(crate) fn new() -> FileCarver {
+        FileCarver {
             states: HashMap::new(),
+            streams: streams::StreamCarver::new(),
             observations: Vec::new(),
             extracted_paths: std::collections::BTreeSet::new(),
             extract: None,
+            yara: None,
         }
     }
 
-    /// A carver that also extracts each carved HTTP download's decoded body to `dir` (created if
-    /// absent). Errors only if the directory can't be created.
-    pub(crate) fn with_extraction(dir: PathBuf) -> std::io::Result<HttpBodyCarver> {
-        Ok(HttpBodyCarver {
-            states: HashMap::new(),
-            observations: Vec::new(),
-            extracted_paths: std::collections::BTreeSet::new(),
+    /// A carver that also extracts each carved file's decoded bytes to `dir` (created if absent).
+    /// Errors only if the directory can't be created.
+    pub(crate) fn with_extraction(dir: PathBuf) -> std::io::Result<FileCarver> {
+        Ok(FileCarver {
             extract: Some(Extractor::new(dir)?),
+            ..FileCarver::new()
         })
     }
 
-    /// Fold one decoded packet. Cheap on the common path (returns immediately unless this is a TCP
-    /// payload that is, or continues, an HTTP response).
+    /// Match `rules` over every carved file (an empty set is ignored).
+    pub(crate) fn with_yara(mut self, rules: Option<Arc<YaraRules>>) -> FileCarver {
+        self.yara = rules.filter(|r| !r.is_empty());
+        self
+    }
+
+    /// Fold one decoded packet. Cheap on the common path (returns immediately unless this is TCP on
+    /// a carved protocol's port or an HTTP response).
     pub(crate) fn observe(&mut self, meta: &PacketMeta, frame: &crate::reader::RawFrame) {
-        if meta.transport != Transport::Tcp || meta.payload_len == 0 {
+        if meta.transport != Transport::Tcp {
             return;
         }
         let Some((src, sport, dst, dport)) = meta.endpoints() else {
             return;
         };
+        let wants_stream = self.streams.wants(meta, src, sport, dst, dport);
+        if meta.payload_len == 0 && !wants_stream {
+            return;
+        }
         let Some(info) = crate::decode::l4_payload(frame) else {
             return;
         };
         let (Some(seq), payload) = (info.seq, info.payload) else {
             return;
         };
+        if wants_stream {
+            let mut open = Opener {
+                extract: self.extract.as_mut(),
+                yara: self.yara.as_ref(),
+            };
+            let mut done = Vec::new();
+            self.streams.observe(
+                meta,
+                (src, sport, dst, dport),
+                seq,
+                payload,
+                &mut open,
+                &mut done,
+            );
+            for obs in done {
+                self.record(obs);
+            }
+            return;
+        }
         if payload.is_empty() {
             return;
         }
@@ -958,25 +1083,34 @@ impl HttpBodyCarver {
                     .insert(key, CarveState::new(src, dst, seq, meta.ts_ns));
             }
         }
-        let done = if let Some(st) = self.states.get_mut(&key) {
-            st.last_ts = meta.ts_ns;
-            if let Some(obs) = st.feed_ex(seq, payload, self.extract.as_mut()) {
-                if let Some(p) = obs.extracted_path.as_ref() {
-                    self.extracted_paths.insert(p.clone());
-                }
-                if self.observations.len() < MAX_OBSERVATIONS {
-                    self.observations.push(obs);
-                }
-            }
-            st.done()
-        } else {
-            false
+        let mut open = Opener {
+            extract: self.extract.as_mut(),
+            yara: self.yara.as_ref(),
         };
+        let (obs, done) = match self.states.get_mut(&key) {
+            Some(st) => {
+                st.last_ts = meta.ts_ns;
+                (st.feed_ex(seq, payload, &mut open), st.done())
+            }
+            None => (None, false),
+        };
+        if let Some(obs) = obs {
+            self.record(obs);
+        }
         // Reclaim the slot the instant a carve completes or aborts, so the finite MAX_FLOWS cap
         // reflects only in-flight carves — not the cumulative count of HTTP response flows over the
         // whole capture (which would silently blind the carver after MAX_FLOWS distinct downloads).
         if done {
             self.states.remove(&key);
+        }
+    }
+
+    fn record(&mut self, obs: CarveObservation) {
+        if let Some(p) = obs.extracted_path.as_ref() {
+            self.extracted_paths.insert(p.clone());
+        }
+        if self.observations.len() < MAX_OBSERVATIONS {
+            self.observations.push(obs);
         }
     }
 
@@ -1018,7 +1152,7 @@ fn find_crlfcrlf(buf: &[u8]) -> Option<usize> {
 /// body that is empty or over the size cap. The body is de-framed (Content-Length or chunked) and
 /// content-decoded (gzip/deflate) on the fly, so a chunked or compressed download is still carved on
 /// its real bytes.
-fn parse_response_headers(head: &[u8], extract: Option<&mut Extractor>) -> Option<BodyPlan> {
+fn parse_response_headers(head: &[u8], open: &mut Opener<'_>) -> Option<BodyPlan> {
     if is_bodyless(head) {
         return None;
     }
@@ -1033,10 +1167,11 @@ fn parse_response_headers(head: &[u8], extract: Option<&mut Extractor>) -> Optio
     };
     // Only now — once we know this response really carries a carveable body — open a temp file (when
     // extraction is enabled), so bodyless/undelimitable responses never create files.
-    let sink = extract.and_then(|e| e.open_tmp());
     Some(BodyPlan {
         framing,
-        decode: Some(Decode::new(content_encoding(head), sink)),
+        decode: Some(Decode::new(content_encoding(head), open.sink())),
+        filename: header_line(head, b"content-disposition:")
+            .and_then(|v| streams::header_param(&String::from_utf8_lossy(v), "filename")),
     })
 }
 
@@ -1914,7 +2049,7 @@ mod tests {
         }
     }
 
-    fn feed_frame(carver: &mut HttpBodyCarver, buf: &[u8], ts: i64, idx: u64) {
+    fn feed_frame(carver: &mut FileCarver, buf: &[u8], ts: i64, idx: u64) {
         let fr = raw(buf, ts, idx);
         let meta = crate::decode::decode_frame(&fr).expect("decode synthetic frame");
         carver.observe(&meta, &fr);
@@ -1942,7 +2077,7 @@ mod tests {
             &resp[split..],
         );
 
-        let mut carver = HttpBodyCarver::new();
+        let mut carver = FileCarver::new();
         feed_frame(&mut carver, &f1, 1, 0);
         feed_frame(&mut carver, &f2, 2, 1);
         let obs = carver.into_results();
@@ -1968,7 +2103,7 @@ mod tests {
         resp.extend_from_slice(b"hello");
         let f = seg(srv4(), cli4(), 80, 49152, 1000, &resp);
 
-        let mut carver = HttpBodyCarver::new();
+        let mut carver = FileCarver::new();
         feed_frame(&mut carver, &f, 1, 0);
         assert!(
             carver.states.is_empty(),
@@ -2026,7 +2161,9 @@ mod tests {
             format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
         resp.extend_from_slice(body);
 
-        let obs = state().feed_ex(1000, &resp, Some(&mut ex)).expect("carved");
+        let obs = state()
+            .feed_ex(1000, &resp, &mut Opener::extracting(&mut ex))
+            .expect("carved");
         let path = obs.extracted_path.expect("extracted path");
         let on_disk = std::fs::read(&path).expect("read extracted file");
         assert_eq!(on_disk, body, "on-disk bytes are the file's bytes");
@@ -2059,7 +2196,9 @@ mod tests {
         .into_bytes();
         resp.extend_from_slice(&gz);
 
-        let obs = state().feed_ex(1000, &resp, Some(&mut ex)).expect("carved");
+        let obs = state()
+            .feed_ex(1000, &resp, &mut Opener::extracting(&mut ex))
+            .expect("carved");
         let path = obs.extracted_path.expect("extracted path");
         let on_disk = std::fs::read(&path).expect("read extracted file");
         assert_eq!(
@@ -2079,9 +2218,11 @@ mod tests {
         let mut st = state();
         let p1 = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel";
         let p2 = b"lo\r\n6\r\n world\r\n0\r\n\r\n";
-        assert!(st.feed_ex(1000, p1, Some(&mut ex)).is_none());
+        assert!(st
+            .feed_ex(1000, p1, &mut Opener::extracting(&mut ex))
+            .is_none());
         let obs = st
-            .feed_ex(1000 + p1.len() as u32, p2, Some(&mut ex))
+            .feed_ex(1000 + p1.len() as u32, p2, &mut Opener::extracting(&mut ex))
             .expect("carved");
         let on_disk = std::fs::read(obs.extracted_path.unwrap()).unwrap();
         assert_eq!(on_disk, b"hello world", "de-chunked bytes on disk");
@@ -2098,7 +2239,9 @@ mod tests {
         let mut resp =
             format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", eicar.len()).into_bytes();
         resp.extend_from_slice(eicar);
-        let obs = state().feed_ex(1000, &resp, Some(&mut ex)).expect("carved");
+        let obs = state()
+            .feed_ex(1000, &resp, &mut Opener::extracting(&mut ex))
+            .expect("carved");
         assert!(obs.known_bad);
         let path = obs.extracted_path.expect("extracted");
         assert!(
@@ -2115,10 +2258,12 @@ mod tests {
         let mut ex = Extractor::new(dir.clone()).unwrap();
         let head = b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nhel";
         let mut st = state();
-        st.feed_ex(1000, head, Some(&mut ex));
+        st.feed_ex(1000, head, &mut Opener::extracting(&mut ex));
         // A 2-byte gap (lost segment) → the carve aborts.
         let gapped = 1000 + head.len() as u32 + 2;
-        assert!(st.feed_ex(gapped, b"world", Some(&mut ex)).is_none());
+        assert!(st
+            .feed_ex(gapped, b"world", &mut Opener::extracting(&mut ex))
+            .is_none());
         assert!(st.aborted);
         drop(st); // dropping the state removes the temp file
         assert!(

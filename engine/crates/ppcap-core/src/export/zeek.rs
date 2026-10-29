@@ -158,9 +158,10 @@ const SSH: Schema = schema![
 const FILES: Schema = schema![
     "ts": "time", "fuid": "string", "uid": "string",
     "id.orig_h": "addr", "id.orig_p": "port", "id.resp_h": "addr", "id.resp_p": "port",
-    "source": "string", "analyzers": "set[string]", "mime_type": "string",
-    "seen_bytes": "count", "total_bytes": "count", "sha256": "string", "extracted": "string",
-    "signatures": "set[string]", "known_bad": "bool",
+    "source": "string", "analyzers": "set[string]", "mime_type": "string", "filename": "string",
+    "is_orig": "bool", "seen_bytes": "count", "total_bytes": "count", "sha256": "string",
+    "extracted": "string", "signatures": "set[string]", "known_bad": "bool",
+    "yara": "set[string]",
 ];
 
 const NOTICE: Schema = schema![
@@ -439,26 +440,31 @@ impl<S: LogSink> ZeekLogger<S> {
                 .unwrap_or_default();
             let uid = f
                 .first_seen_ns
+                .filter(|_| f.protocol == "http")
                 .and_then(|t| self.http_responses.get(&(client, server, t)).cloned());
             let fuid = file_uid(&f.sha256, &f.client, &f.server, ts);
             let vals = vec![
                 Val::Time(ts),
                 Val::Str(fuid),
                 uid.map_or(Val::Unset, Val::Str),
-                // The connection's orig is the downloading client, as in Zeek's `files.log`.
+                // The connection's orig is its client (the downloader, sender or SMB client).
                 Val::Addr(client),
                 Val::Unset,
                 Val::Addr(server),
                 Val::Unset,
-                Val::Str("HTTP".into()),
+                Val::Str(f.protocol.to_ascii_uppercase()),
                 Val::List(vec!["SHA256".into()]),
                 mime_for(&f.signatures).map_or(Val::Unset, |m| Val::Str(m.into())),
+                f.filename.clone().map_or(Val::Unset, Val::Str),
+                // Zeek's `is_orig`: the connection's originator sent the file.
+                Val::Bool(f.upload),
                 Val::Count(f.size),
                 Val::Count(f.size),
                 Val::Str(f.sha256.clone()),
                 f.extracted_path.clone().map_or(Val::Unset, Val::Str),
                 Val::List(f.signatures.clone()),
                 Val::Bool(f.known_bad),
+                Val::List(f.yara.clone()),
             ];
             self.row("files", FILES, vals);
         }
