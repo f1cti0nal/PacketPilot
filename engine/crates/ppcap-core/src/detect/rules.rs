@@ -614,7 +614,7 @@ pub fn apply_rules_with_context<R: std::io::Read + 'static>(
     // Unordered pair → (first frame ts, its sender, its destination port).
     let mut contacts: HashMap<(IpAddr, IpAddr), (i64, IpAddr, Option<u16>)> = HashMap::new();
 
-    'frames: loop {
+    loop {
         let frame = match src.next_frame() {
             Ok(Some(f)) => f,
             Ok(None) => break,
@@ -667,20 +667,20 @@ pub fn apply_rules_with_context<R: std::io::Read + 'static>(
             if r.matches(meta.transport, sport, dport, payload) {
                 let key = (r.sid, src_str.clone(), dst_str.clone(), dport);
                 if let Some(&i) = seen.get(&key) {
-                    if ts.is_some() {
+                    // Frames can arrive out of time order (multi-interface pcapng): widen.
+                    if let Some(t) = ts {
                         let f = &mut out[i];
-                        f.first_seen_ns = f.first_seen_ns.or(ts);
-                        f.last_seen_ns = ts;
+                        f.first_seen_ns = Some(f.first_seen_ns.map_or(t, |v| v.min(t)));
+                        f.last_seen_ns = Some(f.last_seen_ns.map_or(t, |v| v.max(t)));
                     }
-                } else {
+                } else if out.len() < MAX_RULE_FINDINGS {
+                    // At the cap, stop admitting new tuples but keep scanning so the admitted
+                    // ones still get their full time range.
                     seen.insert(key, out.len());
                     let mut f = rule_finding(r, &src_str, &dst_str, dport);
                     f.first_seen_ns = ts;
                     f.last_seen_ns = ts;
                     out.push(f);
-                    if out.len() >= MAX_RULE_FINDINGS {
-                        break 'frames;
-                    }
                 }
             }
         }
@@ -1054,6 +1054,45 @@ mod tests {
         let before = summary.timeline_context.clone();
         summary.timeline_context.merge(&ctx);
         assert_eq!(summary.timeline_context, before);
+    }
+
+    #[test]
+    fn out_of_order_matches_widen_the_detection_window() {
+        use crate::gen::{container, frames};
+        use crate::reader::LinkType;
+        use std::io::Write as _;
+        use std::net::Ipv4Addr;
+        let (src, dst) = (Ipv4Addr::new(10, 0, 0, 1), Ipv4Addr::new(93, 184, 216, 34));
+        let mut pcap = Vec::new();
+        container::write_pcap_header(&mut pcap, LinkType::Ethernet).unwrap();
+        // Matches at 5 s, then 3 s, then 4 s (reordered capture).
+        for ts in [5_000_000_000i64, 3_000_000_000, 4_000_000_000] {
+            let tcp = frames::build_tcp(
+                src,
+                dst,
+                1234,
+                443,
+                frames::TCP_PSH | frames::TCP_ACK,
+                b"abc",
+            );
+            let ip = frames::build_ipv4(src, dst, 6, 64, tcp.len());
+            let eth = frames::build_ethernet([2; 6], [4; 6], 0x0800);
+            let frame: Vec<u8> = eth.into_iter().chain(ip).chain(tcp).collect();
+            container::write_legacy_record(&mut pcap, ts, frame.len() as u32, frame.len() as u32)
+                .unwrap();
+            pcap.write_all(&frame).unwrap();
+        }
+        let rules = parse_rules(r#"alert tcp any any -> any 443 (content:"abc"; sid:9;)"#).rules;
+        let rf = apply_rules(
+            std::io::Cursor::new(pcap.clone()),
+            Some(pcap.len() as u64),
+            &rules,
+        );
+        assert_eq!(rf.len(), 1);
+        assert_eq!(
+            (rf[0].first_seen_ns, rf[0].last_seen_ns),
+            (Some(3_000_000_000), Some(5_000_000_000))
+        );
     }
 
     #[test]
