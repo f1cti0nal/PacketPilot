@@ -66,16 +66,18 @@ impl EveImport {
             if n == 0 {
                 break;
             }
+            // An oversized line was dropped from `buf`, so count it before the blank-line check.
+            if !whole {
+                self.lines += 1;
+                self.skipped += 1;
+                continue;
+            }
             let line = String::from_utf8_lossy(&buf);
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
             self.lines += 1;
-            if !whole {
-                self.skipped += 1;
-                continue;
-            }
             self.event(line);
         }
         Ok(())
@@ -499,6 +501,12 @@ not json
         let (_, whole) = read_line_capped(&mut r, &mut buf, 1 << 20).unwrap();
         assert!(whole);
         assert!(buf.starts_with(b"{"));
+
+        // Through `read`, the oversized line is counted as skipped, not dropped as blank.
+        let mut imp = EveImport::default();
+        let huge = format!("{}\n", "x".repeat(MAX_EVE_LINE + 1));
+        imp.read(huge.as_bytes()).unwrap();
+        assert_eq!((imp.lines, imp.skipped), (1, 1));
     }
 
     #[test]
