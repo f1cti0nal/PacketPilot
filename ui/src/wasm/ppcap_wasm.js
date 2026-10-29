@@ -133,6 +133,42 @@ export function apply_rules(bytes, rules_text, output_json) {
 }
 
 /**
+ * "Teach it once": apply an analyst suppression rule file to a completed analysis.
+ *
+ * `rules_json` is a `SuppressionFile` (`{ version, rules: [...] }`); `today` is `YYYY-MM-DD`
+ * (rules that expired before it are skipped; `""` disables expiry). The rules replace any the
+ * analysis already carries. Returns `{ output, active, expired, invalid }`. Pure + offline.
+ * @param {string} output_json
+ * @param {string} rules_json
+ * @param {string} today
+ * @returns {string}
+ */
+export function apply_suppressions(output_json, rules_json, today) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(output_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(rules_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(today, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.apply_suppressions(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * Behavioral Baseline: fold a completed analysis into a baseline profile (create-or-merge).
  *
  * `output_json` is the `AnalysisOutput` from `analyze` (which carries the per-host egress
@@ -499,6 +535,46 @@ export function sanitize(bytes, options_json, key, created_unix_secs) {
         return getStringFromWasm0(ptr4, len4);
     } finally {
         wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
+ * "Teach it once": turn "this alert is benign" into suppression rules.
+ *
+ * `scope` is `exact` | `source` | `destination`; `meta_json` is `{ reason, author?, created?,
+ * expires? }` (dates `YYYY-MM-DD`). Returns `{ rules, kept }` where `kept` lists
+ * `[finding_index, reason]` members a guardrail keeps visible. Merging into the stored rule
+ * file is the caller's job. Pure + offline.
+ * @param {string} output_json
+ * @param {string} alert_id
+ * @param {string} scope
+ * @param {string} meta_json
+ * @returns {string}
+ */
+export function teach_alert(output_json, alert_id, scope, meta_json) {
+    let deferred6_0;
+    let deferred6_1;
+    try {
+        const ptr0 = passStringToWasm0(output_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(alert_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(scope, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(meta_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.teach_alert(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        var ptr5 = ret[0];
+        var len5 = ret[1];
+        if (ret[3]) {
+            ptr5 = 0; len5 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred6_0 = ptr5;
+        deferred6_1 = len5;
+        return getStringFromWasm0(ptr5, len5);
+    } finally {
+        wasm.__wbindgen_free(deferred6_0, deferred6_1, 1);
     }
 }
 function __wbg_get_imports() {

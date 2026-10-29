@@ -15,6 +15,7 @@
 
 pub mod alerts;
 pub mod rules;
+pub mod suppress;
 
 /// Streaming mean/variance over a stream of `i64` samples using Welford's online algorithm.
 ///
@@ -5523,7 +5524,7 @@ pub fn fold_rule_findings(summary: &mut crate::model::summary::Summary, rule_fin
     summary.attack_chains = reconstruct_attack_chains(&summary.findings);
     // Alerts read findings + incidents + chains + cards, so they re-derive last. Re-derivation
     // (never patching) is what keeps native and wasm alert output byte-identical.
-    summary.alerts = alerts::derive_alerts(summary);
+    alerts::refresh_alerts(summary);
 }
 
 #[cfg(test)]

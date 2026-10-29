@@ -203,6 +203,11 @@ pub struct StatsAccumulator {
     severity_counts: SeverityCounts,
     /// Per-IP threat rollups (Phase 2); bounded by `max_tracked_keys`.
     per_ip_threat: HashMap<IpAddr, IpThreatStat>,
+    /// Every IOC-matched endpoint, tracked independently of `per_ip_threat`'s cap so a safety
+    /// guardrail (analyst suppressions) never loses one; bounded by `max_tracked_keys`, with
+    /// `ioc_overflow` recording that the set is incomplete.
+    ioc_ips: std::collections::HashSet<IpAddr>,
+    ioc_overflow: bool,
     /// Per-SNI-domain traffic rollups; bounded by `max_tracked_keys`.
     per_domain: HashMap<String, DomainStat>,
     /// Per-HTTP-request-`Host` flow counts; bounded by `max_tracked_keys`.
@@ -308,6 +313,8 @@ impl StatsAccumulator {
             scan_spread: HashMap::new(),
             severity_counts: SeverityCounts::default(),
             per_ip_threat: HashMap::new(),
+            ioc_ips: std::collections::HashSet::new(),
+            ioc_overflow: false,
             per_domain: HashMap::new(),
             per_http_host: HashMap::new(),
             per_http_ua: HashMap::new(),
@@ -638,6 +645,18 @@ impl StatsAccumulator {
     /// a brand-new key at capacity is dropped (graceful degradation).
     pub fn observe_scored_flow(&mut self, f: &FlowRecord, sc: &ScoredFlow) {
         self.severity_counts.bump(f.severity);
+        if f.ioc {
+            for ip in [f.key.lo_ip, f.key.hi_ip] {
+                if self.ioc_ips.contains(&ip) {
+                    continue;
+                }
+                if self.ioc_ips.len() >= self.cfg.max_tracked_keys {
+                    self.ioc_overflow = true;
+                } else {
+                    self.ioc_ips.insert(ip);
+                }
+            }
+        }
         for ip in [f.key.lo_ip, f.key.hi_ip] {
             if !self.per_ip_threat.contains_key(&ip)
                 && self.per_ip_threat.len() >= self.cfg.max_tracked_keys
@@ -1287,6 +1306,10 @@ impl StatsAccumulator {
                 .then(b.flows.cmp(&a.flows))
                 .then(a.ip.cmp(&b.ip))
         });
+        // The IOC set survives the top-K cut; sorted by address for deterministic output.
+        let mut ioc_addrs: Vec<IpAddr> = self.ioc_ips.iter().copied().collect();
+        ioc_addrs.sort_unstable();
+        let ioc_ips: Vec<String> = ioc_addrs.iter().map(IpAddr::to_string).collect();
         ip_threats.truncate(self.cfg.top_k_ip_threats);
 
         // Domain (SNI) rollups: desc by bytes, tie-break desc flows, then asc host. Top-N.
@@ -1502,6 +1525,8 @@ impl StatsAccumulator {
             category_breakdown,
             severity_counts: self.severity_counts,
             ip_threats,
+            ioc_ips,
+            ioc_ips_truncated: self.ioc_overflow,
             domain_threats,
             http_hosts,
             user_agents,
@@ -1521,6 +1546,8 @@ impl StatsAccumulator {
             incidents: Vec::new(),
             attack_chains: Vec::new(),
             alerts: Vec::new(),
+            suppression_rules: Vec::new(),
+            suppressions: Vec::new(),
         }
     }
 

@@ -101,4 +101,102 @@ describe("AlertsView", () => {
     await u.click(screen.getByRole("button", { name: `${alerts[1].title}, Review` }));
     expect(screen.queryByRole("button", { name: /open chain/i })).toBeNull();
   });
+
+  describe("teach it once", () => {
+    const rule = {
+      id: "sup:0000000000000001",
+      kind: findings[0].kind,
+      src: findings[0].src_ip,
+      reason: "lab scanner",
+      author: "john",
+      expires: "2027-01-27",
+    };
+
+    it("Mark benign submits the scope and reason, then shows the outcome", async () => {
+      const u = userEvent.setup();
+      const onTeach = vi.fn().mockResolvedValue("Saved 1 rule (expires in 90 days).");
+      render(<AlertsView alerts={alerts} findings={findings} onTeach={onTeach} />);
+      await u.click(screen.getByRole("button", { name: `${alerts[0].title}, Act now` }));
+      await u.click(screen.getByRole("button", { name: "Mark benign" }));
+      const form = screen.getByRole("form", { name: "Mark benign" });
+      const save = within(form).getByRole("button", { name: "Save rule" });
+      expect(save).toBeDisabled();
+      await u.click(within(form).getByLabelText(/This source host/));
+      await u.type(within(form).getByLabelText("Why is this benign?"), "lab scanner");
+      await u.click(save);
+      expect(onTeach).toHaveBeenCalledWith(alerts[0].id, "source", "lab scanner");
+      expect(await screen.findByText("Saved 1 rule (expires in 90 days).")).toBeInTheDocument();
+    });
+
+    it("lists suppressed and guardrail-kept findings with the rule that matched", async () => {
+      const u = userEvent.setup();
+      const onRemoveRule = vi.fn();
+      render(
+        <AlertsView
+          alerts={alerts}
+          findings={findings}
+          suppressions={[
+            { finding_index: 0, rule_id: rule.id, status: "suppressed" },
+            { finding_index: 1, rule_id: rule.id, status: "blocked", reason: "threat_intel" },
+          ]}
+          appliedRules={[rule]}
+          onRemoveRule={onRemoveRule}
+        />,
+      );
+      expect(screen.getByText(/1 finding suppressed$/)).toBeInTheDocument();
+      await u.click(screen.getByRole("button", { name: "Suppressed (1) · 1 kept by guardrails" }));
+      expect(screen.getByText(/Hidden by rule: “lab scanner” \(john\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Still shown: a host matched the threat-intel feed/)).toBeInTheDocument();
+      await u.click(screen.getByRole("button", { name: "Stop suppressing" }));
+      expect(onRemoveRule).toHaveBeenCalledWith(rule);
+    });
+
+    it("keeps the view (not the empty state) when every finding was suppressed", () => {
+      render(
+        <AlertsView
+          alerts={[]}
+          findings={findings}
+          suppressions={[{ finding_index: 0, rule_id: rule.id, status: "suppressed" }]}
+          appliedRules={[rule]}
+        />,
+      );
+      expect(screen.queryByText("No alerts")).not.toBeInTheDocument();
+      expect(screen.getByText(/every finding was suppressed/)).toBeInTheDocument();
+    });
+
+    it("rules manager flags expired rules and deletes, imports and exports", async () => {
+      const u = userEvent.setup();
+      const onRemoveRule = vi.fn();
+      const onImportRules = vi.fn();
+      const onExportRules = vi.fn();
+      const expired = { ...rule, id: "sup:0000000000000002", src: "10.9.9.9", expires: "2026-01-01" };
+      render(
+        <AlertsView
+          alerts={alerts}
+          findings={findings}
+          storedRules={[rule, expired]}
+          today="2026-10-29"
+          onRemoveRule={onRemoveRule}
+          onImportRules={onImportRules}
+          onExportRules={onExportRules}
+        />,
+      );
+      await u.click(screen.getByRole("button", { name: "Suppression rules (2)" }));
+      expect(screen.getByText("expired")).toBeInTheDocument();
+      expect(screen.getByText(/expired 2026-01-01/)).toBeInTheDocument();
+      await u.click(screen.getByRole("button", { name: "Export" }));
+      expect(onExportRules).toHaveBeenCalled();
+      const file = new File(['{"rules":[]}'], "suppressions.json", { type: "application/json" });
+      await u.upload(screen.getByLabelText("Import suppression rules"), file);
+      expect(onImportRules).toHaveBeenCalledWith(file);
+      await u.click(screen.getAllByRole("button", { name: /^Delete rule/ })[1]);
+      expect(onRemoveRule).toHaveBeenCalledWith(expired);
+    });
+
+    it("keeps the rules manager reachable on a capture with no alerts", () => {
+      render(<AlertsView alerts={[]} findings={[]} onImportRules={vi.fn()} storedRules={[rule]} />);
+      expect(screen.getByText("No alerts")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Suppression rules (1)" })).toBeInTheDocument();
+    });
+  });
 });

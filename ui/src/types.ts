@@ -140,7 +140,49 @@ export interface Summary {
   /** Ranked, deduplicated, context-bundled triage queue derived from findings / incidents /
    *  attack chains / threat cards; absent in older summaries. */
   alerts?: Alert[];
+  /** "Teach it once": analyst suppression rules applied to this analysis; absent when none. */
+  suppression_rules?: SuppressionRule[];
+  /** Findings a suppression rule matched (hidden, or kept by a guardrail); absent when none. */
+  suppressions?: SuppressionHit[];
 }
+
+/** One analyst "benign" verdict as a match rule. A missing host/port field is a wildcard. */
+export interface SuppressionRule {
+  /** `sup:<16 hex>` — hash of the match fields, so the same verdict taught twice dedupes. */
+  id: string;
+  /** Finding kind token (`missing_sni`, `beacon`, …). Required; there is no kind wildcard. */
+  kind: string;
+  /** Source IP or CIDR. */
+  src?: string;
+  /** Destination IP or CIDR. */
+  dst?: string;
+  dst_port?: number;
+  reason: string;
+  author?: string;
+  /** `YYYY-MM-DD`. */
+  created?: string;
+  /** Last day the rule applies, `YYYY-MM-DD`; absent = never expires. */
+  expires?: string;
+}
+
+/** A suppression rule file — the unit a team commits to git and shares. */
+export interface SuppressionFile {
+  version: number;
+  rules: SuppressionRule[];
+}
+
+/** Why a matching rule was not allowed to hide a finding. */
+export type SuppressionBlockReason = "protected_kind" | "threat_intel" | "reputation";
+
+/** One finding a rule matched. */
+export type SuppressionHit = {
+  /** Index into `summary.findings`. */
+  finding_index: number;
+  rule_id: string;
+} & ({ status: "suppressed" } | { status: "blocked"; reason: SuppressionBlockReason });
+
+/** How broadly a "mark benign" verdict generalizes. */
+export type TeachScope = "exact" | "source" | "destination";
 
 export interface SeverityCounts {
   critical: number;

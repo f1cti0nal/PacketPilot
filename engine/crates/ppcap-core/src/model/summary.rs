@@ -374,6 +374,15 @@ pub struct Summary {
     pub severity_counts: SeverityCounts,
     /// desc by score; len <= top_k_ip_threats.
     pub ip_threats: Vec<IpThreat>,
+    /// Every IP that matched the offline IOC feed, uncapped and sorted — `ip_threats` is a top-K
+    /// projection, so guardrails that must never miss an IOC hit (analyst suppressions) read
+    /// this. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ioc_ips: Vec<String>,
+    /// `ioc_ips` hit its bound and is incomplete — the suppression guardrail then fails closed.
+    /// `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ioc_ips_truncated: bool,
     /// Top TLS SNI hosts by traffic. `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub domain_threats: Vec<DomainThreat>,
@@ -435,6 +444,16 @@ pub struct Summary {
     /// alert. `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub alerts: Vec<crate::model::alert::Alert>,
+    /// "Teach it once": the analyst suppression rules active for this analysis (expired rules
+    /// already filtered out at load). Carried in the summary so every alert re-derivation seam
+    /// honors them. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suppression_rules: Vec<crate::model::suppression::SuppressionRule>,
+    /// Every finding a suppression rule matched, with whether it was hidden from the alert
+    /// queue or kept by a guardrail. Ascending by finding index. `#[serde(default)]` keeps
+    /// older summaries readable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suppressions: Vec<crate::model::suppression::SuppressionHit>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -468,6 +487,8 @@ impl Summary {
             category_breakdown: Vec::new(),
             severity_counts: SeverityCounts::default(),
             ip_threats: Vec::new(),
+            ioc_ips: Vec::new(),
+            ioc_ips_truncated: false,
             domain_threats: Vec::new(),
             http_hosts: Vec::new(),
             user_agents: Vec::new(),
@@ -483,6 +504,8 @@ impl Summary {
             incidents: Vec::new(),
             attack_chains: Vec::new(),
             alerts: Vec::new(),
+            suppression_rules: Vec::new(),
+            suppressions: Vec::new(),
         }
     }
 

@@ -35,6 +35,15 @@ export function apply_reputation(output_json: string, verdicts_json: string): st
 export function apply_rules(bytes: Uint8Array, rules_text: string, output_json: string): string;
 
 /**
+ * "Teach it once": apply an analyst suppression rule file to a completed analysis.
+ *
+ * `rules_json` is a `SuppressionFile` (`{ version, rules: [...] }`); `today` is `YYYY-MM-DD`
+ * (rules that expired before it are skipped; `""` disables expiry). The rules replace any the
+ * analysis already carries. Returns `{ output, active, expired, invalid }`. Pure + offline.
+ */
+export function apply_suppressions(output_json: string, rules_json: string, today: string): string;
+
+/**
  * Behavioral Baseline: fold a completed analysis into a baseline profile (create-or-merge).
  *
  * `output_json` is the `AnalysisOutput` from `analyze` (which carries the per-host egress
@@ -126,6 +135,16 @@ export function render_report(output_json: string, generated_unix_secs: bigint, 
  */
 export function sanitize(bytes: Uint8Array, options_json: string, key: Uint8Array, created_unix_secs: bigint): string;
 
+/**
+ * "Teach it once": turn "this alert is benign" into suppression rules.
+ *
+ * `scope` is `exact` | `source` | `destination`; `meta_json` is `{ reason, author?, created?,
+ * expires? }` (dates `YYYY-MM-DD`). Returns `{ rules, kept }` where `kept` lists
+ * `[finding_index, reason]` members a guardrail keeps visible. Merging into the stored rule
+ * file is the caller's job. Pure + offline.
+ */
+export function teach_alert(output_json: string, alert_id: string, scope: string, meta_json: string): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -134,6 +153,7 @@ export interface InitOutput {
     readonly apply_domain_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_rules: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly apply_suppressions: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly build_baseline: (a: number, b: number, c: number, d: number, e: bigint) => [number, number, number, number];
     readonly carve_pcap: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly compare_to_baseline: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -146,6 +166,7 @@ export interface InitOutput {
     readonly extract_packets: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly render_report: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number, number];
     readonly sanitize: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => [number, number, number, number];
+    readonly teach_alert: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

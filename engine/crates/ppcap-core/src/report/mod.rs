@@ -157,6 +157,7 @@ pub fn render_html(
 
     // ---- Section 2b: the alert queue (Smart Alerting with Context) --------------------
     s.push_str(&alerts_html(sum));
+    s.push_str(&suppressed_html(sum));
 
     // ---- Section 3: active incidents (the headline triage unit) ----------------------
     s.push_str(&incidents_html(&sum.incidents));
@@ -857,6 +858,73 @@ fn alerts_html(sum: &Summary) -> String {
         );
     }
     s.push_str("</section>\n");
+    s
+}
+
+/// The "Suppressed by analyst rules" section: every finding a "teach it once" rule matched,
+/// with the rule's reason — so a shared report shows what was tuned out, and what a guardrail
+/// refused to hide. Returns `""` when no rule matched anything.
+fn suppressed_html(sum: &Summary) -> String {
+    use crate::model::suppression::SuppressionOutcome;
+    if sum.suppressions.is_empty() {
+        return String::new();
+    }
+    let hidden = sum
+        .suppressions
+        .iter()
+        .filter(|h| h.outcome == SuppressionOutcome::Suppressed)
+        .count();
+    let kept = sum.suppressions.len() - hidden;
+    let mut s = String::with_capacity(1024);
+    s.push_str("<section class=\"card\"><h2>Suppressed by analyst rules</h2>");
+    let _ = write!(
+        s,
+        "<p class=\"muted\">{hidden} finding{hp} hidden from the alert queue by {rules} \
+         rule{rp}{kept_note}. Rules are analyst verdicts loaded with <span class=\"mono\">\
+         --suppress</span>; confirmed malware and threat-intel hits are never hidden.</p>",
+        hp = if hidden == 1 { "" } else { "s" },
+        rules = sum.suppression_rules.len(),
+        rp = if sum.suppression_rules.len() == 1 {
+            ""
+        } else {
+            "s"
+        },
+        kept_note = if kept > 0 {
+            format!("; {kept} more kept visible by guardrails")
+        } else {
+            String::new()
+        },
+    );
+    s.push_str(
+        "<table><thead><tr><th>Finding</th><th>Status</th><th>Rule</th></tr></thead><tbody>",
+    );
+    for h in &sum.suppressions {
+        let title = sum
+            .findings
+            .get(h.finding_index as usize)
+            .map_or("", |f| f.title.as_str());
+        let rule = sum.suppression_rules.iter().find(|r| r.id == h.rule_id);
+        let status = match h.outcome {
+            SuppressionOutcome::Suppressed => "hidden".to_string(),
+            SuppressionOutcome::Blocked(why) => {
+                format!("kept ({})", why.as_str().replace('_', " "))
+            }
+        };
+        let reason = rule.map_or("", |r| r.reason.as_str());
+        let author = rule
+            .and_then(|r| r.author.as_deref())
+            .map(|a| format!(" &middot; {}", esc(a)))
+            .unwrap_or_default();
+        let _ = write!(
+            s,
+            "<tr><td>{}</td><td>{}</td><td>{}{author} <span class=\"mono muted\">{}</span></td></tr>",
+            esc(title),
+            esc(&status),
+            esc(reason),
+            esc(&h.rule_id),
+        );
+    }
+    s.push_str("</tbody></table></section>\n");
     s
 }
 

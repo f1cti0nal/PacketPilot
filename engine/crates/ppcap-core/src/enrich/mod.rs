@@ -288,13 +288,13 @@ fn builtin_seed() -> BuiltinSeed {
 }
 
 /// A parsed CIDR network (family + prefix length).
-struct Cidr {
+pub(crate) struct Cidr {
     net: IpAddr,
     prefix: u8,
 }
 
 impl Cidr {
-    fn contains(&self, ip: IpAddr) -> bool {
+    pub(crate) fn contains(&self, ip: IpAddr) -> bool {
         match (self.net, ip) {
             (IpAddr::V4(n), IpAddr::V4(q)) => masked_eq(&n.octets(), &q.octets(), self.prefix),
             (IpAddr::V6(n), IpAddr::V6(q)) => masked_eq(&n.octets(), &q.octets(), self.prefix),
@@ -321,7 +321,7 @@ fn masked_eq(net: &[u8], q: &[u8], prefix: u8) -> bool {
 /// through to its native IPv4 form. This keeps IOC matching consistent with
 /// [`classify_ip`] regardless of how the endpoint was encoded, so a feed listing a plain v4
 /// indicator still matches a mapped-v6 query (and vice versa).
-fn canonicalize_ip(ip: IpAddr) -> IpAddr {
+pub(crate) fn canonicalize_ip(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
         _ => ip,
@@ -552,7 +552,7 @@ impl ThreatFeed {
 }
 
 /// Parse a `"net/prefix"` CIDR string, validating the prefix against the address family.
-fn parse_cidr(s: &str) -> Result<Cidr> {
+pub(crate) fn parse_cidr(s: &str) -> Result<Cidr> {
     let s = s.trim();
     let (net_s, pfx_s) = s
         .split_once('/')

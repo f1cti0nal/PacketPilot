@@ -109,6 +109,13 @@ cargo run -p ppcap-cli --release -- sanitize sample.pcap --out sample.sanitized.
 cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --html report.html \
   --evidence case.evidence.json
 cargo run -p ppcap-cli --release -- verify case.evidence.json
+
+# Teach it once: mark an alert benign (rules expire in 90 days), then apply the rule file
+# (repeatable: a team file in git plus a personal one) to later captures
+cargo run -p ppcap-cli --release -- suppress add out.json --alert alert:0123abcd4567ef89 \
+  --scope destination --reason "DHCP discovery on port 67" --author john --file suppressions.json
+cargo run -p ppcap-cli --release -- analyze next.pcap --json next.json --suppress suppressions.json
+cargo run -p ppcap-cli --release -- suppress test next.json --suppress suppressions.json
 ```
 
 OT/ICS captures (Modbus / DNP3 / S7comm / BACnet / EtherNet-IP) are identified from packet
@@ -168,6 +175,12 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
 - **Time Machine (retrospective re-scan)** — `analyze --index` distils a capture into a compact
   indicator index; later `ppcap rescan` re-evaluates it against an updated threat feed and flags
   indicators that were clean at capture time but are dirty now — no pcap re-read, fully offline.
+- **Teach it once (analyst suppression rules)** — mark an alert benign once (in the Alerts tab or
+  with `ppcap suppress add`) and the verdict becomes a rule (finding kind + source/destination IP or
+  CIDR + port, with reason, author and a 90-day expiry) applied to every later capture. Hidden
+  findings stay listed under *Suppressed* with the rule that hid them, and confirmed malware, ARP
+  spoofing, OT writes and threat-intel or reputation hits are never hidden. Rules are a plain
+  `suppressions.json`, so one analyst keeps them offline and a team shares them in git — no server.
 - **Explainable severity** per flow + per-IP **report cards** (score, evidence, ATT&CK).
 - Columnar Parquet output + DuckDB view; summary JSON.
 - Triage dashboard (severity strip, threat panel, charts) + virtualized flows + drill-down.

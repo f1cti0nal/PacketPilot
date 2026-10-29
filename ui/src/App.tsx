@@ -11,6 +11,7 @@ import type {
   SummaryState,
   FlowsState,
   TabId,
+  TeachScope,
 } from "./types";
 import { loadSummary, loadFlows } from "./lib/data";
 import { basename } from "./lib/format";
@@ -65,9 +66,27 @@ import {
   copyCef,
   copySigma,
   applyRules,
+  downloadText,
 } from "./lib/platform";
 import { packetsAvailable } from "./lib/packets";
-import { analyzeViaWasm, applyReputationWasm, applyDomainReputationWasm } from "./lib/wasmEngine";
+import {
+  analyzeViaWasm,
+  applyReputationWasm,
+  applyDomainReputationWasm,
+  applySuppressionsWasm,
+  teachAlertWasm,
+} from "./lib/wasmEngine";
+import {
+  DEFAULT_RULE_TTL_DAYS,
+  addSuppressionRules,
+  exportSuppressions,
+  importSuppressions,
+  removeSuppressionRule,
+  rulesSignature,
+  useSuppressions,
+  ymd,
+  ymdPlusDays,
+} from "./lib/suppressions";
 import { HomeView } from "./components/home/HomeView";
 import {
   consentGiven,
@@ -763,6 +782,89 @@ export function App() {
     repChainRef.current = run.catch(() => {});
   }, [summary]);
 
+  // "Teach it once": keep the on-screen queue in step with the analyst's stored suppression
+  // rules. Runs on every new capture and every rule change; the engine's other passes
+  // (reputation, rules, baseline) re-derive with the rules the summary already carries, so this
+  // only fires when the stored set and the summary's set disagree. Queued on repChainRef so it
+  // composes with in-flight enrichment, and attempted once per (capture, rule set) so a rule the
+  // engine rejects can never loop.
+  const suppressionFile = useSuppressions();
+  const suppressAttemptRef = useRef<string | null>(null);
+  // The calendar day rules expire against; re-checked hourly so a rule that expires while the
+  // app stays open stops applying without a reload.
+  const [today, setToday] = useState(() => ymd(new Date()));
+  useEffect(() => {
+    const t = window.setInterval(() => setToday(ymd(new Date())), 3_600_000);
+    return () => window.clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (summary.status !== "ready" || !summary.data) return;
+    const data = summary.data;
+    const wanted = rulesSignature(suppressionFile.rules, today);
+    // The applied side is compared unfiltered: a rule the summary still carries after it
+    // expired (a restored analysis, or a day change) must trigger a re-apply.
+    if (rulesSignature(data.summary.suppression_rules, "") === wanted) return;
+    const attempt = `${repCaptureKey(data) ?? ""}|${wanted}`;
+    if (suppressAttemptRef.current === attempt) return;
+    suppressAttemptRef.current = attempt;
+    const targetKey = repCaptureKey(data);
+    const run = repChainRef.current.then(async () => {
+      const cur = summaryDataRef.current;
+      if (!cur || repCaptureKey(cur) !== targetKey) return;
+      const res = await applySuppressionsWasm(cur, suppressionFile, today);
+      const after = summaryDataRef.current;
+      if (!after || repCaptureKey(after) !== targetKey) return;
+      summaryDataRef.current = res.output;
+      setSummary({ status: "ready", data: res.output });
+      const id = activeIdRef.current;
+      if (id) setRecent(updateRecentSummary(id, res.output));
+    });
+    repChainRef.current = run.catch(() => {});
+  }, [summary, suppressionFile, today]);
+
+  const teachAlert = useCallback(
+    async (alertId: string, scope: TeachScope, reason: string): Promise<string> => {
+      const data = summaryDataRef.current;
+      if (!data) throw new Error("No capture loaded");
+      const now = new Date();
+      const taught = await teachAlertWasm(data, alertId, scope, {
+        reason,
+        created: ymd(now),
+        expires: ymdPlusDays(now, DEFAULT_RULE_TTL_DAYS),
+      });
+      const added = addSuppressionRules(taught.rules);
+      const kept = taught.kept.length;
+      if (taught.rules.length === 0) {
+        return "Nothing saved: every finding in this alert is protected by a guardrail.";
+      }
+      const saved =
+        added === 0
+          ? "These rules already exist."
+          : `Saved ${added} rule${added === 1 ? "" : "s"} (expires in ${DEFAULT_RULE_TTL_DAYS} days).`;
+      const message =
+        kept > 0
+          ? `${saved} ${kept} finding${kept === 1 ? "" : "s"} stay visible because a guardrail protects them.`
+          : saved;
+      // The card usually vanishes into Suppressed, so echo the outcome in the app-wide notice too.
+      setRuleNotice(message);
+      return message;
+    },
+    [],
+  );
+
+  const importSuppressionFile = useCallback(async (file: File) => {
+    try {
+      const added = importSuppressions(await file.text());
+      setRuleNotice(`Suppression rules: ${added} new rule${added === 1 ? "" : "s"} imported`);
+    } catch (e) {
+      setRuleNotice(e instanceof Error ? e.message : "Failed to import suppression rules");
+    }
+  }, []);
+
+  const exportSuppressionFile = useCallback(() => {
+    downloadText(exportSuppressions(), "suppressions.json", "application/json");
+  }, []);
+
   return (
     <>
     <AnnouncementBanner banner={announcement_banner} />
@@ -832,6 +934,14 @@ export function App() {
             setFocusChainId(id);
             setTab("attackchain");
           }}
+          suppressions={summary.status === "ready" ? summary.data?.summary.suppressions ?? [] : []}
+          appliedRules={summary.status === "ready" ? summary.data?.summary.suppression_rules ?? [] : []}
+          storedRules={suppressionFile.rules}
+          today={today}
+          onTeach={summary.status === "ready" && summary.data ? teachAlert : undefined}
+          onRemoveRule={removeSuppressionRule}
+          onImportRules={(f) => void importSuppressionFile(f)}
+          onExportRules={exportSuppressionFile}
         />
       ) : tab === "flows" ? (
         <FlowsView

@@ -135,6 +135,12 @@ pub enum Command {
         /// the JSON. The key-log is read locally and never leaves the machine. Off by default.
         #[arg(long, conflicts_with = "batch")]
         keylog: Option<PathBuf>,
+        /// Teach it once: apply analyst suppression rules (a `suppressions.json` from
+        /// `ppcap suppress add` or the UI). Repeatable — e.g. a team file then a personal one;
+        /// a rule id seen twice keeps the first. Matching findings leave the alert queue and are
+        /// listed under `suppressions` in the JSON. Expired rules are skipped.
+        #[arg(long = "suppress", conflicts_with = "batch")]
+        suppress: Vec<PathBuf>,
     },
     /// Time Machine: re-evaluate saved capture indices against an updated threat feed,
     /// reporting indicators that were clean at capture time but are dirty now.
@@ -169,6 +175,16 @@ pub enum Command {
         /// AlertDiff report.
         #[arg(long)]
         json: Option<String>,
+        /// Teach it once: re-apply the queue under these suppression rule files (replacing any
+        /// rules the analysis already carries). Repeatable; first file wins on a duplicate id.
+        #[arg(long = "suppress")]
+        suppress: Vec<PathBuf>,
+    },
+    /// Teach it once: turn "this alert is benign" into reusable suppression rules, and inspect
+    /// or test rule files. Rules are plain JSON, safe to commit and share.
+    Suppress {
+        #[command(subcommand)]
+        action: SuppressAction,
     },
     /// Evidence: verify a sealed chain-of-custody manifest — recompute the seal, then re-hash
     /// the source capture and every recorded artifact, reporting intact / missing / modified.
@@ -251,6 +267,75 @@ pub enum Command {
     },
 }
 
+/// `ppcap suppress` sub-actions: teach, list and test analyst suppression rule files.
+#[derive(Subcommand, Debug)]
+pub enum SuppressAction {
+    /// Mark one or more alerts of an analyzed capture benign, appending one rule per member
+    /// finding to a rule file (created if absent; existing rules are kept).
+    Add {
+        /// The analysis-output JSON (from `analyze --json`) holding the alerts.
+        summary: PathBuf,
+        /// Alert id(s) to teach (`alert:…`, as printed by `ppcap alerts --json`).
+        #[arg(long = "alert", required = true)]
+        alerts: Vec<String>,
+        /// Why these are benign — stored on every rule and shown wherever a rule hides something.
+        #[arg(long)]
+        reason: String,
+        /// How broadly the verdict generalizes: `exact` (same source, destination and port),
+        /// `source` (this host to anywhere), or `destination` (any host to this destination and
+        /// port; for scans and sweeps with no single destination, any host to this port).
+        #[arg(long, value_enum, default_value_t = ScopeArg::Exact)]
+        scope: ScopeArg,
+        /// Who is teaching it (a name, handle or email).
+        #[arg(long)]
+        author: Option<String>,
+        /// Days until the rules expire (default 90). Ignored with `--no-expiry`.
+        #[arg(long = "expires-days", default_value_t = ppcap_core::DEFAULT_RULE_TTL_DAYS)]
+        expires_days: i64,
+        /// Never expire these rules.
+        #[arg(long = "no-expiry")]
+        no_expiry: bool,
+        /// The rule file to append to.
+        #[arg(long, default_value = "suppressions.json")]
+        file: PathBuf,
+    },
+    /// Print the rules in one or more files with their status (active / expired / invalid).
+    List {
+        /// Rule files, in priority order.
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
+    /// Show what rule files would hide in an analyzed capture, without re-analyzing it.
+    Test {
+        /// The analysis-output JSON (from `analyze --json`).
+        summary: PathBuf,
+        /// Rule files, in priority order.
+        #[arg(long = "suppress", required = true)]
+        suppress: Vec<PathBuf>,
+        /// Write the suppression hits as JSON here ("-" => stdout).
+        #[arg(long)]
+        json: Option<String>,
+    },
+}
+
+/// `--scope` values for `ppcap suppress add`.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScopeArg {
+    Exact,
+    Source,
+    Destination,
+}
+
+impl From<ScopeArg> for ppcap_core::TeachScope {
+    fn from(s: ScopeArg) -> Self {
+        match s {
+            ScopeArg::Exact => ppcap_core::TeachScope::Exact,
+            ScopeArg::Source => ppcap_core::TeachScope::Source,
+            ScopeArg::Destination => ppcap_core::TeachScope::Destination,
+        }
+    }
+}
+
 /// `ppcap baseline` sub-actions: pure transforms over baseline profile sidecars.
 #[derive(Subcommand, Debug)]
 pub enum BaselineAction {
@@ -315,6 +400,255 @@ fn alerts_summary_line(summary: &ppcap_core::Summary) -> String {
     )
 }
 
+/// Seconds since the Unix epoch (a pre-epoch clock reads as 0).
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Read suppression rule files (all must exist and parse).
+fn read_suppression_files(paths: &[PathBuf]) -> anyhow::Result<Vec<ppcap_core::SuppressionFile>> {
+    paths
+        .iter()
+        .map(|p| {
+            let text = std::fs::read_to_string(p)
+                .with_context(|| format!("read suppression rules {}", p.display()))?;
+            serde_json::from_str(&text)
+                .with_context(|| format!("parse suppression rules {}", p.display()))
+        })
+        .collect()
+}
+
+/// Load and merge suppression rule files as of today, warning on stderr about every rule that
+/// will not apply (expired, invalid) or cannot match in this build (unknown kind).
+fn load_suppression_rules(
+    paths: &[PathBuf],
+    quiet: bool,
+) -> anyhow::Result<Vec<ppcap_core::SuppressionRule>> {
+    let files = read_suppression_files(paths)?;
+    let today = ppcap_core::ymd_from_unix_secs(unix_now());
+    let loaded = ppcap_core::load_suppression_rules(&files, Some(&today));
+    if !quiet {
+        for r in &loaded.expired {
+            eprintln!(
+                "suppress: skipping expired rule {} ({} expired {})",
+                r.id,
+                r.kind,
+                r.expires.as_deref().unwrap_or("")
+            );
+        }
+        for (r, why) in &loaded.invalid {
+            eprintln!("suppress: skipping invalid rule {}: {why}", r.id);
+        }
+        for r in &loaded.unknown_kind {
+            eprintln!(
+                "suppress: rule {} names unknown finding kind {:?}; it will never match",
+                r.id, r.kind
+            );
+        }
+    }
+    Ok(loaded.active)
+}
+
+/// `suppressions: 4 findings hidden by 2 rules, 1 kept by guardrails (threat_intel)`.
+fn suppression_summary_line(summary: &ppcap_core::Summary) -> String {
+    use ppcap_core::model::SuppressionOutcome;
+    let hidden: Vec<_> = summary
+        .suppressions
+        .iter()
+        .filter(|h| h.outcome == SuppressionOutcome::Suppressed)
+        .collect();
+    let rules: std::collections::BTreeSet<&str> =
+        hidden.iter().map(|h| h.rule_id.as_str()).collect();
+    let blocked: Vec<&str> = summary
+        .suppressions
+        .iter()
+        .filter_map(|h| match h.outcome {
+            SuppressionOutcome::Blocked(why) => Some(why.as_str()),
+            SuppressionOutcome::Suppressed => None,
+        })
+        .collect();
+    let mut line = format!(
+        "suppressions: {} finding{} hidden by {} rule{} ({} rule{} loaded)",
+        hidden.len(),
+        if hidden.len() == 1 { "" } else { "s" },
+        rules.len(),
+        if rules.len() == 1 { "" } else { "s" },
+        summary.suppression_rules.len(),
+        if summary.suppression_rules.len() == 1 {
+            ""
+        } else {
+            "s"
+        },
+    );
+    if !blocked.is_empty() {
+        let reasons: std::collections::BTreeSet<&str> = blocked.iter().copied().collect();
+        line.push_str(&format!(
+            ", {} kept by guardrails ({})",
+            blocked.len(),
+            reasons.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    line
+}
+
+/// `ppcap suppress …`.
+fn dispatch_suppress(action: SuppressAction) -> anyhow::Result<()> {
+    match action {
+        SuppressAction::Add {
+            summary,
+            alerts,
+            reason,
+            scope,
+            author,
+            expires_days,
+            no_expiry,
+            file,
+        } => {
+            if reason.trim().is_empty() {
+                return Err(anyhow!("--reason must say why these alerts are benign"));
+            }
+            if !no_expiry && expires_days < 1 {
+                return Err(anyhow!(
+                    "--expires-days must be at least 1 (or pass --no-expiry)"
+                ));
+            }
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            ppcap_core::refresh_alerts(&mut out.summary);
+            let now = unix_now();
+            ppcap_core::expire_carried_rules(
+                &mut out.summary,
+                &ppcap_core::ymd_from_unix_secs(now),
+            );
+            let meta = ppcap_core::TeachMeta {
+                reason: reason.trim().to_string(),
+                author,
+                created: Some(ppcap_core::ymd_from_unix_secs(now)),
+                expires: (!no_expiry)
+                    .then(|| ppcap_core::ymd_from_unix_secs(now + expires_days * 86_400)),
+            };
+            let mut rules = Vec::new();
+            for id in &alerts {
+                let taught = ppcap_core::rules_for_alert(&out.summary, id, scope.into(), &meta)
+                    .map_err(|e| anyhow!("{e}"))?;
+                for (idx, why) in &taught.kept {
+                    let title = out
+                        .summary
+                        .findings
+                        .get(*idx as usize)
+                        .map_or("", |f| f.title.as_str());
+                    eprintln!(
+                        "suppress: {id}: finding #{idx} \"{title}\" stays visible ({})",
+                        why.as_str()
+                    );
+                }
+                rules.extend(taught.rules);
+            }
+            let mut rule_file = if file.exists() {
+                read_suppression_files(std::slice::from_ref(&file))?
+                    .pop()
+                    .unwrap_or_default()
+            } else {
+                ppcap_core::SuppressionFile::default()
+            };
+            let added = ppcap_core::merge_suppression_rules(&mut rule_file, &rules);
+            let s = serde_json::to_string_pretty(&rule_file)?;
+            std::fs::write(&file, s + "\n")
+                .with_context(|| format!("write suppression rules {}", file.display()))?;
+            eprintln!(
+                "suppress: added {added} rule{} to {} ({} already present)",
+                if added == 1 { "" } else { "s" },
+                file.display(),
+                rules.len() - added,
+            );
+            Ok(())
+        }
+        SuppressAction::List { files } => {
+            let parsed = read_suppression_files(&files)?;
+            let today = ppcap_core::ymd_from_unix_secs(unix_now());
+            let loaded = ppcap_core::load_suppression_rules(&parsed, Some(&today));
+            let show = |status: &str, r: &ppcap_core::SuppressionRule| {
+                eprintln!(
+                    "  {status:<8} {}  {} src={} dst={} port={}  expires={}  {}",
+                    r.id,
+                    r.kind,
+                    r.src.as_deref().unwrap_or("any"),
+                    r.dst.as_deref().unwrap_or("any"),
+                    r.dst_port
+                        .map_or_else(|| "any".to_string(), |p| p.to_string()),
+                    r.expires.as_deref().unwrap_or("never"),
+                    r.reason,
+                );
+            };
+            eprintln!(
+                "suppress: {} active, {} expired, {} invalid, {} duplicate",
+                loaded.active.len(),
+                loaded.expired.len(),
+                loaded.invalid.len(),
+                loaded.duplicates,
+            );
+            for r in &loaded.active {
+                show("active", r);
+            }
+            for r in &loaded.expired {
+                show("expired", r);
+            }
+            for (r, why) in &loaded.invalid {
+                show("invalid", r);
+                eprintln!("           {why}");
+            }
+            Ok(())
+        }
+        SuppressAction::Test {
+            summary,
+            suppress,
+            json,
+        } => {
+            use ppcap_core::model::SuppressionOutcome;
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            out.summary.suppression_rules = Vec::new();
+            ppcap_core::refresh_alerts(&mut out.summary);
+            let before = out.summary.alerts.len();
+            let rules = load_suppression_rules(&suppress, false)?;
+            ppcap_core::apply_suppressions(&mut out.summary, rules);
+            eprintln!("{}", suppression_summary_line(&out.summary));
+            eprintln!(
+                "alerts: {before} without rules, {} with rules",
+                out.summary.alerts.len()
+            );
+            for h in &out.summary.suppressions {
+                let title = out
+                    .summary
+                    .findings
+                    .get(h.finding_index as usize)
+                    .map_or("", |f| f.title.as_str());
+                let status = match h.outcome {
+                    SuppressionOutcome::Suppressed => "hidden".to_string(),
+                    SuppressionOutcome::Blocked(why) => format!("kept ({})", why.as_str()),
+                };
+                eprintln!("  {status:<22} {}  {title}", h.rule_id);
+            }
+            if let Some(path) = json.as_deref() {
+                let s = serde_json::to_string_pretty(&out.summary.suppressions)?;
+                match path {
+                    "-" => println!("{s}"),
+                    p => std::fs::write(p, &s)
+                        .with_context(|| format!("write suppression hits to {p}"))?,
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Parse args, dispatch, and map errors to a process exit code.
 ///
 /// Exit codes: `0` ok, `1` fatal engine error, `2` usage error (clap handles `2` itself by
@@ -361,6 +695,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             forecast_min_bins,
             evidence,
             keylog,
+            suppress,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
             // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
@@ -637,8 +972,18 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 );
             }
 
+            // Teach it once: analyst suppression rules shape the queue last, after every pass
+            // that adds findings or moves the cards their guardrails read.
+            if !suppress.is_empty() {
+                let rules = load_suppression_rules(&suppress, quiet)?;
+                ppcap_core::apply_suppressions(&mut out.summary, rules);
+                if !quiet {
+                    eprintln!("{}", suppression_summary_line(&out.summary));
+                }
+            }
+
             // Smart Alerting one-liner — printed after ALL summary-mutating passes (reputation,
-            // rules) so the counts match the JSON that follows.
+            // rules, suppressions) so the counts match the JSON that follows.
             if !quiet && !out.summary.alerts.is_empty() {
                 eprintln!("{}", alerts_summary_line(&out.summary));
             }
@@ -848,6 +1193,11 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if let Some(p) = update_baseline.as_ref() {
                     record("baseline_profile", p)?;
                 }
+                // Suppression rule files are inputs the alert queue depends on: record them so
+                // `verify` notices a rule file edited after the fact.
+                for p in &suppress {
+                    record("suppression_rules", p)?;
+                }
                 // Bodies extracted by --carve-dir are evidence too; one record per file (the
                 // uncapped list, not the top-k `carved_files` projection).
                 for p in &out.summary.extracted_paths {
@@ -960,6 +1310,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Command::Suppress { action } => dispatch_suppress(action),
         Command::Baseline { action } => match action {
             BaselineAction::Show { baseline, json } => {
                 let text = std::fs::read_to_string(&baseline)
@@ -1113,13 +1464,33 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             summary,
             diff,
             json,
+            suppress,
         } => {
             let text = std::fs::read_to_string(&summary)
                 .with_context(|| format!("read analysis output {}", summary.display()))?;
             let mut out: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
                 .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            // `--suppress` replaces the rules the analysis carries; without it the carried rules
+            // (if any) still apply.
+            let rules = if suppress.is_empty() {
+                None
+            } else {
+                Some(load_suppression_rules(&suppress, false)?)
+            };
+            let today = ppcap_core::ymd_from_unix_secs(unix_now());
+            if let Some(r) = rules.as_ref() {
+                out.summary.suppression_rules = r.clone();
+            }
             // Idempotent pure re-derive over the loaded summary (same fn as the analyze seam).
-            out.summary.alerts = ppcap_core::derive_alerts(&out.summary);
+            ppcap_core::refresh_alerts(&mut out.summary);
+            // Rules carried from the original run may have expired since.
+            let expired = ppcap_core::expire_carried_rules(&mut out.summary, &today);
+            if expired > 0 {
+                eprintln!("suppress: {expired} carried rule(s) have expired and no longer apply");
+            }
+            if !out.summary.suppressions.is_empty() {
+                eprintln!("{}", suppression_summary_line(&out.summary));
+            }
 
             // Diff mode: compare against an OLDER analysis, matched by stable alert ids.
             if let Some(old_path) = diff.as_ref() {
@@ -1127,8 +1498,14 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     .with_context(|| format!("read older analysis {}", old_path.display()))?;
                 let mut old: ppcap_core::AnalysisOutput = serde_json::from_str(&old_text)
                     .with_context(|| format!("parse older analysis {}", old_path.display()))?;
-                // Re-derive on the old side too, so pre-alerting summaries diff correctly.
-                old.summary.alerts = ppcap_core::derive_alerts(&old.summary);
+                // Re-derive on the old side too, so pre-alerting summaries diff correctly. The
+                // same `--suppress` rules apply to both sides, so the diff shows network change
+                // rather than rule change.
+                if let Some(r) = rules.as_ref() {
+                    old.summary.suppression_rules = r.clone();
+                }
+                ppcap_core::refresh_alerts(&mut old.summary);
+                ppcap_core::expire_carried_rules(&mut old.summary, &today);
                 let d = ppcap_core::diff_alerts(&old.summary.alerts, &out.summary.alerts);
                 eprintln!(
                     "alert diff: {} new, {} resolved, {} changed, {} unchanged (old: {} alerts, new: {})",
@@ -1174,7 +1551,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 }
                 return Ok(());
             }
-            if out.summary.alerts.is_empty() {
+            if out.summary.alerts.is_empty() && !out.summary.suppressions.is_empty() {
+                eprintln!("alerts: none — every finding was suppressed by an analyst rule");
+            } else if out.summary.alerts.is_empty() {
                 eprintln!("alerts: none — no findings rose above informational");
             } else {
                 eprintln!("{}", alerts_summary_line(&out.summary));
@@ -1743,10 +2122,12 @@ mod reputation_cli_tests {
                 summary,
                 diff,
                 json,
+                suppress,
             } => {
                 assert_eq!(summary, std::path::PathBuf::from("out.json"));
                 assert_eq!(diff, None);
                 assert_eq!(json.as_deref(), Some("-"));
+                assert!(suppress.is_empty());
             }
             _ => panic!("expected Alerts"),
         }
@@ -2235,5 +2616,129 @@ mod reputation_cli_tests {
         ])
         .unwrap();
         assert!(dispatch(cli3).is_err());
+    }
+
+    #[test]
+    fn analyze_suppress_is_repeatable() {
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "analyze",
+            "x.pcap",
+            "--suppress",
+            "team.json",
+            "--suppress",
+            "mine.json",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Analyze { suppress, .. } => assert_eq!(
+                suppress,
+                vec![PathBuf::from("team.json"), PathBuf::from("mine.json")]
+            ),
+            _ => panic!("expected Analyze"),
+        }
+    }
+
+    #[test]
+    fn suppress_add_test_and_alerts_round_trip() {
+        let mut summary = ppcap_core::Summary::empty();
+        summary.findings = vec![ppcap_core::Finding {
+            kind: ppcap_core::FindingKind::MissingSni,
+            severity: ppcap_core::Severity::Medium,
+            score: 45,
+            title: "missing SNI: 10.0.0.5".to_string(),
+            src_ip: "10.0.0.5".to_string(),
+            dst_ip: Some("52.1.1.1".to_string()),
+            dst_port: Some(443),
+            attack: Vec::new(),
+            evidence: Vec::new(),
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: Some(1),
+            last_seen_ns: Some(2),
+            victims: Vec::new(),
+        }];
+        ppcap_core::refresh_alerts(&mut summary);
+        let alert_id = summary.alerts[0].id.clone();
+        let out = ppcap_core::AnalysisOutput {
+            summary,
+            ..ppcap_core::AnalysisOutput::default()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let analysis = dir.path().join("a.json");
+        std::fs::write(&analysis, out.to_json_pretty().unwrap()).unwrap();
+        let rules = dir.path().join("suppressions.json");
+        let a = analysis.to_str().unwrap();
+        let r = rules.to_str().unwrap();
+
+        // Teach it (twice: the second add dedupes by id).
+        for _ in 0..2 {
+            let cli = Cli::try_parse_from([
+                "ppcap", "suppress", "add", a, "--alert", &alert_id, "--reason", "IoT hub",
+                "--author", "john", "--file", r,
+            ])
+            .unwrap();
+            dispatch(cli).unwrap();
+        }
+        let file: ppcap_core::SuppressionFile =
+            serde_json::from_str(&std::fs::read_to_string(&rules).unwrap()).unwrap();
+        assert_eq!(file.rules.len(), 1);
+        assert_eq!(file.rules[0].src.as_deref(), Some("10.0.0.5"));
+        assert!(file.rules[0].expires.is_some());
+
+        // `suppress test` reports the hit.
+        let hits = dir.path().join("hits.json");
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "suppress",
+            "test",
+            a,
+            "--suppress",
+            r,
+            "--json",
+            hits.to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let hits: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hits).unwrap()).unwrap();
+        assert_eq!(hits[0]["status"], "suppressed");
+
+        // `alerts --suppress` writes an analysis whose queue is empty but whose finding is
+        // still accounted for.
+        let updated = dir.path().join("b.json");
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "alerts",
+            a,
+            "--suppress",
+            r,
+            "--json",
+            updated.to_str().unwrap(),
+        ])
+        .unwrap();
+        dispatch(cli).unwrap();
+        let b: ppcap_core::AnalysisOutput =
+            serde_json::from_str(&std::fs::read_to_string(&updated).unwrap()).unwrap();
+        assert!(b.summary.alerts.is_empty());
+        assert_eq!(b.summary.suppressions.len(), 1);
+        assert_eq!(b.summary.suppression_rules.len(), 1);
+
+        // An unknown alert id is a hard error, and the rule file is left alone.
+        let cli = Cli::try_parse_from([
+            "ppcap",
+            "suppress",
+            "add",
+            a,
+            "--alert",
+            "alert:nope",
+            "--reason",
+            "x",
+            "--file",
+            r,
+        ])
+        .unwrap();
+        assert!(dispatch(cli).is_err());
     }
 }

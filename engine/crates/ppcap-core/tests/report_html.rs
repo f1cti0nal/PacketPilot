@@ -364,3 +364,59 @@ fn omits_alert_queue_when_none() {
     let html = render_html(&sample(), 1_700_000_000, None);
     assert!(!html.contains("Alert queue"));
 }
+
+/// "Teach it once": suppressed findings get their own section with the rule's reason, and the
+/// section is absent when no rule matched.
+#[test]
+fn renders_suppressed_findings_with_their_rule() {
+    let mut out = sample();
+    out.summary.findings = vec![ppcap_core::Finding {
+        kind: ppcap_core::FindingKind::HostSweep,
+        severity: ppcap_core::Severity::High,
+        score: 65,
+        title: "Host sweep: 10.0.8.10 probed 41 hosts on port 67".into(),
+        src_ip: "10.0.8.10".into(),
+        dst_ip: None,
+        dst_port: Some(67),
+        attack: vec!["T1046".into()],
+        evidence: Vec::new(),
+        interval_ns: None,
+        jitter_cv: None,
+        contacts: None,
+        first_seen_ns: None,
+        last_seen_ns: None,
+        victims: Vec::new(),
+    }];
+    assert!(!render_html(&out, 1_700_000_000, None).contains("Suppressed by analyst rules"));
+    let rule = ppcap_core::SuppressionRule {
+        id: String::new(),
+        kind: "host_sweep".into(),
+        src: None,
+        dst: None,
+        dst_port: Some(67),
+        reason: "DHCP <discover>".into(),
+        author: Some("john".into()),
+        created: None,
+        expires: None,
+    };
+    let rules = ppcap_core::load_suppression_rules(
+        &[ppcap_core::SuppressionFile {
+            version: 1,
+            rules: vec![rule],
+        }],
+        None,
+    )
+    .active;
+    ppcap_core::apply_suppressions(&mut out.summary, rules);
+    let html = render_html(&out, 1_700_000_000, None);
+    assert!(html.contains("<h2>Suppressed by analyst rules</h2>"));
+    assert!(html.contains("1 finding hidden from the alert queue by 1 rule"));
+    assert!(
+        html.contains("DHCP &lt;discover&gt;"),
+        "rule reasons must be escaped"
+    );
+    assert!(
+        !html.contains("Alert queue"),
+        "the only finding was suppressed"
+    );
+}

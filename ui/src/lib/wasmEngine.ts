@@ -4,7 +4,7 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, BaselineProfile, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
+import type { AnalysisOutput, BaselineProfile, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, SuppressionBlockReason, SuppressionFile, SuppressionRule, TeachScope, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
 import initWasm, {
@@ -24,6 +24,8 @@ import initWasm, {
   carve_pcap as wasmCarvePcap,
   render_report as wasmRenderReport,
   sanitize as wasmSanitize,
+  apply_suppressions as wasmApplySuppressions,
+  teach_alert as wasmTeachAlert,
 } from "../wasm/ppcap_wasm.js";
 
 /**
@@ -230,6 +232,50 @@ export async function applyDomainReputationWasm(
   await ensureWasm();
   const updated = wasmApplyDomainReputation(outputJson, JSON.stringify(verdicts)) as string;
   return JSON.parse(updated) as AnalysisOutput;
+}
+
+/** Result of {@link applySuppressionsWasm}. */
+export interface SuppressionApplyResult {
+  output: AnalysisOutput;
+  /** Rules that took effect. */
+  active: number;
+  /** Rules past their `expires` date (skipped). */
+  expired: SuppressionRule[];
+  /** Rules that can never match, with why (bad IP/CIDR). */
+  invalid: [SuppressionRule, string][];
+}
+
+/**
+ * "Teach it once": re-queue an analysis under a suppression rule file (replacing any rules it
+ * carries). `today` is `YYYY-MM-DD`; rules that expired before it are skipped. Same engine code
+ * as `ppcap analyze --suppress`.
+ */
+export async function applySuppressionsWasm(
+  output: AnalysisOutput,
+  file: SuppressionFile,
+  today: string,
+): Promise<SuppressionApplyResult> {
+  await ensureWasm();
+  const json = wasmApplySuppressions(JSON.stringify(output), JSON.stringify(file), today) as string;
+  return JSON.parse(json) as SuppressionApplyResult;
+}
+
+/** Result of {@link teachAlertWasm}: the new rules, and members a guardrail keeps visible. */
+export interface TaughtRules {
+  rules: SuppressionRule[];
+  kept: [number, SuppressionBlockReason][];
+}
+
+/** Turn "this alert is benign" into suppression rules (the caller stores them). */
+export async function teachAlertWasm(
+  output: AnalysisOutput,
+  alertId: string,
+  scope: TeachScope,
+  meta: { reason: string; author?: string; created?: string; expires?: string },
+): Promise<TaughtRules> {
+  await ensureWasm();
+  const json = wasmTeachAlert(JSON.stringify(output), alertId, scope, JSON.stringify(meta)) as string;
+  return JSON.parse(json) as TaughtRules;
 }
 
 /** Result of applying detection rules to a capture. `output` is the full updated AnalysisOutput. */
