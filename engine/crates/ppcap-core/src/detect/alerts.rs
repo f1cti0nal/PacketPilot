@@ -977,7 +977,12 @@ fn first_seen_facts(summary: &Summary, actor: &str, ext_peers: &[&str]) -> Vec<(
                 .iter()
                 .filter(|n| {
                     n.kind == IndicatorKind::Domain
-                        && n.peers.iter().any(|l| l.peer == peer && l.host == actor)
+                        && (n.peers.iter().any(|l| l.peer == peer && l.host == actor)
+                            // Links overflowed: the actor named the domain and some host named
+                            // it at this address — the closest join the bounded record allows.
+                            || (n.peers_truncated
+                                && n.hosts.iter().any(|h| h == actor)
+                                && n.peers.iter().any(|l| l.peer == peer)))
                 })
                 .map(|n| n.value.clone()),
         );
@@ -1879,6 +1884,7 @@ mod tests {
                     peer: p.to_string(),
                 })
                 .collect(),
+            peers_truncated: false,
         }
     }
 
@@ -1917,6 +1923,41 @@ mod tests {
             .priority_terms
             .iter()
             .any(|t| t.label == "novel: 1 indicator new to this network"));
+    }
+
+    #[test]
+    fn overflowed_peer_links_still_join_on_host_and_address() {
+        use crate::rarity::{IndicatorKind, RarityReport};
+        let mut summary = mk_summary(vec![f(
+            FindingKind::Beacon,
+            45,
+            "10.0.0.9",
+            Some("45.77.13.37"),
+            Some(443),
+            None,
+        )]);
+        // 10.0.0.9's own link fell past the cap; another host's link to the address survived.
+        let mut n = rare(
+            IndicatorKind::Domain,
+            "new.example",
+            "10.0.0.1",
+            &["45.77.13.37"],
+        );
+        n.hosts.push("10.0.0.9".to_string());
+        n.peers_truncated = true;
+        summary.rarity = Some(RarityReport {
+            baseline_loaded: true,
+            history_captures: 4,
+            new: vec![n],
+            new_total: 1,
+            ..Default::default()
+        });
+        let alerts = derive_alerts(&summary);
+        assert!(alerts[0]
+            .context
+            .entries
+            .iter()
+            .any(|e| e.kind == ContextKind::NewToNetwork && e.text.contains("new.example")));
     }
 
     #[test]

@@ -363,6 +363,7 @@ export interface RareIndicator {
   history_captures?: number;
   /** For a domain seen in TLS SNI / HTTP Host: which internal host asked for it at which address. */
   peers?: { host: string; peer: string }[];
+  peers_truncated?: boolean;
 }
 
 /** The "new to this network" view (engine `RarityReport`). */

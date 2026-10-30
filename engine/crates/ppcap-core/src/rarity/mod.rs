@@ -33,7 +33,7 @@ pub const MAX_ENV_ITEMS: usize = 16_384;
 /// Cap on internal hosts remembered per sighting (the "how widespread" signal saturates here).
 pub const MAX_HOSTS_PER_ITEM: usize = 16;
 /// Cap on external peers remembered per domain (the SNI / HTTP Host to address link alerts join on).
-pub const MAX_PEERS_PER_ITEM: usize = 8;
+pub const MAX_PEERS_PER_ITEM: usize = 32;
 /// Cap on distinct internal hosts counted for the single-host gate.
 const MAX_INTERNAL_HOSTS: usize = 65_536;
 /// Longest stored value (User-Agents can be arbitrarily long); truncated on a char boundary.
@@ -110,6 +110,9 @@ pub struct EnvObservation {
     /// address name the domain even when no DNS answer was captured.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peers: Vec<PeerLink>,
+    /// True when more host/address links were seen than `peers` keeps.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub peers_truncated: bool,
 }
 
 /// One internal host naming a domain (TLS SNI / HTTP Host) on a connection to an external address.
@@ -147,6 +150,7 @@ struct EnvItem {
     first_ts_ns: i64,
     label: Option<String>,
     peers: BTreeSet<(IpAddr, IpAddr)>,
+    peers_truncated: bool,
 }
 
 /// Streaming, bounded collector of environment sightings.
@@ -282,6 +286,8 @@ impl EnvTracker {
         if let Some(p) = peer {
             if item.peers.len() < MAX_PEERS_PER_ITEM {
                 item.peers.insert((host, p));
+            } else if !item.peers.contains(&(host, p)) {
+                item.peers_truncated = true;
             }
         }
         if item.label.is_none() {
@@ -299,24 +305,27 @@ impl EnvTracker {
     }
 
     /// The software and place identity a closed flow carries, attributed to its client.
-    /// `fallback` is the port-oriented `(client, server)` pair. A SYN-locked initiator is the
-    /// client outright, so an internal host reaching a service on a port above its own source port
-    /// is attributed correctly. Without a SYN the initiator is only the first packet seen (possibly
-    /// the server's reply), so the port rule wins, and the first packet's sender is used only when
-    /// the port rule would name an external client.
+    /// `fallback` is the port-oriented `(client, server)` pair. In order of trust the client is:
+    /// the sender of the flow's request metadata (ClientHello / HTTP request), the SYN sender,
+    /// then the port rule. A first-packet initiator without a SYN may be the server's reply, so it
+    /// is used only when the port rule would name an external client.
     pub fn observe_flow(
         &mut self,
         record: &crate::model::flow::FlowRecord,
         fallback: (IpAddr, IpAddr),
         ts_ns: i64,
     ) {
-        let by_initiator = match record.initiator {
-            crate::model::flow::Direction::Forward => (record.key.lo_ip, record.key.hi_ip),
-            crate::model::flow::Direction::Reverse => (record.key.hi_ip, record.key.lo_ip),
+        use crate::model::flow::Direction;
+        let orient = |d: Direction| match d {
+            Direction::Forward => (record.key.lo_ip, record.key.hi_ip),
+            Direction::Reverse => (record.key.hi_ip, record.key.lo_ip),
         };
-        let trust_initiator = is_internal_host(by_initiator.0)
-            && (record.initiator_locked || !is_internal_host(fallback.0));
-        let (client, server) = if trust_initiator {
+        let by_initiator = orient(record.initiator);
+        let (client, server) = if let Some(d) = record.client_hint {
+            orient(d)
+        } else if is_internal_host(by_initiator.0)
+            && (record.initiator_locked || !is_internal_host(fallback.0))
+        {
             by_initiator
         } else {
             fallback
@@ -387,6 +396,7 @@ impl EnvTracker {
                         peer: p.to_string(),
                     })
                     .collect(),
+                peers_truncated: it.peers_truncated,
             })
             .collect();
         items.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.value.cmp(&b.value)));
@@ -422,6 +432,9 @@ pub struct RareIndicator {
     /// For a domain seen in TLS SNI / HTTP Host: which host asked for it at which address.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub peers: Vec<PeerLink>,
+    /// More host/address links existed than `peers` keeps.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub peers_truncated: bool,
 }
 
 /// The "new to this network" and "only one host" view for one capture.
@@ -497,6 +510,7 @@ fn to_rare(o: &EnvObservation, history_captures: u64) -> RareIndicator {
         first_seen_ns: (o.first_ts_ns != 0).then_some(o.first_ts_ns),
         history_captures,
         peers: o.peers.clone(),
+        peers_truncated: o.peers_truncated,
     }
 }
 
@@ -1002,6 +1016,48 @@ mod tests {
             let o = s.items.iter().find(|o| o.value == v).unwrap();
             assert_eq!(o.hosts, vec!["10.0.0.5".to_string()], "{v}");
         }
+    }
+
+    #[test]
+    fn request_metadata_names_the_client_on_a_mid_stream_flow() {
+        use crate::model::flow::{FlowKey, FlowRecord};
+        use crate::model::packet::Transport;
+        // No SYN captured; 10.0.0.5:40000 sent the ClientHello to 10.0.0.20:50000 (FlowRecord::
+        // observe sets `client_hint` from that packet). The port rule alone would call
+        // 10.0.0.20 the client.
+        let (key, dir) = FlowKey::normalized(
+            ip("10.0.0.5"),
+            40000,
+            ip("10.0.0.20"),
+            50000,
+            Transport::Tcp,
+        );
+        let mut rec = FlowRecord::new(key, 1);
+        rec.ja4 = Some("t13d_req".into());
+        rec.client_hint = Some(dir);
+        let mut t = EnvTracker::new();
+        t.observe_flow(&rec, (ip("10.0.0.20"), ip("10.0.0.5")), 1);
+        let s = t.snapshot();
+        let o = s.items.iter().find(|o| o.value == "t13d_req").unwrap();
+        assert_eq!(o.hosts, vec!["10.0.0.5".to_string()]);
+    }
+
+    #[test]
+    fn peer_links_are_bounded_and_flag_the_overflow() {
+        let mut t = EnvTracker::new();
+        for h in 1..=(MAX_PEERS_PER_ITEM as u8 + 1) {
+            t.observe_with_peer(
+                IndicatorKind::Domain,
+                "new.example",
+                ip(&format!("10.0.1.{h}")),
+                1,
+                None,
+                Some(ip("45.77.13.37")),
+            );
+        }
+        let s = t.snapshot();
+        assert_eq!(s.items[0].peers.len(), MAX_PEERS_PER_ITEM);
+        assert!(s.items[0].peers_truncated);
     }
 
     #[test]

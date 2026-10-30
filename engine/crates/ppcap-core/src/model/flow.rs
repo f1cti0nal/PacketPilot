@@ -168,6 +168,11 @@ pub struct FlowRecord {
     /// override it. Not persisted.
     #[serde(skip)]
     pub initiator_locked: bool,
+    /// Transient: the direction of the first packet carrying client-only request metadata (a
+    /// ClientHello's SNI / JA3 / JA4, an HTTP request's Host / User-Agent). The sender of that
+    /// payload is the client whatever the ports or capture start say. Not persisted.
+    #[serde(skip)]
+    pub client_hint: Option<Direction>,
     /// Transient: whether the flow window (`first_ts_ns`/`last_ts_ns`) has been set by a REAL
     /// timestamp yet. `new()` seeds the window from the first packet's ts even when that packet
     /// is a pcapng SPB (a non-authoritative fill); this flag makes the first `ts_known` packet
@@ -278,6 +283,7 @@ impl FlowRecord {
             ttl_min_rev: 0,
             initiator: Direction::Forward,
             initiator_locked: false,
+            client_hint: None,
             ts_window_set: false,
             opened_ts_ns: first_ts_ns,
             observed_app_proto: AppProto::Unknown,
@@ -346,6 +352,15 @@ impl FlowRecord {
         // "first concrete" coincide.
         if p.app_proto.rank() > self.observed_app_proto.rank() {
             self.observed_app_proto = p.app_proto;
+        }
+        if self.client_hint.is_none()
+            && (p.sni.as_deref().is_some_and(|v| !v.is_empty())
+                || p.ja3.as_deref().is_some_and(|v| !v.is_empty())
+                || p.ja4.as_deref().is_some_and(|v| !v.is_empty())
+                || p.http_host.as_deref().is_some_and(|v| !v.is_empty())
+                || p.http_ua.as_deref().is_some_and(|v| !v.is_empty()))
+        {
+            self.client_hint = Some(dir);
         }
         // First non-empty SNI wins and is then sticky (bounded: at most one String clone per
         // flow, only when a packet already carried an SNI — rare).
@@ -589,13 +604,20 @@ mod tests {
         };
         r.observe(&base, dir);
         assert_eq!(r.observed_app_proto, AppProto::Unknown);
+        assert_eq!(r.client_hint, None, "no request metadata yet");
 
+        // The ClientHello's sender is the client, even if it arrives in the other direction.
+        let other = match dir {
+            Direction::Forward => Direction::Reverse,
+            Direction::Reverse => Direction::Forward,
+        };
         let mut tls = base.clone();
         tls.app_proto = AppProto::Tls;
         tls.sni = Some("first.example".to_string());
-        r.observe(&tls, dir);
+        r.observe(&tls, other);
         assert_eq!(r.observed_app_proto, AppProto::Tls);
         assert_eq!(r.sni.as_deref(), Some("first.example"));
+        assert_eq!(r.client_hint, Some(other));
 
         // A later, different SNI does NOT overwrite the first.
         let mut tls2 = base.clone();
