@@ -416,13 +416,26 @@ fn packet_scope_only_for_filters_it_can_carve() {
         (s.peer.as_deref(), s.port),
         (Some("45.77.13.37"), Some(443))
     );
-    assert!(pv("host {actor} and port 88").scope.is_some());
+    let s = pv("host {actor} and port 88").scope.unwrap();
+    assert_eq!((s.peer, s.port), (None, Some(88)));
     assert!(pv("host {actor}").scope.is_some());
+    // A literal second host is carved as written, not swapped for the alert's peer.
+    let s = pv("host {actor} and host 198.51.100.9").scope.unwrap();
+    assert_eq!(
+        (s.host.as_str(), s.peer.as_deref(), s.port),
+        ("10.0.0.7", Some("198.51.100.9"), None)
+    );
+    let s = pv("host {actor} and host 45.77.13.37 and port 443")
+        .scope
+        .unwrap();
+    assert_eq!(s.peer.as_deref(), Some("45.77.13.37"));
     for f in [
         "arp and host {actor}",
         "host {actor} and host {peer} and icmp",
         "host {actor} and (port 389 or port 445 or port 135)",
         "host {peer} and port 53",
+        "host {actor} and host evil.example",
+        "host {actor} and port 88 and port 443",
     ] {
         let r = pv(f);
         assert!(r.scope.is_none(), "{f}");
@@ -479,13 +492,6 @@ fn sql_values_are_quoted_safely() {
         "o'brien.example"
     );
     assert!(fill_pivot("{peer}", &v, false).is_none());
-}
-
-#[test]
-fn literal_port_reads_one_port_only() {
-    assert_eq!(literal_port("host 10.0.0.7 and port 88"), Some(88));
-    assert_eq!(literal_port("host a and (port 389 or port 445)"), None);
-    assert_eq!(literal_port("host a and icmp"), None);
 }
 
 #[test]

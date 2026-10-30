@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   emptyProgress,
+  legacyCaptureKey,
   loadProgress,
   progressCaptureKey,
   loadTeamPlaybooks,
@@ -59,6 +60,20 @@ describe("playbook progress", () => {
     expect(progressCaptureKey(out("ab12", 1))).toBe("sha256:ab12");
     expect(progressCaptureKey(out(null, 1))).not.toBe(progressCaptureKey(out(null, 2)));
     expect(progressCaptureKey(out(null, 1))).toBe(progressCaptureKey(out(null, 1)));
+  });
+
+  it("moves progress saved under the earlier bare-SHA key", () => {
+    const p = toggleDone(emptyProgress(), "c2-channel/cadence");
+    saveProgress("ab12", "alert:1", p, 5);
+    saveProgress("sha256:ab12", "alert:2", toggleDone(emptyProgress(), "x/y"), 6);
+    const out = { source_path: "/c.pcap", source_sha256: "ab12" } as unknown as AnalysisOutput;
+    expect(legacyCaptureKey(out)).toBe("ab12");
+    expect(legacyCaptureKey({ ...out, source_sha256: null } as unknown as AnalysisOutput)).toBeNull();
+    expect(loadProgress("sha256:ab12", "alert:1", "ab12")).toEqual(p);
+    // Moved, not copied: the new key holds both alerts and the old key is gone.
+    expect(loadProgress("ab12", "alert:1")).toEqual(emptyProgress());
+    expect(loadProgress("sha256:ab12", "alert:1")).toEqual(p);
+    expect(loadProgress("sha256:ab12", "alert:2").done).toEqual(["x/y"]);
   });
 
   it("keys steps like the engine", () => {

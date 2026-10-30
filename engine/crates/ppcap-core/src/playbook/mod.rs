@@ -562,12 +562,13 @@ fn fill_pivot(t: &str, v: &Vars, sql: bool) -> Option<String> {
     Some(out)
 }
 
-/// Whether `filter` is exactly `host <actor> [and host <peer>] [and port N]`, the shape a
-/// [`PacketScope`] carves.
-fn scope_expresses(filter: &str, v: &Vars) -> bool {
+/// The carve scope terms of `filter` when it is exactly `host <actor> [and host <ip>] [and port
+/// N]`, the shape a [`PacketScope`] carves: the second host and the port, read from the rendered
+/// filter itself so a literal peer is carved as written.
+fn scope_terms(filter: &str, v: &Vars) -> Option<(Option<String>, Option<u16>)> {
     let t: Vec<&str> = filter.split_whitespace().collect();
     if t.len() % 3 != 2 || t.iter().skip(2).step_by(3).any(|w| *w != "and") {
-        return false;
+        return None;
     }
     let terms: Vec<(&str, &str)> = t
         .iter()
@@ -576,36 +577,22 @@ fn scope_expresses(filter: &str, v: &Vars) -> bool {
         .map(|(i, w)| (*w, t[i + 1]))
         .collect();
     let actor = v.map.get("actor").map(String::as_str);
-    let peer = v.map.get("peer").map(String::as_str);
-    match terms.as_slice() {
-        [("host", a), rest @ ..] if Some(*a) == actor => {
-            let rest = match rest {
-                [("host", p), rest @ ..] if Some(*p) == peer => rest,
-                r => r,
-            };
-            match rest {
-                [] => true,
-                [("port", n)] => n.parse::<u16>().is_ok(),
-                _ => false,
-            }
-        }
-        _ => false,
+    let [("host", a), rest @ ..] = terms.as_slice() else {
+        return None;
+    };
+    if Some(*a) != actor {
+        return None;
     }
-}
-
-/// The single literal `port N` in a capture filter, if there is exactly one.
-fn literal_port(filter: &str) -> Option<u16> {
-    let ports: BTreeSet<u16> = filter
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .filter(|w| w[0].trim_start_matches('(') == "port")
-        .filter_map(|w| w[1].trim_end_matches(')').parse().ok())
-        .collect();
-    if ports.len() == 1 {
-        ports.into_iter().next()
-    } else {
-        None
+    let (peer, rest) = match rest {
+        [("host", p), rest @ ..] if p.parse::<std::net::IpAddr>().is_ok() => {
+            (Some((*p).to_string()), rest)
+        }
+        r => (None, r),
+    };
+    match rest {
+        [] => Some((peer, None)),
+        [("port", n)] => n.parse::<u16>().ok().map(|n| (peer, Some(n))),
+        _ => None,
     }
 }
 
@@ -626,24 +613,19 @@ fn render_pivot(p: &Pivot, v: &Vars) -> Option<RenderedPivot> {
         }),
         PivotTarget::Packets => {
             let value = fill_pivot(&p.value, v, false)?;
-            let names = placeholders(&p.value);
             // A carve scope is host, optional peer, one port and a window. A filter it cannot
             // express (a protocol, alternative ports) or an untimed capture leaves just the
             // capture filter, so a carve never returns packets the filter would not.
-            let scope =
-                v.window
-                    .filter(|_| scope_expresses(&value, v))
-                    .map(|(start_ns, end_ns)| PacketScope {
-                        host: v.map.get("actor").cloned().unwrap_or_default(),
-                        peer: if names.contains(&"peer") {
-                            v.map.get("peer").cloned()
-                        } else {
-                            None
-                        },
-                        port: literal_port(&value),
-                        start_ns,
-                        end_ns,
-                    });
+            let scope = v.window.and_then(|(start_ns, end_ns)| {
+                let (peer, port) = scope_terms(&value, v)?;
+                Some(PacketScope {
+                    host: v.map.get("actor").cloned().unwrap_or_default(),
+                    peer,
+                    port,
+                    start_ns,
+                    end_ns,
+                })
+            });
             Some(RenderedPivot {
                 label,
                 target: p.target,

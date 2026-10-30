@@ -91,7 +91,14 @@ import {
   lintPlaybooksWasm,
   playbookMarkdownWasm,
 } from "./lib/wasmEngine";
-import { loadProgress, loadTeamPlaybooks, progressCaptureKey, saveProgress, saveTeamPlaybooks } from "./lib/playbooks";
+import {
+  legacyCaptureKey,
+  loadProgress,
+  loadTeamPlaybooks,
+  progressCaptureKey,
+  saveProgress,
+  saveTeamPlaybooks,
+} from "./lib/playbooks";
 import {
   DEFAULT_RULE_TTL_DAYS,
   addSuppressionRules,
@@ -922,6 +929,7 @@ export function App() {
   }, [teamPlaybooks]);
   const huntCaptureKey =
     summary.status === "ready" && summary.data ? progressCaptureKey(summary.data) : "unsaved";
+  const huntLegacyKey = summary.status === "ready" && summary.data ? legacyCaptureKey(summary.data) : null;
   const loadAlertPlaybooks = useCallback(
     (alert: Alert) => {
       const data = summaryDataRef.current;
@@ -1062,7 +1070,7 @@ export function App() {
           onExportRules={exportSuppressionFile}
           hunt={{
             loadRuns: loadAlertPlaybooks,
-            loadProgress: (id) => loadProgress(huntCaptureKey, id),
+            loadProgress: (id) => loadProgress(huntCaptureKey, id, huntLegacyKey),
             saveProgress: (id, p) => saveProgress(huntCaptureKey, id, p),
             onPivot: followPivot,
             onExport: (runs, p) => void exportHuntChecklist(runs, p),

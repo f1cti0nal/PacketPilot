@@ -29,6 +29,14 @@ export function progressCaptureKey(output: AnalysisOutput): string {
   return ["path", output.source_path, s.first_ts_ns, s.last_ts_ns, s.total_packets, s.total_bytes].join("|");
 }
 
+/**
+ * The key earlier builds stored progress under for the same capture: the bare SHA-256. Path-keyed
+ * progress is not carried over, since it cannot tell two captures at the same path apart.
+ */
+export function legacyCaptureKey(output: AnalysisOutput): string | null {
+  return output.source_sha256 ?? null;
+}
+
 /** The progress key for a step (matches the engine's `step_key`). */
 export function stepKey(run: PlaybookRun, step: PlaybookStep): string {
   return `${run.playbook_id}/${step.id}`;
@@ -52,9 +60,23 @@ function writeStore(store: ProgressStore): void {
   }
 }
 
-/** The analyst's progress on one alert of one capture. */
-export function loadProgress(captureKey: string, alertId: string): PlaybookProgress {
-  const p = readStore()[captureKey]?.alerts?.[alertId];
+/**
+ * The analyst's progress on one alert of one capture. Progress found only under `legacyKey` is
+ * moved to `captureKey`, so ticks and notes saved by an earlier build reopen where they were.
+ */
+export function loadProgress(captureKey: string, alertId: string, legacyKey?: string | null): PlaybookProgress {
+  const store = readStore();
+  let p = store[captureKey]?.alerts?.[alertId];
+  if (!p && legacyKey && legacyKey !== captureKey) {
+    const old = store[legacyKey];
+    if (old?.alerts && typeof old.alerts === "object") {
+      const cur = store[captureKey];
+      store[captureKey] = { at: Math.max(old.at ?? 0, cur?.at ?? 0), alerts: { ...old.alerts, ...cur?.alerts } };
+      delete store[legacyKey];
+      writeStore(store);
+      p = store[captureKey].alerts[alertId];
+    }
+  }
   if (!p) return emptyProgress();
   return {
     done: Array.isArray(p.done) ? p.done.filter((d) => typeof d === "string") : [],
