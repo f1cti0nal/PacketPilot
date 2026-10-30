@@ -47,6 +47,27 @@ describe("Dashboard", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the noise budget only when the analysis carries one, and opens the queue from it", () => {
+    const { unmount } = render(
+      <Dashboard output={makeOutput()} selectedIncident={null} onSelectIncident={vi.fn()} />,
+    );
+    expect(screen.queryByText("Noise budget")).not.toBeInTheDocument();
+    unmount();
+    const out = makeOutput();
+    out.summary.noise_budget = {
+      packets: 3000, flows: 120, findings: 4, suppressed: 0, stories: 2, urgent: 1,
+      manual_minutes: 40.6, queue_minutes: 30, saved_minutes: 10.6,
+      rates: { version: 1, minutes_per_1k_flows: 5, minutes_per_finding: 10, minutes_per_story: 15 },
+    };
+    const onOpenAlerts = vi.fn();
+    render(
+      <Dashboard output={out} selectedIncident={null} onSelectIncident={vi.fn()} onOpenAlerts={onOpenAlerts} />,
+    );
+    expect(screen.getByText("Noise budget")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /2\s*stories/ }));
+    expect(onOpenAlerts).toHaveBeenCalledOnce();
+  });
+
   it("flyout is absent when selectedIncident is null", () => {
     render(
       <Dashboard

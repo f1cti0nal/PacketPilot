@@ -157,6 +157,10 @@ cargo run -p ppcap-cli --release -- playbook show out.json --alert alert:3f2a...
 cargo run -p ppcap-cli --release -- playbook builtin > playbooks.json
 cargo run -p ppcap-cli --release -- playbook lint playbooks.json
 cargo run -p ppcap-cli --release -- playbook show out.json --playbooks playbooks.json
+
+# Noise budget: packets → flows → stories and the review time saved, with the team's own rates
+echo '{"version":1,"minutes_per_finding":20}' > review-rates.json
+cargo run -p ppcap-cli --release -- analyze capture.pcap --review-rates review-rates.json --json out.json
 ```
 
 A destination in `destinations.json` never holds a secret: it names the environment variable
@@ -247,6 +251,16 @@ the last playbook naming it wins. `playbook lint` rejects unknown placeholders, 
 steps, write notes, follow a pivot into Flows, Query, the packets or the Timeline, and export the
 checklist as Markdown. Ticks and notes stay on the device per capture. `ppcap mcp --playbooks`
 serves the same checklist to agents through `get_playbook`.
+
+Every analysis carries a noise budget: the packets, flows, findings (and how many analyst rules
+suppressed) and the stories in the alert queue, plus an estimate of the review time the queue
+saved. The estimate is `flows / 1000 × minutes_per_1k_flows + findings × minutes_per_finding`
+(skimming the flows and triaging each finding on its own) minus `stories × minutes_per_story`
+(reading the queue), never below zero. The defaults are 5, 10 and 15 minutes. A team sets its own
+in `review-rates.json` (`version` 1; any field left out keeps its default; each must be 0–480) via
+`analyze --review-rates`. The rates are carried in the JSON, so later re-derives keep them. The
+line leads the overview in the app, the HTML report's executive summary, the `analyze` output, the
+MCP `capture_overview` and Slack/Teams digests, and is always labelled an estimate.
 
 Suricata EVE import reads `alert` events and skips other event types. Each signature between the
 same two hosts becomes one `rule_match` finding with a hit count and first/last seen; Suricata
@@ -358,6 +372,8 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   timeline). Steps the engine can answer from the alert's context are pre-answered with the
   evidence. Teams override or add playbooks in a plain JSON file shared like the suppression rules;
   `ppcap playbook show` prints the checklist as Markdown for a ticket.
+- **Noise budget meter** — "4.2M packets → 61k flows → 9 stories, about 6 h saved": how far the
+  engine boiled the capture down, with a transparent time-saved estimate a team can tune.
 - **Incident timeline** — every alert retold as one chronological story across all the hosts it
   touches: first contact with the peer, the DNS answer that resolved it, downloads with their
   SHA-256, each detection as it starts, and the lateral hops between hosts. Every row is one click

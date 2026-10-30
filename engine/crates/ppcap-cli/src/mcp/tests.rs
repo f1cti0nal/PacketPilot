@@ -176,6 +176,12 @@ fn alerts_drill_down_with_findings_and_timeline() {
     let ov = ok(&mut s, "capture_overview", json!({}));
     assert_eq!(ov["packets"], 3000);
     assert!(ov["first_packet"].as_str().unwrap().ends_with('Z'));
+    let nb = &ov["noise_budget"];
+    assert!(nb["headline"]
+        .as_str()
+        .unwrap()
+        .starts_with("3k packets → "));
+    assert_eq!(nb["detail"]["packets"], 3000);
 
     let list = ok(&mut s, "list_alerts", json!({ "min_band": "investigate" }));
     let alerts = list["alerts"].as_array().unwrap();

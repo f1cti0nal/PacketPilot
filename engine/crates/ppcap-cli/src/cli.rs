@@ -8,7 +8,7 @@
 //! is now fully wired to the engine (analyze / gen / init-db). The CLI signatures must not
 //! change.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, Context};
@@ -163,6 +163,11 @@ pub enum Command {
         /// Write the `--zeek` logs as Zeek JSON (one object per line) instead of tab-separated.
         #[arg(long = "zeek-json", requires = "zeek")]
         zeek_json: bool,
+        /// Noise budget: the team's review-time rates (`review-rates.json`, version 1) for the
+        /// "time saved" estimate. Fields left out keep the defaults (5 min per 1k flows, 10 per
+        /// finding, 15 per story). The rates are carried in the JSON so later re-derives keep them.
+        #[arg(long = "review-rates", conflicts_with = "batch")]
+        review_rates: Option<PathBuf>,
         /// Match these YARA rules over every carved file; each match is a finding. Repeatable.
         /// Rules using features outside the supported subset (regex, modules, `for` loops) are
         /// listed and skipped.
@@ -685,6 +690,40 @@ fn load_suppression_rules(
     Ok(loaded.active)
 }
 
+/// A checked `review-rates.json` and the digest of the exact bytes read (for the manifest).
+#[derive(Debug)]
+struct LoadedReviewRates {
+    rates: ppcap_core::ReviewRates,
+    sha256: String,
+    bytes: u64,
+}
+
+/// Read and check a `review-rates.json`.
+fn load_review_rates(path: &Path) -> anyhow::Result<LoadedReviewRates> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("read review rates {}", path.display()))?;
+    let rates = ppcap_core::parse_review_rates(&text).map_err(|problems| {
+        anyhow::anyhow!(
+            "review rates {} has problems:\n  {}",
+            path.display(),
+            problems.join("\n  ")
+        )
+    })?;
+    Ok(LoadedReviewRates {
+        rates,
+        sha256: ppcap_core::sha256_hex(text.as_bytes()),
+        bytes: text.len() as u64,
+    })
+}
+
+/// `noise budget: 4.2M packets → 61k flows → 9 stories, about 6 h saved (estimate)`.
+fn noise_budget_line(summary: &ppcap_core::Summary) -> Option<String> {
+    summary
+        .noise_budget
+        .as_ref()
+        .map(|b| format!("noise budget: {}\n  {}", b.headline(), b.explain()))
+}
+
 /// `suppressions: 4 findings hidden by 2 rules, 1 kept by guardrails (threat_intel)`.
 fn suppression_summary_line(summary: &ppcap_core::Summary) -> String {
     use ppcap_core::model::SuppressionOutcome;
@@ -1153,6 +1192,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             eve,
             zeek,
             zeek_json,
+            review_rates,
             yara,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
@@ -1216,6 +1256,10 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
 
             // YARA rules: loaded up front too, so a bad path fails before the pass.
             let yara_rules = crate::yara::load(&yara, quiet)?;
+            // Review rates: loaded up front too, with the digest of the exact bytes for the manifest.
+            let review_rates = review_rates
+                .map(|p| load_review_rates(&p).map(|loaded| (p, loaded)))
+                .transpose()?;
 
             // Derive a stable capture id from the input path (cheap FNV-1a hash) so distinct
             // captures get distinct ids in the Parquet footer; falls back to 0 on empty path.
@@ -1509,6 +1553,14 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             if !quiet && !out.summary.alerts.is_empty() {
                 eprintln!("{}", alerts_summary_line(&out.summary));
             }
+            if let Some((_, loaded)) = review_rates.as_ref() {
+                ppcap_core::apply_review_rates(&mut out.summary, loaded.rates);
+            }
+            if !quiet {
+                if let Some(line) = noise_budget_line(&out.summary) {
+                    eprintln!("{line}");
+                }
+            }
 
             // notice.log carries every finding, so the logs close after the passes that add them.
             let zeek_report = match (zeek_logger, zeek.as_deref()) {
@@ -1670,6 +1722,13 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 if let Some(y) = yara_rules.as_ref() {
                     settings.extend(y.settings());
                 }
+                if let Some((p, loaded)) = review_rates.as_ref() {
+                    settings.push(format!(
+                        "--review-rates {} (sha256 {})",
+                        p.display(),
+                        loaded.sha256
+                    ));
+                }
                 if let Some(d) = zeek.as_ref() {
                     settings.push(format!("--zeek {}", d.display()));
                     if zeek_json {
@@ -1770,6 +1829,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         path: rel(p),
                         sha256: sha256.clone(),
                         bytes: *bytes,
+                    });
+                }
+                // Review rates shape the noise budget estimate: the digest of the bytes applied.
+                if let Some((p, loaded)) = review_rates.as_ref() {
+                    artifacts.push(ppcap_core::ArtifactRecord {
+                        role: "review_rates".to_string(),
+                        path: rel(p),
+                        sha256: loaded.sha256.clone(),
+                        bytes: loaded.bytes,
                     });
                 }
                 if let (Some(p), Some((sha256, bytes))) =
@@ -2182,6 +2250,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 eprintln!("alerts: none — no findings rose above informational");
             } else {
                 eprintln!("{}", alerts_summary_line(&out.summary));
+                if let Some(line) = noise_budget_line(&out.summary) {
+                    eprintln!("{line}");
+                }
                 for (i, a) in out.summary.alerts.iter().enumerate() {
                     eprintln!(
                         "  {:>2}. [{:<11} {:>3}/100 conf {:>3}%] {}",
@@ -3171,6 +3242,35 @@ mod reputation_cli_tests {
     }
 
     #[test]
+    fn review_rates_file_and_noise_budget_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = dir.path().join("review-rates.json");
+        std::fs::write(&good, r#"{"version":1,"minutes_per_story":5}"#).unwrap();
+        let loaded = load_review_rates(&good).unwrap();
+        let rates = loaded.rates;
+        assert_eq!(rates.minutes_per_story, 5.0);
+        assert_eq!(loaded.bytes, 35);
+        assert_eq!(loaded.sha256.len(), 64);
+        let bad = dir.path().join("bad.json");
+        std::fs::write(&bad, r#"{"version":1,"minutes_per_finding":-2}"#).unwrap();
+        let err = format!("{:#}", load_review_rates(&bad).unwrap_err());
+        assert!(err.contains("minutes_per_finding"), "{err}");
+
+        let mut summary = ppcap_core::Summary::empty();
+        assert!(noise_budget_line(&summary).is_none());
+        summary.total_packets = 12_000;
+        summary.total_flows = 3_000;
+        ppcap_core::refresh_alerts(&mut summary);
+        ppcap_core::apply_review_rates(&mut summary, rates);
+        let line = noise_budget_line(&summary).unwrap();
+        assert!(
+            line.starts_with("noise budget: 12k packets → 3k flows → 0 stories"),
+            "{line}"
+        );
+        assert!(line.contains("(5 min per story)"), "{line}");
+    }
+
+    #[test]
     fn playbook_show_lint_and_team_files() {
         let mut summary = ppcap_core::Summary::empty();
         summary.findings = vec![ppcap_core::Finding {
@@ -3326,6 +3426,62 @@ mod reputation_cli_tests {
             }
             _ => panic!("expected Verify"),
         }
+    }
+
+    #[test]
+    fn review_rates_fail_before_analysis_and_are_sealed_as_evidence() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n).to_string_lossy().into_owned();
+        let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap();
+        dispatch(parse(&[
+            "ppcap",
+            "gen",
+            &p("in.pcap"),
+            "--scenario",
+            "beacon",
+            "--packets",
+            "500",
+        ]))
+        .unwrap();
+        // A bad rates file stops the run before anything is written.
+        std::fs::write(p("bad.json"), r#"{"version":9}"#).unwrap();
+        let analyze = |rates: &str, json: &str| {
+            parse(&[
+                "ppcap",
+                "analyze",
+                &p("in.pcap"),
+                "--json",
+                &p(json),
+                "--review-rates",
+                &p(rates),
+                "--evidence",
+                &p("case.json"),
+                "--quiet",
+            ])
+        };
+        assert!(dispatch(analyze("bad.json", "bad-out.json")).is_err());
+        assert!(!dir.path().join("bad-out.json").exists());
+        assert!(dispatch(analyze("missing.json", "bad-out.json")).is_err());
+        assert!(!dir.path().join("bad-out.json").exists());
+
+        // A good one is applied, listed in the settings and sealed as an input artifact.
+        std::fs::write(p("rates.json"), r#"{"version":1,"minutes_per_finding":20}"#).unwrap();
+        dispatch(analyze("rates.json", "out.json")).unwrap();
+        let out: ppcap_core::AnalysisOutput =
+            serde_json::from_str(&std::fs::read_to_string(p("out.json")).unwrap()).unwrap();
+        assert_eq!(
+            out.summary.noise_budget.unwrap().rates.minutes_per_finding,
+            20.0
+        );
+        let m = ppcap_core::EvidenceManifest::from_json_str(
+            &std::fs::read_to_string(p("case.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(m.settings.iter().any(|s| s.starts_with("--review-rates ")));
+        assert!(m.artifacts.iter().any(|a| a.role == "review_rates"));
+        dispatch(parse(&["ppcap", "verify", &p("case.json")])).unwrap();
+        std::fs::write(p("rates.json"), r#"{"version":1,"minutes_per_finding":40}"#).unwrap();
+        assert!(dispatch(parse(&["ppcap", "verify", &p("case.json")])).is_err());
     }
 
     #[test]

@@ -131,6 +131,15 @@ pub fn render_html(
         hosts = group_thousands(sum.unique_hosts),
         inc = group_thousands(n_inc as u64),
     );
+    if let Some(b) = sum.noise_budget.as_ref() {
+        let _ = write!(
+            s,
+            "<p class=\"noise-budget\"><strong>Noise budget:</strong> {head}</p>\
+             <p class=\"muted\">{why}</p>",
+            head = esc(&b.headline()),
+            why = esc(&b.explain()),
+        );
+    }
     if n_inc > 0 || crit > 0 || ioc_cards > 0 {
         // Lead with the correlated incidents (the headline answer), then the flow/IOC tallies.
         let inc_part = match sum.incidents.first() {

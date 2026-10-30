@@ -352,6 +352,7 @@ mod apply_tests {
             timeline_context: Default::default(),
             timelines: vec![],
             rarity: None,
+            noise_budget: None,
         }
     }
 

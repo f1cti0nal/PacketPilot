@@ -1190,6 +1190,7 @@ export function App() {
           activeSource={activeSource}
           aiGate={aiOn ? "on" : "off"}
           aiModel={aiModel}
+          onOpenAlerts={() => setTab("alerts")}
         />
       )}
       </ErrorBoundary>
