@@ -138,6 +138,11 @@ cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --zeek z
 # at analysis time or folded into a saved analysis (importing the same file twice adds nothing)
 cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json --eve /var/log/suricata/eve.json
 cargo run -p ppcap-cli --release -- eve out.json eve.json --json out.json
+
+# File extraction + YARA: files carried by HTTP, FTP, SMTP/POP3 and SMB2 are hashed in-stream;
+# your YARA rules run over every one (each match is a finding), and --carve-dir saves them
+cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json \
+  --yara team-rules.yar --yara my-rules.yar --carve-dir carved
 ```
 
 A destination in `destinations.json` never holds a secret: it names the environment variable
@@ -174,9 +179,31 @@ Every row about one connection carries the same `uid`, and `notice.log` holds Pa
 (`note` is `PacketPilot::<kind>`, with severity, score and ATT&CK ids). Fields are filled from one
 pass without TCP reassembly beyond a segment: `conn_state` comes from each side's TCP flags,
 `history` is left unset, HTTP body lengths are the declared `Content-Length`, and `files.log`
-lists the HTTP downloads the analysis carved. An export first removes the Zeek logs an earlier export left in the same
+lists every file the analysis carved, with its protocol as `source`, its `filename` and any
+`yara` matches. An export first removes the Zeek logs an earlier export left in the same
 directory, so the folder only ever holds one capture's logs; `--evidence` records every log written
 and every `--eve` input.
+
+File carving follows TCP strictly in order: a lost segment drops that file rather than hash wrong
+bytes. Besides HTTP downloads it carves FTP transfers (passive and active, `RETR` and `STOR`;
+directory listings are skipped), email attachments from SMTP and POP3 (nested MIME, base64 and
+quoted-printable; a part is carved when it has a filename, is an attachment, or is not text),
+and SMB2 files read or written from offset 0 to their end (named `\\server\share\path`; `IPC$`
+pipes, shares connected before the capture began, and encrypted SMB3 are skipped). An FTP `APPE`
+is not carved, since it carries only the end of a file. Each file gets its SHA-256, content signatures and YARA
+verdicts with nothing buffered; `--carve-dir` writes it to `<sha256>.<ext>`, with `.quarantine`
+added when anything flagged it. Traffic after `STARTTLS`, `STLS` or `AUTH TLS` is encrypted and
+not carved.
+
+`--yara` takes the common YARA subset, implemented in pure Rust so it builds without a C compiler
+(the web UI does not take rule files yet): text strings (`nocase`, `wide`, `ascii`), hex strings with wildcards and
+bounded jumps, `and`/`or`/`not`, `any`/`all`/`N of`, `#a` counts, `$a at`/`in`, `filesize`,
+`uint8`/`16`/`32` reads within the first 16 KiB, tags, `meta`, `private` rules and references to
+earlier rules. A rule that uses regular expressions, modules (`pe.`, `math.`), `for` loops,
+`fullword`, `xor` or `base64` is listed on stderr and skipped; the rest of the file still loads.
+A match becomes a `rule_match` finding titled `YARA <rule>` on the client, with severity from the
+rule's `severity` meta (`critical`/`high`/`medium`/`low`, or 1–10; High when absent) and ATT&CK
+ids from `mitre_attack`. `--evidence` records each rule file's hash.
 
 Suricata EVE import reads `alert` events and skips other event types. Each signature between the
 same two hosts becomes one `rule_match` finding with a hit count and first/last seen; Suricata

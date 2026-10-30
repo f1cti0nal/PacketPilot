@@ -117,4 +117,29 @@ describe("CarvedFilesCard", () => {
     );
     expect(screen.queryByText(/VT/)).toBeNull();
   });
+
+  it("shows the protocol, file name, direction and YARA matches of a non-HTTP file", () => {
+    render(
+      <CarvedFilesCard
+        files={[{
+          client: "10.0.0.9", server: "10.0.0.20", sha256: "d".repeat(64), size: 9000, known_bad: false,
+          protocol: "smb", filename: "\\\\fs01\\C$\\Temp\\svc.exe", upload: true, yara: ["Stage2_Loader"],
+        }]}
+      />,
+    );
+    expect(screen.getByText("smb")).toBeInTheDocument();
+    expect(screen.getByText("\\\\fs01\\C$\\Temp\\svc.exe")).toBeInTheDocument();
+    expect(screen.getByText("→")).toBeInTheDocument();
+    expect(screen.getByText("YARA Stage2_Loader")).toBeInTheDocument();
+  });
+
+  it("shows no protocol chip for HTTP (the default)", () => {
+    render(
+      <CarvedFilesCard
+        files={[{ client: "10.0.0.9", server: "1.2.3.4", sha256: "e".repeat(64), size: 10, known_bad: false, protocol: "http" }]}
+      />,
+    );
+    expect(screen.queryByText("http")).toBeNull();
+    expect(screen.getByText("←")).toBeInTheDocument();
+  });
 });

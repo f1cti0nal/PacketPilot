@@ -330,6 +330,43 @@ pub struct CarvedFile {
     /// covers the whole transfer. `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub last_seen_ns: Option<i64>,
+    /// The protocol that carried the file: `http`, `ftp`, `smtp`, `pop3` or `smb`.
+    #[serde(default = "default_carve_protocol")]
+    pub protocol: String,
+    /// The name the protocol gave the file (FTP path, attachment filename, SMB share path, HTTP
+    /// `Content-Disposition`), when it gave one. Sender-supplied: display only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    /// The client sent the file to the server (FTP upload, outgoing mail, SMB write).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub upload: bool,
+    /// YARA rules (`--yara`) the file matched.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub yara: Vec<String>,
+}
+
+fn default_carve_protocol() -> String {
+    "http".to_string()
+}
+
+impl Default for CarvedFile {
+    fn default() -> CarvedFile {
+        CarvedFile {
+            client: String::new(),
+            server: String::new(),
+            sha256: String::new(),
+            size: 0,
+            known_bad: false,
+            signatures: Vec::new(),
+            extracted_path: None,
+            first_seen_ns: None,
+            last_seen_ns: None,
+            protocol: default_carve_protocol(),
+            filename: None,
+            upload: false,
+            yara: Vec::new(),
+        }
+    }
 }
 
 /// Capture-wide summary. The headline JSON object. Bounded-memory derived.

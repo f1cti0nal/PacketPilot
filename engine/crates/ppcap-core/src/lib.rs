@@ -72,6 +72,7 @@ pub use baseline::{
     update_baseline, BaselineParams, BaselineProfile, CaptureProfile, Deviation, DeviationReport,
     HostBaseline, HostObservation, RunningStat, BASELINE_SCHEMA_VERSION,
 };
+pub use carve::yara::{SkippedYaraRule, YaraHit, YaraParse, YaraRules};
 pub use case::{
     run_case, CaptureEntry, CaptureStatus, CaseAlert, CaseConfig, CaseSummary, SharedIndicator,
 };

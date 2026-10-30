@@ -50,9 +50,11 @@ pub struct PipelineConfig {
     pub flows_parquet: Option<PathBuf>,
     /// Local IOC threat-feed JSON for offline enrichment; `None` => no enrichment.
     pub threat_feed: Option<PathBuf>,
-    /// Opt-in artifact extraction: directory to write each carved cleartext HTTP download's decoded
-    /// body into (`<sha256>[.<ext>]`), or `None` (the default) to retain no body bytes.
+    /// Opt-in artifact extraction: directory to write each carved file's decoded bytes into
+    /// (`<sha256>[.<ext>]`), or `None` (the default) to retain no body bytes.
     pub carve_dir: Option<PathBuf>,
+    /// User YARA rules matched over every carved file; each match becomes a rule-match finding.
+    pub yara: Option<std::sync::Arc<crate::carve::yara::YaraRules>>,
     /// Run flow eviction every N packets.
     pub evict_interval_pkts: u64,
     /// Compute the source SHA-256 (an extra read pass).
@@ -141,6 +143,7 @@ impl Default for PipelineConfig {
             flows_parquet: None,
             threat_feed: None,
             carve_dir: None,
+            yara: None,
             // Drain cadence for closed/cap-evicted flows. Kept small so the cap-eviction
             // victim buffer (`pending`) cannot accumulate up to a full interval of flows
             // between drains — that buffer, not the live map, was the residual peak-heap
@@ -369,14 +372,16 @@ pub fn run_source_observing<'a>(
     // sniffer can name, so unknown *ciphertext* (custom-crypto C2 / hand-rolled tunnels) is
     // distinguishable from unknown cleartext. Drained per flow at close.
     let mut entropy = crate::entropy::EntropySampler::new(cfg.entropy.clone());
-    // Bounded HTTP file carver: reassembles cleartext download bodies in TCP order and streams them
-    // through SHA-256 (no body buffering), for file-hash IOC surfacing + known-bad detection. With
-    // `carve_dir` set (opt-in) it also writes each decoded body to disk (`<sha256>.<ext>`).
+    // Bounded file carver: reassembles cleartext HTTP downloads and FTP, SMTP/POP3 and SMB2
+    // transfers in TCP order and streams them through SHA-256, content signatures and the user's
+    // YARA rules (no body buffering), for file-hash IOCs + known-bad detection. With `carve_dir`
+    // set (opt-in) it also writes each decoded file to disk (`<sha256>.<ext>`).
     let mut body_carver = match &cfg.carve_dir {
-        Some(dir) => crate::carve::HttpBodyCarver::with_extraction(dir.clone())
+        Some(dir) => crate::carve::FileCarver::with_extraction(dir.clone())
             .map_err(|e| PpError::io(format!("create carve dir {}", dir.display()), e))?,
-        None => crate::carve::HttpBodyCarver::new(),
-    };
+        None => crate::carve::FileCarver::new(),
+    }
+    .with_yara(cfg.yara.clone());
     let mut writer: Option<FlowParquetWriter> = match &cfg.flows_parquet {
         Some(p) => Some(FlowParquetWriter::create(p, cfg.writer.clone())?),
         None => None,
@@ -679,6 +684,7 @@ pub fn run_source_observing<'a>(
             // A novel/unknown-hash file whose CONTENT matched a curated malware signature.
             findings.push(f);
         }
+        findings.extend(c.yara.iter().map(|hit| yara_finding(c, hit)));
     }
     // Surface the carved-file IOC list, known-bad first then largest, capped for the summary/UI.
     const TOP_K_CARVED: usize = 128;
@@ -694,11 +700,16 @@ pub fn run_source_observing<'a>(
             extracted_path: c.extracted_path.clone(),
             first_seen_ns: Some(c.first_ts_ns),
             last_seen_ns: Some(c.last_ts_ns),
+            protocol: c.protocol.to_string(),
+            filename: c.filename.clone(),
+            upload: c.upload,
+            yara: c.yara.iter().map(|h| h.rule.clone()).collect(),
         })
         .collect();
     carved_files.sort_by(|a, b| {
         b.known_bad
             .cmp(&a.known_bad)
+            .then(a.yara.is_empty().cmp(&b.yara.is_empty()))
             .then(b.size.cmp(&a.size))
             .then(a.sha256.cmp(&b.sha256))
     });
@@ -1210,7 +1221,7 @@ fn malware_download_finding(c: &crate::carve::CarveObservation) -> crate::model:
                 "sha256 {} matched the known-bad set (+50)",
                 hex_of(&c.sha256)
             ),
-            format!("carved {}-byte cleartext HTTP download", c.size),
+            format!("carved {}", carved_what(c)),
         ],
         interval_ns: None,
         jitter_cv: None,
@@ -1258,10 +1269,7 @@ fn malware_signature_finding(
     if attack.is_empty() {
         attack.push("T1027".to_string()); // Obfuscated Files or Information
     }
-    let mut evidence = vec![format!(
-        "carved {}-byte cleartext HTTP download from {}",
-        c.size, c.server
-    )];
+    let mut evidence = vec![format!("carved {}", carved_what(c))];
     for s in &firing {
         evidence.push(format!(
             "body matched signature: {} ({})",
@@ -1289,6 +1297,100 @@ fn malware_signature_finding(
         last_seen_ns: Some(c.last_ts_ns),
         victims: Vec::new(),
     })
+}
+
+/// How a carved file moved, for finding evidence ("4096-byte SMB file write to 10.0.0.9 (name)").
+fn carved_what(c: &crate::carve::CarveObservation) -> String {
+    let what = match (c.protocol, c.upload) {
+        ("http", _) => "cleartext HTTP download from",
+        ("ftp", false) => "FTP download from",
+        ("ftp", true) => "FTP upload to",
+        ("smtp", _) => "email attachment sent via",
+        ("pop3", _) => "email attachment fetched from",
+        ("smb", false) => "SMB file read from",
+        ("smb", true) => "SMB file write to",
+        (_, false) => "download from",
+        (_, true) => "upload to",
+    };
+    let mut s = format!("{}-byte {what} {}", c.size, c.server);
+    if let Some(name) = &c.filename {
+        s.push_str(&format!(" ({name})"));
+    }
+    s
+}
+
+/// A user YARA rule matched a carved file: a rule-match finding on the client, severity from the
+/// rule's `severity`/`threat_level` meta (High by default), techniques from its MITRE meta.
+fn yara_finding(
+    c: &crate::carve::CarveObservation,
+    hit: &crate::carve::yara::YaraHit,
+) -> crate::model::finding::Finding {
+    use crate::model::finding::{Finding, FindingKind};
+    use crate::model::severity::Severity;
+    let severity = match hit
+        .meta_value(&["severity", "threat_level"])
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("critical") => Severity::Critical,
+        Some("medium") => Severity::Medium,
+        Some("low") => Severity::Low,
+        Some("info" | "informational") => Severity::Info,
+        Some(n) => match n.parse::<u8>() {
+            Ok(9..) => Severity::Critical,
+            Ok(7..=8) => Severity::High,
+            Ok(4..=6) => Severity::Medium,
+            Ok(1..=3) => Severity::Low,
+            _ => Severity::High,
+        },
+        None => Severity::High,
+    };
+    let mut attack: Vec<String> = hit
+        .meta
+        .iter()
+        .filter(|(k, _)| {
+            matches!(
+                k.to_ascii_lowercase().as_str(),
+                "mitre_att" | "mitre_attack" | "mitre" | "technique" | "attack"
+            )
+        })
+        .flat_map(|(_, v)| v.split([',', ' ', ';']))
+        .map(str::trim)
+        .filter(|t| {
+            t.len() >= 5 && t.starts_with(['T', 't']) && t[1..5].bytes().all(|b| b.is_ascii_digit())
+        })
+        .map(str::to_ascii_uppercase)
+        .collect();
+    attack.sort();
+    attack.dedup();
+    let mut evidence = vec![
+        format!("YARA rule {} matched", hit.rule),
+        format!("carved {}", carved_what(c)),
+        format!("sha256 {}", hex_of(&c.sha256)),
+    ];
+    if !hit.tags.is_empty() {
+        evidence.push(format!("tags: {}", hit.tags.join(", ")));
+    }
+    if let Some(d) = hit.meta_value(&["description", "desc"]) {
+        evidence.push(format!("description: {d}"));
+    }
+    Finding {
+        kind: FindingKind::RuleMatch,
+        severity,
+        score: crate::detect::rules::score_for_severity(severity),
+        title: format!("YARA {}", hit.rule),
+        src_ip: c.client.to_string(),
+        dst_ip: Some(c.server.to_string()),
+        dst_port: None,
+        attack,
+        evidence,
+        interval_ns: None,
+        jitter_cv: None,
+        contacts: None,
+        first_seen_ns: Some(c.first_ts_ns),
+        last_seen_ns: Some(c.last_ts_ns),
+        victims: Vec::new(),
+    }
 }
 
 /// Minimal streaming SHA-256 (FIPS 180-4). No external dependencies; constant memory.
@@ -1479,6 +1581,10 @@ mod tests {
         let obs = |sigs: Vec<SigHit>| CarveObservation {
             client: "10.0.0.5".parse().unwrap(),
             server: "1.2.3.4".parse().unwrap(),
+            protocol: "http",
+            filename: None,
+            upload: false,
+            yara: Vec::new(),
             sha256: [0u8; 32],
             size: 1000,
             known_bad: false,

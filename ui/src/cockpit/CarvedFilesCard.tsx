@@ -36,7 +36,10 @@ function RepBadge({ file }: { file: CarvedFile }) {
 }
 
 /**
- * Carved files: cleartext HTTP downloads reassembled in-stream and hashed. Each row is the file's
+ * Carved files: cleartext HTTP downloads plus FTP transfers, SMTP/POP3 attachments and SMB2 file
+ * reads/writes, reassembled in-stream and hashed. Non-HTTP rows carry a protocol chip, the name the
+ * protocol gave the file, and an arrow that points the way the file moved; YARA matches (`--yara`)
+ * show as red chips. Each row is the file's
  * SHA-256 — a ready IOC — with its size and the downloading client ← serving host. A `known-bad`
  * badge flags a hash that matched the embedded known-bad set (a confirmed-malware download, which
  * also raises a Critical finding). Content-signature chips (file type + suspicious markers like a
@@ -78,6 +81,11 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
                   known-bad
                 </span>
               )}
+              {f.protocol && f.protocol !== "http" && (
+                <span className="shrink-0 rounded-[var(--r-micro)] bg-[var(--color-surface-2)] px-1 t-tag uppercase text-[var(--color-text-dim)]">
+                  {f.protocol}
+                </span>
+              )}
               <RepBadge file={f} />
               <span className="font-mono-num ml-auto shrink-0 t-tag text-[var(--color-text-faint)]">
                 {humanBytes(f.size)}
@@ -87,11 +95,35 @@ export function CarvedFilesCard({ files }: { files: CarvedFile[] }) {
               <span className="font-mono-num truncate" title={f.client}>
                 {f.client}
               </span>
-              <span className="text-[var(--color-text-faint)]">←</span>
+              <span
+                className="text-[var(--color-text-faint)]"
+                title={f.upload ? "sent by the client" : "received by the client"}
+              >
+                {f.upload ? "→" : "←"}
+              </span>
               <span className="font-mono-num truncate" title={f.server}>
                 {f.server}
               </span>
             </div>
+            {f.filename && (
+              <div className="truncate t-tag text-[var(--color-text)]" title={f.filename}>
+                {f.filename}
+              </div>
+            )}
+            {(f.yara?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {f.yara!.slice(0, 6).map((r) => (
+                  <span
+                    key={r}
+                    className="rounded-[var(--r-micro)] px-1 t-tag"
+                    style={{ color: "var(--color-sev-critical)" }}
+                    title="YARA rule match"
+                  >
+                    YARA {r}
+                  </span>
+                ))}
+              </div>
+            )}
             {(f.signatures?.length ?? 0) > 0 && (
               <div className="flex flex-wrap gap-1 pt-0.5">
                 {f.signatures!.slice(0, 6).map((s) => (

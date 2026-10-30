@@ -72,8 +72,9 @@ pub enum Command {
         /// Local IOC threat-feed JSON (offline enrichment); omit => no enrichment.
         #[arg(long = "threat-feed")]
         threat_feed: Option<PathBuf>,
-        /// Opt-in: extract each carved cleartext HTTP download to this directory (`<sha256>.<ext>`;
-        /// known-bad/suspicious files get a `.quarantine` suffix). Off by default — no bytes written.
+        /// Opt-in: extract each carved file (HTTP, FTP, SMTP/POP3 attachments, SMB2) to this
+        /// directory (`<sha256>.<ext>`; known-bad/suspicious/YARA-matched files get a `.quarantine`
+        /// suffix). Off by default — no bytes written.
         #[arg(long = "carve-dir")]
         carve_dir: Option<PathBuf>,
         /// Export behavioral findings as CSV to this path.
@@ -162,6 +163,11 @@ pub enum Command {
         /// Write the `--zeek` logs as Zeek JSON (one object per line) instead of tab-separated.
         #[arg(long = "zeek-json", requires = "zeek")]
         zeek_json: bool,
+        /// Match these YARA rules over every carved file; each match is a finding. Repeatable.
+        /// Rules using features outside the supported subset (regex, modules, `for` loops) are
+        /// listed and skipped.
+        #[arg(long = "yara", conflicts_with = "batch")]
+        yara: Vec<PathBuf>,
     },
     /// Zeek logs out: analyze a capture and write Zeek-format logs (conn, dns, http, ssl, ssh,
     /// files, plus notice for PacketPilot's findings) that share one connection uid, ready for a
@@ -178,6 +184,10 @@ pub enum Command {
         /// Suricata EVE files whose alerts join the findings in notice.log. Repeatable.
         #[arg(long = "eve")]
         eve: Vec<PathBuf>,
+        /// YARA rules matched over every carved file (matches land in files.log and notice.log).
+        /// Repeatable.
+        #[arg(long = "yara")]
+        yara: Vec<PathBuf>,
         /// Also write the analysis JSON here.
         #[arg(long)]
         summary: Option<PathBuf>,
@@ -966,6 +976,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             eve,
             zeek,
             zeek_json,
+            yara,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
             // capture output flags (--json/--html/--parquet/--csv/--stix/--rules/--reputation) do
@@ -1026,6 +1037,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 None => None,
             };
 
+            // YARA rules: loaded up front too, so a bad path fails before the pass.
+            let yara_rules = crate::yara::load(&yara, quiet)?;
+
             // Derive a stable capture id from the input path (cheap FNV-1a hash) so distinct
             // captures get distinct ids in the Parquet footer; falls back to 0 on empty path.
             let cfg = ppcap_core::PipelineConfig {
@@ -1034,6 +1048,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 flows_parquet: parquet.clone(),
                 threat_feed: threat_feed.clone(),
                 carve_dir: carve_dir.clone(),
+                yara: yara_rules.as_ref().map(|y| y.rules.clone()),
                 writer: ppcap_core::columnar::WriterConfig {
                     capture_id: fnv1a64(input.to_string_lossy().as_bytes()),
                     ..Default::default()
@@ -1456,6 +1471,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 for p in &eve {
                     settings.push(format!("--eve {}", p.display()));
                 }
+                if let Some(y) = yara_rules.as_ref() {
+                    settings.extend(y.settings());
+                }
                 if let Some(d) = zeek.as_ref() {
                     settings.push(format!("--zeek {}", d.display()));
                     if zeek_json {
@@ -1549,6 +1567,15 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 }
                 // The key-log is an input the output depends on: record it so `verify` checks it,
                 // with the digest of the exact bytes the run parsed.
+                // YARA rule files add findings: record the digest of the exact bytes parsed.
+                for (p, sha256, bytes) in yara_rules.iter().flat_map(|y| y.files.iter()) {
+                    artifacts.push(ppcap_core::ArtifactRecord {
+                        role: "yara_rules".to_string(),
+                        path: rel(p),
+                        sha256: sha256.clone(),
+                        bytes: *bytes,
+                    });
+                }
                 if let (Some(p), Some((sha256, bytes))) =
                     (keylog_path.as_ref(), keylog_digest.clone())
                 {
@@ -1945,6 +1972,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             out_dir,
             json,
             eve,
+            yara,
             summary,
             quiet,
         } => {
@@ -1953,6 +1981,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     capture_id: fnv1a64(input.to_string_lossy().as_bytes()),
                     ..Default::default()
                 },
+                yara: crate::yara::load(&yara, quiet)?.map(|y| y.rules),
                 ..Default::default()
             };
             let mut logger = crate::zeek::logger(&out_dir, json)?;
