@@ -64,6 +64,11 @@ pub const PTS_ALERT_REP: i32 = 10;
 /// A `BaselineDeviation` member: the actor did something first-seen vs its learned self
 /// (warmup gating upstream keeps this trustworthy).
 pub const PTS_ALERT_NOVEL: i32 = 5;
+/// Environment rarity: the alert's peer, the peer's domain, or the actor's client software is new
+/// to the whole network (vs the baseline's history; warm-up gating upstream).
+pub const PTS_ALERT_FIRST_SEEN: i32 = 5;
+/// Context lines listing first-seen indicators per alert.
+const MAX_FIRST_SEEN_FACTS: usize = 3;
 /// A `TrafficAnomaly` member: the actor departed from its own within-capture forecast.
 pub const PTS_ALERT_ANOM: i32 = 5;
 /// Every external peer is attributed cloud/CDN address space and none is IOC/reputation-bad —
@@ -557,6 +562,7 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
                 .unwrap_or(false)
         })
         .collect();
+    let first_seen = first_seen_facts(summary, &seed.actor, &ext_peers);
     let all_ext_cloud = !ext_peers.is_empty()
         && ext_peers.iter().all(|ip| {
             cloud_of(summary, ip).is_some()
@@ -635,6 +641,18 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
             &mut terms,
             "novel: deviates from learned baseline".to_string(),
             PTS_ALERT_NOVEL,
+        );
+    }
+    if !first_seen.is_empty() {
+        pos += PTS_ALERT_FIRST_SEEN;
+        push(
+            &mut terms,
+            format!(
+                "novel: {} indicator{} new to this network",
+                first_seen.len(),
+                if first_seen.len() == 1 { "" } else { "s" }
+            ),
+            PTS_ALERT_FIRST_SEEN,
         );
     }
     if has_anom {
@@ -773,6 +791,7 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
         &dst_ports,
         &ext_peers,
         next_stage.as_deref(),
+        &first_seen,
     );
 
     let mut hosts = seed.hosts;
@@ -917,6 +936,69 @@ fn action_for(f: &Finding, peer: Option<&str>, port: Option<u16>, actor: &str) -
     }
 }
 
+/// Environment-rarity facts for an alert: `(sentence, subject ip)` for each first-seen indicator
+/// tied to it — an external peer nobody here reached before, a domain resolving to that peer that
+/// nobody here looked up before, or client software (JA4/JA3/User-Agent) on the actor that no
+/// capture in the history saw. Peers come first. Empty without a mature baseline.
+fn first_seen_facts(summary: &Summary, actor: &str, ext_peers: &[&str]) -> Vec<(String, String)> {
+    use crate::rarity::IndicatorKind;
+    let Some(r) = summary.rarity.as_ref() else {
+        return Vec::new();
+    };
+    if r.new.is_empty() {
+        return Vec::new();
+    }
+    let history = format!(
+        "{} earlier capture{}",
+        r.history_captures,
+        if r.history_captures == 1 { "" } else { "s" }
+    );
+    let mut out: Vec<(String, String)> = Vec::new();
+    for &peer in ext_peers {
+        if r.new
+            .iter()
+            .any(|n| n.kind == IndicatorKind::Destination && n.value == peer)
+        {
+            out.push((
+                format!("new to this network: nobody here reached {peer} in {history}"),
+                peer.to_string(),
+            ));
+        }
+        let domains: BTreeSet<String> = summary
+            .resolved_ips
+            .iter()
+            .filter(|d| d.ip == peer)
+            .filter_map(|d| crate::rarity::registered_domain(&d.domain))
+            .collect();
+        for d in domains {
+            if r.new
+                .iter()
+                .any(|n| n.kind == IndicatorKind::Domain && n.value == d)
+            {
+                out.push((
+                    format!("new to this network: domain {d} ({peer}) never seen in {history}"),
+                    peer.to_string(),
+                ));
+            }
+        }
+    }
+    for n in r
+        .new
+        .iter()
+        .filter(|n| n.kind.is_software() && n.hosts.iter().any(|h| h == actor))
+    {
+        let v: String = n.value.chars().take(48).collect();
+        out.push((
+            format!(
+                "new to this network: {} {v} on {actor} never seen in {history}",
+                n.kind.phrase()
+            ),
+            actor.to_string(),
+        ));
+    }
+    out
+}
+
 /// Threat-card lookup for an implicated IP (ip_threats is bounded to the top-k rows).
 fn card_of<'a>(summary: &'a Summary, ip: &str) -> Option<&'a IpThreat> {
     summary.ip_threats.iter().find(|c| c.ip == ip)
@@ -955,6 +1037,7 @@ fn build_context(
     dst_ports: &BTreeMap<&str, Option<u16>>,
     ext_peers: &[&str],
     next_stage: Option<&str>,
+    first_seen: &[(String, String)],
 ) -> AlertContext {
     let findings = &summary.findings;
     // The actor's flag is actor-scoped: on a multi-host chain a pivot host's deviation must
@@ -1172,6 +1255,14 @@ fn build_context(
             ),
             None,
             Some(c.server.clone()),
+        );
+    }
+    for (text, ip) in first_seen.iter().take(MAX_FIRST_SEEN_FACTS) {
+        entry(
+            ContextKind::NewToNetwork,
+            text.clone(),
+            None,
+            Some(ip.clone()),
         );
     }
     if let Some(ed) = summary.encrypted_dns.iter().find(|e| e.host == seed.actor) {

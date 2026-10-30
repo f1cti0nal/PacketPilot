@@ -1703,6 +1703,7 @@ impl StatsAccumulator {
             suppressions: Vec::new(),
             timeline_context: Default::default(),
             timelines: Vec::new(),
+            rarity: None,
         }
     }
 

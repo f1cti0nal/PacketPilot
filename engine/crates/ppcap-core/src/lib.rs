@@ -54,6 +54,7 @@ pub mod metrics;
 pub mod model;
 pub mod packets;
 pub(crate) mod quic;
+pub mod rarity;
 pub mod reader;
 pub mod report;
 pub mod sanitize;

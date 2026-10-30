@@ -460,6 +460,7 @@ pub fn run_source_observing<'a>(
                         (&meta.dns_qname, meta.src_ip, meta.dst_ip)
                     {
                         tracker.observe_dns_query(src, dst, qname);
+                        tracker.env_mut().observe_dns(src, qname, meta.ts_ns);
                     }
                 }
                 // Cleartext credential exposure: fold each packet that carried a credential in the
@@ -619,6 +620,11 @@ pub fn run_source_observing<'a>(
             obs.sni,
         );
     }
+    for leaf in tls_results.leaves {
+        tracker
+            .env_mut()
+            .observe_cert(leaf.client, &leaf.sha256, leaf.cn.as_deref(), leaf.ts_ns);
+    }
     for obs in tls_results.weak_tls {
         tracker.observe_weak_tls(
             obs.client,
@@ -720,7 +726,7 @@ pub fn run_source_observing<'a>(
     // CLI to persist/merge, and (b) compare it against a loaded baseline — emitting deviation
     // findings BEFORE `stats.apply_findings` so they uplift the per-IP threat cards and flow into
     // incidents/chains exactly like every other detector.
-    let baseline_snapshot = if baseline_ref.is_some() || cfg.update_baseline {
+    let mut baseline_snapshot = if baseline_ref.is_some() || cfg.update_baseline {
         Some(tracker.baseline_snapshot(&cfg.baseline))
     } else {
         None
@@ -734,6 +740,23 @@ pub fn run_source_observing<'a>(
         findings.extend(
             compare_to_baseline_at(base, prof, capture_unix, &cfg.baseline).into_findings(),
         );
+    }
+
+    // Environment rarity: what is new to the whole network (vs the baseline's history) and what
+    // only one host does. The single-host view needs no history, so it always runs.
+    let env_snapshot = tracker.env().snapshot();
+    let rarity = (!env_snapshot.is_empty() || baseline_ref.is_some())
+        .then(|| crate::rarity::rarity_report(baseline_ref.as_ref(), &env_snapshot, &cfg.baseline));
+    if let Some(r) = rarity.as_ref().filter(|_| cfg.baseline.enabled) {
+        let deviating: std::collections::BTreeSet<String> = findings
+            .iter()
+            .filter(|f| f.kind == crate::model::finding::FindingKind::BaselineDeviation)
+            .map(|f| f.src_ip.clone())
+            .collect();
+        findings.extend(crate::rarity::combo_findings(r, &deviating));
+    }
+    if let Some(prof) = baseline_snapshot.as_mut() {
+        prof.environment = env_snapshot;
     }
 
     // Predictive Anomaly Detection. `stats` is still live (not consumed until `finish()` below), so
@@ -819,6 +842,7 @@ pub fn run_source_observing<'a>(
     summary.carved_files = carved_files;
     summary.extracted_paths = extracted_paths;
     summary.timeline_context = timeline_context;
+    summary.rarity = rarity;
     // Correlate the findings into per-host incidents (the "is this a real incident" view).
     summary.incidents = correlate_incidents(&findings);
     // Reconstruct the multi-host, temporally-ordered attack chains over the same finding set
@@ -929,6 +953,10 @@ fn process_flow(
         if let Some(j) = record.ja3.as_deref() {
             tracker.observe_ja3(c.client, j);
         }
+        // Environment rarity: the software and places this connection shows, network-wide.
+        tracker
+            .env_mut()
+            .observe_flow(record, c.client, c.server, c.ts_ns);
         tracker.observe_category(c.client, record.category);
 
         // Encrypted-traffic analysis: a TLS client that named no server. ECH flows are excluded —
@@ -1953,6 +1981,7 @@ mod tests {
                     ..Default::default()
                 })
                 .collect(),
+            ..Default::default()
         };
         let mut base = BaselineProfile::new();
         for i in 0..params.min_captures {

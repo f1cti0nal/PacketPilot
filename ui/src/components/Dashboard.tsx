@@ -27,6 +27,7 @@ import { DnsResolutionsCard } from "../cockpit/DnsResolutionsCard";
 import { EncryptedDnsCard } from "../cockpit/EncryptedDnsCard";
 import { TlsServersCard } from "../cockpit/TlsServersCard";
 import { CarvedFilesCard } from "../cockpit/CarvedFilesCard";
+import { NewToNetworkCard } from "../cockpit/NewToNetworkCard";
 import { LocalHostsCard } from "../cockpit/LocalHostsCard";
 import { DownloadsCard } from "../cockpit/DownloadsCard";
 import { PacketDistributionsCard } from "../cockpit/PacketDistributionsCard";
@@ -259,6 +260,7 @@ export function Dashboard({
         <EncryptedDnsCard hosts={s.encrypted_dns ?? []} />
         <TlsServersCard servers={s.tls_servers ?? []} onJump={toFlowsIp} />
         <CarvedFilesCard files={s.carved_files ?? []} />
+        <NewToNetworkCard rarity={s.rarity} />
         <LocalHostsCard arp={s.arp_hosts ?? []} dhcp={s.dhcp_hosts ?? []} />
         <DownloadsCard downloads={s.downloads ?? []} />
       </div>

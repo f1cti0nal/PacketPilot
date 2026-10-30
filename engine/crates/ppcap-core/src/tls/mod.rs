@@ -203,6 +203,8 @@ const MAX_WATCHED: usize = 4096;
 const MAX_SNI: usize = 4096;
 /// Cap on concurrently-buffered server handshake flights.
 const MAX_BUFFERS: usize = 512;
+/// Cap on distinct `(client, leaf certificate)` sightings recorded for environment rarity.
+const MAX_LEAF_SIGHTINGS: usize = 8192;
 /// Cap on bytes buffered for one server flight before we give up on it.
 const MAX_BUF_BYTES: usize = 16 * 1024;
 
@@ -284,6 +286,16 @@ pub(crate) struct WeakTlsObservation {
 pub(crate) struct ReassemblerResults {
     pub certs: Vec<CertObservation>,
     pub weak_tls: Vec<WeakTlsObservation>,
+    pub leaves: Vec<LeafSighting>,
+}
+
+/// A server leaf certificate a client was served, healthy or not: its SHA-256 (of the DER) and
+/// subject CN. Feeds environment rarity ("first-seen certificate").
+pub(crate) struct LeafSighting {
+    pub client: IpAddr,
+    pub sha256: String,
+    pub cn: Option<String>,
+    pub ts_ns: i64,
 }
 
 /// One in-flight server handshake: the reassembled bytes plus whether its ServerHello has already
@@ -308,6 +320,9 @@ pub(crate) struct TlsCertReassembler {
     buffers: HashMap<(IpAddr, u16, IpAddr, u16), FlightBuf>,
     observations: Vec<CertObservation>,
     weak_tls: Vec<WeakTlsObservation>,
+    /// Every parsed leaf certificate, once per `(client, sha256)` (environment rarity).
+    leaves: Vec<LeafSighting>,
+    leaf_seen: HashSet<(IpAddr, String)>,
 }
 
 impl TlsCertReassembler {
@@ -318,6 +333,8 @@ impl TlsCertReassembler {
             buffers: HashMap::new(),
             observations: Vec::new(),
             weak_tls: Vec::new(),
+            leaves: Vec::new(),
+            leaf_seen: HashSet::new(),
         }
     }
 
@@ -350,7 +367,7 @@ impl TlsCertReassembler {
             _ => return,
         };
         let observed = capture_stamp(meta.ts_ns);
-        self.feed_server(src, sport, dst, dport, info.payload, observed);
+        self.feed_server(src, sport, dst, dport, info.payload, observed, meta.ts_ns);
     }
 
     /// Register a ClientHello's server endpoint + requested SNI (bounded inserts).
@@ -376,6 +393,7 @@ impl TlsCertReassembler {
 
     /// Buffer server→client handshake bytes and, once the Certificate message is complete, parse
     /// the leaf certificate and record its health issues.
+    #[allow(clippy::too_many_arguments)]
     fn feed_server(
         &mut self,
         server: IpAddr,
@@ -384,6 +402,7 @@ impl TlsCertReassembler {
         client_port: u16,
         payload: &[u8],
         observed: u64,
+        ts_ns: i64,
     ) {
         let key = (server, server_port, client, client_port);
         if !self.buffers.contains_key(&key) {
@@ -458,6 +477,17 @@ impl TlsCertReassembler {
             Action::Found(der) => {
                 self.buffers.remove(&key);
                 if let Some(cert) = cert::parse_leaf(&der) {
+                    if self.leaves.len() < MAX_LEAF_SIGHTINGS {
+                        let sha256 = crate::analyze::sha256_hex(&der);
+                        if self.leaf_seen.insert((client, sha256.clone())) {
+                            self.leaves.push(LeafSighting {
+                                client,
+                                sha256,
+                                cn: cert.cn.clone(),
+                                ts_ns,
+                            });
+                        }
+                    }
                     let sni = self
                         .sni
                         .get(&(client, client_port, server, server_port))
@@ -483,6 +513,7 @@ impl TlsCertReassembler {
         ReassemblerResults {
             certs: self.observations,
             weak_tls: self.weak_tls,
+            leaves: self.leaves,
         }
     }
 }
@@ -1137,7 +1168,7 @@ mod tests {
         let client: IpAddr = "10.0.0.5".parse().unwrap();
         let server: IpAddr = "203.0.113.9".parse().unwrap();
         r.note_client_hello(client, 51000, server, 443, Some("good.example"));
-        r.feed_server(server, 443, client, 51000, &flight, 20_250_101_000_000);
+        r.feed_server(server, 443, client, 51000, &flight, 20_250_101_000_000, 0);
 
         let obs = r.into_results().certs;
         assert_eq!(obs.len(), 1);
@@ -1156,6 +1187,35 @@ mod tests {
     }
 
     #[test]
+    fn reassembler_records_every_leaf_once_per_client_for_rarity() {
+        let der = testcert::build(testcert::Spec {
+            subject_cn: "fine.example",
+            issuer_cn: "Some CA",
+            not_before: "200101000000Z",
+            not_after: "300101000000Z",
+            sans: &["fine.example"],
+        });
+        let flight = testcert::server_flight(&der);
+        let mut r = TlsCertReassembler::new();
+        let client: IpAddr = "10.0.0.5".parse().unwrap();
+        let server: IpAddr = "203.0.113.9".parse().unwrap();
+        for port in [51000, 51001] {
+            r.note_client_hello(client, port, server, 443, Some("fine.example"));
+            r.feed_server(server, 443, client, port, &flight, 20_250_101_000_000, 77);
+        }
+        let res = r.into_results();
+        assert!(res.certs.is_empty(), "a healthy cert raises nothing");
+        assert_eq!(
+            res.leaves.len(),
+            1,
+            "same client + same cert = one sighting"
+        );
+        assert_eq!(res.leaves[0].sha256, crate::analyze::sha256_hex(&der));
+        assert_eq!(res.leaves[0].cn.as_deref(), Some("fine.example"));
+        assert_eq!(res.leaves[0].ts_ns, 77);
+    }
+
+    #[test]
     fn reassembler_handles_multi_segment_flight() {
         let der = testcert::build(testcert::Spec {
             subject_cn: "split.example",
@@ -1171,12 +1231,12 @@ mod tests {
         let client: IpAddr = "10.0.0.5".parse().unwrap();
         let server: IpAddr = "203.0.113.9".parse().unwrap();
         r.note_client_hello(client, 51000, server, 443, None);
-        r.feed_server(server, 443, client, 51000, a, 20_250_101_000_000);
+        r.feed_server(server, 443, client, 51000, a, 20_250_101_000_000, 0);
         assert!(
             r.observations.is_empty(),
             "incomplete flight yields nothing yet"
         );
-        r.feed_server(server, 443, client, 51000, b, 20_250_101_000_000);
+        r.feed_server(server, 443, client, 51000, b, 20_250_101_000_000, 0);
         assert_eq!(r.observations.len(), 1);
         assert!(r.observations[0]
             .issues
@@ -1198,6 +1258,7 @@ mod tests {
             51000,
             &[23, 3, 3, 0, 5, 1, 2, 3, 4, 5],
             20_250_101_000_000,
+            0,
         );
         assert!(r.buffers.is_empty());
         assert!(r.observations.is_empty());
@@ -1319,6 +1380,7 @@ mod tests {
             51000,
             &testcert::server_hello(version, cipher, supported),
             20_250_101_000_000,
+            0,
         );
         r.into_results().weak_tls
     }
@@ -1474,12 +1536,12 @@ mod tests {
         let server: IpAddr = "203.0.113.9".parse().unwrap();
         r.note_client_hello(client, 51000, server, 443, None);
 
-        r.feed_server(server, 443, client, 51000, head, 20_250_101_000_000);
+        r.feed_server(server, 443, client, 51000, head, 20_250_101_000_000, 0);
         assert!(
             r.weak_tls.is_empty(),
             "a ServerHello head too short to reach the cipher must not yet be flagged"
         );
-        r.feed_server(server, 443, client, 51000, tail, 20_250_101_000_000);
+        r.feed_server(server, 443, client, 51000, tail, 20_250_101_000_000, 0);
         assert_eq!(
             r.weak_tls.len(),
             1,

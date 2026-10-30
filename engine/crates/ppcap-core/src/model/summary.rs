@@ -512,6 +512,11 @@ pub struct Summary {
     /// `#[serde(default)]` keeps older summaries readable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub timelines: Vec<crate::model::timeline::AlertTimeline>,
+    /// Environment rarity: what is new to the whole network (vs the baseline's history) and what
+    /// only one host does. `None` when the capture had no internal-host sightings and no baseline
+    /// was loaded. `#[serde(default)]` keeps older summaries readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rarity: Option<crate::rarity::RarityReport>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -566,6 +571,7 @@ impl Summary {
             suppressions: Vec::new(),
             timeline_context: Default::default(),
             timelines: Vec::new(),
+            rarity: None,
         }
     }
 

@@ -75,6 +75,11 @@ pub const PTS_DEV_NEW_CATEGORY: i32 = 10;
 pub const PTS_DEV_OFF_HOURS: i32 = 10;
 /// A newly-periodic channel (beacon) the host's baseline never carried.
 pub const PTS_DEV_NEW_BEACON: i32 = 15;
+/// Environment rarity: client software (JA4/JA3/User-Agent) no capture in the network history saw.
+pub const PTS_ENV_NEW_SOFTWARE: i32 = 20;
+/// Environment rarity: a domain, certificate or external destination new to the whole network,
+/// on the same host as new software (the pair is what makes it a finding).
+pub const PTS_ENV_NEW_PLACE: i32 = 20;
 /// Deviation-alone score ceiling: caps a baseline deviation at Medium (see `Severity::from_score`).
 pub const DEV_UPLIFT_CAP: i32 = 45;
 

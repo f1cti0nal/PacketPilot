@@ -1166,6 +1166,24 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 );
             }
 
+            if let (Some(r), false) = (out.summary.rarity.as_ref(), quiet) {
+                if r.warming_up {
+                    eprintln!(
+                        "rarity: baseline has {} of {} captures of network history; nothing is called new yet",
+                        r.history_captures,
+                        ppcap_core::BaselineParams::default().min_env_captures
+                    );
+                } else if r.baseline_loaded {
+                    eprintln!(
+                        "rarity: {} indicator{} new to this network (vs {} captures), {} on only one host",
+                        r.new_total,
+                        if r.new_total == 1 { "" } else { "s" },
+                        r.history_captures,
+                        r.single_host_total
+                    );
+                }
+            }
+
             if !no_forecast && !quiet {
                 let n = out
                     .summary
@@ -1405,9 +1423,10 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     .with_context(|| format!("write baseline to {}", bpath.display()))?;
                 if !quiet {
                     eprintln!(
-                        "updated behavioral baseline ({} hosts, {} captures) -> {}",
+                        "updated behavioral baseline ({} hosts, {} captures, {} network-wide indicators) -> {}",
                         updated.hosts.len(),
                         updated.captures_merged,
+                        updated.environment.len(),
                         bpath.display()
                     );
                 }
@@ -1694,6 +1713,11 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     profile.captures_merged,
                     profile.engine_version
                 );
+                eprintln!(
+                    "network history: {} indicators from {} captures",
+                    profile.environment.len(),
+                    profile.env_captures
+                );
                 for h in profile.hosts.iter().take(20) {
                     eprintln!(
                         "  {:<20} seen x{:<4} peers={:<4} ports={:<4} out~{:.0}B",
@@ -1819,6 +1843,27 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 );
                 for d in &report.deviations {
                     eprintln!("  {:<8} {}", d.severity.as_str(), d.title);
+                }
+                let rarity =
+                    ppcap_core::rarity::rarity_report(Some(&base), &prof.environment, &params);
+                if rarity.warming_up {
+                    eprintln!(
+                        "new to this network: baseline has {} of {} captures of history, nothing called new yet",
+                        rarity.history_captures, params.min_env_captures
+                    );
+                } else {
+                    eprintln!(
+                        "new to this network: {} indicator(s) vs {} captures",
+                        rarity.new_total, rarity.history_captures
+                    );
+                    for r in rarity.new.iter().take(20) {
+                        eprintln!(
+                            "  {:<20} {}  [{}]",
+                            r.kind.phrase(),
+                            r.value,
+                            r.hosts.join(", ")
+                        );
+                    }
                 }
                 if let Some(path) = json.as_deref() {
                     let s = serde_json::to_string_pretty(&report)?;
@@ -3281,6 +3326,7 @@ mod reputation_cli_tests {
                     services: vec![443],
                     ..Default::default()
                 }],
+                ..Default::default()
             }),
             ..Default::default()
         };

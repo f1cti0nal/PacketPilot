@@ -134,6 +134,8 @@ pub enum ContextKind {
     CarvedFile,
     /// DNS-visibility caveat: the actor resolves via DoH/DoT, so passive DNS is blind.
     EncryptedDns,
+    /// Environment rarity: a peer, domain or client software the whole network never saw before.
+    NewToNetwork,
 }
 
 /// One deterministic context fact, with an optional back-reference to the finding it came from.
