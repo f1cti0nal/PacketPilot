@@ -426,6 +426,11 @@ fn capture_overview(c: &Capture) -> Result<Value, String> {
         "carved_files": sm.carved_files.len(),
         "suppression_rules": sm.suppression_rules.len(),
         "findings_suppressed": hidden,
+        "noise_budget": sm.noise_budget.as_ref().map(|b| json!({
+            "headline": b.headline(),
+            "explain": b.explain(),
+            "detail": b,
+        })),
     }))
 }
 

@@ -691,6 +691,12 @@ fn slack_message(out: &AnalysisOutput, chunk: &[&Alert], total: usize) -> Value 
         "type": "header",
         "text": {"type": "plain_text", "text": truncate(&heading, 150)},
     })];
+    if let Some(b) = &out.summary.noise_budget {
+        blocks.push(json!({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": slack_escape(&b.headline())}],
+        }));
+    }
     for a in chunk {
         let (head, meta) = alert_line_parts(a);
         blocks.push(json!({
@@ -727,6 +733,15 @@ fn teams_message(out: &AnalysisOutput, chunk: &[&Alert], total: usize) -> Value 
         "size": "Medium",
         "wrap": true,
     })];
+    if let Some(b) = &out.summary.noise_budget {
+        body.push(json!({
+            "type": "TextBlock",
+            "text": teams_escape(&b.headline()),
+            "isSubtle": true,
+            "wrap": true,
+            "spacing": "None",
+        }));
+    }
     for a in chunk {
         let (head, meta) = alert_line_parts(a);
         let color = match a.band {
@@ -1861,6 +1876,31 @@ mod tests {
             "a capture title must not ping a channel"
         );
         assert!(body.contains("&lt;!channel&gt;"));
+    }
+
+    #[test]
+    fn digests_carry_the_noise_budget_line() {
+        let mut out = output();
+        let alerts: Vec<&Alert> = out.summary.alerts.iter().collect();
+        let p = build_payloads(&out, &dest(DestinationKind::Slack), &alerts, 0);
+        assert!(!p[0].body.contains("saved"), "no budget, no line");
+        crate::noise::refresh_noise_budget(&mut out.summary);
+        let line = out.summary.noise_budget.as_ref().unwrap().headline();
+        let alerts: Vec<&Alert> = out.summary.alerts.iter().collect();
+        let slack: Value = serde_json::from_str(
+            &build_payloads(&out, &dest(DestinationKind::Slack), &alerts, 0)[0].body,
+        )
+        .unwrap();
+        assert_eq!(slack["blocks"][1]["type"], "context");
+        assert_eq!(slack["blocks"][1]["elements"][0]["text"], line.as_str());
+        let teams: Value = serde_json::from_str(
+            &build_payloads(&out, &dest(DestinationKind::Teams), &alerts, 0)[0].body,
+        )
+        .unwrap();
+        assert_eq!(
+            teams["attachments"][0]["content"]["body"][1]["text"],
+            line.as_str()
+        );
     }
 
     #[test]

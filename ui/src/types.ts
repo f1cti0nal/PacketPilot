@@ -134,6 +134,9 @@ export interface Summary {
   /** Environment rarity: what is new to the whole network and what only one host does; absent
    * when there were no internal-host sightings and no baseline, and in older summaries. */
   rarity?: RarityReport;
+  /** Noise budget: packets to flows to stories and the review time that saved (an estimate);
+   * absent in older summaries. */
+  noise_budget?: NoiseBudget;
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -1285,3 +1288,25 @@ export interface FlowsState {
 }
 
 export interface AiSummaryEntry { text: string; model: string; cached_at: number; }
+
+/** Minutes an analyst spends per unit of review (the engine's `ReviewRates`). */
+export interface ReviewRates {
+  version: number;
+  minutes_per_1k_flows: number;
+  minutes_per_finding: number;
+  minutes_per_story: number;
+}
+
+/** The engine's `NoiseBudget`: exact counts plus the time-saved estimate and its rates. */
+export interface NoiseBudget {
+  packets: number;
+  flows: number;
+  findings: number;
+  suppressed: number;
+  stories: number;
+  urgent: number;
+  manual_minutes: number;
+  queue_minutes: number;
+  saved_minutes: number;
+  rates: ReviewRates;
+}

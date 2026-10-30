@@ -8,7 +8,7 @@
 //! is now fully wired to the engine (analyze / gen / init-db). The CLI signatures must not
 //! change.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, Context};
@@ -163,6 +163,11 @@ pub enum Command {
         /// Write the `--zeek` logs as Zeek JSON (one object per line) instead of tab-separated.
         #[arg(long = "zeek-json", requires = "zeek")]
         zeek_json: bool,
+        /// Noise budget: the team's review-time rates (`review-rates.json`, version 1) for the
+        /// "time saved" estimate. Fields left out keep the defaults (5 min per 1k flows, 10 per
+        /// finding, 15 per story). The rates are carried in the JSON so later re-derives keep them.
+        #[arg(long = "review-rates", conflicts_with = "batch")]
+        review_rates: Option<PathBuf>,
         /// Match these YARA rules over every carved file; each match is a finding. Repeatable.
         /// Rules using features outside the supported subset (regex, modules, `for` loops) are
         /// listed and skipped.
@@ -685,6 +690,27 @@ fn load_suppression_rules(
     Ok(loaded.active)
 }
 
+/// Read and check a `review-rates.json`.
+fn load_review_rates(path: &Path) -> anyhow::Result<ppcap_core::ReviewRates> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("read review rates {}", path.display()))?;
+    ppcap_core::parse_review_rates(&text).map_err(|problems| {
+        anyhow::anyhow!(
+            "review rates {} has problems:\n  {}",
+            path.display(),
+            problems.join("\n  ")
+        )
+    })
+}
+
+/// `noise budget: 4.2M packets → 61k flows → 9 stories, about 6 h saved (estimate)`.
+fn noise_budget_line(summary: &ppcap_core::Summary) -> Option<String> {
+    summary
+        .noise_budget
+        .as_ref()
+        .map(|b| format!("noise budget: {}\n  {}", b.headline(), b.explain()))
+}
+
 /// `suppressions: 4 findings hidden by 2 rules, 1 kept by guardrails (threat_intel)`.
 fn suppression_summary_line(summary: &ppcap_core::Summary) -> String {
     use ppcap_core::model::SuppressionOutcome;
@@ -1153,6 +1179,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             eve,
             zeek,
             zeek_json,
+            review_rates,
             yara,
         } => {
             // Batch / case mode: fan the pipeline over a folder into a ranked case index. Single-
@@ -1508,6 +1535,14 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             // rules, suppressions) so the counts match the JSON that follows.
             if !quiet && !out.summary.alerts.is_empty() {
                 eprintln!("{}", alerts_summary_line(&out.summary));
+            }
+            if let Some(path) = review_rates.as_deref() {
+                ppcap_core::apply_review_rates(&mut out.summary, load_review_rates(path)?);
+            }
+            if !quiet {
+                if let Some(line) = noise_budget_line(&out.summary) {
+                    eprintln!("{line}");
+                }
             }
 
             // notice.log carries every finding, so the logs close after the passes that add them.
@@ -2182,6 +2217,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 eprintln!("alerts: none — no findings rose above informational");
             } else {
                 eprintln!("{}", alerts_summary_line(&out.summary));
+                if let Some(line) = noise_budget_line(&out.summary) {
+                    eprintln!("{line}");
+                }
                 for (i, a) in out.summary.alerts.iter().enumerate() {
                     eprintln!(
                         "  {:>2}. [{:<11} {:>3}/100 conf {:>3}%] {}",
@@ -3168,6 +3206,32 @@ mod reputation_cli_tests {
         assert_eq!(one[0].alert_id, id);
         let err = run(&["--alert", "alert:nope"]).unwrap_err().to_string();
         assert!(err.contains("alert:nope"), "{err}");
+    }
+
+    #[test]
+    fn review_rates_file_and_noise_budget_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = dir.path().join("review-rates.json");
+        std::fs::write(&good, r#"{"version":1,"minutes_per_story":5}"#).unwrap();
+        let rates = load_review_rates(&good).unwrap();
+        assert_eq!(rates.minutes_per_story, 5.0);
+        let bad = dir.path().join("bad.json");
+        std::fs::write(&bad, r#"{"version":1,"minutes_per_finding":-2}"#).unwrap();
+        let err = format!("{:#}", load_review_rates(&bad).unwrap_err());
+        assert!(err.contains("minutes_per_finding"), "{err}");
+
+        let mut summary = ppcap_core::Summary::empty();
+        assert!(noise_budget_line(&summary).is_none());
+        summary.total_packets = 12_000;
+        summary.total_flows = 3_000;
+        ppcap_core::refresh_alerts(&mut summary);
+        ppcap_core::apply_review_rates(&mut summary, rates);
+        let line = noise_budget_line(&summary).unwrap();
+        assert!(
+            line.starts_with("noise budget: 12k packets → 3k flows → 0 stories"),
+            "{line}"
+        );
+        assert!(line.contains("(5 min per story)"), "{line}");
     }
 
     #[test]

@@ -433,6 +433,7 @@ pub fn refresh_alerts(summary: &mut Summary) {
     summary.suppressions = super::suppress::match_suppressions(summary);
     summary.alerts = derive_alerts(summary);
     summary.timelines = super::timeline::derive_timelines(summary);
+    crate::noise::refresh_noise_budget(summary);
 }
 
 /// The queue's total order: priority desc, severity desc, tier asc, first-seen asc

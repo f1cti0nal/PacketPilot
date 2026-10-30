@@ -52,6 +52,7 @@ pub mod gen;
 pub mod identity;
 pub mod metrics;
 pub mod model;
+pub mod noise;
 pub mod packets;
 pub mod playbook;
 pub(crate) mod quic;
@@ -146,6 +147,7 @@ pub use model::timeline::{
     AlertTimeline, DnsAnswer, FirstContact, PacketScope, TimelineContext, TimelineEvent,
     TimelineEventKind,
 };
+pub use noise::{apply_review_rates, noise_budget, parse_review_rates, NoiseBudget, ReviewRates};
 pub use packets::{
     carve_pcap, decrypt_capture, decrypt_tls_flow, extract_flow_packets, CarveQuery, CarveResult,
     CarveTarget, DecryptedFlow, FlowPackets, KeylogCaps, KeylogReport, PacketCaps, PacketQuery,

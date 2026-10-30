@@ -9,6 +9,7 @@ import { humanBytes, humanNumber } from "../lib/format";
 import { sevColor } from "../cockpit/viz";
 import { Panel, ScoreBar, IocDot, MitreTag, ProvenanceChip, Tag } from "../cockpit/primitives";
 import { KpiCluster } from "../cockpit/KpiCluster";
+import { NoiseBudgetMeter } from "../cockpit/NoiseBudgetMeter";
 import { IncidentHero } from "../cockpit/IncidentHero";
 import { AttackChainCard } from "../cockpit/AttackChainCard";
 import { DetailFlyout } from "../cockpit/DetailFlyout";
@@ -70,6 +71,8 @@ export interface DashboardProps {
   aiModel?: string;
   /** When false the per-host PCAP carve button is hidden. Defaults to true (always on now). */
   pcapExport?: boolean;
+  /** Open the alert queue (the noise budget's "stories" step). */
+  onOpenAlerts?: () => void;
 }
 
 const worstFirst = (
@@ -92,6 +95,7 @@ export function Dashboard({
   aiGate = "on",
   aiModel = "",
   pcapExport = true,
+  onOpenAlerts,
 }: DashboardProps) {
   const s = output.summary;
 
@@ -147,6 +151,13 @@ export function Dashboard({
       <div className="mx-auto flex max-w-[1600px] flex-col gap-[var(--density-gap)] p-2">
         {/* Zone 1 — instrument-cluster KPIs + incident verdict + context ring */}
         <KpiCluster output={output} />
+        {s.noise_budget && (
+          <NoiseBudgetMeter
+            budget={s.noise_budget}
+            onFlows={onJumpToFlows ? () => onJumpToFlows({}) : undefined}
+            onStories={onOpenAlerts}
+          />
+        )}
         {aiGate === "on" && (
           <AiSummaryCard output={output} captureId={captureKey(output)} model={aiModel} />
         )}

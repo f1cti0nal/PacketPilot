@@ -517,6 +517,11 @@ pub struct Summary {
     /// was loaded. `#[serde(default)]` keeps older summaries readable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rarity: Option<crate::rarity::RarityReport>,
+    /// Noise budget: packets to flows to stories, and the review time that saved (an estimate
+    /// from the carried rates). Re-derived with the alert queue. `#[serde(default)]` keeps older
+    /// summaries readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise_budget: Option<crate::noise::NoiseBudget>,
 }
 
 /// Serde fallback for [`Summary::time_bucket_secs`] on summaries written before the field
@@ -572,6 +577,7 @@ impl Summary {
             timeline_context: Default::default(),
             timelines: Vec::new(),
             rarity: None,
+            noise_budget: None,
         }
     }
 

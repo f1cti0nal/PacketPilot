@@ -1704,6 +1704,7 @@ impl StatsAccumulator {
             timeline_context: Default::default(),
             timelines: Vec::new(),
             rarity: None,
+            noise_budget: None,
         }
     }
 

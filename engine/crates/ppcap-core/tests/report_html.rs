@@ -465,3 +465,18 @@ fn incident_timeline_section_lists_rows_with_packet_filters_escaped() {
     // The DNS answer precedes the beacon it explains.
     assert!(section.find("DNS answer").unwrap() < section.find("beacon &lt;b&gt;").unwrap());
 }
+
+/// The noise budget line leads the executive summary, with the formula behind its estimate; an
+/// older summary without one renders no line.
+#[test]
+fn renders_noise_budget_in_executive_summary() {
+    let html = render_html(&sample(), 1_700_000_000, None);
+    assert!(!html.contains("Noise budget"));
+    let mut out = sample();
+    ppcap_core::refresh_alerts(&mut out.summary);
+    let html = render_html(&out, 1_700_000_000, None);
+    let at = html.find("Noise budget:").expect("noise budget line");
+    assert!(at > html.find("<h2>Executive summary</h2>").unwrap());
+    assert!(html[at..].contains("123k packets → 42 flows → "));
+    assert!(html[at..].contains("min per story"));
+}
