@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ActiveSource,
   AlertTimeline,
@@ -15,6 +15,10 @@ import type {
   FlowsState,
   TabId,
   TeachScope,
+  Alert,
+  PlaybookProgress,
+  PlaybookRun,
+  RenderedPivot,
 } from "./types";
 import { loadSummary, loadFlows } from "./lib/data";
 import { basename } from "./lib/format";
@@ -82,7 +86,12 @@ import {
   applyDomainReputationWasm,
   applySuppressionsWasm,
   teachAlertWasm,
+  alertPlaybooksWasm,
+  builtinPlaybooksWasm,
+  lintPlaybooksWasm,
+  playbookMarkdownWasm,
 } from "./lib/wasmEngine";
+import { loadProgress, loadTeamPlaybooks, saveProgress, saveTeamPlaybooks } from "./lib/playbooks";
 import {
   DEFAULT_RULE_TTL_DAYS,
   addSuppressionRules,
@@ -897,6 +906,78 @@ export function App() {
     downloadText(exportSuppressions(), "suppressions.json", "application/json");
   }, []);
 
+  // Guided hunt playbooks: the team file (checked by the engine before it is stored), per-capture
+  // checklist progress, and the pivots each step hands over (flows, query, packets, timeline).
+  const [teamPlaybooks, setTeamPlaybooks] = useState<string | null>(() => loadTeamPlaybooks());
+  const [playbookNotice, setPlaybookNotice] = useState<string | null>(null);
+  const [querySql, setQuerySql] = useState<{ sql: string; nonce: number } | null>(null);
+  const teamPlaybookCount = useMemo(() => {
+    if (!teamPlaybooks) return null;
+    try {
+      const n = (JSON.parse(teamPlaybooks) as { playbooks?: unknown[] }).playbooks?.length;
+      return typeof n === "number" ? n : 0;
+    } catch {
+      return 0;
+    }
+  }, [teamPlaybooks]);
+  const huntCaptureKey =
+    summary.status === "ready" && summary.data ? (repCaptureKey(summary.data) ?? "unsaved") : "unsaved";
+  const loadAlertPlaybooks = useCallback(
+    (alert: Alert) => {
+      const data = summaryDataRef.current;
+      if (!data) return Promise.resolve([]);
+      return alertPlaybooksWasm(data.summary, alert, teamPlaybooks);
+    },
+    [teamPlaybooks],
+  );
+  const followPivot = useCallback(
+    (pivot: RenderedPivot, alert: Alert) => {
+      const value = pivot.value ?? "";
+      if (pivot.target === "flows") {
+        jumpToFlows({ query: value });
+      } else if (pivot.target === "sql") {
+        setQuerySql({ sql: value, nonce: Date.now() });
+        setTab("query");
+      } else if (pivot.target === "timeline") {
+        setFocusTimelineId(alert.id);
+        setTimelineNotice(null);
+        setTab("timeline");
+      } else if (pivot.scope && packetsAvailable(activeSource)) {
+        const sc = pivot.scope;
+        const name = `hunt_${[sc.host, sc.peer, sc.port != null ? `p${sc.port}` : null].filter(Boolean).join("_")}.pcap`;
+        void carveSubPcap(carveQueryFor(sc), activeSource, name.replace(/[^A-Za-z0-9._-]/g, "-")).then((res) =>
+          setRuleNotice(res.message || null),
+        );
+      } else {
+        void navigator.clipboard?.writeText(value);
+        setRuleNotice(`Capture filter copied: ${value}`);
+      }
+    },
+    [activeSource, jumpToFlows],
+  );
+  const exportHuntChecklist = useCallback(async (runs: PlaybookRun[], progress: PlaybookProgress) => {
+    const md = await playbookMarkdownWasm(runs, progress);
+    const id = (runs[0]?.alert_id ?? "alert").replace(/^alert:/, "");
+    downloadText(md, `hunt-${id}.md`, "text/markdown");
+  }, []);
+  const importTeamPlaybooks = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const lint = await lintPlaybooksWasm(text);
+      if (!lint.ok) {
+        setPlaybookNotice(`Not loaded. ${lint.problems.length} problem(s):\n${lint.problems.join("\n")}`);
+        return;
+      }
+      saveTeamPlaybooks(text);
+      setTeamPlaybooks(text);
+      setPlaybookNotice(
+        [`Loaded ${lint.playbooks} team playbook${lint.playbooks === 1 ? "" : "s"}.`, ...lint.warnings].join("\n"),
+      );
+    } catch (e) {
+      setPlaybookNotice(e instanceof Error ? e.message : "Failed to import playbooks");
+    }
+  }, []);
+
   return (
     <>
     <AnnouncementBanner banner={announcement_banner} />
@@ -979,6 +1060,28 @@ export function App() {
           onRemoveRule={removeSuppressionRule}
           onImportRules={(f) => void importSuppressionFile(f)}
           onExportRules={exportSuppressionFile}
+          hunt={{
+            loadRuns: loadAlertPlaybooks,
+            loadProgress: (id) => loadProgress(huntCaptureKey, id),
+            saveProgress: (id, p) => saveProgress(huntCaptureKey, id, p),
+            onPivot: followPivot,
+            onExport: (runs, p) => void exportHuntChecklist(runs, p),
+          }}
+          playbooks={{
+            teamCount: teamPlaybookCount,
+            notice: playbookNotice,
+            onImport: (f) => void importTeamPlaybooks(f),
+            onDownloadBuiltin: () =>
+              void builtinPlaybooksWasm().then((t) => downloadText(t, "playbooks.json", "application/json")),
+            onDownloadTeam: teamPlaybooks
+              ? () => downloadText(teamPlaybooks, "playbooks.json", "application/json")
+              : undefined,
+            onRemove: () => {
+              saveTeamPlaybooks(null);
+              setTeamPlaybooks(null);
+              setPlaybookNotice("Team playbooks removed; using the built-ins.");
+            },
+          }}
         />
       ) : tab === "flows" ? (
         <FlowsView
@@ -989,7 +1092,7 @@ export function App() {
           onClearFlowIdFilter={() => setQueryFlowIds(null)}
         />
       ) : tab === "query" ? (
-        <QueryView state={flows} onOpenInFlows={openQueryResultInFlows} aiOn={aiOn} aiModel={aiModel} />
+        <QueryView state={flows} onOpenInFlows={openQueryResultInFlows} aiOn={aiOn} aiModel={aiModel} initialSql={querySql} />
       ) : tab === "findings" ? (
         <FindingsView
           findings={summary.status === "ready" ? summary.data?.summary.findings ?? [] : []}

@@ -2,6 +2,14 @@
 /* eslint-disable */
 
 /**
+ * Guided hunt playbooks for one alert, rendered with its values. `slice_json` is
+ * `{ findings, resolved_ips, carved_files, first_ts_ns, last_ts_ns }` from the summary,
+ * `alert_json` the alert, and `team_json` a team playbook file (`""` for the built-ins only).
+ * Returns `PlaybookRun[]`. Pure + offline.
+ */
+export function alert_playbooks(slice_json: string, alert_json: string, team_json: string): string;
+
+/**
  * Analyze a raw capture (`.pcap`/`.pcapng`) held entirely in memory.
  *
  * `bytes` is the capture file; `name` becomes the reported `source_path`. Returns a JSON
@@ -53,6 +61,11 @@ export function apply_suppressions(output_json: string, rules_json: string, toda
  * device; identical to the native `analyze --update-baseline`.
  */
 export function build_baseline(output_json: string, prior_baseline_json: string | null | undefined, analyzed_unix_secs: bigint): string;
+
+/**
+ * The built-in playbook file (a team's starting point).
+ */
+export function builtin_playbooks(): string;
 
 /**
  * Re-read `bytes` (a raw `.pcap`/`.pcapng` file) and carve out frames matching `query_json`
@@ -126,6 +139,17 @@ export function export_timeline(timelines_json: string, format: string): string;
 export function extract_packets(bytes: Uint8Array, query_json: string, caps_json: string): string;
 
 /**
+ * Check a team playbook file. Returns `{ ok, playbooks, problems, warnings }`.
+ */
+export function lint_playbooks(text: string): string;
+
+/**
+ * Rendered playbook runs as a Markdown checklist; `progress_json` is `{ done: [key], notes:
+ * { key: text } }` with keys `"{playbook_id}/{step_id}"` (`""` for none).
+ */
+export function playbook_markdown(runs_json: string, progress_json: string): string;
+
+/**
  * Render the full HTML triage report for `output_json` (browser parity with the desktop `save_report`).
  */
 export function render_report(output_json: string, generated_unix_secs: bigint, ai_summary?: string | null): string;
@@ -155,12 +179,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly alert_playbooks: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly analyze: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_domain_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_reputation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly apply_rules: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly apply_suppressions: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly build_baseline: (a: number, b: number, c: number, d: number, e: bigint) => [number, number, number, number];
+    readonly builtin_playbooks: () => [number, number];
     readonly carve_pcap: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly compare_to_baseline: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly decrypt_tls_flow: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
@@ -171,6 +197,8 @@ export interface InitOutput {
     readonly export_stix: (a: number, b: number, c: bigint) => [number, number, number, number];
     readonly export_timeline: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly extract_packets: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly lint_playbooks: (a: number, b: number) => [number, number];
+    readonly playbook_markdown: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly render_report: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number, number];
     readonly sanitize: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => [number, number, number, number];
     readonly teach_alert: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];

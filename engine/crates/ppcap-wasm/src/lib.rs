@@ -825,6 +825,89 @@ pub fn teach_alert(
     teach_alert_impl(output_json, alert_id, scope, meta_json).map_err(|e| JsValue::from_str(&e))
 }
 
+/// The slice of a summary hunt playbooks read (the rest of a large summary stays in JS).
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct PlaybookSlice {
+    findings: Vec<ppcap_core::Finding>,
+    resolved_ips: Vec<ppcap_core::model::summary::ResolvedDomain>,
+    carved_files: Vec<ppcap_core::model::summary::CarvedFile>,
+    first_ts_ns: Option<i64>,
+    last_ts_ns: Option<i64>,
+}
+
+fn alert_playbooks_impl(
+    slice_json: &str,
+    alert_json: &str,
+    team_json: &str,
+) -> Result<String, String> {
+    let slice: PlaybookSlice = serde_json::from_str(slice_json).map_err(|e| e.to_string())?;
+    let alert: ppcap_core::Alert = serde_json::from_str(alert_json).map_err(|e| e.to_string())?;
+    let mut set = ppcap_core::builtin_playbooks();
+    if !team_json.trim().is_empty() {
+        let (file, _) = ppcap_core::parse_playbook_file(team_json).map_err(|p| p.join("; "))?;
+        set.add_file(file, "team playbooks");
+    }
+    let mut summary = ppcap_core::Summary::empty();
+    summary.findings = slice.findings;
+    summary.resolved_ips = slice.resolved_ips;
+    summary.carved_files = slice.carved_files;
+    summary.first_ts_ns = slice.first_ts_ns;
+    summary.last_ts_ns = slice.last_ts_ns;
+    let runs = ppcap_core::runs_for_alert(&summary, &alert, &set);
+    serde_json::to_string(&runs).map_err(|e| e.to_string())
+}
+
+/// Guided hunt playbooks for one alert, rendered with its values. `slice_json` is
+/// `{ findings, resolved_ips, carved_files, first_ts_ns, last_ts_ns }` from the summary,
+/// `alert_json` the alert, and `team_json` a team playbook file (`""` for the built-ins only).
+/// Returns `PlaybookRun[]`. Pure + offline.
+#[wasm_bindgen]
+pub fn alert_playbooks(
+    slice_json: &str,
+    alert_json: &str,
+    team_json: &str,
+) -> Result<String, JsValue> {
+    alert_playbooks_impl(slice_json, alert_json, team_json).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Rendered playbook runs as a Markdown checklist; `progress_json` is `{ done: [key], notes:
+/// { key: text } }` with keys `"{playbook_id}/{step_id}"` (`""` for none).
+#[wasm_bindgen]
+pub fn playbook_markdown(runs_json: &str, progress_json: &str) -> Result<String, JsValue> {
+    let runs: Vec<ppcap_core::PlaybookRun> =
+        serde_json::from_str(runs_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let progress: Option<ppcap_core::PlaybookProgress> = if progress_json.trim().is_empty() {
+        None
+    } else {
+        Some(serde_json::from_str(progress_json).map_err(|e| JsValue::from_str(&e.to_string()))?)
+    };
+    Ok(ppcap_core::render_playbook_markdown(
+        &runs,
+        progress.as_ref(),
+    ))
+}
+
+/// Check a team playbook file. Returns `{ ok, playbooks, problems, warnings }`.
+#[wasm_bindgen]
+pub fn lint_playbooks(text: &str) -> String {
+    let v = match ppcap_core::parse_playbook_file(text) {
+        Ok((f, warnings)) => serde_json::json!({
+            "ok": true, "playbooks": f.playbooks.len(), "problems": [], "warnings": warnings,
+        }),
+        Err(problems) => serde_json::json!({
+            "ok": false, "playbooks": 0, "problems": problems, "warnings": [],
+        }),
+    };
+    v.to_string()
+}
+
+/// The built-in playbook file (a team's starting point).
+#[wasm_bindgen]
+pub fn builtin_playbooks() -> String {
+    ppcap_core::builtin_playbooks_json().to_string()
+}
+
 /// Apply VirusTotal domain reputation verdicts to a completed analysis. `output_json` is the
 /// `AnalysisOutput`; `verdicts_json` is `{ "<host>": [ReputationVerdict, ...], ... }`. Pure +
 /// network-free — identical to native callers.

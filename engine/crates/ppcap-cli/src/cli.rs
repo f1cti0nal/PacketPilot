@@ -322,6 +322,13 @@ pub enum Command {
         #[command(subcommand)]
         action: SuppressAction,
     },
+    /// Guided hunt playbooks: a step-by-step checklist per alert type, with every pivot (SQL,
+    /// flow filter, capture filter) already filled in from the alert. Teams override or extend
+    /// the built-in set with plain JSON files, safe to commit and share.
+    Playbook {
+        #[command(subcommand)]
+        action: PlaybookAction,
+    },
     /// Evidence: verify a sealed chain-of-custody manifest — recompute the seal, then re-hash
     /// the source capture and every recorded artifact, reporting intact / missing / modified.
     Verify {
@@ -349,6 +356,9 @@ pub enum Command {
         /// duplicate id). For a summary they replace the rules it carries.
         #[arg(long = "suppress")]
         suppress: Vec<PathBuf>,
+        /// Team hunt playbook files for `get_playbook`, applied over the built-ins (repeatable).
+        #[arg(long = "playbooks")]
+        playbooks: Vec<PathBuf>,
         /// Offer `carve_pcap`, which writes carved pcaps into this directory (and nowhere else).
         /// Without it the server never writes a file.
         #[arg(long = "allow-write")]
@@ -434,6 +444,49 @@ pub enum Command {
         #[arg(long)]
         case_dir: Option<String>,
     },
+}
+
+/// `ppcap playbook` sub-actions.
+#[derive(Subcommand, Debug)]
+pub enum PlaybookAction {
+    /// List the active playbooks and the alert kinds each covers.
+    List {
+        /// Team playbook files, applied over the built-ins in order (same id replaces; for each
+        /// alert kind the last playbook naming it wins). Repeatable.
+        #[arg(long = "playbooks")]
+        playbooks: Vec<PathBuf>,
+    },
+    /// Print the hunt checklist for the alerts of an analyzed capture.
+    Show {
+        /// The analysis-output JSON (from `analyze --json`).
+        summary: PathBuf,
+        /// Only these alert id(s) (`alert:…`, as printed by `ppcap alerts`). Repeatable;
+        /// default: every alert, in queue order.
+        #[arg(long = "alert")]
+        alerts: Vec<String>,
+        /// Team playbook files (see `ppcap playbook list`). Repeatable.
+        #[arg(long = "playbooks")]
+        playbooks: Vec<PathBuf>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = PlaybookFormat::Markdown)]
+        format: PlaybookFormat,
+        /// Write here instead of stdout ("-" => stdout).
+        #[arg(long)]
+        out: Option<String>,
+    },
+    /// Check a team playbook file: format version, ids, placeholders and SQL pivots.
+    Lint { file: PathBuf },
+    /// Print the built-in playbook file: the starting point for a team's own copy.
+    Builtin,
+}
+
+/// `--format` values for `ppcap playbook show`.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaybookFormat {
+    /// A Markdown checklist (paste into case notes or a ticket).
+    Markdown,
+    /// The rendered playbooks as JSON.
+    Json,
 }
 
 /// `ppcap suppress` sub-actions: teach, list and test analyst suppression rule files.
@@ -675,15 +728,18 @@ fn suppression_summary_line(summary: &ppcap_core::Summary) -> String {
 }
 
 /// `ppcap mcp`: load every input, then serve MCP on stdin/stdout until the client hangs up.
+#[allow(clippy::too_many_arguments)]
 fn dispatch_mcp(
     inputs: &[PathBuf],
     threat_feed: Option<PathBuf>,
     suppress: &[PathBuf],
+    playbooks: &[PathBuf],
     allow_write: Option<PathBuf>,
     online: bool,
     max_response_bytes: usize,
     quiet: bool,
 ) -> anyhow::Result<()> {
+    let playbooks = load_playbooks(playbooks)?;
     // Load the feed up front so a typo fails before any (possibly long) analysis.
     let feed = match threat_feed.as_ref() {
         Some(p) => ppcap_core::ThreatFeed::load(p)
@@ -736,6 +792,7 @@ fn dispatch_mcp(
             allow_write,
             online,
             max_response_bytes,
+            playbooks: Some(playbooks),
         },
     );
     if !quiet {
@@ -922,6 +979,126 @@ pub fn run() -> ExitCode {
 /// human context to typed core errors.
 /// The timelines `ppcap timeline` prints: every one, or exactly the requested alert ids (in the
 /// order asked). An unknown id is an error naming it, so a typo never prints a silent subset.
+/// The built-in playbooks with `files` applied over them in order.
+pub fn load_playbooks(files: &[PathBuf]) -> anyhow::Result<ppcap_core::PlaybookSet> {
+    let mut set = ppcap_core::builtin_playbooks();
+    for path in files {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("read playbook file {}", path.display()))?;
+        let (file, warnings) = ppcap_core::parse_playbook_file(&text).map_err(|problems| {
+            anyhow::anyhow!(
+                "playbook file {} has problems:\n  {}",
+                path.display(),
+                problems.join("\n  ")
+            )
+        })?;
+        for w in warnings {
+            eprintln!("playbook: {}: {w}", path.display());
+        }
+        let origin = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        set.add_file(file, &origin);
+    }
+    Ok(set)
+}
+
+fn dispatch_playbook(action: PlaybookAction) -> anyhow::Result<()> {
+    match action {
+        PlaybookAction::List { playbooks } => {
+            let set = load_playbooks(&playbooks)?;
+            for p in &set.playbooks {
+                let kinds: Vec<&str> = p.kinds.iter().map(|k| k.as_str()).collect();
+                println!(
+                    "{:<24} {:<44} {} step(s)  [{}]  {}",
+                    p.id,
+                    p.title,
+                    p.steps.len(),
+                    p.origin.as_deref().unwrap_or("built-in"),
+                    if kinds.is_empty() {
+                        "fallback".to_string()
+                    } else {
+                        kinds.join(", ")
+                    }
+                );
+            }
+            Ok(())
+        }
+        PlaybookAction::Show {
+            summary,
+            alerts,
+            playbooks,
+            format,
+            out,
+        } => {
+            let set = load_playbooks(&playbooks)?;
+            let text = std::fs::read_to_string(&summary)
+                .with_context(|| format!("read analysis output {}", summary.display()))?;
+            let mut analysis: ppcap_core::AnalysisOutput = serde_json::from_str(&text)
+                .with_context(|| format!("parse analysis output {}", summary.display()))?;
+            ppcap_core::refresh_alerts(&mut analysis.summary);
+            let s = &analysis.summary;
+            let mut runs = Vec::new();
+            if alerts.is_empty() {
+                for a in &s.alerts {
+                    runs.extend(ppcap_core::runs_for_alert(s, a, &set));
+                }
+            } else {
+                for id in &alerts {
+                    runs.extend(ppcap_core::runs_for_alert_id(s, id, &set).ok_or_else(|| {
+                        anyhow::anyhow!("no alert {id} in this analysis (see `ppcap alerts`)")
+                    })?);
+                }
+            }
+            if runs.is_empty() {
+                eprintln!("playbook: no alerts — nothing to hunt");
+            }
+            let rendered = match format {
+                PlaybookFormat::Markdown => ppcap_core::render_playbook_markdown(&runs, None),
+                PlaybookFormat::Json => serde_json::to_string_pretty(&runs)? + "\n",
+            };
+            match out.as_deref() {
+                None | Some("-") => print!("{rendered}"),
+                Some(p) => {
+                    std::fs::write(p, &rendered)
+                        .with_context(|| format!("write playbooks to {p}"))?;
+                    eprintln!("playbook: {} checklist(s) written to {p}", runs.len());
+                }
+            }
+            Ok(())
+        }
+        PlaybookAction::Lint { file } => {
+            let text = std::fs::read_to_string(&file)
+                .with_context(|| format!("read playbook file {}", file.display()))?;
+            match ppcap_core::parse_playbook_file(&text) {
+                Ok((f, warnings)) => {
+                    for w in &warnings {
+                        println!("warning: {w}");
+                    }
+                    println!(
+                        "{}: ok, {} playbook(s), {} warning(s)",
+                        file.display(),
+                        f.playbooks.len(),
+                        warnings.len()
+                    );
+                    Ok(())
+                }
+                Err(problems) => {
+                    for p in &problems {
+                        println!("problem: {p}");
+                    }
+                    anyhow::bail!("{}: {} problem(s)", file.display(), problems.len())
+                }
+            }
+        }
+        PlaybookAction::Builtin => {
+            print!("{}", ppcap_core::builtin_playbooks_json());
+            Ok(())
+        }
+    }
+}
+
 fn select_timelines(
     all: &[ppcap_core::AlertTimeline],
     ids: &[String],
@@ -1701,6 +1878,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
         Command::Suppress { action } => dispatch_suppress(action),
+        Command::Playbook { action } => dispatch_playbook(action),
         Command::Baseline { action } => match action {
             BaselineAction::Show { baseline, json } => {
                 let text = std::fs::read_to_string(&baseline)
@@ -1892,6 +2070,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             inputs,
             threat_feed,
             suppress,
+            playbooks,
             allow_write,
             online,
             max_response_bytes,
@@ -1900,6 +2079,7 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
             &inputs,
             threat_feed,
             &suppress,
+            &playbooks,
             allow_write,
             online,
             max_response_bytes,
@@ -2988,6 +3168,81 @@ mod reputation_cli_tests {
         assert_eq!(one[0].alert_id, id);
         let err = run(&["--alert", "alert:nope"]).unwrap_err().to_string();
         assert!(err.contains("alert:nope"), "{err}");
+    }
+
+    #[test]
+    fn playbook_show_lint_and_team_files() {
+        let mut summary = ppcap_core::Summary::empty();
+        summary.findings = vec![ppcap_core::Finding {
+            kind: ppcap_core::FindingKind::Beacon,
+            severity: ppcap_core::Severity::High,
+            score: 75,
+            title: "beacon: 10.0.0.7".to_string(),
+            src_ip: "10.0.0.7".to_string(),
+            dst_ip: Some("45.77.13.37".to_string()),
+            dst_port: Some(443),
+            attack: vec!["T1071".to_string()],
+            evidence: vec!["every 30s".to_string()],
+            interval_ns: None,
+            jitter_cv: None,
+            contacts: None,
+            first_seen_ns: Some(1_700_000_000_000_000_000),
+            last_seen_ns: Some(1_700_000_060_000_000_000),
+            victims: Vec::new(),
+        }];
+        let out = ppcap_core::AnalysisOutput {
+            summary,
+            ..Default::default()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.json");
+        std::fs::write(&input, out.to_json_pretty().unwrap()).unwrap();
+        let team = dir.path().join("team.json");
+        std::fs::write(
+            &team,
+            r#"{"version":1,"playbooks":[{"id":"ours","title":"Our beacon list","kinds":["beacon"],
+               "steps":[{"id":"t","question":"Ticket {actor}","why":"Policy."}]}]}"#,
+        )
+        .unwrap();
+        let dest = dir.path().join("out.md");
+        let run = |args: &[&str]| -> anyhow::Result<String> {
+            let mut argv = vec!["ppcap", "playbook", "show", input.to_str().unwrap()];
+            argv.extend_from_slice(args);
+            argv.extend_from_slice(&["--out", dest.to_str().unwrap()]);
+            dispatch(Cli::try_parse_from(argv).unwrap())?;
+            Ok(std::fs::read_to_string(&dest).unwrap())
+        };
+        let md = run(&[]).unwrap();
+        assert!(md.contains("## Command and control channel"), "{md}");
+        assert!(md.contains("dst_ip = '45.77.13.37'"));
+        let json: Vec<ppcap_core::PlaybookRun> =
+            serde_json::from_str(&run(&["--format", "json"]).unwrap()).unwrap();
+        assert_eq!(json[0].playbook_id, "c2-channel");
+        let md = run(&["--playbooks", team.to_str().unwrap()]).unwrap();
+        assert!(md.contains("## Our beacon list"));
+        assert!(md.contains("**Ticket 10.0.0.7**"));
+        assert!(md.contains("_Playbook from team.json_"));
+        let err = run(&["--alert", "alert:nope"]).unwrap_err().to_string();
+        assert!(err.contains("alert:nope"), "{err}");
+
+        let lint = |path: &std::path::Path| {
+            dispatch(
+                Cli::try_parse_from(["ppcap", "playbook", "lint", path.to_str().unwrap()]).unwrap(),
+            )
+        };
+        lint(&team).unwrap();
+        let bad = dir.path().join("bad.json");
+        std::fs::write(
+            &bad,
+            r#"{"version":1,"playbooks":[{"id":"x","title":"X","kinds":["beacon"],
+            "steps":[{"id":"s","question":"Who is {attacker}","why":""}]}]}"#,
+        )
+        .unwrap();
+        assert!(lint(&bad).unwrap_err().to_string().contains("1 problem"));
+        let err = run(&["--playbooks", bad.to_str().unwrap()])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown placeholder {attacker}"), "{err}");
     }
 
     #[test]

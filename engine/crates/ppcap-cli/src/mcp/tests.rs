@@ -218,6 +218,30 @@ fn alerts_drill_down_with_findings_and_timeline() {
 }
 
 #[test]
+fn get_playbook_fills_the_checklist_for_an_alert() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = server_with(dir.path(), None);
+    let list = ok(&mut s, "list_alerts", json!({}));
+    let id = list["alerts"][0]["id"].as_str().unwrap().to_string();
+    let p = ok(&mut s, "get_playbook", json!({ "alert_id": id }));
+    assert_eq!(p["alert_id"], id.as_str());
+    let runs = p["playbooks"].as_array().unwrap();
+    assert!(!runs.is_empty());
+    let ids: Vec<&str> = runs
+        .iter()
+        .map(|r| r["playbook_id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&"c2-channel"), "{ids:?}");
+    // Pivots arrive filled in: the beaconing host, never a raw placeholder.
+    let text = p.to_string();
+    assert!(text.contains("10.66.0.1"));
+    assert!(!text.contains("{actor}") && !text.contains("{peer}"));
+    let (err, msg) = call(&mut s, "get_playbook", json!({ "alert_id": "alert:nope" }));
+    assert!(err);
+    assert!(msg.as_str().unwrap().contains("list_alerts"));
+}
+
+#[test]
 fn query_flows_filters_groups_and_bounds() {
     let dir = tempfile::tempdir().unwrap();
     let mut s = server_with(dir.path(), None);

@@ -611,6 +611,56 @@ export type ContextKind =
   | "encrypted_dns"
   | "new_to_network";
 
+/** Where a hunt-playbook pivot lands (engine `PivotTarget`). */
+export type PivotTarget = "flows" | "sql" | "packets" | "timeline";
+
+/** A playbook pivot with the alert's values filled in. */
+export interface RenderedPivot {
+  label: string;
+  target: PivotTarget;
+  /** Flow filter text, SQL over the `flow` table, or a capture filter; absent for timeline. */
+  value?: string;
+  /** For packets: the carve scope (host, peer, port, alert window). */
+  scope?: PacketScope | null;
+}
+
+/** What the engine already found for a step, from the alert's context. */
+export interface AutoAnswer {
+  /** false = nothing in this capture says so (not "proven clean"). */
+  found: boolean;
+  evidence: string[];
+}
+
+/** One rendered playbook step. */
+export interface PlaybookStep {
+  id: string;
+  question: string;
+  why: string;
+  normal?: string | null;
+  bad?: string | null;
+  pivots: RenderedPivot[];
+  auto?: AutoAnswer | null;
+}
+
+/** One guided hunt playbook rendered for one alert (engine `PlaybookRun`). */
+export interface PlaybookRun {
+  alert_id: string;
+  alert_title: string;
+  playbook_id: string;
+  title: string;
+  summary: string;
+  /** "built-in" or the team file it came from. */
+  origin: string;
+  kinds: FindingKind[];
+  steps: PlaybookStep[];
+}
+
+/** Analyst progress on an alert's playbooks, keyed `"{playbook_id}/{step_id}"`. */
+export interface PlaybookProgress {
+  done: string[];
+  notes: Record<string, string>;
+}
+
 /** One deterministic context fact, with an optional back-ref to its source finding. */
 export interface ContextEntry {
   kind: ContextKind;

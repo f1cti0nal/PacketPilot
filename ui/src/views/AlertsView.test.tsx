@@ -69,6 +69,66 @@ describe("AlertsView", () => {
     expect(screen.getByText(/matches the offline IOC feed/)).toBeInTheDocument();
   });
 
+  it("an expanded card shows its hunt playbook and saves progress per alert", async () => {
+    const u = userEvent.setup();
+    const saveProgress = vi.fn();
+    const loadRuns = vi.fn((a: (typeof alerts)[number]) =>
+      Promise.resolve([
+        {
+          alert_id: a.id,
+          alert_title: a.title,
+          playbook_id: "c2-channel",
+          title: "Command and control channel",
+          summary: "",
+          origin: "built-in",
+          kinds: ["beacon" as const],
+          steps: [{ id: "cadence", question: "Is the timing regular?", why: "Timers.", pivots: [] }],
+        },
+      ]),
+    );
+    render(
+      <AlertsView
+        alerts={alerts}
+        findings={findings}
+        hunt={{ loadRuns, loadProgress: () => ({ done: [], notes: {} }), saveProgress }}
+      />,
+    );
+    expect(screen.queryByText("Hunt playbook")).toBeNull();
+    await u.click(screen.getByRole("button", { name: `${alerts[0].title}, Act now` }));
+    await screen.findByText("Command and control channel");
+    expect(loadRuns).toHaveBeenCalledWith(alerts[0]);
+    await u.click(screen.getByRole("checkbox", { name: "Done: Is the timing regular?" }));
+    expect(saveProgress).toHaveBeenCalledWith(alerts[0].id, { done: ["c2-channel/cadence"], notes: {} });
+  });
+
+  it("manages the team playbook file", async () => {
+    const u = userEvent.setup();
+    const onImport = vi.fn();
+    const onDownloadBuiltin = vi.fn();
+    const onRemove = vi.fn();
+    const { rerender } = render(
+      <AlertsView alerts={alerts} findings={findings} playbooks={{ teamCount: null, onImport, onDownloadBuiltin, onRemove }} />,
+    );
+    await u.click(screen.getByRole("button", { name: "Hunt playbooks (built-in)" }));
+    await u.click(screen.getByRole("button", { name: "Download built-ins" }));
+    expect(onDownloadBuiltin).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Remove team file" })).toBeNull();
+    const file = new File(['{"version":1,"playbooks":[]}'], "team.json", { type: "application/json" });
+    await u.upload(screen.getByLabelText("Import team playbooks"), file);
+    expect(onImport).toHaveBeenCalledWith(file);
+    rerender(
+      <AlertsView
+        alerts={alerts}
+        findings={findings}
+        playbooks={{ teamCount: 2, notice: "Loaded 2 team playbooks", onImport, onDownloadBuiltin, onRemove }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Hunt playbooks (built-in + 2 from your team)" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loaded 2 team playbooks");
+    await u.click(screen.getByRole("button", { name: "Remove team file" }));
+    expect(onRemove).toHaveBeenCalled();
+  });
+
   it("member rows resolve the right finding title for each alert", async () => {
     const u = userEvent.setup();
     render(<AlertsView alerts={alerts} findings={findings} />);
