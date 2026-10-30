@@ -977,12 +977,9 @@ fn first_seen_facts(summary: &Summary, actor: &str, ext_peers: &[&str]) -> Vec<(
                 .iter()
                 .filter(|n| {
                     n.kind == IndicatorKind::Domain
-                        && (n.peers.iter().any(|l| l.peer == peer && l.host == actor)
-                            // Links overflowed: the actor named the domain and some host named
-                            // it at this address — the closest join the bounded record allows.
-                            || (n.peers_truncated
-                                && n.hosts.iter().any(|h| h == actor)
-                                && n.peers.iter().any(|l| l.peer == peer)))
+                        // Exact host/address pairs only: past the link cap a missing fact is the
+                        // safe failure, a guessed pairing would be a false one.
+                        && n.peers.iter().any(|l| l.peer == peer && l.host == actor)
                 })
                 .map(|n| n.value.clone()),
         );
@@ -1926,7 +1923,7 @@ mod tests {
     }
 
     #[test]
-    fn overflowed_peer_links_still_join_on_host_and_address() {
+    fn overflowed_peer_links_never_invent_a_host_address_pair() {
         use crate::rarity::{IndicatorKind, RarityReport};
         let mut summary = mk_summary(vec![f(
             FindingKind::Beacon,
@@ -1936,7 +1933,8 @@ mod tests {
             Some(443),
             None,
         )]);
-        // 10.0.0.9's own link fell past the cap; another host's link to the address survived.
+        // 10.0.0.9 named the domain (maybe elsewhere); only 10.0.0.1's link to this address is
+        // known. Joining the two would claim something nobody saw.
         let mut n = rare(
             IndicatorKind::Domain,
             "new.example",
@@ -1957,7 +1955,7 @@ mod tests {
             .context
             .entries
             .iter()
-            .any(|e| e.kind == ContextKind::NewToNetwork && e.text.contains("new.example")));
+            .all(|e| e.kind != ContextKind::NewToNetwork));
     }
 
     #[test]
