@@ -144,6 +144,16 @@ pub fn definitions(s: &Server) -> Vec<Value> {
             "annotations": ro("Get alert"),
         }),
         json!({
+            "name": "get_playbook",
+            "title": "Get hunt playbook",
+            "description": "The guided hunt checklist for one alert: per alert type, the questions a senior analyst would answer in order, why each matters, what normal and bad look like, what the engine already found for it, and ready pivots filled in with this alert's hosts, ports, names and time window (SQL over the flow table, a flow filter, a capture filter with its packet scope). Work the steps with query_flows and get_packets.",
+            "inputSchema": { "type": "object", "properties": {
+                "capture": cap,
+                "alert_id": { "type": "string", "description": "alert:... id from list_alerts." }
+            }, "required": ["alert_id"] },
+            "annotations": ro("Get hunt playbook"),
+        }),
+        json!({
             "name": "host_profile",
             "title": "Host profile",
             "description": "Everything known about one IP in a capture: threat score and its reasons, identity (MAC, DHCP hostname, DNS names), the alerts and findings that implicate it, TLS server posture, files it downloaded or served, and (when the flows Parquet is available) its traffic: flows, bytes, top peers and top destination ports.",
@@ -224,6 +234,7 @@ pub fn call(s: &Server, name: &str, args: &Value) -> Result<Value, String> {
         "capture_overview" => capture_overview(pick(s, args)?),
         "list_alerts" => list_alerts(pick(s, args)?, args),
         "get_alert" => get_alert(pick(s, args)?, args),
+        "get_playbook" => get_playbook(s, pick(s, args)?, args),
         "host_profile" => host_profile(pick(s, args)?, args),
         "query_flows" => {
             let c = pick(s, args)?;
@@ -491,6 +502,30 @@ fn get_alert(c: &Capture, args: &Value) -> Result<Value, String> {
         }
     }
     Ok(Value::Object(out))
+}
+
+fn get_playbook(s: &Server, c: &Capture, args: &Value) -> Result<Value, String> {
+    let id = str_arg(args, "alert_id").ok_or("alert_id is required")?;
+    let sm = &c.out.summary;
+    let alert = sm
+        .alerts
+        .iter()
+        .find(|a| a.id == id || a.id.strip_prefix("alert:") == Some(id))
+        .ok_or_else(|| format!("no alert {id} in capture {}; see list_alerts", c.id))?;
+    let builtin;
+    let set = match &s.opts.playbooks {
+        Some(set) => set,
+        None => {
+            builtin = ppcap_core::builtin_playbooks();
+            &builtin
+        }
+    };
+    let runs = ppcap_core::runs_for_alert(sm, alert, set);
+    Ok(json!({
+        "capture": c.id,
+        "alert_id": alert.id,
+        "playbooks": to_json(&runs),
+    }))
 }
 
 fn host_profile(c: &Capture, args: &Value) -> Result<Value, String> {
@@ -1202,7 +1237,7 @@ pub fn get_prompt(s: &Server, params: &Value) -> Result<Value, String> {
          2. list_alerts with min_band \"review\": the queue is already ranked and deduplicated, so \
             work top-down rather than re-ranking.\n\
          3. For each of the top alerts (at most five): get_alert, then host_profile for its actor \
-            and peer.\n\
+            and peer, then get_playbook and answer its steps in order.\n\
          4. Verify before you claim. For each key claim (beacon interval, data volume, a file \
             download, a credential or command), find the flows with query_flows and read the bytes \
             with get_packets. Say which flow_id backs each claim; if the packets do not support the \

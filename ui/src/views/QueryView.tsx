@@ -38,6 +38,8 @@ export interface QueryViewProps {
   aiOn?: boolean;
   /** Configured model name, shown in the consent dialog. */
   aiModel?: string;
+  /** SQL handed over from elsewhere (a hunt-playbook pivot); a new `nonce` loads it again. */
+  initialSql?: { sql: string; nonce: number } | null;
 }
 
 /**
@@ -71,7 +73,7 @@ const BOOT_TIMEOUT_MS = 60_000;
  * leaves the device). Phase 2 of the NLQ plan; the natural-language input
  * lands on top of this in Phase 3.
  */
-export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: QueryViewProps) {
+export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "", initialSql = null }: QueryViewProps) {
   const rows = state.rows;
 
   const [engineStatus, setEngineStatus] = useState<EngineStatus>("booting");
@@ -84,7 +86,15 @@ export function QueryView({ state, onOpenInFlows, aiOn = false, aiModel = "" }: 
   /** Dataset identity last seen by the boot effect — a change means capture switch. */
   const lastKeyRef = useRef<string | null>(null);
 
-  const [sql, setSql] = useState<string>(SAMPLE_QUERIES[0].sql);
+  const [sql, setSql] = useState<string>(initialSql?.sql ?? SAMPLE_QUERIES[0].sql);
+  // A pivot that arrives while the console is already open replaces the editor text.
+  const handedNonce = useRef(initialSql?.nonce);
+  useEffect(() => {
+    if (initialSql && initialSql.nonce !== handedNonce.current) {
+      handedNonce.current = initialSql.nonce;
+      setSql(initialSql.sql);
+    }
+  }, [initialSql]);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);

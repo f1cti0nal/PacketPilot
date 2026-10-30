@@ -128,6 +128,47 @@ pub enum FindingKind {
 }
 
 impl FindingKind {
+    /// Every kind, in declaration order (tests and per-kind tables iterate it). A new kind is
+    /// appended here too.
+    pub const ALL: [FindingKind; 36] = [
+        FindingKind::Beacon,
+        FindingKind::HostSweep,
+        FindingKind::BruteForce,
+        FindingKind::CleartextCreds,
+        FindingKind::PiiExposure,
+        FindingKind::LateralMovement,
+        FindingKind::DataExfil,
+        FindingKind::DnsTunnel,
+        FindingKind::RuleMatch,
+        FindingKind::TlsCertHealth,
+        FindingKind::WeakTls,
+        FindingKind::IcmpTunnel,
+        FindingKind::Dga,
+        FindingKind::PortScan,
+        FindingKind::ArpSpoof,
+        FindingKind::SynFlood,
+        FindingKind::SuspiciousUa,
+        FindingKind::DisguisedDownload,
+        FindingKind::Cryptomining,
+        FindingKind::MalwareDownload,
+        FindingKind::MalwareSignature,
+        FindingKind::ExposedRemoteAccess,
+        FindingKind::IcsControlCommand,
+        FindingKind::BaselineDeviation,
+        FindingKind::TrafficAnomaly,
+        FindingKind::EncryptedUnknownProtocol,
+        FindingKind::MissingSni,
+        FindingKind::PortProtocolMismatch,
+        FindingKind::SshPosture,
+        FindingKind::Kerberoasting,
+        FindingKind::AsrepRoasting,
+        FindingKind::DcSync,
+        FindingKind::AdRecon,
+        FindingKind::LegacyAuth,
+        FindingKind::RemoteServiceExec,
+        FindingKind::PasswordSpray,
+    ];
+
     /// Stable snake_case token (matches the serde wire form).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -212,4 +253,21 @@ pub struct Finding {
     /// `#[serde(default)]` keeps older summaries readable.
     #[serde(default)]
     pub victims: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FindingKind;
+
+    #[test]
+    fn all_lists_every_kind_in_declaration_order() {
+        for (i, k) in FindingKind::ALL.iter().enumerate() {
+            assert_eq!(*k as usize, i, "{}", k.as_str());
+        }
+        // The last declared kind closes the list.
+        assert_eq!(
+            FindingKind::ALL.len(),
+            FindingKind::PasswordSpray as usize + 1
+        );
+    }
 }

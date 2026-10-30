@@ -4,7 +4,7 @@
 // pipeline the desktop app runs natively, compiled to wasm, with the capture bytes never
 // leaving the page (no upload, no server). The .wasm is lazily instantiated on first use.
 
-import type { AnalysisOutput, BaselineProfile, TimelineExportFormat, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, SuppressionBlockReason, SuppressionFile, SuppressionRule, TeachScope, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
+import type { Alert, AnalysisOutput, BaselineProfile, PlaybookProgress, PlaybookRun, Summary, TimelineExportFormat, FlowRow, ReputationVerdict, SanitizeManifest, SanitizeOptions, SuppressionBlockReason, SuppressionFile, SuppressionRule, TeachScope, WasmFlow, WireFlowPackets, WireTlsDecryptResult } from "../types";
 import { flowRowFromWasm } from "./data";
 import { sha256Hex } from "./recent";
 import initWasm, {
@@ -27,6 +27,10 @@ import initWasm, {
   sanitize as wasmSanitize,
   apply_suppressions as wasmApplySuppressions,
   teach_alert as wasmTeachAlert,
+  alert_playbooks as wasmAlertPlaybooks,
+  playbook_markdown as wasmPlaybookMarkdown,
+  lint_playbooks as wasmLintPlaybooks,
+  builtin_playbooks as wasmBuiltinPlaybooks,
 } from "../wasm/ppcap_wasm.js";
 
 /**
@@ -277,6 +281,54 @@ export async function teachAlertWasm(
   await ensureWasm();
   const json = wasmTeachAlert(JSON.stringify(output), alertId, scope, JSON.stringify(meta)) as string;
   return JSON.parse(json) as TaughtRules;
+}
+
+/**
+ * Guided hunt playbooks for one alert, rendered with its values. Only the slice of the summary
+ * the engine reads crosses into wasm (not the whole analysis). `teamText` is a team playbook file
+ * (`null` for the built-ins); a bad file rejects with the engine's problem list.
+ */
+export async function alertPlaybooksWasm(
+  summary: Summary,
+  alert: Alert,
+  teamText: string | null,
+): Promise<PlaybookRun[]> {
+  await ensureWasm();
+  const slice = {
+    findings: summary.findings ?? [],
+    resolved_ips: summary.resolved_ips ?? [],
+    carved_files: summary.carved_files ?? [],
+    first_ts_ns: summary.first_ts_ns ?? null,
+    last_ts_ns: summary.last_ts_ns ?? null,
+  };
+  const json = wasmAlertPlaybooks(JSON.stringify(slice), JSON.stringify(alert), teamText ?? "") as string;
+  return JSON.parse(json) as PlaybookRun[];
+}
+
+/** Rendered playbooks (with the analyst's ticks and notes) as a Markdown checklist. */
+export async function playbookMarkdownWasm(runs: PlaybookRun[], progress: PlaybookProgress | null): Promise<string> {
+  await ensureWasm();
+  return wasmPlaybookMarkdown(JSON.stringify(runs), progress ? JSON.stringify(progress) : "") as string;
+}
+
+/** Result of checking a team playbook file. */
+export interface PlaybookLint {
+  ok: boolean;
+  playbooks: number;
+  problems: string[];
+  warnings: string[];
+}
+
+/** Check a team playbook file before storing it. */
+export async function lintPlaybooksWasm(text: string): Promise<PlaybookLint> {
+  await ensureWasm();
+  return JSON.parse(wasmLintPlaybooks(text) as string) as PlaybookLint;
+}
+
+/** The built-in playbook file (a team's starting point). */
+export async function builtinPlaybooksWasm(): Promise<string> {
+  await ensureWasm();
+  return wasmBuiltinPlaybooks() as string;
 }
 
 /** Result of applying detection rules to a capture. `output` is the full updated AnalysisOutput. */

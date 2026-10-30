@@ -150,6 +150,13 @@ cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json \
 cargo run -p ppcap-cli --release -- analyze monday.pcap --json out.json \
   --baseline network.json --update-baseline network.json
 cargo run -p ppcap-cli --release -- baseline merge alice.json bob.json --out network.json
+
+# Guided hunt playbooks: a checklist per alert type with every pivot filled in from the alert
+# (SQL over the flow table, a flow filter, a capture filter). Copy the built-ins to make a team file
+cargo run -p ppcap-cli --release -- playbook show out.json --alert alert:3f2a... > hunt.md
+cargo run -p ppcap-cli --release -- playbook builtin > playbooks.json
+cargo run -p ppcap-cli --release -- playbook lint playbooks.json
+cargo run -p ppcap-cli --release -- playbook show out.json --playbooks playbooks.json
 ```
 
 A destination in `destinations.json` never holds a secret: it names the environment variable
@@ -226,6 +233,21 @@ domain, certificate or destination, that becomes a Medium `baseline_deviation` f
 history keeps the 50,000 most-seen values; anything dropped would show as new again, never hidden.
 `baseline merge` combines teammates' files; `baseline diff` lists what is new for a saved analysis.
 
+Each alert type has a built-in hunt playbook: the questions to answer in order, why each matters,
+what normal and bad look like, and pivots written as templates (`{actor}`, `{peer}`, `{port}`,
+`{domain}`, `{sha256}`, `{start}`, `{end}`, `{hosts}`, `{victims}`). For an alert they are filled
+with the host that did that step (on a multi-host chain, each playbook follows its own host), the
+peer, port, domain and file hash, and the alert's time window padded by 15 minutes; a pivot that
+needs a value the alert lacks is left out. Steps the engine can already answer from the alert's
+context (IOC and reputation hits, new-to-network, baseline changes, identity, kill chain, carved
+files) show that evidence, or say nothing in the capture answers them. A team file uses the same
+JSON as `playbook builtin`: a playbook with a built-in's `id` replaces it, and for each alert kind
+the last playbook naming it wins. `playbook lint` rejects unknown placeholders, SQL that is not a
+`SELECT`/`WITH`, and duplicate ids. In the app, the checklist sits in each expanded alert: tick
+steps, write notes, follow a pivot into Flows, Query, the packets or the Timeline, and export the
+checklist as Markdown. Ticks and notes stay on the device per capture. `ppcap mcp --playbooks`
+serves the same checklist to agents through `get_playbook`.
+
 Suricata EVE import reads `alert` events and skips other event types. Each signature between the
 same two hosts becomes one `rule_match` finding with a hit count and first/last seen; Suricata
 severity 1/2/3 maps to High/Medium/Low and `mitre_technique_id` metadata to ATT&CK ids. The flow
@@ -246,7 +268,7 @@ To connect an agent, add PacketPilot to its MCP config (Claude Desktop's
 ```
 
 The server exposes `list_captures`, `capture_overview`, `list_alerts`, `get_alert` (narrative,
-findings, incident timeline), `host_profile`, `query_flows` (filter / group / sort over the flows
+findings, incident timeline), `get_playbook` (the alert's hunt checklist), `host_profile`, `query_flows` (filter / group / sort over the flows
 Parquet), `get_packets` (a flow's packets with payload preview, so the agent checks its claims
 against the bytes) and `lookup_indicator`, plus a `triage` prompt that walks the investigation.
 Every tool is read-only and offline. `--allow-write <DIR>` adds `carve_pcap` (writes only into
@@ -330,6 +352,12 @@ See [engine/BENCHMARK.md](engine/BENCHMARK.md) for methodology and the full tabl
   findings stay listed under *Suppressed* with the rule that hid them, and confirmed malware, ARP
   spoofing, OT writes and threat-intel or reputation hits are never hidden. Rules are a plain
   `suppressions.json`, so one analyst keeps them offline and a team shares them in git — no server.
+- **Guided hunt playbooks** — every alert type comes with a senior analyst's checklist: the
+  questions to work through, why each matters, what normal and bad look like, and one-click
+  pivots already filled in from the alert (SQL over the flows, a flow filter, the packets, the
+  timeline). Steps the engine can answer from the alert's context are pre-answered with the
+  evidence. Teams override or add playbooks in a plain JSON file shared like the suppression rules;
+  `ppcap playbook show` prints the checklist as Markdown for a ticket.
 - **Incident timeline** — every alert retold as one chronological story across all the hosts it
   touches: first contact with the peer, the DNS answer that resolved it, downloads with their
   SHA-256, each detection as it starts, and the lateral hops between hosts. Every row is one click

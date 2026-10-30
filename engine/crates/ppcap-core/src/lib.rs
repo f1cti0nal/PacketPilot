@@ -53,6 +53,7 @@ pub mod identity;
 pub mod metrics;
 pub mod model;
 pub mod packets;
+pub mod playbook;
 pub(crate) mod quic;
 pub mod rarity;
 pub mod reader;
@@ -149,6 +150,11 @@ pub use packets::{
     carve_pcap, decrypt_capture, decrypt_tls_flow, extract_flow_packets, CarveQuery, CarveResult,
     CarveTarget, DecryptedFlow, FlowPackets, KeylogCaps, KeylogReport, PacketCaps, PacketQuery,
     PacketRecord,
+};
+pub use playbook::{
+    builtin as builtin_playbooks, builtin_json as builtin_playbooks_json,
+    parse_file as parse_playbook_file, render_markdown as render_playbook_markdown, runs_for_alert,
+    runs_for_alert_id, PlaybookFile, PlaybookProgress, PlaybookRun, PlaybookSet,
 };
 pub use report::{case_html, render_html};
 #[cfg(not(target_arch = "wasm32"))]

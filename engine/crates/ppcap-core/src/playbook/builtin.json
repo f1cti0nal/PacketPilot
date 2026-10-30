@@ -1,0 +1,1719 @@
+{
+  "version": 1,
+  "playbooks": [
+    {
+      "id": "c2-channel",
+      "title": "Command and control channel",
+      "kinds": [
+        "beacon",
+        "encrypted_unknown_protocol",
+        "missing_sni"
+      ],
+      "summary": "A host keeps calling the same outside address on a regular or opaque channel. Decide whether it is software phoning home or something you must contain.",
+      "steps": [
+        {
+          "id": "cadence",
+          "question": "Is the timing machine-regular, and does it run all day?",
+          "why": "Malware beacons on a timer with little jitter and keeps going overnight. People and most update agents do not.",
+          "normal": "Bursty, human-paced contacts, or a known updater's schedule.",
+          "bad": "A steady interval with low jitter that continues through idle hours.",
+          "pivots": [
+            {
+              "label": "Every connection between {actor} and {peer}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, src_port, dst_ip, dst_port, app_proto, pkts, bytes_c2s, bytes_s2c, sni, ja4 FROM flow WHERE (src_ip = '{actor}' AND dst_ip = '{peer}') OR (src_ip = '{peer}' AND dst_ip = '{actor}') ORDER BY start_ts"
+            },
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer}"
+            }
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the peer already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "new",
+          "question": "Is this new to the network?",
+          "why": "Malware infrastructure is almost always new to an environment. Something every host has used for months rarely is.",
+          "normal": "The peer, domain or client software appears in earlier captures.",
+          "bad": "First seen in this capture, or only this host uses it.",
+          "answers_from": [
+            "new_to_network",
+            "baseline_novelty"
+          ]
+        },
+        {
+          "id": "domain",
+          "question": "What name does the peer go by?",
+          "why": "A legitimate service has a name that fits it. Bare IPs, missing SNI and freshly registered or random-looking domains do not.",
+          "normal": "A well-known vendor domain that matches the certificate.",
+          "bad": "No name at all, a random-looking name, or a mismatch with the certificate.",
+          "answers_from": [
+            "passive_dns",
+            "cloud_provider",
+            "encrypted_dns"
+          ],
+          "pivots": [
+            {
+              "label": "Flows naming {domain}",
+              "target": "flows",
+              "value": "{domain}"
+            },
+            {
+              "label": "Every flow that named {domain}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, dst_ip, dst_port, sni, http_host FROM flow WHERE sni LIKE '%{domain}' OR http_host LIKE '%{domain}' ORDER BY start_ts"
+            }
+          ]
+        },
+        {
+          "id": "spread",
+          "question": "Does any other host talk to {peer}?",
+          "why": "One host means a single infection or a single odd app. Several hosts with the same pattern means wider compromise or a shared tool.",
+          "normal": "Many hosts, consistent with a shared corporate service.",
+          "bad": "A small set of hosts with the same timing and client software.",
+          "pivots": [
+            {
+              "label": "Hosts that contacted {peer}",
+              "target": "sql",
+              "value": "SELECT src_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{peer}' GROUP BY src_ip ORDER BY flows DESC"
+            },
+            {
+              "label": "All flows to {peer}",
+              "target": "flows",
+              "value": "{peer}"
+            }
+          ]
+        },
+        {
+          "id": "software",
+          "question": "Which client software made the connection?",
+          "why": "The JA4 or User-Agent points at the process. An unusual fingerprint on one host is a strong lead.",
+          "normal": "A browser or agent fingerprint the rest of the fleet shares.",
+          "bad": "A fingerprint only this host has, or a scripting runtime.",
+          "pivots": [
+            {
+              "label": "Client fingerprints and user agents on {actor}",
+              "target": "sql",
+              "value": "SELECT ja4, ja3, http_ua, COUNT(*) AS flows FROM flow WHERE src_ip = '{actor}' GROUP BY ja4, ja3, http_ua ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dns-tunnel",
+      "title": "DNS tunneling or DGA",
+      "kinds": [
+        "dns_tunnel",
+        "dga"
+      ],
+      "summary": "A host is sending unusual DNS: long random labels, high volume to one zone, or many random domains. Work out whether it is a tunnel, malware hunting for its C2, or a noisy product.",
+      "steps": [
+        {
+          "id": "zone",
+          "question": "Which zone carries the traffic?",
+          "why": "Tunnels and DGAs concentrate on one parent domain or a family of random ones. Security products and CDNs also use long labels, so the zone tells them apart.",
+          "normal": "A known vendor zone such as an antivirus or CDN lookup service.",
+          "bad": "An unfamiliar or newly seen zone, or many unregistered random names.",
+          "answers_from": [
+            "passive_dns",
+            "new_to_network"
+          ],
+          "pivots": [
+            {
+              "label": "Flows naming {domain}",
+              "target": "flows",
+              "value": "{domain}"
+            },
+            {
+              "label": "Every flow that named {domain}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, dst_ip, dst_port, sni, http_host FROM flow WHERE sni LIKE '%{domain}' OR http_host LIKE '%{domain}' ORDER BY start_ts"
+            }
+          ]
+        },
+        {
+          "id": "resolver",
+          "question": "Which resolver did it use?",
+          "why": "Hosts should use your internal resolvers. Direct queries to an outside resolver bypass your DNS logging.",
+          "normal": "The corporate resolvers.",
+          "bad": "A public resolver queried directly, or DNS over HTTPS hiding the rest.",
+          "answers_from": [
+            "encrypted_dns"
+          ],
+          "pivots": [
+            {
+              "label": "Where {actor} sent DNS",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE src_ip = '{actor}' AND dst_port IN (53, 853) GROUP BY dst_ip, dst_port ORDER BY flows DESC"
+            },
+            {
+              "label": "DNS packets from {actor}",
+              "target": "packets",
+              "value": "host {actor} and port 53"
+            }
+          ]
+        },
+        {
+          "id": "volume",
+          "question": "How much data moved through DNS?",
+          "why": "A tunnel moves real data, so the bytes per query and the total stand out next to normal lookups.",
+          "normal": "A handful of small queries.",
+          "bad": "Thousands of queries, or kilobytes of query names in a short time.",
+          "pivots": [
+            {
+              "label": "{actor}'s DNS traffic during the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, pkts, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND dst_port = 53 AND start_ts BETWEEN TIMESTAMP '{start}' AND TIMESTAMP '{end}' ORDER BY start_ts"
+            }
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the domain or its resolver already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "identity",
+          "question": "Which machine is {actor}, and who uses it?",
+          "why": "Containment and the business impact depend on what the box is: a server, a workstation, a printer, a jump host.",
+          "normal": "A known asset whose role matches this traffic.",
+          "bad": "An unknown MAC, an unexpected vendor, or a role that should never do this.",
+          "answers_from": [
+            "identity"
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "icmp-tunnel",
+      "title": "ICMP tunnel",
+      "kinds": [
+        "icmp_tunnel"
+      ],
+      "summary": "A host keeps a large-payload ICMP echo channel open. Pings are tiny; a sustained data channel over ICMP is a covert path.",
+      "steps": [
+        {
+          "id": "payload",
+          "question": "Do the echo payloads carry data?",
+          "why": "Normal ping payloads are small and repetitive. Tunnels carry variable, high-entropy payloads.",
+          "normal": "Fixed small payloads from a monitoring tool.",
+          "bad": "Large or changing payloads, in both directions.",
+          "pivots": [
+            {
+              "label": "ICMP packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer} and icmp"
+            }
+          ]
+        },
+        {
+          "id": "monitor",
+          "question": "Is {actor} a monitoring system?",
+          "why": "Network monitors ping constantly and are the usual benign explanation.",
+          "normal": "A known monitoring host pinging many devices.",
+          "bad": "A workstation pinging one outside address.",
+          "answers_from": [
+            "identity"
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the peer already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "new",
+          "question": "Is this new to the network?",
+          "why": "Malware infrastructure is almost always new to an environment. Something every host has used for months rarely is.",
+          "normal": "The peer, domain or client software appears in earlier captures.",
+          "bad": "First seen in this capture, or only this host uses it.",
+          "answers_from": [
+            "new_to_network",
+            "baseline_novelty"
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data-exfil",
+      "title": "Data exfiltration",
+      "kinds": [
+        "data_exfil"
+      ],
+      "summary": "A host sent far more out than it received to one peer. Decide what left, where it went, and whether it was sanctioned.",
+      "steps": [
+        {
+          "id": "destination",
+          "question": "Where did the data go?",
+          "why": "Sanctioned uploads go to known storage and backup services. Exfiltration often lands on fresh infrastructure or personal storage.",
+          "normal": "Corporate cloud storage or a backup provider.",
+          "bad": "A new, unnamed or personal storage destination.",
+          "answers_from": [
+            "passive_dns",
+            "cloud_provider",
+            "new_to_network"
+          ],
+          "pivots": [
+            {
+              "label": "All flows to {peer}",
+              "target": "flows",
+              "value": "{peer}"
+            }
+          ]
+        },
+        {
+          "id": "size",
+          "question": "How much left, and over how long?",
+          "why": "The size and pacing tell you whether this was a bulk grab or a slow drip.",
+          "normal": "A size and schedule that match a known job.",
+          "bad": "Gigabytes at an odd hour, or a long low-rate stream.",
+          "pivots": [
+            {
+              "label": "Every connection between {actor} and {peer}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, src_port, dst_ip, dst_port, app_proto, pkts, bytes_c2s, bytes_s2c, sni, ja4 FROM flow WHERE (src_ip = '{actor}' AND dst_ip = '{peer}') OR (src_ip = '{peer}' AND dst_ip = '{actor}') ORDER BY start_ts"
+            },
+            {
+              "label": "{actor}'s biggest outbound destinations",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, app_proto, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE src_ip = '{actor}' GROUP BY dst_ip, dst_port, app_proto ORDER BY bytes_out DESC"
+            }
+          ]
+        },
+        {
+          "id": "staging",
+          "question": "What happened before the upload?",
+          "why": "Exfiltration usually follows collection: internal file-share reads, archive downloads, or database pulls.",
+          "normal": "No unusual internal reads before.",
+          "bad": "Heavy reads from file shares or databases shortly before.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "{actor}'s traffic during the alert window",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c, sni, http_host FROM flow WHERE src_ip = '{actor}' AND start_ts BETWEEN TIMESTAMP '{start}' AND TIMESTAMP '{end}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the peer already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "identity",
+          "question": "Which machine is {actor}, and who uses it?",
+          "why": "Containment and the business impact depend on what the box is: a server, a workstation, a printer, a jump host.",
+          "normal": "A known asset whose role matches this traffic.",
+          "bad": "An unknown MAC, an unexpected vendor, or a role that should never do this.",
+          "answers_from": [
+            "identity"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recon-scan",
+      "title": "Scan or sweep",
+      "kinds": [
+        "host_sweep",
+        "port_scan"
+      ],
+      "summary": "One host probed many hosts or many ports. Find out whether it is an authorized scanner, and if not, what it found.",
+      "steps": [
+        {
+          "id": "authorized",
+          "question": "Is {actor} an authorized scanner?",
+          "why": "Vulnerability scanners and monitoring tools explain most scans. Check your scanner list before anything else.",
+          "normal": "A documented scanner running on its usual schedule.",
+          "bad": "A workstation or server with no scanning role.",
+          "answers_from": [
+            "identity"
+          ]
+        },
+        {
+          "id": "answers",
+          "question": "Which targets answered?",
+          "why": "A scan matters most where it found an open service. Those hosts are the next targets.",
+          "normal": "Few or no responses.",
+          "bad": "Open admin services (SMB, RDP, SSH, WinRM) on many hosts.",
+          "pivots": [
+            {
+              "label": "Targets that sent data back to {actor}",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, app_proto, COUNT(*) AS flows, SUM(bytes_s2c) AS bytes_back FROM flow WHERE src_ip = '{actor}' AND dst_ip IN ({victims}) GROUP BY dst_ip, dst_port, app_proto ORDER BY dst_ip"
+            },
+            {
+              "label": "Where {actor} connected and got data back",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, app_proto, COUNT(*) AS flows FROM flow WHERE src_ip = '{actor}' AND bytes_s2c > 0 GROUP BY dst_ip, dst_port, app_proto ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "source",
+          "question": "Did the scan come from outside, or after an inbound connection?",
+          "why": "An internal host that starts scanning right after an unusual inbound session or download is likely compromised.",
+          "normal": "No unusual inbound traffic before the scan.",
+          "bad": "A new inbound session or download just before the scan began.",
+          "pivots": [
+            {
+              "label": "Who connected to {actor}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_port, app_proto, COUNT(*) AS flows, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{actor}' GROUP BY src_ip, dst_port, app_proto ORDER BY first_seen"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brute-force",
+      "title": "Brute force or password spray",
+      "kinds": [
+        "brute_force",
+        "password_spray"
+      ],
+      "summary": "Many authentication attempts against one service or many accounts. Decide whether any attempt worked.",
+      "steps": [
+        {
+          "id": "success",
+          "question": "Did any attempt succeed?",
+          "why": "A failed spray is noise. One success is a compromised account.",
+          "normal": "Only failures, then the source stops.",
+          "bad": "A long session or data transfer after the attempts.",
+          "pivots": [
+            {
+              "label": "Every connection between {actor} and {peer}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, src_port, dst_ip, dst_port, app_proto, pkts, bytes_c2s, bytes_s2c, sni, ja4 FROM flow WHERE (src_ip = '{actor}' AND dst_ip = '{peer}') OR (src_ip = '{peer}' AND dst_ip = '{actor}') ORDER BY start_ts"
+            },
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer} and port {port}"
+            }
+          ]
+        },
+        {
+          "id": "scope",
+          "question": "How many services or hosts were targeted?",
+          "why": "One target suggests a misconfigured client. Many targets suggest an attacker.",
+          "normal": "One service and a stuck password.",
+          "bad": "Several hosts on the same port.",
+          "pivots": [
+            {
+              "label": "Every source hitting port {port}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE dst_port = {port} GROUP BY src_ip, dst_ip ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "source",
+          "question": "Is the source internal, and should it authenticate here?",
+          "why": "An internal workstation spraying a domain controller is a compromised host. An internet source is exposure.",
+          "normal": "A service account with a known expired password.",
+          "bad": "A workstation or an outside address.",
+          "answers_from": [
+            "identity",
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cleartext-exposure",
+      "title": "Cleartext credentials or personal data",
+      "kinds": [
+        "cleartext_creds",
+        "pii_exposure"
+      ],
+      "summary": "Credentials or personal data crossed the network unencrypted. Scope what was exposed and who could see it.",
+      "steps": [
+        {
+          "id": "what",
+          "question": "Which credentials or data were exposed?",
+          "why": "Rotation and notification depend on exactly what was sent.",
+          "normal": "Test accounts or synthetic data.",
+          "bad": "Real user, admin or service credentials, or customer data.",
+          "pivots": [
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer} and port {port}"
+            }
+          ]
+        },
+        {
+          "id": "path",
+          "question": "Did the traffic leave the network?",
+          "why": "Cleartext inside a segment is a hygiene problem. Cleartext over the internet means the data must be treated as disclosed.",
+          "normal": "Internal segment only.",
+          "bad": "The peer is outside the network.",
+          "answers_from": [
+            "cloud_provider",
+            "passive_dns"
+          ],
+          "pivots": [
+            {
+              "label": "All flows to {peer}",
+              "target": "flows",
+              "value": "{peer}"
+            }
+          ]
+        },
+        {
+          "id": "reuse",
+          "question": "Were the exposed credentials used anywhere else?",
+          "why": "An attacker sniffing the wire will try the same credentials on other services.",
+          "normal": "No other logins from unusual hosts.",
+          "bad": "The same service seen from new hosts after the exposure.",
+          "pivots": [
+            {
+              "label": "Every source hitting port {port}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE dst_port = {port} GROUP BY src_ip, dst_ip ORDER BY flows DESC"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lateral-movement",
+      "title": "Lateral movement or remote execution",
+      "kinds": [
+        "lateral_movement",
+        "remote_service_exec"
+      ],
+      "summary": "A host opened admin sessions to other internal hosts, or created a service or task on one. Decide whether it is IT administration or an attacker spreading.",
+      "steps": [
+        {
+          "id": "admin",
+          "question": "Is {actor} an admin or management host?",
+          "why": "Jump hosts, deployment servers and IT workstations do this every day. User workstations should not.",
+          "normal": "A documented management system during a change window.",
+          "bad": "A user workstation, or a server that never administers others.",
+          "answers_from": [
+            "identity",
+            "baseline_novelty",
+            "new_to_network"
+          ]
+        },
+        {
+          "id": "targets",
+          "question": "Which hosts did it reach, and how?",
+          "why": "The protocol and target list show the technique (SMB service creation, WinRM, RDP) and where to look next.",
+          "normal": "A small set of expected servers.",
+          "bad": "Many workstations, or domain controllers and file servers.",
+          "pivots": [
+            {
+              "label": "Sessions from {actor} to its targets",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, app_proto, COUNT(*) AS flows, SUM(bytes_s2c) AS bytes_back FROM flow WHERE src_ip = '{actor}' AND dst_ip IN ({victims}) GROUP BY dst_ip, dst_port, app_proto ORDER BY dst_ip"
+            },
+            {
+              "label": "{actor}'s internal destinations",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, app_proto, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE src_ip = '{actor}' GROUP BY dst_ip, dst_port, app_proto ORDER BY bytes_out DESC"
+            }
+          ]
+        },
+        {
+          "id": "entry",
+          "question": "How did {actor} get compromised?",
+          "why": "The host doing the spreading was itself entered somehow. Its own inbound connections and downloads show how.",
+          "normal": "Nothing unusual reached it first.",
+          "bad": "An inbound session, phishing download or beacon before the spread.",
+          "answers_from": [
+            "kill_chain",
+            "carved_file"
+          ],
+          "pivots": [
+            {
+              "label": "Who connected to {actor}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_port, app_proto, COUNT(*) AS flows, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{actor}' GROUP BY src_ip, dst_port, app_proto ORDER BY first_seen"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rule-match",
+      "title": "Signature rule match",
+      "kinds": [
+        "rule_match"
+      ],
+      "summary": "An imported signature fired. Check the rule against the traffic before trusting it.",
+      "steps": [
+        {
+          "id": "rule",
+          "question": "What does the rule look for, and is it reliable?",
+          "why": "Community rules range from precise to very broad. Read the rule and its references first.",
+          "normal": "A broad policy or informational rule.",
+          "bad": "A specific rule for a named malware family or exploit.",
+          "pivots": [
+            {
+              "label": "All flows to {peer}",
+              "target": "flows",
+              "value": "{peer}"
+            }
+          ]
+        },
+        {
+          "id": "payload",
+          "question": "Does the payload actually match the threat?",
+          "why": "Signatures fire on fragments. The packets show whether the content really is the attack.",
+          "normal": "The match is in benign content, such as a documentation page.",
+          "bad": "The full exploit or malware traffic is visible.",
+          "pivots": [
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer} and port {port}"
+            }
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the peer already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crypto-posture",
+      "title": "TLS, SSH or certificate posture",
+      "kinds": [
+        "tls_cert_health",
+        "weak_tls",
+        "ssh_posture"
+      ],
+      "summary": "A server offered weak protocol settings or a bad certificate. Usually a hardening task, sometimes interception.",
+      "steps": [
+        {
+          "id": "server",
+          "question": "Which server is it, and who owns it?",
+          "why": "Posture issues are fixed by the server owner, so identify the service first.",
+          "normal": "A known internal appliance with an owner.",
+          "bad": "An unknown server, or an outside service your users depend on.",
+          "answers_from": [
+            "passive_dns",
+            "cloud_provider"
+          ],
+          "pivots": [
+            {
+              "label": "All flows to {peer}",
+              "target": "flows",
+              "value": "{peer}"
+            }
+          ]
+        },
+        {
+          "id": "intercept",
+          "question": "Could this be interception rather than old configuration?",
+          "why": "A self-signed or mismatched certificate on a well-known site is how a man-in-the-middle looks.",
+          "normal": "The same certificate across captures for an internal service.",
+          "bad": "A new self-signed certificate on a public name.",
+          "answers_from": [
+            "new_to_network"
+          ],
+          "pivots": [
+            {
+              "label": "Hosts that contacted {peer}",
+              "target": "sql",
+              "value": "SELECT src_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{peer}' GROUP BY src_ip ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "clients",
+          "question": "Which clients still negotiate the weak setting?",
+          "why": "Disabling the weak option breaks these clients, so list them before remediation.",
+          "normal": "No clients, or only legacy test systems.",
+          "bad": "Production clients that need upgrading first.",
+          "pivots": [
+            {
+              "label": "Hosts that contacted {peer}",
+              "target": "sql",
+              "value": "SELECT src_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{peer}' GROUP BY src_ip ORDER BY flows DESC"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arp-spoof",
+      "title": "ARP spoofing",
+      "kinds": [
+        "arp_spoof"
+      ],
+      "summary": "One IP address was claimed by more than one MAC. That is either a failover pair or someone positioning to intercept traffic.",
+      "steps": [
+        {
+          "id": "macs",
+          "question": "Which MACs claimed the address, and which is legitimate?",
+          "why": "The vendor and switch port of each MAC tell you which device is the impostor.",
+          "normal": "A documented HA pair or a VM migration.",
+          "bad": "An unknown MAC claiming the gateway or a server.",
+          "answers_from": [
+            "identity"
+          ],
+          "pivots": [
+            {
+              "label": "ARP traffic for {actor}",
+              "target": "packets",
+              "value": "arp and host {actor}"
+            }
+          ]
+        },
+        {
+          "id": "gateway",
+          "question": "Is the claimed address the gateway or a key server?",
+          "why": "Spoofing the gateway intercepts a whole segment.",
+          "normal": "An ordinary host address.",
+          "bad": "The default gateway, DNS or a domain controller.",
+          "pivots": [
+            {
+              "label": "All flows touching {actor}",
+              "target": "flows",
+              "value": "{actor}"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "syn-flood",
+      "title": "SYN flood",
+      "kinds": [
+        "syn_flood"
+      ],
+      "summary": "A service received a flood of half-open connections. Decide whether it is an attack, a broken client or a scan.",
+      "steps": [
+        {
+          "id": "sources",
+          "question": "How many sources are there?",
+          "why": "One source is easy to block. Thousands of spoofed sources need upstream help.",
+          "normal": "One misbehaving client.",
+          "bad": "Many sources, or spoofed random addresses.",
+          "pivots": [
+            {
+              "label": "Every source hitting port {port}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE dst_port = {port} GROUP BY src_ip, dst_ip ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "impact",
+          "question": "Did legitimate clients still complete connections?",
+          "why": "Impact decides urgency.",
+          "normal": "Normal handshakes continue.",
+          "bad": "Completed connections drop during the flood.",
+          "pivots": [
+            {
+              "label": "Connections to {peer} during the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, dst_port, pkts, bytes_s2c FROM flow WHERE dst_ip = '{peer}' AND start_ts BETWEEN TIMESTAMP '{start}' AND TIMESTAMP '{end}' ORDER BY start_ts"
+            }
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the source already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attack-tool",
+      "title": "Attack tool user agent",
+      "kinds": [
+        "suspicious_ua"
+      ],
+      "summary": "A known attack or scanning tool identified itself. Confirm whether it is authorized testing.",
+      "steps": [
+        {
+          "id": "authorized",
+          "question": "Is there an authorized test running from {actor}?",
+          "why": "Penetration tests and red teams use these tools. Check with whoever owns testing.",
+          "normal": "A scheduled test from the tester's machine.",
+          "bad": "No test on record, or an unexpected source.",
+          "answers_from": [
+            "identity",
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "targets",
+          "question": "What did the tool hit, and did it get answers?",
+          "why": "Successful responses (200s, logins, data) show what the tool reached.",
+          "normal": "Errors and blocks only.",
+          "bad": "Successful responses from sensitive applications.",
+          "pivots": [
+            {
+              "label": "{actor}'s destinations",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, app_proto, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE src_ip = '{actor}' GROUP BY dst_ip, dst_port, app_proto ORDER BY bytes_out DESC"
+            },
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer}"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "malware-delivery",
+      "title": "Malware delivery",
+      "kinds": [
+        "disguised_download",
+        "malware_download",
+        "malware_signature"
+      ],
+      "summary": "A host downloaded a file that is malware or pretends to be something else. Treat the host as infected until shown otherwise.",
+      "steps": [
+        {
+          "id": "file",
+          "question": "What is the file, and is it known?",
+          "why": "The hash is the fastest way to a verdict and the key to hunting the same file elsewhere.",
+          "normal": "An installer from a vendor whose content type was simply mislabeled.",
+          "bad": "A known-bad hash, a signature hit, or an executable posing as an image.",
+          "answers_from": [
+            "carved_file",
+            "threat_intel"
+          ],
+          "pivots": [
+            {
+              "label": "Flows to the download server {peer}",
+              "target": "flows",
+              "value": "{peer}"
+            }
+          ]
+        },
+        {
+          "id": "executed",
+          "question": "Did it run?",
+          "why": "Delivery is not infection. Traffic after the download shows whether the payload executed.",
+          "normal": "Nothing new after the download.",
+          "bad": "New beacons, DNS or downloads from {actor} soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        },
+        {
+          "id": "fleet",
+          "question": "Did anyone else download it?",
+          "why": "The same file or server on other hosts widens the incident.",
+          "normal": "Only this host.",
+          "bad": "Several hosts fetched it.",
+          "pivots": [
+            {
+              "label": "Hosts that contacted {peer}",
+              "target": "sql",
+              "value": "SELECT src_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{peer}' GROUP BY src_ip ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "source",
+          "question": "Where did it come from?",
+          "why": "A compromised legitimate site and attacker infrastructure need different responses.",
+          "normal": "A known vendor site.",
+          "bad": "A new domain, a bare IP, or a known-bad host.",
+          "answers_from": [
+            "passive_dns",
+            "new_to_network",
+            "reputation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cryptomining",
+      "title": "Cryptomining",
+      "kinds": [
+        "cryptomining"
+      ],
+      "summary": "A host talks the Stratum mining protocol to a pool. It is almost never sanctioned on corporate hardware.",
+      "steps": [
+        {
+          "id": "pool",
+          "question": "Which pool, and since when?",
+          "why": "The start time often lines up with the infection or an install.",
+          "normal": "A sanctioned research or lab system.",
+          "bad": "A production or user machine mining for weeks.",
+          "answers_from": [
+            "new_to_network",
+            "passive_dns"
+          ],
+          "pivots": [
+            {
+              "label": "Every connection between {actor} and {peer}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, src_port, dst_ip, dst_port, app_proto, pkts, bytes_c2s, bytes_s2c, sni, ja4 FROM flow WHERE (src_ip = '{actor}' AND dst_ip = '{peer}') OR (src_ip = '{peer}' AND dst_ip = '{actor}') ORDER BY start_ts"
+            }
+          ]
+        },
+        {
+          "id": "entry",
+          "question": "How did the miner get there?",
+          "why": "Miners are often dropped through exposed services or stolen credentials, which may give access to more than mining.",
+          "normal": "A user installed it.",
+          "bad": "An exploit or remote session before the mining started.",
+          "pivots": [
+            {
+              "label": "Who connected to {actor}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_port, app_proto, COUNT(*) AS flows, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{actor}' GROUP BY src_ip, dst_port, app_proto ORDER BY first_seen"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        },
+        {
+          "id": "identity",
+          "question": "Which machine is {actor}, and who uses it?",
+          "why": "Containment and the business impact depend on what the box is: a server, a workstation, a printer, a jump host.",
+          "normal": "A known asset whose role matches this traffic.",
+          "bad": "An unknown MAC, an unexpected vendor, or a role that should never do this.",
+          "answers_from": [
+            "identity"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exposed-remote-access",
+      "title": "Exposed remote access",
+      "kinds": [
+        "exposed_remote_access"
+      ],
+      "summary": "A remote administration session crossed the network boundary. Find out whether that path is meant to exist.",
+      "steps": [
+        {
+          "id": "direction",
+          "question": "Who started it, and from where?",
+          "why": "Inbound sessions from the internet to RDP, SMB or SSH are a top initial access route.",
+          "normal": "An outbound session to a known vendor support portal.",
+          "bad": "Inbound from an unknown internet address.",
+          "answers_from": [
+            "threat_intel",
+            "reputation",
+            "new_to_network"
+          ],
+          "pivots": [
+            {
+              "label": "Every connection between {actor} and {peer}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, src_port, dst_ip, dst_port, app_proto, pkts, bytes_c2s, bytes_s2c, sni, ja4 FROM flow WHERE (src_ip = '{actor}' AND dst_ip = '{peer}') OR (src_ip = '{peer}' AND dst_ip = '{actor}') ORDER BY start_ts"
+            }
+          ]
+        },
+        {
+          "id": "session",
+          "question": "How long did it last, and how much moved?",
+          "why": "A short failed attempt is exposure. A long interactive session is access.",
+          "normal": "Short and failed.",
+          "bad": "Minutes or hours of interactive traffic.",
+          "pivots": [
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer} and port {port}"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ics-command",
+      "title": "Industrial control command",
+      "kinds": [
+        "ics_control_command"
+      ],
+      "summary": "A client wrote to or controlled an industrial device. Verify it was an authorized operator action.",
+      "steps": [
+        {
+          "id": "operator",
+          "question": "Is {actor} an authorized HMI or engineering workstation?",
+          "why": "Only a short list of hosts should ever write to PLCs.",
+          "normal": "The plant's HMI during a shift.",
+          "bad": "Any other host, or an IT network address.",
+          "answers_from": [
+            "identity",
+            "baseline_novelty",
+            "new_to_network"
+          ]
+        },
+        {
+          "id": "commands",
+          "question": "Which commands were sent, and to what?",
+          "why": "Writes to setpoints or stop commands can have physical consequences.",
+          "normal": "Routine reads and expected setpoint changes.",
+          "bad": "Writes to safety-related registers, or many devices at once.",
+          "pivots": [
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer} and port {port}"
+            }
+          ]
+        },
+        {
+          "id": "path",
+          "question": "How did {actor} reach the control network?",
+          "why": "IT to OT paths should go through a controlled conduit.",
+          "normal": "Through the plant DMZ jump host.",
+          "bad": "Directly from the corporate network or the internet.",
+          "pivots": [
+            {
+              "label": "Who connected to {actor}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_port, app_proto, COUNT(*) AS flows, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{actor}' GROUP BY src_ip, dst_port, app_proto ORDER BY first_seen"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "baseline-change",
+      "title": "Change from normal behavior",
+      "kinds": [
+        "baseline_deviation",
+        "traffic_anomaly"
+      ],
+      "summary": "A host did something it never did before, or its traffic broke from its own trend. Decide whether it is planned change or compromise.",
+      "steps": [
+        {
+          "id": "what-changed",
+          "question": "What exactly is new for {actor}?",
+          "why": "The specific new peer, port or volume is what you will check against change records.",
+          "normal": "A new update server or a new application rollout.",
+          "bad": "A new outside peer with no business reason.",
+          "answers_from": [
+            "baseline_novelty",
+            "forecast_anomaly",
+            "new_to_network"
+          ],
+          "pivots": [
+            {
+              "label": "{actor}'s destinations",
+              "target": "sql",
+              "value": "SELECT dst_ip, dst_port, app_proto, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE src_ip = '{actor}' GROUP BY dst_ip, dst_port, app_proto ORDER BY bytes_out DESC"
+            }
+          ]
+        },
+        {
+          "id": "change",
+          "question": "Was there planned change at that time?",
+          "why": "Most deviations are deployments, backups or patching. A ticket closes them fast.",
+          "normal": "A matching change ticket or maintenance window.",
+          "bad": "No planned change."
+        },
+        {
+          "id": "software",
+          "question": "Did new software appear on {actor}?",
+          "why": "New client software alongside new destinations is the classic sign of an implant.",
+          "normal": "Known browsers and agents only.",
+          "bad": "A fingerprint no other host has.",
+          "pivots": [
+            {
+              "label": "Client fingerprints and user agents on {actor}",
+              "target": "sql",
+              "value": "SELECT ja4, ja3, http_ua, COUNT(*) AS flows FROM flow WHERE src_ip = '{actor}' GROUP BY ja4, ja3, http_ua ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the peer already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "port-mismatch",
+      "title": "Protocol on an unexpected port",
+      "kinds": [
+        "port_protocol_mismatch"
+      ],
+      "summary": "The protocol does not match the port: TLS on a port no service uses, or something other than TLS on 443. Usually misconfiguration, sometimes evasion.",
+      "steps": [
+        {
+          "id": "service",
+          "question": "What service is really there?",
+          "why": "Naming the real service tells you whether this is a sanctioned app.",
+          "normal": "A known application on a custom port.",
+          "bad": "An unidentified service, or a tunnel on 443.",
+          "answers_from": [
+            "passive_dns",
+            "cloud_provider"
+          ],
+          "pivots": [
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer} and port {port}"
+            }
+          ]
+        },
+        {
+          "id": "spread",
+          "question": "Do other hosts use the same port and peer?",
+          "why": "A company-wide app shows up on many hosts. A one-off is suspicious.",
+          "normal": "Many hosts, consistently.",
+          "bad": "Only {actor}.",
+          "pivots": [
+            {
+              "label": "Every source hitting port {port}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE dst_port = {port} GROUP BY src_ip, dst_ip ORDER BY flows DESC"
+            }
+          ]
+        },
+        {
+          "id": "reputation",
+          "question": "Is the peer already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "new",
+          "question": "Is this new to the network?",
+          "why": "Malware infrastructure is almost always new to an environment. Something every host has used for months rarely is.",
+          "normal": "The peer, domain or client software appears in earlier captures.",
+          "bad": "First seen in this capture, or only this host uses it.",
+          "answers_from": [
+            "new_to_network",
+            "baseline_novelty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kerberos-roasting",
+      "title": "Kerberoasting or AS-REP roasting",
+      "kinds": [
+        "kerberoasting",
+        "asrep_roasting"
+      ],
+      "summary": "A host pulled Kerberos tickets in a form that can be cracked offline. Assume the targeted service account passwords are at risk.",
+      "steps": [
+        {
+          "id": "accounts",
+          "question": "Which accounts were targeted?",
+          "why": "Rotation starts with the roasted accounts, and privileged ones come first.",
+          "normal": "A single service account requested by its usual client.",
+          "bad": "Many SPNs, or accounts with admin rights.",
+          "pivots": [
+            {
+              "label": "Kerberos packets from {actor}",
+              "target": "packets",
+              "value": "host {actor} and port 88"
+            }
+          ]
+        },
+        {
+          "id": "client",
+          "question": "Is {actor} a normal Kerberos client for those services?",
+          "why": "Workstations that suddenly request tickets for many services are running a tool.",
+          "normal": "An application server that always uses these services.",
+          "bad": "A user workstation requesting dozens of tickets at once.",
+          "answers_from": [
+            "identity",
+            "baseline_novelty",
+            "new_to_network"
+          ]
+        },
+        {
+          "id": "recon",
+          "question": "Did directory reconnaissance come first?",
+          "why": "Roasting usually follows LDAP queries for SPN holders.",
+          "normal": "No LDAP searches before.",
+          "bad": "LDAP or SAMR enumeration shortly before.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "{actor}'s LDAP, Kerberos and RPC traffic",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, pkts FROM flow WHERE src_ip = '{actor}' AND dst_port IN (88, 135, 389, 445, 636, 3268) ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dcsync",
+      "title": "DCSync",
+      "kinds": [
+        "dc_sync"
+      ],
+      "summary": "A host that is not a domain controller asked a DC to replicate secrets. Unless it is a real DC or a sanctioned sync tool, assume domain credentials are stolen.",
+      "steps": [
+        {
+          "id": "is-dc",
+          "question": "Is {actor} a domain controller or an approved sync tool?",
+          "why": "Only DCs and a few identity products replicate. Everything else is credential theft.",
+          "normal": "A new DC being promoted, or Azure AD Connect.",
+          "bad": "A workstation or member server.",
+          "answers_from": [
+            "identity"
+          ]
+        },
+        {
+          "id": "how",
+          "question": "How did the attacker get replication rights?",
+          "why": "DCSync needs domain admin-level rights, so the account used is already compromised.",
+          "bad": "Admin sessions to {actor} shortly before.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Who connected to {actor}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_port, app_proto, COUNT(*) AS flows, MIN(start_ts) AS first_seen FROM flow WHERE dst_ip = '{actor}' GROUP BY src_ip, dst_port, app_proto ORDER BY first_seen"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ad-recon",
+      "title": "Active Directory reconnaissance",
+      "kinds": [
+        "ad_recon"
+      ],
+      "summary": "A host ran recon-shaped directory queries: SPN holders, accounts without pre-auth, admin groups. This usually precedes roasting or lateral movement.",
+      "steps": [
+        {
+          "id": "queries",
+          "question": "What was enumerated?",
+          "why": "The query targets show the attacker's next move: SPNs mean roasting, admin groups mean privilege hunting.",
+          "normal": "An inventory or IAM tool's usual sweep.",
+          "bad": "Queries for SPNs, adminCount, delegation or LAPS.",
+          "pivots": [
+            {
+              "label": "LDAP and RPC packets from {actor}",
+              "target": "packets",
+              "value": "host {actor} and (port 389 or port 445 or port 135)"
+            }
+          ]
+        },
+        {
+          "id": "tool",
+          "question": "Is {actor} an identity or inventory system?",
+          "why": "IAM products and auditing scripts query AD heavily and are the main benign explanation.",
+          "normal": "A documented IAM or audit host.",
+          "bad": "A user workstation.",
+          "answers_from": [
+            "identity",
+            "baseline_novelty"
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy-auth",
+      "title": "Legacy authentication",
+      "kinds": [
+        "legacy_auth"
+      ],
+      "summary": "Weak Kerberos encryption or legacy protocols were negotiated. A hardening task that also leaves crackable material on the wire.",
+      "steps": [
+        {
+          "id": "accounts",
+          "question": "Which accounts and services are affected?",
+          "why": "Fixing it means giving those accounts AES keys or retiring old clients.",
+          "normal": "A known legacy appliance on a remediation list.",
+          "bad": "Privileged accounts, or many services.",
+          "pivots": [
+            {
+              "label": "Kerberos packets from {actor}",
+              "target": "packets",
+              "value": "host {actor} and port 88"
+            }
+          ]
+        },
+        {
+          "id": "clients",
+          "question": "Which clients still need the weak setting?",
+          "why": "Disabling RC4 or DES breaks these clients, so they must be found first.",
+          "normal": "None, or test systems only.",
+          "bad": "Production clients.",
+          "pivots": [
+            {
+              "label": "Every source hitting port {port}",
+              "target": "sql",
+              "value": "SELECT src_ip, dst_ip, COUNT(*) AS flows, SUM(bytes_c2s) AS bytes_out FROM flow WHERE dst_port = {port} GROUP BY src_ip, dst_ip ORDER BY flows DESC"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "generic",
+      "title": "General triage",
+      "kinds": [],
+      "summary": "No specific playbook matches this alert. Work the standard questions.",
+      "steps": [
+        {
+          "id": "reputation",
+          "question": "Is the peer already known bad?",
+          "why": "An intel or reputation hit turns a suspicion into a confirmed lead, and decides how fast you contain.",
+          "normal": "No feed hit and a clean or unknown reputation.",
+          "bad": "Any IOC feed hit, or several engines calling it malicious.",
+          "answers_from": [
+            "threat_intel",
+            "reputation"
+          ]
+        },
+        {
+          "id": "new",
+          "question": "Is this new to the network?",
+          "why": "Malware infrastructure is almost always new to an environment. Something every host has used for months rarely is.",
+          "normal": "The peer, domain or client software appears in earlier captures.",
+          "bad": "First seen in this capture, or only this host uses it.",
+          "answers_from": [
+            "new_to_network",
+            "baseline_novelty"
+          ]
+        },
+        {
+          "id": "identity",
+          "question": "Which machine is {actor}, and who uses it?",
+          "why": "Containment and the business impact depend on what the box is: a server, a workstation, a printer, a jump host.",
+          "normal": "A known asset whose role matches this traffic.",
+          "bad": "An unknown MAC, an unexpected vendor, or a role that should never do this.",
+          "answers_from": [
+            "identity"
+          ]
+        },
+        {
+          "id": "conversation",
+          "question": "What did {actor} and {peer} actually exchange?",
+          "why": "The raw conversation is the ground truth behind every detection.",
+          "pivots": [
+            {
+              "label": "Every connection between {actor} and {peer}",
+              "target": "sql",
+              "value": "SELECT start_ts, src_ip, src_port, dst_ip, dst_port, app_proto, pkts, bytes_c2s, bytes_s2c, sni, ja4 FROM flow WHERE (src_ip = '{actor}' AND dst_ip = '{peer}') OR (src_ip = '{peer}' AND dst_ip = '{actor}') ORDER BY start_ts"
+            },
+            {
+              "label": "Packets between {actor} and {peer}",
+              "target": "packets",
+              "value": "host {actor} and host {peer}"
+            }
+          ]
+        },
+        {
+          "id": "after",
+          "question": "What did {actor} do next?",
+          "why": "Attackers rarely stop at one step. The traffic right after the detection shows whether it worked.",
+          "normal": "Ordinary traffic resumes.",
+          "bad": "New internal connections, downloads, credential traffic or uploads soon after.",
+          "answers_from": [
+            "kill_chain"
+          ],
+          "pivots": [
+            {
+              "label": "Everything {actor} opened from the start of the alert",
+              "target": "sql",
+              "value": "SELECT start_ts, dst_ip, dst_port, app_proto, bytes_c2s, bytes_s2c FROM flow WHERE src_ip = '{actor}' AND start_ts >= TIMESTAMP '{start}' ORDER BY start_ts"
+            },
+            {
+              "label": "Open the incident timeline",
+              "target": "timeline"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

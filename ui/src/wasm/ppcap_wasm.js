@@ -1,6 +1,41 @@
 /* @ts-self-types="./ppcap_wasm.d.ts" */
 
 /**
+ * Guided hunt playbooks for one alert, rendered with its values. `slice_json` is
+ * `{ findings, resolved_ips, carved_files, first_ts_ns, last_ts_ns }` from the summary,
+ * `alert_json` the alert, and `team_json` a team playbook file (`""` for the built-ins only).
+ * Returns `PlaybookRun[]`. Pure + offline.
+ * @param {string} slice_json
+ * @param {string} alert_json
+ * @param {string} team_json
+ * @returns {string}
+ */
+export function alert_playbooks(slice_json, alert_json, team_json) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(slice_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(alert_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(team_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.alert_playbooks(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * Analyze a raw capture (`.pcap`/`.pcapng`) held entirely in memory.
  *
  * `bytes` is the capture file; `name` becomes the reported `source_path`. Returns a JSON
@@ -201,6 +236,23 @@ export function build_baseline(output_json, prior_baseline_json, analyzed_unix_s
         return getStringFromWasm0(ptr3, len3);
     } finally {
         wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * The built-in playbook file (a team's starting point).
+ * @returns {string}
+ */
+export function builtin_playbooks() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.builtin_playbooks();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
 }
 
@@ -496,6 +548,56 @@ export function extract_packets(bytes, query_json, caps_json) {
         return getStringFromWasm0(ptr4, len4);
     } finally {
         wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
+ * Check a team playbook file. Returns `{ ok, playbooks, problems, warnings }`.
+ * @param {string} text
+ * @returns {string}
+ */
+export function lint_playbooks(text) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.lint_playbooks(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * Rendered playbook runs as a Markdown checklist; `progress_json` is `{ done: [key], notes:
+ * { key: text } }` with keys `"{playbook_id}/{step_id}"` (`""` for none).
+ * @param {string} runs_json
+ * @param {string} progress_json
+ * @returns {string}
+ */
+export function playbook_markdown(runs_json, progress_json) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(runs_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(progress_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.playbook_markdown(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
     }
 }
 

@@ -9,7 +9,10 @@ import { ChartGantt, ChevronDown, ChevronRight, Download, ShieldCheck, Trash2, U
 import type {
   Alert,
   Finding,
+  PlaybookProgress,
+  PlaybookRun,
   PriorityBand,
+  RenderedPivot,
   SuppressionBlockReason,
   SuppressionHit,
   SuppressionRule,
@@ -20,6 +23,7 @@ import { kindLabel } from "../lib/findingKinds";
 import { sevColor } from "../cockpit/viz";
 import { BTN_OUTLINE, BTN_PRIMARY, IocDot, MitreTag, ScoreBar, SectionLabel, SeverityChip, Tag, Toolbar } from "../cockpit/primitives";
 import { EmptyState } from "../components/state/EmptyState";
+import { HuntPanel } from "../cockpit/HuntPanel";
 import { cn } from "../lib/cn";
 
 export interface AlertsViewProps {
@@ -47,6 +51,31 @@ export interface AlertsViewProps {
   onImportRules?: (file: File) => void;
   /** Download the stored rules as `suppressions.json`. */
   onExportRules?: () => void;
+  /** Guided hunt playbooks in each expanded alert. Absent = no hunt section. */
+  hunt?: HuntHandlers;
+  /** Team playbook file management. Absent = no playbooks manager. */
+  playbooks?: PlaybookFileHandlers;
+}
+
+/** What an expanded alert needs to show and track its hunt playbook. */
+export interface HuntHandlers {
+  loadRuns: (alert: Alert) => Promise<PlaybookRun[]>;
+  loadProgress: (alertId: string) => PlaybookProgress;
+  saveProgress: (alertId: string, progress: PlaybookProgress) => void;
+  onPivot?: (pivot: RenderedPivot, alert: Alert) => void;
+  onExport?: (runs: PlaybookRun[], progress: PlaybookProgress) => void;
+}
+
+/** The team playbook file: status and actions. */
+export interface PlaybookFileHandlers {
+  /** Playbooks in the stored team file; null when only the built-ins are in use. */
+  teamCount: number | null;
+  /** One line from the last import (accepted, or the problems that rejected it). */
+  notice?: string | null;
+  onImport: (file: File) => void;
+  onDownloadBuiltin: () => void;
+  onDownloadTeam?: () => void;
+  onRemove?: () => void;
 }
 
 /** Scope choices for "Mark benign", in the order shown. */
@@ -200,6 +229,7 @@ function AlertCard({
   onOpenChain,
   onOpenTimeline,
   onTeach,
+  hunt,
 }: {
   alert: Alert;
   findings: Finding[];
@@ -208,6 +238,7 @@ function AlertCard({
   onOpenChain?: (chainId: string) => void;
   onOpenTimeline?: (alertId: string) => void;
   onTeach?: (alertId: string, scope: TeachScope, reason: string) => Promise<string>;
+  hunt?: HuntHandlers;
 }) {
   const color = sevColor(bandSeverity(alert.band));
   const peers = alert.context.peers ?? [];
@@ -335,6 +366,17 @@ function AlertCard({
                 ))}
               </ul>
             </div>
+          )}
+
+          {hunt && (
+            <HuntPanel
+              alert={alert}
+              loadRuns={hunt.loadRuns}
+              initialProgress={hunt.loadProgress(alert.id)}
+              onProgress={(p) => hunt.saveProgress(alert.id, p)}
+              onPivot={hunt.onPivot}
+              onExport={hunt.onExport}
+            />
           )}
 
           <div>
@@ -574,6 +616,66 @@ function RulesManager({
   );
 }
 
+/** The team playbook file: status, import, download, remove. */
+function PlaybooksManager({ teamCount, notice, onImport, onDownloadBuiltin, onDownloadTeam, onRemove }: PlaybookFileHandlers) {
+  const [open, setOpen] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <Disclosure
+      title={teamCount == null ? "Hunt playbooks (built-in)" : `Hunt playbooks (built-in + ${teamCount} from your team)`}
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+    >
+      <div className="flex flex-col gap-3">
+        <p className="t-tag text-[var(--color-text-dim)]">
+          Every alert type has a built-in checklist. To change one or add your own, download the built-ins, edit the
+          JSON and import it here. The same file works with <code>ppcap playbook --playbooks</code>, so a team can keep
+          it in git.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            aria-label="Import team playbooks"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImport(f);
+              e.target.value = "";
+            }}
+          />
+          <button type="button" className={BTN_OUTLINE} onClick={() => fileRef.current?.click()}>
+            <Upload className="mr-1.5 h-4 w-4" />
+            Import team file
+          </button>
+          <button type="button" className={BTN_OUTLINE} onClick={onDownloadBuiltin}>
+            <Download className="mr-1.5 h-4 w-4" />
+            Download built-ins
+          </button>
+          {teamCount != null && onDownloadTeam && (
+            <button type="button" className={BTN_OUTLINE} onClick={onDownloadTeam}>
+              <Download className="mr-1.5 h-4 w-4" />
+              Download team file
+            </button>
+          )}
+          {teamCount != null && onRemove && (
+            <button type="button" className={BTN_OUTLINE} onClick={onRemove}>
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              Remove team file
+            </button>
+          )}
+        </div>
+        {notice && (
+          <p role="status" className="whitespace-pre-line text-xs text-[var(--color-text-dim)]">
+            {notice}
+          </p>
+        )}
+      </div>
+    </Disclosure>
+  );
+}
+
 /**
  * The ranked alert queue as a full-tab view: a compact verdict strip, then one expandable card
  * per alert with its band, priority ledger, context bundle, and member findings. Cards are real
@@ -592,6 +694,8 @@ export function AlertsView({
   onRemoveRule,
   onImportRules,
   onExportRules,
+  hunt,
+  playbooks,
 }: AlertsViewProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const hiddenCount = suppressions.filter((h) => h.status === "suppressed").length;
@@ -604,19 +708,23 @@ export function AlertsView({
         hint="The ranked triage queue appears once a capture is analyzed. Load a capture to get started."
       />
     );
-    if (!showRules) return empty;
-    // Rules stay manageable (import a team file, delete one) even when this capture is quiet.
+    if (!showRules && !playbooks) return empty;
+    // Rules and team playbooks stay manageable (import a team file, delete one) even when this
+    // capture is quiet.
     return (
       <div data-component="AlertsView" className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
         {empty}
-        <div className="mx-auto w-full max-w-4xl">
-          <RulesManager
-            rules={storedRules}
-            today={today}
-            onRemoveRule={onRemoveRule}
-            onImportRules={onImportRules}
-            onExportRules={onExportRules}
-          />
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">
+          {showRules && (
+            <RulesManager
+              rules={storedRules}
+              today={today}
+              onRemoveRule={onRemoveRule}
+              onImportRules={onImportRules}
+              onExportRules={onExportRules}
+            />
+          )}
+          {playbooks && <PlaybooksManager {...playbooks} />}
         </div>
       </div>
     );
@@ -649,6 +757,7 @@ export function AlertsView({
                 onOpenChain={onOpenChain}
                 onOpenTimeline={onOpenTimeline}
                 onTeach={onTeach}
+                hunt={hunt}
               />
             </li>
           ))}
@@ -676,6 +785,11 @@ export function AlertsView({
                 onImportRules={onImportRules}
                 onExportRules={onExportRules}
               />
+            </li>
+          )}
+          {playbooks && (
+            <li>
+              <PlaybooksManager {...playbooks} />
             </li>
           )}
         </ul>

@@ -47,6 +47,8 @@ pub struct ServerOptions {
     pub online: bool,
     /// See [`DEFAULT_MAX_RESPONSE_BYTES`].
     pub max_response_bytes: usize,
+    /// Hunt playbooks for `get_playbook`; `None` means the built-in set.
+    pub playbooks: Option<ppcap_core::PlaybookSet>,
 }
 
 /// The loaded captures plus the launch-time options. One server per process.
