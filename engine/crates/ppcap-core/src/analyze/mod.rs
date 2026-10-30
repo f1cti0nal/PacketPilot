@@ -842,7 +842,15 @@ pub fn run_source_observing<'a>(
     summary.carved_files = carved_files;
     summary.extracted_paths = extracted_paths;
     summary.timeline_context = timeline_context;
-    summary.rarity = rarity;
+    summary.rarity = rarity.map(|mut r| {
+        // Keep the rows the findings (and so the alerts) touch when capping the stored lists.
+        let focus: std::collections::BTreeSet<String> = findings
+            .iter()
+            .flat_map(|f| std::iter::once(f.src_ip.clone()).chain(f.dst_ip.clone()))
+            .collect();
+        r.truncate_for(&focus);
+        r
+    });
     // Correlate the findings into per-host incidents (the "is this a real incident" view).
     summary.incidents = correlate_incidents(&findings);
     // Reconstruct the multi-host, temporally-ordered attack chains over the same finding set
@@ -956,7 +964,7 @@ fn process_flow(
         // Environment rarity: the software and places this connection shows, network-wide.
         tracker
             .env_mut()
-            .observe_flow(record, c.client, c.server, c.ts_ns);
+            .observe_flow(record, (c.client, c.server), c.ts_ns);
         tracker.observe_category(c.client, record.category);
 
         // Encrypted-traffic analysis: a TLS client that named no server. ECH flows are excluded —

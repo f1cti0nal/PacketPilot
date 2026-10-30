@@ -1844,8 +1844,9 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 for d in &report.deviations {
                     eprintln!("  {:<8} {}", d.severity.as_str(), d.title);
                 }
-                let rarity =
+                let mut rarity =
                     ppcap_core::rarity::rarity_report(Some(&base), &prof.environment, &params);
+                rarity.truncate_for(&Default::default());
                 if rarity.warming_up {
                     eprintln!(
                         "new to this network: baseline has {} of {} captures of history, nothing called new yet",
@@ -1866,7 +1867,18 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     }
                 }
                 if let Some(path) = json.as_deref() {
-                    let s = serde_json::to_string_pretty(&report)?;
+                    // The deviation report's own keys stay at the top level; the network-wide
+                    // view is an added `rarity` key.
+                    #[derive(serde::Serialize)]
+                    struct DiffJson<'a> {
+                        #[serde(flatten)]
+                        report: &'a ppcap_core::DeviationReport,
+                        rarity: &'a ppcap_core::rarity::RarityReport,
+                    }
+                    let s = serde_json::to_string_pretty(&DiffJson {
+                        report: &report,
+                        rarity: &rarity,
+                    })?;
                     match path {
                         "-" => println!("{s}"),
                         p => std::fs::write(p, &s)
@@ -3372,6 +3384,9 @@ mod reputation_cli_tests {
             serde_json::from_str(&std::fs::read_to_string(rep.path()).unwrap()).unwrap();
         assert_eq!(report["hosts_compared"], 1);
         assert!(report["deviations"].is_array());
+        // The network-wide view rides alongside under `rarity` (1 capture of history: warming up).
+        assert_eq!(report["rarity"]["baseline_loaded"], true);
+        assert_eq!(report["rarity"]["warming_up"], true);
 
         // diff on a summary with no snapshot is a hard error.
         let plain = ppcap_core::AnalysisOutput::default();

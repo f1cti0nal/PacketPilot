@@ -32,6 +32,8 @@ use crate::score::{score_baseline_deviation, PTS_ENV_NEW_PLACE, PTS_ENV_NEW_SOFT
 pub const MAX_ENV_ITEMS: usize = 16_384;
 /// Cap on internal hosts remembered per sighting (the "how widespread" signal saturates here).
 pub const MAX_HOSTS_PER_ITEM: usize = 16;
+/// Cap on external peers remembered per domain (the SNI / HTTP Host to address link alerts join on).
+pub const MAX_PEERS_PER_ITEM: usize = 8;
 /// Cap on distinct internal hosts counted for the single-host gate.
 const MAX_INTERNAL_HOSTS: usize = 65_536;
 /// Longest stored value (User-Agents can be arbitrarily long); truncated on a char boundary.
@@ -103,6 +105,11 @@ pub struct EnvObservation {
     /// First sighting this capture (ns since epoch; `0` when untimed).
     #[serde(default)]
     pub first_ts_ns: i64,
+    /// For a domain named in TLS SNI or HTTP Host: the external addresses it was reached at
+    /// (sorted, at most [`MAX_PEERS_PER_ITEM`]). Lets an alert on that address name the domain
+    /// even when no DNS answer was captured.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub peers: Vec<String>,
 }
 
 /// This capture's environment sightings. Carried on [`crate::baseline::CaptureProfile`].
@@ -132,6 +139,7 @@ struct EnvItem {
     count: u64,
     first_ts_ns: i64,
     label: Option<String>,
+    peers: BTreeSet<IpAddr>,
 }
 
 /// Streaming, bounded collector of environment sightings.
@@ -222,6 +230,19 @@ impl EnvTracker {
         ts_ns: i64,
         label: Option<&str>,
     ) {
+        self.observe_with_peer(kind, value, host, ts_ns, label, None);
+    }
+
+    /// [`Self::observe`], also remembering the external `peer` the value was seen going to.
+    fn observe_with_peer(
+        &mut self,
+        kind: IndicatorKind,
+        value: &str,
+        host: IpAddr,
+        ts_ns: i64,
+        label: Option<&str>,
+        peer: Option<IpAddr>,
+    ) {
         let value = value.trim();
         if value.is_empty() || !is_internal_host(host) {
             return;
@@ -251,6 +272,11 @@ impl EnvTracker {
                 item.hosts_truncated = true;
             }
         }
+        if let Some(p) = peer {
+            if item.peers.len() < MAX_PEERS_PER_ITEM {
+                item.peers.insert(p);
+            }
+        }
         if item.label.is_none() {
             if let Some(l) = label.map(str::trim).filter(|l| !l.is_empty()) {
                 item.label = Some(clip(l));
@@ -265,24 +291,44 @@ impl EnvTracker {
         }
     }
 
-    /// The software and place identity a closed flow carries, attributed to its client.
+    /// The software and place identity a closed flow carries, attributed to its client. The
+    /// client is the flow's initiator (its SYN sender, else its first packet), so an internal host
+    /// reaching a service on a port above its own source port is still attributed correctly.
+    /// `fallback` is the port-oriented `(client, server)` pair, used when the initiator is not an
+    /// internal host (a flow first seen mid-stream from the server side).
     pub fn observe_flow(
         &mut self,
         record: &crate::model::flow::FlowRecord,
-        client: IpAddr,
-        server: IpAddr,
+        fallback: (IpAddr, IpAddr),
         ts_ns: i64,
     ) {
+        let by_initiator = match record.initiator {
+            crate::model::flow::Direction::Forward => (record.key.lo_ip, record.key.hi_ip),
+            crate::model::flow::Direction::Reverse => (record.key.hi_ip, record.key.lo_ip),
+        };
+        let (client, server) = if is_internal_host(by_initiator.0) {
+            by_initiator
+        } else {
+            fallback
+        };
         if !is_internal_host(client) {
             return;
         }
+        let ext_server = classify_ip(server).is_external().then_some(server);
         for name in [record.sni.as_deref(), record.http_host.as_deref()]
             .into_iter()
             .flatten()
         {
             if let Some(d) = registered_domain(name) {
                 let label = name.trim().trim_end_matches('.').to_ascii_lowercase();
-                self.observe(IndicatorKind::Domain, &d, client, ts_ns, Some(&label));
+                self.observe_with_peer(
+                    IndicatorKind::Domain,
+                    &d,
+                    client,
+                    ts_ns,
+                    Some(&label),
+                    ext_server,
+                );
             }
         }
         if let Some(j) = record.ja4.as_deref() {
@@ -323,6 +369,7 @@ impl EnvTracker {
                 hosts_truncated: it.hosts_truncated,
                 count: it.count,
                 first_ts_ns: it.first_ts_ns,
+                peers: it.peers.iter().map(|p| p.to_string()).collect(),
             })
             .collect();
         items.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.value.cmp(&b.value)));
@@ -355,6 +402,9 @@ pub struct RareIndicator {
     /// Earlier captures in the history that saw it (`0` for a new indicator).
     #[serde(default)]
     pub history_captures: u64,
+    /// For a domain seen in TLS SNI / HTTP Host: the external addresses it was reached at.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub peers: Vec<String>,
 }
 
 /// The "new to this network" and "only one host" view for one capture.
@@ -390,6 +440,26 @@ pub struct RarityReport {
 }
 
 impl RarityReport {
+    /// Cap both lists at [`MAX_REPORT_ITEMS`], keeping first the rows that touch `focus` (IPs a
+    /// finding names, as producing host or as the value) so the alerts built from the stored
+    /// report still see their own first-seen indicators on a capture with many new values.
+    /// Otherwise the `(kind, value)` order is kept; `*_total` keep the exact counts.
+    pub fn truncate_for(&mut self, focus: &BTreeSet<String>) {
+        let touches = |r: &RareIndicator| {
+            r.hosts.iter().any(|h| focus.contains(h))
+                || focus.contains(&r.value)
+                || r.peers.iter().any(|p| focus.contains(p))
+        };
+        for list in [&mut self.new, &mut self.single_host] {
+            if list.len() > MAX_REPORT_ITEMS {
+                // Stable: within each group the (kind, value) order survives.
+                list.sort_by_key(|r| !touches(r));
+                list.truncate(MAX_REPORT_ITEMS);
+                list.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.value.cmp(&b.value)));
+            }
+        }
+    }
+
     /// New indicators that name `ip` as a producing host or as the indicator value (a first-seen
     /// destination).
     pub fn new_touching<'a>(&'a self, ip: &'a str) -> impl Iterator<Item = &'a RareIndicator> {
@@ -409,10 +479,13 @@ fn to_rare(o: &EnvObservation, history_captures: u64) -> RareIndicator {
         count: o.count,
         first_seen_ns: (o.first_ts_ns != 0).then_some(o.first_ts_ns),
         history_captures,
+        peers: o.peers.clone(),
     }
 }
 
-/// Diff this capture's sightings against the baseline's network-wide history.
+/// Diff this capture's sightings against the baseline's network-wide history. The `new` and
+/// `single_host` lists come back complete (detection reads them whole); call
+/// [`RarityReport::truncate_for`] before storing or printing the report.
 pub fn rarity_report(
     base: Option<&BaselineProfile>,
     snap: &EnvSnapshot,
@@ -432,6 +505,7 @@ pub fn rarity_report(
     let mut new = Vec::new();
     let mut single = Vec::new();
     for o in &snap.items {
+        // (sorted by (kind, value) already, so both lists keep that order)
         let hist = known.get(&(o.kind, o.value.as_str())).copied();
         if mature && hist.is_none() {
             new.push(to_rare(o, 0));
@@ -448,8 +522,6 @@ pub fn rarity_report(
     }
     let new_total = new.len() as u64;
     let single_host_total = single.len() as u64;
-    new.truncate(MAX_REPORT_ITEMS);
-    single.truncate(MAX_REPORT_ITEMS);
     RarityReport {
         baseline_loaded: base.is_some(),
         history_captures,
@@ -809,6 +881,107 @@ mod tests {
             .to_json_pretty()
             .unwrap()
             .contains("environment"));
+    }
+
+    #[test]
+    fn flow_is_oriented_by_its_initiator_and_links_domains_to_peers() {
+        use crate::model::flow::{FlowKey, FlowRecord};
+        use crate::model::packet::Transport;
+        // 10.0.0.5:40000 opens TLS to 45.33.32.156:50000 — the internal side has the LOWER port,
+        // so the port rule alone would call the external address the client.
+        let (key, dir) = FlowKey::normalized(
+            ip("10.0.0.5"),
+            40000,
+            ip("45.33.32.156"),
+            50000,
+            Transport::Tcp,
+        );
+        let mut rec = FlowRecord::new(key, 5);
+        rec.initiator = dir;
+        rec.sni = Some("svc.newsite.example".into());
+        rec.ja4 = Some("t13d_x".into());
+        let mut t = EnvTracker::new();
+        // The port-oriented pair a caller would pass: (45.33.32.156, 10.0.0.5).
+        t.observe_flow(&rec, (ip("45.33.32.156"), ip("10.0.0.5")), 5);
+        let s = t.snapshot();
+        let kinds: Vec<(IndicatorKind, &str)> =
+            s.items.iter().map(|o| (o.kind, o.value.as_str())).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (IndicatorKind::Ja4, "t13d_x"),
+                (IndicatorKind::Domain, "newsite.example"),
+                (IndicatorKind::Destination, "45.33.32.156"),
+            ]
+        );
+        assert!(s
+            .items
+            .iter()
+            .all(|o| o.hosts == vec!["10.0.0.5".to_string()]));
+        let dom = s
+            .items
+            .iter()
+            .find(|o| o.kind == IndicatorKind::Domain)
+            .unwrap();
+        assert_eq!(dom.peers, vec!["45.33.32.156".to_string()]);
+
+        // A flow first seen from the server side falls back to the port orientation.
+        let (key, _) = FlowKey::normalized(
+            ip("45.33.32.156"),
+            443,
+            ip("10.0.0.6"),
+            51000,
+            Transport::Tcp,
+        );
+        let mut rec = FlowRecord::new(key, 6);
+        rec.initiator = if key.lo_ip == ip("45.33.32.156") {
+            crate::model::flow::Direction::Forward
+        } else {
+            crate::model::flow::Direction::Reverse
+        };
+        rec.ja4 = Some("t13d_y".into());
+        t.observe_flow(&rec, (ip("10.0.0.6"), ip("45.33.32.156")), 6);
+        let s = t.snapshot();
+        let y = s.items.iter().find(|o| o.value == "t13d_y").unwrap();
+        assert_eq!(y.hosts, vec!["10.0.0.6".to_string()]);
+    }
+
+    #[test]
+    fn combos_see_every_new_value_and_the_stored_list_keeps_finding_rows() {
+        let mut t = EnvTracker::new();
+        for i in 0..150 {
+            t.observe(
+                IndicatorKind::Ja3,
+                &format!("a{i:03}"),
+                ip("10.0.0.2"),
+                1,
+                None,
+            );
+        }
+        // Sorts after every "a…" fingerprint, so a plain cap would drop it.
+        t.observe(IndicatorKind::Ja3, "zzz", ip("10.0.0.9"), 1, None);
+        t.observe(
+            IndicatorKind::Destination,
+            "45.33.32.156",
+            ip("10.0.0.9"),
+            1,
+            None,
+        );
+        let base = base_with(5, &[]);
+        let mut r = rarity_report(Some(&base), &t.snapshot(), &BaselineParams::default());
+        assert_eq!(r.new.len(), 152, "complete until truncated");
+        let combo = combo_findings(&r, &BTreeSet::new());
+        assert!(combo.iter().any(|f| f.src_ip == "10.0.0.9"), "{combo:?}");
+        let focus: BTreeSet<String> = ["10.0.0.9".to_string()].into();
+        r.truncate_for(&focus);
+        assert_eq!(r.new.len(), MAX_REPORT_ITEMS);
+        assert_eq!(r.new_total, 152);
+        assert!(r.new.iter().any(|n| n.value == "zzz"));
+        assert!(r.new.iter().any(|n| n.value == "45.33.32.156"));
+        assert!(r
+            .new
+            .windows(2)
+            .all(|w| (w[0].kind, &w[0].value) <= (w[1].kind, &w[1].value)));
     }
 
     // ---- Through the real pipeline ------------------------------------------------------------
