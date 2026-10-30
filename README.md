@@ -143,6 +143,13 @@ cargo run -p ppcap-cli --release -- eve out.json eve.json --json out.json
 # your YARA rules run over every one (each match is a finding), and --carve-dir saves them
 cargo run -p ppcap-cli --release -- analyze sample.pcap --json out.json \
   --yara team-rules.yar --yara my-rules.yar --carve-dir carved
+
+# What is new to this network: each run learns into the baseline file what the network's hosts
+# resolve, which client fingerprints and user agents they use, which certificates they are served
+# and where they connect; later runs list what no earlier capture saw. Share the file to share history
+cargo run -p ppcap-cli --release -- analyze monday.pcap --json out.json \
+  --baseline network.json --update-baseline network.json
+cargo run -p ppcap-cli --release -- baseline merge alice.json bob.json --out network.json
 ```
 
 A destination in `destinations.json` never holds a secret: it names the environment variable
@@ -204,6 +211,20 @@ earlier rules. A rule that uses regular expressions, modules (`pe.`, `math.`), `
 A match becomes a `rule_match` finding titled `YARA <rule>` on the client, with severity from the
 rule's `severity` meta (`critical`/`high`/`medium`/`low`, or 1–10; High when absent) and ATT&CK
 ids from `mitre_attack`. `--evidence` records each rule file's hash.
+
+The baseline file also keeps a network-wide history: registered domains (from DNS queries, TLS
+SNI and HTTP `Host`), JA4 and JA3 client fingerprints, HTTP user agents, server certificates
+(SHA-256 of the leaf, with its CN; visible on TLS 1.2 and older) and external destinations, each
+with how many captures saw it, first and last seen, and the most internal hosts that produced it
+at once. Only sightings by internal hosts count. Each analysis gets a "new to this network" list
+(nothing no earlier capture saw), shown once the baseline holds at least 3 captures of history so a
+young file does not call everything new, and an "only one host" list of domains, fingerprints,
+user agents and certificates a single host produced, shown when the capture has at least 5 internal
+hosts. An alert whose peer, peer domain or client software is new to the network says so in its
+context and gains a small priority bump; when one host shows both new client software and a new
+domain, certificate or destination, that becomes a Medium `baseline_deviation` finding. The
+history keeps the 50,000 most-seen values; anything dropped would show as new again, never hidden.
+`baseline merge` combines teammates' files; `baseline diff` lists what is new for a saved analysis.
 
 Suricata EVE import reads `alert` events and skips other event types. Each signature between the
 same two hosts becomes one `rule_match` finding with a hit count and first/last seen; Suricata

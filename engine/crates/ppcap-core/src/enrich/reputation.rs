@@ -351,6 +351,7 @@ mod apply_tests {
             suppressions: vec![],
             timeline_context: Default::default(),
             timelines: vec![],
+            rarity: None,
         }
     }
 

@@ -693,6 +693,9 @@ pub struct BehaviorTracker {
     /// SSH posture: per-`(client, server, port)` weaknesses seen in the cleartext handshake.
     /// Key-count bounded by `max_tracked_keys` (new-key-drop).
     ssh_posture: HashMap<(IpAddr, IpAddr, u16), SshPostureStat>,
+    /// Environment rarity: network-wide sightings (domains, fingerprints, certificates,
+    /// destinations, user agents). Bounded by its own caps.
+    env: crate::rarity::EnvTracker,
 }
 
 /// One SSH channel's cleartext-handshake posture.
@@ -906,7 +909,18 @@ impl BehaviorTracker {
             missing_sni: HashMap::new(),
             port_mismatch: HashMap::new(),
             ssh_posture: HashMap::new(),
+            env: crate::rarity::EnvTracker::new(),
         }
+    }
+
+    /// Environment rarity sightings collected so far.
+    pub fn env(&self) -> &crate::rarity::EnvTracker {
+        &self.env
+    }
+
+    /// Mutable access for the streaming pass to fold environment sightings.
+    pub fn env_mut(&mut self) -> &mut crate::rarity::EnvTracker {
+        &mut self.env
     }
 
     /// Project this capture's per-internal-host egress behavior for Behavioral Baseline Learning.
@@ -1003,7 +1017,12 @@ impl BehaviorTracker {
             .collect();
         out.sort_by(|a, b| a.host.cmp(&b.host));
         out.truncate(params.max_hosts);
-        crate::baseline::CaptureProfile { hosts: out }
+        // `environment` is filled by the caller from `env().snapshot()`, which it also needs for
+        // the rarity report.
+        crate::baseline::CaptureProfile {
+            hosts: out,
+            environment: Default::default(),
+        }
     }
 
     /// Behavioral-baseline: record that `src` presented TLS JA3 fingerprint `ja3`. Bounded: a

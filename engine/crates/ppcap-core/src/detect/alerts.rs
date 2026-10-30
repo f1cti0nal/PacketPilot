@@ -64,6 +64,11 @@ pub const PTS_ALERT_REP: i32 = 10;
 /// A `BaselineDeviation` member: the actor did something first-seen vs its learned self
 /// (warmup gating upstream keeps this trustworthy).
 pub const PTS_ALERT_NOVEL: i32 = 5;
+/// Environment rarity: the alert's peer, the peer's domain, or the actor's client software is new
+/// to the whole network (vs the baseline's history; warm-up gating upstream).
+pub const PTS_ALERT_FIRST_SEEN: i32 = 5;
+/// Context lines listing first-seen indicators per alert.
+const MAX_FIRST_SEEN_FACTS: usize = 3;
 /// A `TrafficAnomaly` member: the actor departed from its own within-capture forecast.
 pub const PTS_ALERT_ANOM: i32 = 5;
 /// Every external peer is attributed cloud/CDN address space and none is IOC/reputation-bad —
@@ -557,6 +562,7 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
                 .unwrap_or(false)
         })
         .collect();
+    let first_seen = first_seen_facts(summary, &seed.actor, &ext_peers);
     let all_ext_cloud = !ext_peers.is_empty()
         && ext_peers.iter().all(|ip| {
             cloud_of(summary, ip).is_some()
@@ -635,6 +641,18 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
             &mut terms,
             "novel: deviates from learned baseline".to_string(),
             PTS_ALERT_NOVEL,
+        );
+    }
+    if !first_seen.is_empty() {
+        pos += PTS_ALERT_FIRST_SEEN;
+        push(
+            &mut terms,
+            format!(
+                "novel: {} indicator{} new to this network",
+                first_seen.len(),
+                if first_seen.len() == 1 { "" } else { "s" }
+            ),
+            PTS_ALERT_FIRST_SEEN,
         );
     }
     if has_anom {
@@ -773,6 +791,7 @@ fn assemble(seed: Seed, summary: &Summary) -> Alert {
         &dst_ports,
         &ext_peers,
         next_stage.as_deref(),
+        &first_seen,
     );
 
     let mut hosts = seed.hosts;
@@ -917,6 +936,82 @@ fn action_for(f: &Finding, peer: Option<&str>, port: Option<u16>, actor: &str) -
     }
 }
 
+/// Environment-rarity facts for an alert: `(sentence, subject ip)` for each first-seen indicator
+/// tied to it — an external peer nobody here reached before, a domain resolving to that peer that
+/// nobody here looked up before, or client software (JA4/JA3/User-Agent) on the actor that no
+/// capture in the history saw. Peers come first. Empty without a mature baseline.
+fn first_seen_facts(summary: &Summary, actor: &str, ext_peers: &[&str]) -> Vec<(String, String)> {
+    use crate::rarity::IndicatorKind;
+    let Some(r) = summary.rarity.as_ref() else {
+        return Vec::new();
+    };
+    if r.new.is_empty() {
+        return Vec::new();
+    }
+    let history = format!(
+        "{} earlier capture{}",
+        r.history_captures,
+        if r.history_captures == 1 { "" } else { "s" }
+    );
+    let mut out: Vec<(String, String)> = Vec::new();
+    for &peer in ext_peers {
+        if r.new
+            .iter()
+            .any(|n| n.kind == IndicatorKind::Destination && n.value == peer)
+        {
+            out.push((
+                format!("new to this network: nobody here reached {peer} in {history}"),
+                peer.to_string(),
+            ));
+        }
+        // The peer's names: DNS answers, plus TLS SNI / HTTP Host names this alert's actor sent
+        // to it (another host's name for a shared address is not this alert's story).
+        let mut domains: BTreeSet<String> = summary
+            .resolved_ips
+            .iter()
+            .filter(|d| d.ip == peer)
+            .filter_map(|d| crate::rarity::registered_domain(&d.domain))
+            .collect();
+        domains.extend(
+            r.new
+                .iter()
+                .filter(|n| {
+                    n.kind == IndicatorKind::Domain
+                        // Exact host/address pairs only: past the link cap a missing fact is the
+                        // safe failure, a guessed pairing would be a false one.
+                        && n.peers.iter().any(|l| l.peer == peer && l.host == actor)
+                })
+                .map(|n| n.value.clone()),
+        );
+        for d in domains {
+            if r.new
+                .iter()
+                .any(|n| n.kind == IndicatorKind::Domain && n.value == d)
+            {
+                out.push((
+                    format!("new to this network: domain {d} ({peer}) never seen in {history}"),
+                    peer.to_string(),
+                ));
+            }
+        }
+    }
+    for n in r
+        .new
+        .iter()
+        .filter(|n| n.kind.is_software() && n.hosts.iter().any(|h| h == actor))
+    {
+        let v: String = n.value.chars().take(48).collect();
+        out.push((
+            format!(
+                "new to this network: {} {v} on {actor} never seen in {history}",
+                n.kind.phrase()
+            ),
+            actor.to_string(),
+        ));
+    }
+    out
+}
+
 /// Threat-card lookup for an implicated IP (ip_threats is bounded to the top-k rows).
 fn card_of<'a>(summary: &'a Summary, ip: &str) -> Option<&'a IpThreat> {
     summary.ip_threats.iter().find(|c| c.ip == ip)
@@ -955,6 +1050,7 @@ fn build_context(
     dst_ports: &BTreeMap<&str, Option<u16>>,
     ext_peers: &[&str],
     next_stage: Option<&str>,
+    first_seen: &[(String, String)],
 ) -> AlertContext {
     let findings = &summary.findings;
     // The actor's flag is actor-scoped: on a multi-host chain a pivot host's deviation must
@@ -1174,6 +1270,14 @@ fn build_context(
             Some(c.server.clone()),
         );
     }
+    for (text, ip) in first_seen.iter().take(MAX_FIRST_SEEN_FACTS) {
+        entry(
+            ContextKind::NewToNetwork,
+            text.clone(),
+            None,
+            Some(ip.clone()),
+        );
+    }
     if let Some(ed) = summary.encrypted_dns.iter().find(|e| e.host == seed.actor) {
         entry(
             ContextKind::EncryptedDns,
@@ -1188,7 +1292,19 @@ fn build_context(
 
     entries.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.text.cmp(&b.text)));
     entries.dedup_by(|a, b| a.kind == b.kind && a.text == b.text);
-    entries.truncate(MAX_CONTEXT_ENTRIES);
+    if entries.len() > MAX_CONTEXT_ENTRIES {
+        // A first-seen fact backs a priority term, so it keeps one slot even on a busy alert
+        // (it sorts last and would otherwise always be the one cut).
+        let new_fact = entries
+            .iter()
+            .position(|e| e.kind == ContextKind::NewToNetwork)
+            .filter(|&i| i >= MAX_CONTEXT_ENTRIES)
+            .map(|i| entries[i].clone());
+        entries.truncate(MAX_CONTEXT_ENTRIES);
+        if let Some(fact) = new_fact {
+            entries[MAX_CONTEXT_ENTRIES - 1] = fact;
+        }
+    }
 
     AlertContext {
         actor,
@@ -1741,6 +1857,202 @@ mod tests {
             "cap term must be visible: {:?}",
             alerts[0].priority_terms
         );
+    }
+
+    fn rare(
+        kind: crate::rarity::IndicatorKind,
+        value: &str,
+        host: &str,
+        peers: &[&str],
+    ) -> crate::rarity::RareIndicator {
+        crate::rarity::RareIndicator {
+            kind,
+            value: value.to_string(),
+            label: None,
+            hosts: vec![host.to_string()],
+            hosts_truncated: false,
+            count: 1,
+            first_seen_ns: None,
+            history_captures: 0,
+            peers: peers
+                .iter()
+                .map(|p| crate::rarity::PeerLink {
+                    host: host.to_string(),
+                    peer: p.to_string(),
+                })
+                .collect(),
+            peers_truncated: false,
+        }
+    }
+
+    #[test]
+    fn sni_only_new_domain_reaches_the_alert_on_its_peer() {
+        use crate::rarity::{IndicatorKind, RarityReport};
+        let mut summary = mk_summary(vec![f(
+            FindingKind::Beacon,
+            45,
+            "10.0.0.9",
+            Some("45.77.13.37"),
+            Some(443),
+            None,
+        )]);
+        // No DNS answer for the peer: the link comes from the SNI sighting itself.
+        summary.rarity = Some(RarityReport {
+            baseline_loaded: true,
+            history_captures: 4,
+            new: vec![rare(
+                IndicatorKind::Domain,
+                "newsite.example",
+                "10.0.0.9",
+                &["45.77.13.37"],
+            )],
+            new_total: 1,
+            ..Default::default()
+        });
+        let alerts = derive_alerts(&summary);
+        let ctx = &alerts[0].context.entries;
+        assert!(
+            ctx.iter()
+                .any(|e| e.kind == ContextKind::NewToNetwork && e.text.contains("newsite.example")),
+            "{ctx:?}"
+        );
+        assert!(alerts[0]
+            .priority_terms
+            .iter()
+            .any(|t| t.label == "novel: 1 indicator new to this network"));
+    }
+
+    #[test]
+    fn overflowed_peer_links_never_invent_a_host_address_pair() {
+        use crate::rarity::{IndicatorKind, RarityReport};
+        let mut summary = mk_summary(vec![f(
+            FindingKind::Beacon,
+            45,
+            "10.0.0.9",
+            Some("45.77.13.37"),
+            Some(443),
+            None,
+        )]);
+        // 10.0.0.9 named the domain (maybe elsewhere); only 10.0.0.1's link to this address is
+        // known. Joining the two would claim something nobody saw.
+        let mut n = rare(
+            IndicatorKind::Domain,
+            "new.example",
+            "10.0.0.1",
+            &["45.77.13.37"],
+        );
+        n.hosts.push("10.0.0.9".to_string());
+        n.peers_truncated = true;
+        summary.rarity = Some(RarityReport {
+            baseline_loaded: true,
+            history_captures: 4,
+            new: vec![n],
+            new_total: 1,
+            ..Default::default()
+        });
+        let alerts = derive_alerts(&summary);
+        assert!(alerts[0]
+            .context
+            .entries
+            .iter()
+            .all(|e| e.kind != ContextKind::NewToNetwork));
+    }
+
+    #[test]
+    fn another_hosts_sni_on_a_shared_address_stays_off_this_alert() {
+        use crate::rarity::{IndicatorKind, RarityReport};
+        let mut summary = mk_summary(vec![f(
+            FindingKind::Beacon,
+            45,
+            "10.0.0.6",
+            Some("45.77.13.37"),
+            Some(443),
+            None,
+        )]);
+        // 10.0.0.5 named newsite.example at the same address; 10.0.0.6 never did.
+        summary.rarity = Some(RarityReport {
+            baseline_loaded: true,
+            history_captures: 4,
+            new: vec![rare(
+                IndicatorKind::Domain,
+                "newsite.example",
+                "10.0.0.5",
+                &["45.77.13.37"],
+            )],
+            new_total: 1,
+            ..Default::default()
+        });
+        let alerts = derive_alerts(&summary);
+        assert!(alerts[0]
+            .context
+            .entries
+            .iter()
+            .all(|e| e.kind != ContextKind::NewToNetwork));
+        assert!(alerts[0]
+            .priority_terms
+            .iter()
+            .all(|t| !t.label.contains("new to this network")));
+    }
+
+    #[test]
+    fn busy_alert_keeps_a_slot_for_its_first_seen_fact() {
+        use crate::rarity::{IndicatorKind, RarityReport};
+        let peers = ["45.77.13.37", "45.77.13.38", "45.77.13.39", "45.77.13.40"];
+        let mut summary = mk_summary(
+            peers
+                .iter()
+                .map(|p| {
+                    f(
+                        FindingKind::Beacon,
+                        45,
+                        "10.0.0.9",
+                        Some(p),
+                        Some(443),
+                        None,
+                    )
+                })
+                .collect(),
+        );
+        // Every peer brings threat-intel, reputation, passive-DNS and cloud facts: 16 > 12.
+        summary.ip_threats = peers
+            .iter()
+            .map(|p| card(p, true, vec!["public", "ioc", "cloud:aws"], 1))
+            .collect();
+        summary.resolved_ips = peers
+            .iter()
+            .map(|p| crate::model::summary::ResolvedDomain {
+                ip: p.to_string(),
+                domain: format!("h{p}.cdn.example"),
+                resolutions: 1,
+            })
+            .collect();
+        summary.rarity = Some(RarityReport {
+            baseline_loaded: true,
+            history_captures: 4,
+            new: vec![rare(
+                IndicatorKind::Destination,
+                "45.77.13.40",
+                "10.0.0.9",
+                &[],
+            )],
+            new_total: 1,
+            ..Default::default()
+        });
+        let alerts = derive_alerts(&summary);
+        let a = alerts
+            .iter()
+            .find(|a| {
+                a.priority_terms
+                    .iter()
+                    .any(|t| t.label.contains("new to this network"))
+            })
+            .expect("first-seen term");
+        assert_eq!(a.context.entries.len(), MAX_CONTEXT_ENTRIES);
+        assert!(a
+            .context
+            .entries
+            .iter()
+            .any(|e| e.kind == ContextKind::NewToNetwork && e.text.contains("45.77.13.40")));
     }
 
     #[test]

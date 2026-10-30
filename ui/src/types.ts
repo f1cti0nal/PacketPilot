@@ -131,6 +131,9 @@ export interface Summary {
   tls_servers?: TlsServerPosture[];
   /** Carved HTTP downloads with their SHA-256 (IOC) + known-bad flag; absent in older summaries. */
   carved_files?: CarvedFile[];
+  /** Environment rarity: what is new to the whole network and what only one host does; absent
+   * when there were no internal-host sightings and no baseline, and in older summaries. */
+  rarity?: RarityReport;
   /** Cross-flow behavioral findings (beaconing, sweeps, exfil); absent in older summaries. */
   findings?: Finding[];
   /** Findings correlated into per-host incidents; absent in older summaries. */
@@ -341,6 +344,39 @@ export interface TlsServerPosture {
   flows: number;
   bytes: number;
   clients: number;
+}
+
+/** Environment-rarity indicator kind (engine `IndicatorKind`). */
+export type IndicatorKind = "ja4" | "ja3" | "user_agent" | "cert" | "domain" | "destination";
+
+/** One rare indicator: a value new to the network, or produced by only one host. */
+export interface RareIndicator {
+  kind: IndicatorKind;
+  value: string;
+  /** Full name for a domain, subject CN for a certificate. */
+  label?: string;
+  hosts: string[];
+  hosts_truncated?: boolean;
+  count: number;
+  first_seen_ns?: number;
+  /** Earlier captures that saw it (0 for a new indicator). */
+  history_captures?: number;
+  /** For a domain seen in TLS SNI / HTTP Host: which internal host asked for it at which address. */
+  peers?: { host: string; peer: string }[];
+  peers_truncated?: boolean;
+}
+
+/** The "new to this network" view (engine `RarityReport`). */
+export interface RarityReport {
+  baseline_loaded?: boolean;
+  history_captures?: number;
+  warming_up?: boolean;
+  internal_hosts?: number;
+  new?: RareIndicator[];
+  new_total?: number;
+  single_host?: RareIndicator[];
+  single_host_total?: number;
+  incomplete?: boolean;
 }
 
 export interface EncryptedDnsHost {
@@ -572,7 +608,8 @@ export type ContextKind =
   | "passive_dns"
   | "cloud_provider"
   | "carved_file"
-  | "encrypted_dns";
+  | "encrypted_dns"
+  | "new_to_network";
 
 /** One deterministic context fact, with an optional back-ref to its source finding. */
 export interface ContextEntry {

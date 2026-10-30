@@ -109,6 +109,13 @@ pub struct BaselineParams {
     /// Minimum distinct populated phase slots before seasonality engages (else the plain trend
     /// forecast is used — a profile with only one phase carries no seasonal information).
     pub min_seasonal_phases: u32,
+
+    // ---- Environment rarity (network-wide "new to this network") ----
+    /// Captures of environment history a baseline needs before anything is called new to the
+    /// network (a young baseline would call everything new).
+    pub min_env_captures: u64,
+    /// Cap on network-wide environment values kept in the sidecar (most-seen survive).
+    pub max_env_items: usize,
 }
 
 impl Default for BaselineParams {
@@ -136,6 +143,8 @@ impl Default for BaselineParams {
             seasonal_slot_secs: 86_400, // one day per slot
             min_seasonal_samples: 2,
             min_seasonal_phases: 3,
+            min_env_captures: 3,
+            max_env_items: 50_000,
         }
     }
 }
@@ -409,6 +418,24 @@ pub struct HostObservation {
 pub struct CaptureProfile {
     /// Per-host observations, sorted by host for stable diffs.
     pub hosts: Vec<HostObservation>,
+    /// Network-wide environment sightings (domains, fingerprints, certificates, destinations, user
+    /// agents) for environment rarity. `#[serde(default)]` keeps older snapshots readable.
+    #[serde(default, skip_serializing_if = "crate::rarity::EnvSnapshot::is_empty")]
+    pub environment: crate::rarity::EnvSnapshot,
+}
+
+/// One network-wide environment value learned across captures: has anyone here seen it, in how
+/// many captures, first and last when, and on how many hosts at most in one capture.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnvStat {
+    pub kind: crate::rarity::IndicatorKind,
+    pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub seen: SeenCount,
+    /// Most internal hosts that produced it in any one capture (saturates at the tracker cap).
+    #[serde(default)]
+    pub max_hosts: u32,
 }
 
 // ---- The persisted baseline sidecar -----------------------------------------------------------
@@ -722,6 +749,13 @@ pub struct BaselineProfile {
     pub last_ts_ns: i64,
     /// Per-internal-host profiles, sorted by host, bounded by `max_hosts`.
     pub hosts: Vec<HostBaseline>,
+    /// Captures that contributed environment sightings (the rarity warm-up gate). Distinct from
+    /// `captures_merged`: a sidecar learned before environment rarity existed has none.
+    #[serde(default)]
+    pub env_captures: u64,
+    /// Network-wide environment history, sorted by `(kind, value)`, bounded by `max_env_items`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment: Vec<EnvStat>,
 }
 
 impl BaselineProfile {
@@ -737,6 +771,8 @@ impl BaselineProfile {
             first_ts_ns: 0,
             last_ts_ns: 0,
             hosts: Vec::new(),
+            env_captures: 0,
+            environment: Vec::new(),
         }
     }
 
@@ -891,6 +927,29 @@ fn cap_beacons(map: BTreeMap<(String, u16), (i64, f64, SeenCount)>, k: usize) ->
     v
 }
 
+/// Keep the `max` most-seen environment values (by captures, then recency, then volume), then sort
+/// by `(kind, value)` for stable on-disk order. An evicted rare value looks new again later — the
+/// conservative failure (an extra "new" row, never a hidden one).
+fn cap_env(
+    map: BTreeMap<(crate::rarity::IndicatorKind, String), EnvStat>,
+    max: usize,
+) -> Vec<EnvStat> {
+    let mut v: Vec<EnvStat> = map.into_values().collect();
+    if v.len() > max {
+        v.sort_by(|a, b| {
+            b.seen
+                .captures
+                .cmp(&a.seen.captures)
+                .then(b.seen.last_seen_unix.cmp(&a.seen.last_seen_unix))
+                .then(b.seen.total.cmp(&a.seen.total))
+                .then_with(|| (a.kind, &a.value).cmp(&(b.kind, &b.value)))
+        });
+        v.truncate(max);
+    }
+    v.sort_by(|a, b| (a.kind, &a.value).cmp(&(b.kind, &b.value)));
+    v
+}
+
 /// Keep the top-`max_hosts` host profiles (by captures-seen then outbound volume), then sort by
 /// host for stable on-disk order.
 fn cap_hosts(mut hosts: Vec<HostBaseline>, max_hosts: usize) -> Vec<HostBaseline> {
@@ -961,6 +1020,34 @@ pub fn update_baseline(
     base.last_ts_ns = fold_max_ts(base.last_ts_ns, l);
 
     base.hosts = cap_hosts(hosts.into_values().collect(), params.max_hosts);
+
+    // Environment rarity: fold this capture's network-wide sightings.
+    if !prof.environment.items.is_empty() {
+        let mut env: BTreeMap<(crate::rarity::IndicatorKind, String), EnvStat> =
+            std::mem::take(&mut base.environment)
+                .into_iter()
+                .map(|e| ((e.kind, e.value.clone()), e))
+                .collect();
+        for o in &prof.environment.items {
+            let hosts = o.hosts.len() as u32 + u32::from(o.hosts_truncated);
+            let e = env
+                .entry((o.kind, o.value.clone()))
+                .or_insert_with(|| EnvStat {
+                    kind: o.kind,
+                    value: o.value.clone(),
+                    label: None,
+                    seen: SeenCount::default(),
+                    max_hosts: 0,
+                });
+            e.seen.observe(o.count, now_unix);
+            e.max_hosts = e.max_hosts.max(hosts);
+            if e.label.is_none() {
+                e.label = o.label.clone();
+            }
+        }
+        base.env_captures += 1;
+        base.environment = cap_env(env, params.max_env_items);
+    }
     base
 }
 
@@ -994,6 +1081,25 @@ pub fn merge(a: BaselineProfile, b: BaselineProfile, params: &BaselineParams) ->
             }
         }
     }
+    let mut env: BTreeMap<(crate::rarity::IndicatorKind, String), EnvStat> = a
+        .environment
+        .into_iter()
+        .map(|e| ((e.kind, e.value.clone()), e))
+        .collect();
+    for e in b.environment {
+        match env.get_mut(&(e.kind, e.value.clone())) {
+            Some(cur) => {
+                cur.seen = SeenCount::merge(&cur.seen, &e.seen);
+                cur.max_hosts = cur.max_hosts.max(e.max_hosts);
+                if cur.label.is_none() {
+                    cur.label = e.label;
+                }
+            }
+            None => {
+                env.insert((e.kind, e.value.clone()), e);
+            }
+        }
+    }
     let mut shas = a.source_sha256s;
     for h in b.source_sha256s {
         if !shas.contains(&h) {
@@ -1020,6 +1126,8 @@ pub fn merge(a: BaselineProfile, b: BaselineProfile, params: &BaselineParams) ->
         first_ts_ns: fold_min_ts(a.first_ts_ns, b.first_ts_ns),
         last_ts_ns: fold_max_ts(a.last_ts_ns, b.last_ts_ns),
         hosts: cap_hosts(hosts.into_values().collect(), params.max_hosts),
+        env_captures: a.env_captures + b.env_captures,
+        environment: cap_env(env, params.max_env_items),
     }
 }
 
@@ -1523,6 +1631,7 @@ mod tests {
         for (i, &(out, in_, flows)) in samples.iter().enumerate() {
             let prof = CaptureProfile {
                 hosts: vec![obs_metrics(host, out, in_, flows)],
+                ..Default::default()
             };
             base = update_baseline(
                 base,
@@ -1584,6 +1693,7 @@ mod tests {
         let params = BaselineParams::default();
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 1000, &["203.0.113.7"], &[443])],
+            ..Default::default()
         };
         let base = update_baseline(
             BaselineProfile::new(),
@@ -1617,9 +1727,11 @@ mod tests {
         let params = BaselineParams::default();
         let p1 = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 1000, &["203.0.113.7"], &[443])],
+            ..Default::default()
         };
         let p2 = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 2000, &["203.0.113.8"], &[80])],
+            ..Default::default()
         };
         let a = update_baseline(
             BaselineProfile::new(),
@@ -1695,6 +1807,7 @@ mod tests {
                 engine_version: "t".to_string(),
                 baseline: Some(CaptureProfile {
                     hosts: vec![base_obs.clone()],
+                    ..Default::default()
                 }),
                 ..Default::default()
             };
@@ -1735,7 +1848,14 @@ mod tests {
             &[0, 7],
             &[("203.0.113.7", 443), ("198.51.100.9", 8443)],
         );
-        let report = compare_to_baseline(&base, &CaptureProfile { hosts: vec![dev] }, &params);
+        let report = compare_to_baseline(
+            &base,
+            &CaptureProfile {
+                hosts: vec![dev],
+                ..Default::default()
+            },
+            &params,
+        );
         assert_eq!(report.deviations.len(), 1);
         let ev = &report.deviations[0].evidence;
         assert!(ev.iter().any(|e| e.contains("fingerprint")), "{ev:?}");
@@ -1764,6 +1884,7 @@ mod tests {
             &base,
             &CaptureProfile {
                 hosts: vec![base_obs.clone()],
+                ..Default::default()
             },
             &params,
         );
@@ -1775,6 +1896,7 @@ mod tests {
             engine_version: "t".to_string(),
             baseline: Some(CaptureProfile {
                 hosts: vec![o.clone()],
+                ..Default::default()
             }),
             ..Default::default()
         }
@@ -1899,7 +2021,10 @@ mod tests {
         );
         assert!(!has_offhours(&compare_to_baseline(
             &base,
-            &CaptureProfile { hosts: vec![dev] },
+            &CaptureProfile {
+                hosts: vec![dev],
+                ..Default::default()
+            },
             &params
         )));
 
@@ -1928,7 +2053,10 @@ mod tests {
         );
         assert!(!has_offhours(&compare_to_baseline(
             &base,
-            &CaptureProfile { hosts: vec![dev] },
+            &CaptureProfile {
+                hosts: vec![dev],
+                ..Default::default()
+            },
             &params
         )));
 
@@ -1956,7 +2084,10 @@ mod tests {
         );
         assert!(has_offhours(&compare_to_baseline(
             &base,
-            &CaptureProfile { hosts: vec![dev] },
+            &CaptureProfile {
+                hosts: vec![dev],
+                ..Default::default()
+            },
             &params
         )));
     }
@@ -1976,7 +2107,14 @@ mod tests {
         );
         // A small bump stays within the scale-relative band.
         let near = obs("10.0.0.5", 1050, &["203.0.113.7"], &[443]);
-        let quiet = compare_to_baseline(&base, &CaptureProfile { hosts: vec![near] }, &params);
+        let quiet = compare_to_baseline(
+            &base,
+            &CaptureProfile {
+                hosts: vec![near],
+                ..Default::default()
+            },
+            &params,
+        );
         assert!(
             quiet.deviations.is_empty(),
             "a small bump on a constant baseline stays quiet: {:?}",
@@ -1984,7 +2122,14 @@ mod tests {
         );
         // A large spike is now caught (the sd==0 blind spot is closed).
         let spike = obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443]);
-        let report = compare_to_baseline(&base, &CaptureProfile { hosts: vec![spike] }, &params);
+        let report = compare_to_baseline(
+            &base,
+            &CaptureProfile {
+                hosts: vec![spike],
+                ..Default::default()
+            },
+            &params,
+        );
         assert_eq!(report.deviations.len(), 1);
         assert!(report.deviations[0]
             .evidence
@@ -2005,6 +2150,7 @@ mod tests {
         for i in 0..n {
             let prof = CaptureProfile {
                 hosts: vec![obs(host, bytes, peers, svcs)],
+                ..Default::default()
             };
             base = update_baseline(
                 base,
@@ -2022,6 +2168,7 @@ mod tests {
         let base = warm_baseline("10.0.0.5", 6, 1000, &["203.0.113.7"], &[443]);
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 1000, &["203.0.113.7"], &[443])],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.hosts_compared, 1);
@@ -2039,6 +2186,7 @@ mod tests {
                 &["203.0.113.7", "198.51.100.9"],
                 &[443, 4444],
             )],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.deviations.len(), 1);
@@ -2066,6 +2214,7 @@ mod tests {
         {
             let prof = CaptureProfile {
                 hosts: vec![obs("10.0.0.5", b, &["203.0.113.7"], &[443])],
+                ..Default::default()
             };
             base = update_baseline(
                 base,
@@ -2077,6 +2226,7 @@ mod tests {
         // A 50 MB egress dwarfs the ~1 KB baseline.
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443])],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.deviations.len(), 1);
@@ -2095,6 +2245,7 @@ mod tests {
             let bytes = start + i * step;
             let prof = CaptureProfile {
                 hosts: vec![obs(host, bytes, &["203.0.113.7"], &[443])],
+                ..Default::default()
             };
             base = update_baseline(
                 base,
@@ -2152,6 +2303,7 @@ mod tests {
         // The next capture continues the trend (~9 MB) — predictive mode must NOT flag it.
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 9_000_000, &["203.0.113.7"], &[443])],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert!(
@@ -2186,6 +2338,7 @@ mod tests {
         assert!((observed as f64) < static_threshold && (observed as f64) > band_hi);
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", observed, &["203.0.113.7"], &[443])],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(
@@ -2215,6 +2368,7 @@ mod tests {
         {
             let prof = CaptureProfile {
                 hosts: vec![obs("10.0.0.5", b, &["203.0.113.7"], &[443])],
+                ..Default::default()
             };
             base = update_baseline(
                 base,
@@ -2231,6 +2385,7 @@ mod tests {
         }
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 50_000_000, &["203.0.113.7"], &[443])],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.deviations.len(), 1);
@@ -2255,6 +2410,7 @@ mod tests {
         // Inbound jumps far off its trend (which predicts ~9 MB); outbound/flows unchanged.
         let prof = CaptureProfile {
             hosts: vec![obs_metrics("10.0.0.5", 1000, 40_000_000, 1)],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.deviations.len(), 1);
@@ -2279,6 +2435,7 @@ mod tests {
         // A burst of connections far off the trend (which predicts ~90).
         let prof = CaptureProfile {
             hosts: vec![obs_metrics("10.0.0.5", 1000, 1000, 400)],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.deviations.len(), 1);
@@ -2302,6 +2459,7 @@ mod tests {
             let out = if (day % 7) < 5 { 10_000_000 } else { 1_000_000 };
             let prof = CaptureProfile {
                 hosts: vec![obs_metrics(host, out, 500_000, 5)],
+                ..Default::default()
             };
             let ts = day * 86_400 * 1_000_000_000;
             base = update_baseline(
@@ -2325,6 +2483,7 @@ mod tests {
         // A weekend capture carrying a weekday-high 10 MB — off-rhythm.
         let prof = CaptureProfile {
             hosts: vec![obs_metrics("10.0.0.5", 10_000_000, 500_000, 5)],
+            ..Default::default()
         };
 
         // Seasonality ON: the value breaks the weekend seasonal band.
@@ -2383,6 +2542,7 @@ mod tests {
         // 1 MB is far below the host's overall (weekday-dominated) mean.
         let prof = CaptureProfile {
             hosts: vec![obs_metrics("10.0.0.5", 1_000_000, 500_000, 5)],
+            ..Default::default()
         };
         let report = compare_to_baseline_at(&base, &prof, 12 * 86_400, &params);
         assert!(
@@ -2399,6 +2559,7 @@ mod tests {
         let base = warm_baseline("10.0.0.5", 2, 1000, &["203.0.113.7"], &[443]);
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.5", 1000, &["9.9.9.9"], &[31337])],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.hosts_compared, 1);
@@ -2412,6 +2573,7 @@ mod tests {
         // A host not in the baseline is skipped.
         let prof = CaptureProfile {
             hosts: vec![obs("10.0.0.99", 1000, &["9.9.9.9"], &[443])],
+            ..Default::default()
         };
         let report = compare_to_baseline(&base, &prof, &params);
         assert_eq!(report.hosts_compared, 0);
@@ -2432,6 +2594,7 @@ mod tests {
         let base = {
             let prof = CaptureProfile {
                 hosts: vec![obs("10.0.0.5", 1000, &peer_refs, &[443])],
+                ..Default::default()
             };
             update_baseline(
                 BaselineProfile::new(),
