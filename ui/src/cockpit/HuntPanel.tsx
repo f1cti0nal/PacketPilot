@@ -73,7 +73,7 @@ function PivotRow({ pivot, onFollow }: { pivot: RenderedPivot; onFollow?: () => 
           )}
           {onFollow && (
             <button type="button" className={cn(BTN_OUTLINE, "h-7 px-2 text-xs")} onClick={onFollow}>
-              {PIVOT_ACTION[pivot.target]}
+              {pivot.target === "packets" && !pivot.scope ? "Copy filter" : PIVOT_ACTION[pivot.target]}
             </button>
           )}
         </span>

@@ -4,7 +4,7 @@
 // `PlaybookFile`), so export/import is a straight download/upload and `ppcap playbook --playbooks`
 // reads the same file. Never throws: a quota/parse error degrades to "no progress" / "built-ins".
 
-import type { PlaybookProgress, PlaybookRun, PlaybookStep } from "../types";
+import type { AnalysisOutput, PlaybookProgress, PlaybookRun, PlaybookStep } from "../types";
 import { scopedKey } from "./storageScope";
 
 const PROGRESS_BASE = "packetpilot.playbooks.progress.v1";
@@ -17,6 +17,17 @@ const MAX_CAPTURES = 50;
 type ProgressStore = Record<string, { at: number; alerts: Record<string, PlaybookProgress> }>;
 
 export const emptyProgress = (): PlaybookProgress => ({ done: [], notes: {} });
+
+/**
+ * The capture identity progress is stored under: the source SHA-256 when the analysis recorded
+ * one, else the path plus the capture's time span and size, so a different capture later saved
+ * at the same path never inherits this one's ticks and notes.
+ */
+export function progressCaptureKey(output: AnalysisOutput): string {
+  if (output.source_sha256) return `sha256:${output.source_sha256}`;
+  const s = output.summary;
+  return ["path", output.source_path, s.first_ts_ns, s.last_ts_ns, s.total_packets, s.total_bytes].join("|");
+}
 
 /** The progress key for a step (matches the engine's `step_key`). */
 export function stepKey(run: PlaybookRun, step: PlaybookStep): string {

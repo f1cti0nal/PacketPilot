@@ -120,7 +120,7 @@ pub struct PlaybookFile {
 }
 
 /// The active playbooks: the built-ins, then team files in load order. A later playbook with the
-/// same id replaces the earlier one in place; for each kind the last playbook naming it wins.
+/// same id replaces the earlier one; for each kind the last loaded playbook naming it wins.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PlaybookSet {
     pub playbooks: Vec<Playbook>,
@@ -145,10 +145,9 @@ impl PlaybookSet {
     pub fn add_file(&mut self, file: PlaybookFile, origin: &str) {
         for mut p in file.playbooks {
             p.origin = Some(origin.to_string());
-            match self.playbooks.iter_mut().find(|q| q.id == p.id) {
-                Some(slot) => *slot = p,
-                None => self.playbooks.push(p),
-            }
+            // A replacement moves to the end, so it outranks everything loaded before it.
+            self.playbooks.retain(|q| q.id != p.id);
+            self.playbooks.push(p);
         }
     }
 
@@ -361,6 +360,8 @@ pub struct PlaybookProgress {
 struct Vars {
     map: BTreeMap<&'static str, String>,
     window: Option<(i64, i64)>,
+    /// The member findings this playbook was picked for; `None` = the whole alert (no anchor).
+    members: Option<BTreeSet<u32>>,
 }
 
 fn sql_list(items: &BTreeSet<String>) -> Option<String> {
@@ -392,8 +393,28 @@ fn utc_timestamp(ns: i64) -> String {
 /// The alert's values, anchored on `anchor` — the first member finding of the kinds a playbook was
 /// picked for — so on a multi-host chain each playbook pivots on the host that did that step, not
 /// the chain root.
-fn alert_vars(summary: &Summary, alert: &Alert, anchor: Option<&Finding>) -> Vars {
+fn alert_vars(
+    summary: &Summary,
+    alert: &Alert,
+    anchor: Option<&Finding>,
+    kinds: &[FindingKind],
+) -> Vars {
     let mut v = Vars::default();
+    if anchor.is_some() {
+        v.members = Some(
+            alert
+                .finding_indices
+                .iter()
+                .copied()
+                .filter(|&i| {
+                    summary
+                        .findings
+                        .get(i as usize)
+                        .is_some_and(|f| kinds.contains(&f.kind))
+                })
+                .collect(),
+        );
+    }
     let members: Vec<&Finding> = alert
         .finding_indices
         .iter()
@@ -541,6 +562,37 @@ fn fill_pivot(t: &str, v: &Vars, sql: bool) -> Option<String> {
     Some(out)
 }
 
+/// Whether `filter` is exactly `host <actor> [and host <peer>] [and port N]`, the shape a
+/// [`PacketScope`] carves.
+fn scope_expresses(filter: &str, v: &Vars) -> bool {
+    let t: Vec<&str> = filter.split_whitespace().collect();
+    if t.len() % 3 != 2 || t.iter().skip(2).step_by(3).any(|w| *w != "and") {
+        return false;
+    }
+    let terms: Vec<(&str, &str)> = t
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i % 3 == 0)
+        .map(|(i, w)| (*w, t[i + 1]))
+        .collect();
+    let actor = v.map.get("actor").map(String::as_str);
+    let peer = v.map.get("peer").map(String::as_str);
+    match terms.as_slice() {
+        [("host", a), rest @ ..] if Some(*a) == actor => {
+            let rest = match rest {
+                [("host", p), rest @ ..] if Some(*p) == peer => rest,
+                r => r,
+            };
+            match rest {
+                [] => true,
+                [("port", n)] => n.parse::<u16>().is_ok(),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 /// The single literal `port N` in a capture filter, if there is exactly one.
 fn literal_port(filter: &str) -> Option<u16> {
     let ports: BTreeSet<u16> = filter
@@ -575,18 +627,23 @@ fn render_pivot(p: &Pivot, v: &Vars) -> Option<RenderedPivot> {
         PivotTarget::Packets => {
             let value = fill_pivot(&p.value, v, false)?;
             let names = placeholders(&p.value);
-            // No window (an untimed capture) leaves just the capture filter.
-            let scope = v.window.map(|(start_ns, end_ns)| PacketScope {
-                host: v.map.get("actor").cloned().unwrap_or_default(),
-                peer: if names.contains(&"peer") {
-                    v.map.get("peer").cloned()
-                } else {
-                    None
-                },
-                port: literal_port(&value),
-                start_ns,
-                end_ns,
-            });
+            // A carve scope is host, optional peer, one port and a window. A filter it cannot
+            // express (a protocol, alternative ports) or an untimed capture leaves just the
+            // capture filter, so a carve never returns packets the filter would not.
+            let scope =
+                v.window
+                    .filter(|_| scope_expresses(&value, v))
+                    .map(|(start_ns, end_ns)| PacketScope {
+                        host: v.map.get("actor").cloned().unwrap_or_default(),
+                        peer: if names.contains(&"peer") {
+                            v.map.get("peer").cloned()
+                        } else {
+                            None
+                        },
+                        port: literal_port(&value),
+                        start_ns,
+                        end_ns,
+                    });
             Some(RenderedPivot {
                 label,
                 target: p.target,
@@ -597,18 +654,33 @@ fn render_pivot(p: &Pivot, v: &Vars) -> Option<RenderedPivot> {
     }
 }
 
-fn auto_answer(step: &Step, alert: &Alert) -> Option<AutoAnswer> {
+fn auto_answer(step: &Step, alert: &Alert, v: &Vars) -> Option<AutoAnswer> {
     if step.answers_from.is_empty() {
         return None;
     }
+    // On a multi-host alert a playbook is about its own host and peer: keep the context facts
+    // about them or about this playbook's member findings, plus alert-wide ones.
+    let actor = v.map.get("actor");
+    let peer = v.map.get("peer");
+    let anchored = v.members.is_some();
+    let about_us = |ip: &String| Some(ip) == actor || Some(ip) == peer;
     let mut evidence: Vec<String> = Vec::new();
     for e in &alert.context.entries {
-        if step.answers_from.contains(&e.kind) && !evidence.contains(&e.text) {
+        let relevant = !anchored
+            || match (&e.ip, e.finding_index) {
+                (Some(ip), _) => about_us(ip),
+                (None, Some(i)) => v.members.as_ref().is_some_and(|m| m.contains(&i)),
+                (None, None) => true,
+            };
+        if relevant && step.answers_from.contains(&e.kind) && !evidence.contains(&e.text) {
             evidence.push(e.text.clone());
         }
     }
-    // The actor's identity and first-seen flag live on the host context, not in the entries.
-    if step.answers_from.contains(&ContextKind::Identity) {
+    // The actor's identity lives on the host context, not in the entries, and describes the
+    // alert's primary actor only.
+    if step.answers_from.contains(&ContextKind::Identity)
+        && (!anchored || Some(&alert.context.actor.ip) == actor)
+    {
         let a = &alert.context.actor;
         let mut parts = Vec::new();
         if let Some(h) = &a.hostname {
@@ -628,7 +700,12 @@ fn auto_answer(step: &Step, alert: &Alert) -> Option<AutoAnswer> {
         }
     }
     if step.answers_from.contains(&ContextKind::ThreatIntel) {
-        for p in alert.context.peers.iter().filter(|p| p.ioc) {
+        for p in alert
+            .context
+            .peers
+            .iter()
+            .filter(|p| p.ioc && (!anchored || Some(&p.ip) == peer))
+        {
             let line = format!("{} is on the offline IOC feed", p.ip);
             if !evidence.contains(&line) {
                 evidence.push(line);
@@ -665,7 +742,7 @@ fn render(p: &Playbook, kinds: Vec<FindingKind>, alert: &Alert, v: &Vars) -> Pla
                     .iter()
                     .filter_map(|pv| render_pivot(pv, v))
                     .collect(),
-                auto: auto_answer(s, alert),
+                auto: auto_answer(s, alert, v),
             })
             .collect(),
     }
@@ -698,7 +775,10 @@ pub fn runs_for_alert(summary: &Summary, alert: &Alert, set: &PlaybookSet) -> Ve
     }
     picked
         .into_iter()
-        .map(|(p, kinds, anchor)| render(p, kinds, alert, &alert_vars(summary, alert, anchor)))
+        .map(|(p, kinds, anchor)| {
+            let vars = alert_vars(summary, alert, anchor, &kinds);
+            render(p, kinds, alert, &vars)
+        })
         .collect()
 }
 

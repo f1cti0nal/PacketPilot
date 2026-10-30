@@ -129,6 +129,14 @@ describe("AlertsView", () => {
     expect(onRemove).toHaveBeenCalled();
   });
 
+  it("keeps the playbook manager on a quiet capture", () => {
+    render(
+      <AlertsView alerts={[]} findings={[]} playbooks={{ teamCount: null, onImport: vi.fn(), onDownloadBuiltin: vi.fn() }} />,
+    );
+    expect(screen.getByText("No alerts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hunt playbooks (built-in)" })).toBeInTheDocument();
+  });
+
   it("member rows resolve the right finding title for each alert", async () => {
     const u = userEvent.setup();
     render(<AlertsView alerts={alerts} findings={findings} />);

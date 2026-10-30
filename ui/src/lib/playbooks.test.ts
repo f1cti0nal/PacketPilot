@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   emptyProgress,
   loadProgress,
+  progressCaptureKey,
   loadTeamPlaybooks,
   saveProgress,
   saveTeamPlaybooks,
@@ -9,7 +10,7 @@ import {
   stepKey,
   toggleDone,
 } from "./playbooks";
-import type { PlaybookRun } from "../types";
+import type { AnalysisOutput, PlaybookRun } from "../types";
 
 describe("playbook progress", () => {
   beforeEach(() => localStorage.clear());
@@ -46,6 +47,18 @@ describe("playbook progress", () => {
     expect(loadTeamPlaybooks()).toBe('{"version":1,"playbooks":[]}');
     saveTeamPlaybooks(null);
     expect(loadTeamPlaybooks()).toBeNull();
+  });
+
+  it("keys progress by capture content, not just its path", () => {
+    const out = (sha: string | null, first: number) =>
+      ({
+        source_path: "/cases/traffic.pcap",
+        source_sha256: sha,
+        summary: { first_ts_ns: first, last_ts_ns: first + 10, total_packets: 5, total_bytes: 500 },
+      }) as unknown as AnalysisOutput;
+    expect(progressCaptureKey(out("ab12", 1))).toBe("sha256:ab12");
+    expect(progressCaptureKey(out(null, 1))).not.toBe(progressCaptureKey(out(null, 2)));
+    expect(progressCaptureKey(out(null, 1))).toBe(progressCaptureKey(out(null, 1)));
   });
 
   it("keys steps like the engine", () => {

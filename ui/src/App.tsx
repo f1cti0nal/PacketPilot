@@ -91,7 +91,7 @@ import {
   lintPlaybooksWasm,
   playbookMarkdownWasm,
 } from "./lib/wasmEngine";
-import { loadProgress, loadTeamPlaybooks, saveProgress, saveTeamPlaybooks } from "./lib/playbooks";
+import { loadProgress, loadTeamPlaybooks, progressCaptureKey, saveProgress, saveTeamPlaybooks } from "./lib/playbooks";
 import {
   DEFAULT_RULE_TTL_DAYS,
   addSuppressionRules,
@@ -921,7 +921,7 @@ export function App() {
     }
   }, [teamPlaybooks]);
   const huntCaptureKey =
-    summary.status === "ready" && summary.data ? (repCaptureKey(summary.data) ?? "unsaved") : "unsaved";
+    summary.status === "ready" && summary.data ? progressCaptureKey(summary.data) : "unsaved";
   const loadAlertPlaybooks = useCallback(
     (alert: Alert) => {
       const data = summaryDataRef.current;

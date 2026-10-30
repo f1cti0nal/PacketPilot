@@ -206,7 +206,7 @@ fn chain_alert_gets_one_playbook_per_kind_family() {
         assert_eq!(c2.kinds, vec![FindingKind::Beacon, FindingKind::MissingSni]);
     }
     // The malware file on the actor fills {sha256} for anyone who uses it.
-    let vars = alert_vars(&s, alert, None);
+    let vars = alert_vars(&s, alert, None, &[]);
     assert_eq!(
         vars.map.get("sha256").map(String::as_str),
         Some("ab".repeat(32).as_str())
@@ -272,7 +272,7 @@ fn team_file_overrides_by_id_and_by_kind() {
     let mut set = builtin();
     let before = set.playbooks.len();
     set.add_file(file, "team.json");
-    assert_eq!(set.playbooks.len(), before + 1, "same id replaces in place");
+    assert_eq!(set.playbooks.len(), before + 1, "same id replaces");
     assert_eq!(
         set.for_kind(FindingKind::Beacon).unwrap().title,
         "Our C2 checklist"
@@ -285,6 +285,149 @@ fn team_file_overrides_by_id_and_by_kind() {
     let runs = runs_for_alert(&s, &s.alerts[0], &set);
     assert_eq!(runs[0].origin, "team.json");
     assert_eq!(runs[0].steps[0].question, "Open a ticket for 10.0.0.7");
+}
+
+#[test]
+fn a_later_file_outranks_an_earlier_one_even_when_replacing_by_id() {
+    let file = |json: &str| parse_file(json).unwrap().0;
+    let mut set = builtin();
+    set.add_file(
+        file(
+            r#"{"version":1,"playbooks":[{"id":"ours","title":"Ours","kinds":["beacon"],
+            "steps":[{"id":"a","question":"A","why":""}]}]}"#,
+        ),
+        "a.json",
+    );
+    set.add_file(
+        file(
+            r#"{"version":1,"playbooks":[{"id":"c2-channel","title":"Theirs","kinds":["beacon"],
+            "steps":[{"id":"b","question":"B","why":""}]}]}"#,
+        ),
+        "b.json",
+    );
+    assert_eq!(set.for_kind(FindingKind::Beacon).unwrap().title, "Theirs");
+}
+
+#[test]
+fn chain_auto_answers_stay_with_each_playbooks_host() {
+    use crate::model::alert::PeerContext;
+    let mut sweep = f(FindingKind::HostSweep, "10.0.0.5", Some("10.0.0.7"), None);
+    sweep.victims = vec!["10.0.0.7".into()];
+    let mut s = summary(vec![
+        sweep,
+        f(
+            FindingKind::Beacon,
+            "10.0.0.7",
+            Some("45.77.13.37"),
+            Some(443),
+        ),
+    ]);
+    let ai = s.alerts.iter().position(|a| a.chain_id.is_some()).unwrap();
+    let alert = &mut s.alerts[ai];
+    alert.context.actor.ip = "10.0.0.5".into();
+    alert.context.actor.hostname = Some("scanner-box".into());
+    alert.context.peers = vec![PeerContext {
+        ip: "198.51.100.9".into(),
+        domain: None,
+        cloud: None,
+        ioc: true,
+        reputation_malicious: 0,
+        dst_port: None,
+    }];
+    alert.context.entries = vec![
+        ContextEntry {
+            kind: ContextKind::NewToNetwork,
+            text: "45.77.13.37 is new".into(),
+            finding_index: None,
+            ip: Some("45.77.13.37".into()),
+        },
+        ContextEntry {
+            kind: ContextKind::NewToNetwork,
+            text: "10.0.0.9 is new".into(),
+            finding_index: None,
+            ip: Some("10.0.0.9".into()),
+        },
+    ];
+    let alert = s.alerts[ai].clone();
+    let runs = runs_for_alert(&s, &alert, &builtin());
+    let c2 = runs.iter().find(|r| r.playbook_id == "c2-channel").unwrap();
+    let step = |id: &str| {
+        c2.steps
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .auto
+            .clone()
+            .unwrap()
+    };
+    assert_eq!(step("new").evidence, vec!["45.77.13.37 is new"]);
+    // Another peer's IOC hit is not this peer's reputation.
+    assert!(!step("reputation").found);
+    // The chain root's identity does not answer for the beaconing host.
+    let scan = runs.iter().find(|r| r.playbook_id == "recon-scan").unwrap();
+    let id = scan
+        .steps
+        .iter()
+        .find(|s| s.id == "authorized")
+        .unwrap()
+        .auto
+        .clone()
+        .unwrap();
+    assert_eq!(id.evidence, vec!["10.0.0.5 is hostname scanner-box"]);
+    let after = c2.steps.iter().find(|s| s.id == "after").unwrap();
+    assert!(after
+        .auto
+        .as_ref()
+        .unwrap()
+        .evidence
+        .iter()
+        .all(|e| !e.contains("scanner-box")));
+}
+
+#[test]
+fn packet_scope_only_for_filters_it_can_carve() {
+    let mut v = Vars::default();
+    v.map.insert("actor", "10.0.0.7".into());
+    v.map.insert("peer", "45.77.13.37".into());
+    v.window = Some((0, 10));
+    // A pivot needing a value the alert lacks is dropped.
+    let missing = Pivot {
+        label: "p".into(),
+        target: PivotTarget::Packets,
+        value: "host {actor} and port {port}".into(),
+    };
+    assert!(render_pivot(&missing, &v).is_none());
+    v.map.insert("port", "443".into());
+    let pv = |value: &str| {
+        render_pivot(
+            &Pivot {
+                label: "p".into(),
+                target: PivotTarget::Packets,
+                value: value.into(),
+            },
+            &v,
+        )
+        .unwrap()
+    };
+    let s = pv("host {actor} and host {peer} and port {port}")
+        .scope
+        .unwrap();
+    assert_eq!(
+        (s.peer.as_deref(), s.port),
+        (Some("45.77.13.37"), Some(443))
+    );
+    assert!(pv("host {actor} and port 88").scope.is_some());
+    assert!(pv("host {actor}").scope.is_some());
+    for f in [
+        "arp and host {actor}",
+        "host {actor} and host {peer} and icmp",
+        "host {actor} and (port 389 or port 445 or port 135)",
+        "host {peer} and port 53",
+    ] {
+        let r = pv(f);
+        assert!(r.scope.is_none(), "{f}");
+        assert!(!r.value.is_empty());
+    }
 }
 
 #[test]

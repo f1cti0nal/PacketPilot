@@ -25,6 +25,7 @@ const runs: PlaybookRun[] = [
         pivots: [
           { label: "Every connection", target: "sql", value: "SELECT * FROM flow WHERE src_ip = '10.0.0.7'" },
           { label: "All flows to 45.77.13.37", target: "flows", value: "45.77.13.37" },
+          { label: "ARP for 10.0.0.7", target: "packets", value: "arp and host 10.0.0.7" },
         ],
       },
       {
@@ -76,6 +77,9 @@ describe("HuntPanel", () => {
     expect(onPivot).toHaveBeenCalledWith(runs[0].steps[0].pivots[0], alert);
     await user.click(screen.getByRole("button", { name: "Filter flows" }));
     expect(onPivot).toHaveBeenLastCalledWith(runs[0].steps[0].pivots[1], alert);
+    // A capture filter the carve scope cannot express is offered to copy, not to carve.
+    await user.click(screen.getByRole("button", { name: "Copy filter" }));
+    expect(onPivot).toHaveBeenLastCalledWith(runs[0].steps[0].pivots[2], alert);
 
     await user.type(screen.getByRole("textbox", { name: "Note: Is the timing machine-regular?" }), "60s");
     expect(onProgress).toHaveBeenLastCalledWith({ done: ["c2-channel/cadence"], notes: { "c2-channel/cadence": "60s" } });
