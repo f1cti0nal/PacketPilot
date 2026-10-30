@@ -105,11 +105,18 @@ pub struct EnvObservation {
     /// First sighting this capture (ns since epoch; `0` when untimed).
     #[serde(default)]
     pub first_ts_ns: i64,
-    /// For a domain named in TLS SNI or HTTP Host: the external addresses it was reached at
-    /// (sorted, at most [`MAX_PEERS_PER_ITEM`]). Lets an alert on that address name the domain
-    /// even when no DNS answer was captured.
+    /// For a domain named in TLS SNI or HTTP Host: which internal host asked for it at which
+    /// external address (sorted, at most [`MAX_PEERS_PER_ITEM`]). Lets an alert on that host and
+    /// address name the domain even when no DNS answer was captured.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub peers: Vec<String>,
+    pub peers: Vec<PeerLink>,
+}
+
+/// One internal host naming a domain (TLS SNI / HTTP Host) on a connection to an external address.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PeerLink {
+    pub host: String,
+    pub peer: String,
 }
 
 /// This capture's environment sightings. Carried on [`crate::baseline::CaptureProfile`].
@@ -139,7 +146,7 @@ struct EnvItem {
     count: u64,
     first_ts_ns: i64,
     label: Option<String>,
-    peers: BTreeSet<IpAddr>,
+    peers: BTreeSet<(IpAddr, IpAddr)>,
 }
 
 /// Streaming, bounded collector of environment sightings.
@@ -274,7 +281,7 @@ impl EnvTracker {
         }
         if let Some(p) = peer {
             if item.peers.len() < MAX_PEERS_PER_ITEM {
-                item.peers.insert(p);
+                item.peers.insert((host, p));
             }
         }
         if item.label.is_none() {
@@ -291,11 +298,12 @@ impl EnvTracker {
         }
     }
 
-    /// The software and place identity a closed flow carries, attributed to its client. The
-    /// client is the flow's initiator (its SYN sender, else its first packet), so an internal host
-    /// reaching a service on a port above its own source port is still attributed correctly.
-    /// `fallback` is the port-oriented `(client, server)` pair, used when the initiator is not an
-    /// internal host (a flow first seen mid-stream from the server side).
+    /// The software and place identity a closed flow carries, attributed to its client.
+    /// `fallback` is the port-oriented `(client, server)` pair. A SYN-locked initiator is the
+    /// client outright, so an internal host reaching a service on a port above its own source port
+    /// is attributed correctly. Without a SYN the initiator is only the first packet seen (possibly
+    /// the server's reply), so the port rule wins, and the first packet's sender is used only when
+    /// the port rule would name an external client.
     pub fn observe_flow(
         &mut self,
         record: &crate::model::flow::FlowRecord,
@@ -306,7 +314,9 @@ impl EnvTracker {
             crate::model::flow::Direction::Forward => (record.key.lo_ip, record.key.hi_ip),
             crate::model::flow::Direction::Reverse => (record.key.hi_ip, record.key.lo_ip),
         };
-        let (client, server) = if is_internal_host(by_initiator.0) {
+        let trust_initiator = is_internal_host(by_initiator.0)
+            && (record.initiator_locked || !is_internal_host(fallback.0));
+        let (client, server) = if trust_initiator {
             by_initiator
         } else {
             fallback
@@ -369,7 +379,14 @@ impl EnvTracker {
                 hosts_truncated: it.hosts_truncated,
                 count: it.count,
                 first_ts_ns: it.first_ts_ns,
-                peers: it.peers.iter().map(|p| p.to_string()).collect(),
+                peers: it
+                    .peers
+                    .iter()
+                    .map(|(h, p)| PeerLink {
+                        host: h.to_string(),
+                        peer: p.to_string(),
+                    })
+                    .collect(),
             })
             .collect();
         items.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.value.cmp(&b.value)));
@@ -402,9 +419,9 @@ pub struct RareIndicator {
     /// Earlier captures in the history that saw it (`0` for a new indicator).
     #[serde(default)]
     pub history_captures: u64,
-    /// For a domain seen in TLS SNI / HTTP Host: the external addresses it was reached at.
+    /// For a domain seen in TLS SNI / HTTP Host: which host asked for it at which address.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub peers: Vec<String>,
+    pub peers: Vec<PeerLink>,
 }
 
 /// The "new to this network" and "only one host" view for one capture.
@@ -448,7 +465,7 @@ impl RarityReport {
         let touches = |r: &RareIndicator| {
             r.hosts.iter().any(|h| focus.contains(h))
                 || focus.contains(&r.value)
-                || r.peers.iter().any(|p| focus.contains(p))
+                || r.peers.iter().any(|l| focus.contains(&l.peer))
         };
         for list in [&mut self.new, &mut self.single_host] {
             if list.len() > MAX_REPORT_ITEMS {
@@ -923,7 +940,13 @@ mod tests {
             .iter()
             .find(|o| o.kind == IndicatorKind::Domain)
             .unwrap();
-        assert_eq!(dom.peers, vec!["45.33.32.156".to_string()]);
+        assert_eq!(
+            dom.peers,
+            vec![PeerLink {
+                host: "10.0.0.5".into(),
+                peer: "45.33.32.156".into()
+            }]
+        );
 
         // A flow first seen from the server side falls back to the port orientation.
         let (key, _) = FlowKey::normalized(
@@ -944,6 +967,41 @@ mod tests {
         let s = t.snapshot();
         let y = s.items.iter().find(|o| o.value == "t13d_y").unwrap();
         assert_eq!(y.hosts, vec!["10.0.0.6".to_string()]);
+    }
+
+    #[test]
+    fn internal_flows_trust_only_a_syn_initiator_over_the_port_rule() {
+        use crate::model::flow::{Direction, FlowKey, FlowRecord};
+        use crate::model::packet::Transport;
+        let client = ip("10.0.0.5");
+        let server = ip("10.0.0.20");
+        let dir_from = |key: &FlowKey, src: IpAddr| {
+            if key.lo_ip == src {
+                Direction::Forward
+            } else {
+                Direction::Reverse
+            }
+        };
+        // Mid-stream capture: the server's reply (443 -> 51000) is the first packet, no SYN.
+        let (key, _) = FlowKey::normalized(server, 443, client, 51000, Transport::Tcp);
+        let mut rec = FlowRecord::new(key, 1);
+        rec.initiator = dir_from(&key, server);
+        rec.ja4 = Some("t13d_mid".into());
+        let mut t = EnvTracker::new();
+        t.observe_flow(&rec, (client, server), 1);
+        // A SYN-locked internal flow to a high port: 10.0.0.5:40000 -> 10.0.0.20:50000.
+        let (key, _) = FlowKey::normalized(client, 40000, server, 50000, Transport::Tcp);
+        let mut rec = FlowRecord::new(key, 2);
+        rec.initiator = dir_from(&key, client);
+        rec.initiator_locked = true;
+        rec.ja4 = Some("t13d_syn".into());
+        // The port rule would call 10.0.0.20 the client here.
+        t.observe_flow(&rec, (server, client), 2);
+        let s = t.snapshot();
+        for v in ["t13d_mid", "t13d_syn"] {
+            let o = s.items.iter().find(|o| o.value == v).unwrap();
+            assert_eq!(o.hosts, vec!["10.0.0.5".to_string()], "{v}");
+        }
     }
 
     #[test]

@@ -964,7 +964,8 @@ fn first_seen_facts(summary: &Summary, actor: &str, ext_peers: &[&str]) -> Vec<(
                 peer.to_string(),
             ));
         }
-        // The peer's names: DNS answers, plus TLS SNI / HTTP Host names seen going to it.
+        // The peer's names: DNS answers, plus TLS SNI / HTTP Host names this alert's actor sent
+        // to it (another host's name for a shared address is not this alert's story).
         let mut domains: BTreeSet<String> = summary
             .resolved_ips
             .iter()
@@ -974,7 +975,10 @@ fn first_seen_facts(summary: &Summary, actor: &str, ext_peers: &[&str]) -> Vec<(
         domains.extend(
             r.new
                 .iter()
-                .filter(|n| n.kind == IndicatorKind::Domain && n.peers.iter().any(|p| p == peer))
+                .filter(|n| {
+                    n.kind == IndicatorKind::Domain
+                        && n.peers.iter().any(|l| l.peer == peer && l.host == actor)
+                })
                 .map(|n| n.value.clone()),
         );
         for d in domains {
@@ -1868,7 +1872,13 @@ mod tests {
             count: 1,
             first_seen_ns: None,
             history_captures: 0,
-            peers: peers.iter().map(|p| p.to_string()).collect(),
+            peers: peers
+                .iter()
+                .map(|p| crate::rarity::PeerLink {
+                    host: host.to_string(),
+                    peer: p.to_string(),
+                })
+                .collect(),
         }
     }
 
@@ -1907,6 +1917,42 @@ mod tests {
             .priority_terms
             .iter()
             .any(|t| t.label == "novel: 1 indicator new to this network"));
+    }
+
+    #[test]
+    fn another_hosts_sni_on_a_shared_address_stays_off_this_alert() {
+        use crate::rarity::{IndicatorKind, RarityReport};
+        let mut summary = mk_summary(vec![f(
+            FindingKind::Beacon,
+            45,
+            "10.0.0.6",
+            Some("45.77.13.37"),
+            Some(443),
+            None,
+        )]);
+        // 10.0.0.5 named newsite.example at the same address; 10.0.0.6 never did.
+        summary.rarity = Some(RarityReport {
+            baseline_loaded: true,
+            history_captures: 4,
+            new: vec![rare(
+                IndicatorKind::Domain,
+                "newsite.example",
+                "10.0.0.5",
+                &["45.77.13.37"],
+            )],
+            new_total: 1,
+            ..Default::default()
+        });
+        let alerts = derive_alerts(&summary);
+        assert!(alerts[0]
+            .context
+            .entries
+            .iter()
+            .all(|e| e.kind != ContextKind::NewToNetwork));
+        assert!(alerts[0]
+            .priority_terms
+            .iter()
+            .all(|t| !t.label.contains("new to this network")));
     }
 
     #[test]

@@ -361,8 +361,8 @@ export interface RareIndicator {
   first_seen_ns?: number;
   /** Earlier captures that saw it (0 for a new indicator). */
   history_captures?: number;
-  /** For a domain seen in TLS SNI / HTTP Host: the external addresses it was reached at. */
-  peers?: string[];
+  /** For a domain seen in TLS SNI / HTTP Host: which internal host asked for it at which address. */
+  peers?: { host: string; peer: string }[];
 }
 
 /** The "new to this network" view (engine `RarityReport`). */
